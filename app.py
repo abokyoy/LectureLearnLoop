@@ -13,6 +13,9 @@ import requests
 import json
 import re
 
+# 导入配置文件
+from config import SUMMARY_PROMPT
+
 # ----- 从 audio_recorder.py 和 batch_transcribe.py 整合的配置 -----
 # 音频录制配置
 CHUNK = 1024
@@ -29,11 +32,15 @@ MAX_RECORD_SECONDS = 30
 MODEL_SIZE = "large-v2" # large-v2, medium, small, base, tiny
 LANGUAGE = "zh" # 中文
 
-# --- 新增: Ollama 配置 ---
+# --- Ollama 配置 ---
 OLLAMA_API_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "deepseek-r1:1.5b"
 TRANSCRIPTION_LOG_FILE = "transcription.txt"
 
+# --- 总结配置 ---
+SUMMARY_CHECK_INTERVAL = 60 # 每60秒检查一次
+MIN_TEXT_FOR_SUMMARY = 50 # 降低门槛，至少有50字新增文本才触发总结
+# SUMMARY_PROMPT 在 config.py 中定义
 # --------------------------------------------------------------------
 
 class TranscriptionApp:
@@ -46,222 +53,66 @@ class TranscriptionApp:
         self.whisper_model = None
         self.recorder_thread = None
         self.transcriber_thread = None
+        self.summary_thread = None
         self.stop_event = None
+        
         self.audio_queue = queue.Queue()
         self.transcription_queue = queue.Queue()
+        self.summarized_text = ""
+        self.transcription_history = ""
 
         self.setup_ui()
         self.check_transcription_queue()
 
     def setup_ui(self):
         # --- 控件框架 ---
-        control_frame = tk.Frame(self.root, padx=10, pady=10)
-        control_frame.pack(fill=tk.X)
-
-        self.start_button = tk.Button(control_frame, text="开始录制", command=self.start_recording, font=("Arial", 12), width=15)
-        self.start_button.pack(side=tk.LEFT, padx=5)
-
-        self.stop_button = tk.Button(control_frame, text="停止录制", command=self.stop_recording, font=("Arial", 12), width=15, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
-        
-        self.summarize_button = tk.Button(control_frame, text="总结选中文字", command=self.summarize_selection, font=("Arial", 12), width=15)
-        self.summarize_button.pack(side=tk.LEFT, padx=5)
-
-        # --- 新增: 保存按钮 ---
-        self.save_button = tk.Button(control_frame, text="保存为 MD", command=self.save_as_markdown, font=("Arial", 12), width=15)
-        self.save_button.pack(side=tk.LEFT, padx=5)
-
-
-        # --- 状态栏 ---
-        self.status_label = tk.Label(self.root, text="状态: 空闲", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+        self.status_label = tk.Label(self.root, text="就绪", bd=1, relief=tk.SUNKEN, anchor=tk.W)
         self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
 
-        # --- 文本显示框 ---
-        self.transcription_display = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, font=("Arial", 14))
-        self.transcription_display.pack(expand=True, fill=tk.BOTH, padx=10, pady=5)
+        self.button_frame = tk.Frame(self.root)
+        self.button_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
+
+        self.start_button = tk.Button(self.button_frame, text="开始录制", command=self.start_recording)
+        self.start_button.pack(side=tk.LEFT, padx=5)
+
+        self.stop_button = tk.Button(self.button_frame, text="停止录制", command=self.stop_recording)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.stop_button["state"] = "disabled"
+
+        self.text_area = scrolledtext.ScrolledText(self.root, wrap=tk.WORD, font=("微软雅黑", 12))
+        self.text_area.pack(expand=True, fill="both", padx=10, pady=10)
+        
+        # 定义摘要的标签样式
+        self.text_area.tag_configure("summary", foreground="#007bff", font=("微软雅黑", 12, "bold"))
+        self.text_area.tag_configure("original", foreground="black")
 
     def update_status(self, message):
-        self.status_label.config(text=f"状态: {message}")
+        self.status_label.config(text=message)
         self.root.update_idletasks()
 
-    def start_recording(self):
-        self.is_recording = True
-        self.start_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.NORMAL)
-        
-        self.clear_transcription_display()
-        self.update_status("正在初始化...")
-
-        self.stop_event = threading.Event()
-        
-        self.recorder_thread = threading.Thread(target=self.record_audio_worker)
-        self.transcriber_thread = threading.Thread(target=self.transcribe_audio_worker)
-        
-        self.recorder_thread.start()
-        self.transcriber_thread.start()
-
-    def stop_recording(self):
-        if self.is_recording:
-            self.update_status("正在停止...")
-            self.stop_event.set()
-            
-            if self.recorder_thread:
-                self.recorder_thread.join()
-            if self.transcriber_thread:
-                self.transcriber_thread.join()
-
-            self.is_recording = False
-            self.start_button.config(state=tk.NORMAL)
-            self.stop_button.config(state=tk.DISABLED)
-            self.update_status("空闲")
-
-    def check_transcription_queue(self):
-        try:
-            while not self.transcription_queue.empty():
-                text = self.transcription_queue.get_nowait()
-                self.append_to_transcription_display(text)
-        finally:
-            self.root.after(200, self.check_transcription_queue)
-
-    def append_to_transcription_display(self, text):
-        self.transcription_display.insert(tk.END, text + "\n\n")
-        self.transcription_display.see(tk.END)
-        
-    def clear_transcription_display(self):
-        self.transcription_display.delete(1.0, tk.END)
-
-    def summarize_selection(self):
-        try:
-            selected_text = self.transcription_display.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
-        except tk.TclError:
-            messagebox.showwarning("操作无效", "请先选择您想要总结的文字。")
-            return
-
-        if not selected_text:
-            messagebox.showwarning("操作无效", "请先选择您想要总结的文字。")
-            return
-
-        try:
-            full_text = self.transcription_display.get(1.0, tk.END)
-            with open(TRANSCRIPTION_LOG_FILE, "w", encoding="utf-8") as f:
-                f.write(full_text)
-            self.update_status(f"原始稿已保存到 {TRANSCRIPTION_LOG_FILE}")
-        except Exception as e:
-            messagebox.showerror("文件保存失败", f"无法保存原始转写稿: {e}")
-            return
-            
-        self.update_status(f"正在使用 {OLLAMA_MODEL} 进行总结...")
-        self.summarize_button.config(state=tk.DISABLED)
-        threading.Thread(target=self.call_ollama_for_summary, args=(selected_text,)).start()
-
-    def call_ollama_for_summary(self, text_to_summarize):
-        try:
-            prompt = f"""你是一名专业的笔记整理员。你的任务是忠于原文，对以下语音转录内容进行要点提炼和格式化，并以工整的Markdown笔记形式输出。
-
-            请严格遵守以下规则：
-            1. 不进行任何发散、主观发挥或内容补充。
-            2. 除非有必要，否则不要大幅度缩减内容。
-            3. 将每一句有用的信息整理成一个独立的、带有项目符号（-）的要点。
-
-            以下是需要你整理的原始文本：
-
-            ---
-
-            {text_to_summarize}
-            """
-            payload = {
-                "model": OLLAMA_MODEL,
-                "prompt": prompt,
-                "stream": False
-            }
-            
-            response = requests.post(OLLAMA_API_URL, json=payload)
-            response.raise_for_status()
-            
-            response_data = response.json()
-            summary = response_data.get("response", "总结失败，未收到有效响应。").strip()
-
-            # --- 新增: 过滤 <think> 标签 ---
-            summary = re.sub(r'<think>.*?</think>', '', summary, flags=re.DOTALL).strip()
-
-            self.root.after(0, self.update_ui_with_summary, summary)
-
-        except requests.exceptions.RequestException as e:
-            messagebox.showerror("API 请求失败", f"连接Ollama API时出错: {e}\n请确保Ollama服务正在本地运行。")
-            self.root.after(0, self.update_status, "空闲")
-        except Exception as e:
-            messagebox.showerror("总结失败", f"处理总结时发生未知错误: {e}")
-            self.root.after(0, self.update_status, "空闲")
-        finally:
-            self.root.after(0, lambda: self.summarize_button.config(state=tk.NORMAL))
-
-    def update_ui_with_summary(self, summary):
-        try:
-            start = self.transcription_display.index(tk.SEL_FIRST)
-            end = self.transcription_display.index(tk.SEL_LAST)
-            self.transcription_display.delete(start, end)
-            self.transcription_display.insert(start, summary)
-            self.update_status("总结完成！")
-        except tk.TclError:
-            self.transcription_display.insert(tk.END, "\n\n--- 总结 ---\n" + summary)
-            self.update_status("总结完成（已追加到末尾）！")
-        except Exception as e:
-            messagebox.showerror("UI 更新失败", f"更新文本时出错: {e}")
-            self.update_status("UI 更新失败")
-
-    # --- 新增: 保存功能 ---
-    def save_as_markdown(self):
-        full_text = self.transcription_display.get(1.0, tk.END).strip()
-        if not full_text:
-            messagebox.showwarning("内容为空", "没有内容可以保存。")
-            return
-
-        filepath = filedialog.asksaveasfilename(
-            defaultextension=".md",
-            filetypes=[("Markdown 文件", "*.md"), ("所有文件", "*.*")],
-            title="保存为 Markdown 文件"
-        )
-
-        if not filepath:
-            return
-
-        try:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(full_text)
-            self.update_status(f"文件已保存到: {filepath}")
-        except Exception as e:
-            messagebox.showerror("保存失败", f"无法将文件保存到 '{filepath}':\n{e}")
-            self.update_status("文件保存失败")
-
-
-    def find_device_index(self, p, device_name_keyword):
+    def find_device_index(self, p, keyword):
         for i in range(p.get_device_count()):
             dev_info = p.get_device_info_by_index(i)
-            if device_name_keyword.lower() in dev_info['name'].lower() and dev_info['maxInputChannels'] > 0:
+            if keyword.lower() in dev_info['name'].lower() and dev_info['maxInputChannels'] > 0:
                 return i
         return None
 
-    def record_audio_worker(self):
+    def record_audio(self):
         p = pyaudio.PyAudio()
         if not os.path.exists(OUTPUT_DIR):
             os.makedirs(OUTPUT_DIR)
-
+        
+        self.update_status("正在寻找音频设备...")
         device_index = self.find_device_index(p, DEVICE_INDEX_KEYWORD)
         if device_index is None:
-            messagebox.showerror("错误", f"未找到包含关键字 '{DEVICE_INDEX_KEYWORD}' 的音频输入设备。请检查设备连接和配置。")
+            messagebox.showerror("设备错误", f"未找到音频输入设备 '{DEVICE_INDEX_KEYWORD}'")
             self.stop_recording()
             return
 
-        try:
-            stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
-                            frames_per_buffer=CHUNK, input_device_index=device_index)
-        except Exception as e:
-            messagebox.showerror("错误", f"无法打开音频流: {e}")
-            self.stop_recording()
-            return
-            
-        self.update_status("正在录制...")
-        
+        self.update_status(f"准备监听设备: '{p.get_device_info_by_index(device_index)['name']}'")
+        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
+                        frames_per_buffer=CHUNK, input_device_index=device_index)
+
         frames = []
         silence_frames = 0
         is_recording_segment = False
@@ -275,49 +126,49 @@ class TranscriptionApp:
                 if is_silent:
                     if is_recording_segment:
                         silence_frames += 1
-                    if is_recording_segment and silence_frames >= int(SILENCE_SECONDS * RATE / CHUNK) and len(frames) > 10:
-                        self.save_segment(p, frames)
-                        frames, is_recording_segment, silence_frames = [], False, 0
+                    
+                    if is_recording_segment and silence_frames >= int(SILENCE_SECONDS * RATE / CHUNK) and len(frames) > 0:
+                        filename = os.path.join(OUTPUT_DIR, f"segment_{int(time.time())}.wav")
+                        with wave.open(filename, 'wb') as wf:
+                            wf.setnchannels(CHANNELS)
+                            wf.setsampwidth(p.get_sample_size(FORMAT))
+                            wf.setframerate(RATE)
+                            wf.writeframes(b''.join(frames))
+                        self.audio_queue.put(filename)
+                        frames = []
+                        is_recording_segment = False
+                        silence_frames = 0
                 else:
                     is_recording_segment = True
                     silence_frames = 0
                     frames.append(data)
 
                 if len(frames) >= int(MAX_RECORD_SECONDS * RATE / CHUNK):
-                    self.save_segment(p, frames)
-                    frames, is_recording_segment, silence_frames = [], False, 0
+                    filename = os.path.join(OUTPUT_DIR, f"segment_force_{int(time.time())}.wav")
+                    with wave.open(filename, 'wb') as wf:
+                        wf.setnchannels(CHANNELS)
+                        wf.setsampwidth(p.get_sample_size(FORMAT))
+                        wf.setframerate(RATE)
+                        wf.writeframes(b''.join(frames))
+                    self.audio_queue.put(filename)
+                    frames = []
+                    is_recording_segment = False
+                    silence_frames = 0
             except Exception as e:
-                print(f"录制循环中发生错误: {e}")
+                print(f"音频录制错误: {e}")
+                self.stop_event.set()
                 break
 
-        if frames:
-            self.save_segment(p, frames)
-
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-        self.audio_queue.put(None)
-
-    def save_segment(self, p, frames):
-        filename = os.path.join(OUTPUT_DIR, f"segment_{int(time.time())}.wav")
-        with wave.open(filename, 'wb') as wf:
-            wf.setnchannels(CHANNELS)
-            wf.setsampwidth(p.get_sample_size(FORMAT))
-            wf.setframerate(RATE)
-            wf.writeframes(b''.join(frames))
-        self.audio_queue.put(filename)
-
-    def transcribe_audio_worker(self):
-        if self.whisper_model is None:
+    def transcribe_audio(self):
+        try:
             self.update_status(f"正在加载 Whisper '{MODEL_SIZE}' 模型...")
-            try:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                self.whisper_model = whisper.load_model(MODEL_SIZE, device=device)
-                self.update_status("模型加载完成。等待音频...")
-            except Exception as e:
-                messagebox.showerror("模型加载失败", f"加载 Whisper 模型时出错: {e}")
-                self.stop_recording()
-                return
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.whisper_model = whisper.load_model(MODEL_SIZE, device=device)
+            self.update_status("模型加载完成。等待音频...")
+        except Exception as e:
+            messagebox.showerror("模型加载失败", f"加载 Whisper 模型时出错: {e}")
+            self.stop_recording()
+            return
         
         while not self.stop_event.is_set():
             try:
@@ -340,6 +191,142 @@ class TranscriptionApp:
             except Exception as e:
                 print(f"转写文件时发生错误: {e}")
 
+    def call_ollama(self, prompt):
+        """调用 Ollama API，处理结构化 JSON 返回"""
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": prompt,
+            "stream": False,
+        }
+        try:
+            print("\n--- 发送给大模型的提示词（用于调试） ---")
+            print(prompt)
+            print("-------------------------------------------\n")
+
+            response = requests.post(OLLAMA_API_URL, json=payload, timeout=90)
+            response.raise_for_status()
+            
+            response_text = response.text.strip()
+
+            print("\n--- 大模型原始响应（用于调试） ---")
+            print(response_text)
+            print("---------------------------------------\n")
+            
+            # Ollama的原始响应可能包含多个JSON对象，只需要最后一个
+            last_response_line = response_text.strip().split('\n')[-1]
+            try:
+                data = json.loads(last_response_line)
+                raw_response = data['response']
+                
+                # 新增：使用正则表达式移除 <think> 标签及其内容
+                clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL)
+                return clean_response
+            except (json.JSONDecodeError, IndexError, KeyError):
+                print("警告：无法解析大模型响应，返回原始文本。")
+                return response_text
+        except requests.exceptions.RequestException as e:
+            print(f"Ollama API调用错误: {e}")
+            self.update_status("Ollama API调用失败，请检查服务。")
+            return prompt
+
+    def summary_loop(self):
+        """定期检查和总结文本"""
+        while not self.stop_event.is_set():
+            time.sleep(SUMMARY_CHECK_INTERVAL)
+            self.process_summary()
+
+    def process_summary(self):
+        # 提取上次总结后的新文本
+        text_to_analyze = self.transcription_history[len(self.summarized_text):]
+        
+        if not text_to_analyze or len(text_to_analyze) < MIN_TEXT_FOR_SUMMARY:
+            print("新增文本过短，不进行总结。")
+            return
+
+        self.update_status("正在检查是否需要总结...")
+        prompt = SUMMARY_PROMPT.format(text_to_analyze)
+        
+        raw_response = self.call_ollama(prompt)
+        
+        # 使用分隔符拆分响应
+        parts = raw_response.split("[SPLIT_POINT]")
+        summary_content = parts[0].strip()
+        remaining_text = parts[1].strip() if len(parts) > 1 else ""
+
+        # 只有当大模型返回了有效的总结内容时才进行更新
+        if summary_content:
+            self.update_status("意群结束，生成阶段性总结...")
+            
+            # 找到需要被替换的原文
+            text_to_be_replaced = text_to_analyze.replace(remaining_text, "", 1)
+            
+            # 更新显示区域
+            # 先删除旧的、未总结的文本
+            self.text_area.delete(f"end-{len(text_to_analyze)}c", tk.END)
+            
+            # 插入新的、带标签的总结
+            self.text_area.insert(tk.END, summary_content + "\n", "summary")
+            
+            # 插入未被总结的剩余文本
+            if remaining_text:
+                self.text_area.insert(tk.END, remaining_text, "original")
+            
+            self.text_area.see(tk.END)
+            
+            # 更新已总结的文本历史
+            self.summarized_text += text_to_be_replaced
+            
+            self.update_status("总结完成。")
+        else:
+            print("大模型未返回有效的总结，继续积累文本。")
+
+    def check_transcription_queue(self):
+        """定期检查转写队列并更新UI"""
+        while not self.transcription_queue.empty():
+            new_text = self.transcription_queue.get_nowait()
+            self.text_area.insert(tk.END, new_text, "original")
+            self.text_area.see(tk.END)
+            self.transcription_history += new_text
+            with open(TRANSCRIPTION_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(new_text)
+
+        self.root.after(100, self.check_transcription_queue)
+
+    def start_recording(self):
+        self.is_recording = True
+        self.start_button["state"] = "disabled"
+        self.stop_button["state"] = "normal"
+        self.stop_event = threading.Event()
+        
+        self.recorder_thread = threading.Thread(target=self.record_audio, daemon=True)
+        self.transcriber_thread = threading.Thread(target=self.transcribe_audio, daemon=True)
+        self.summary_thread = threading.Thread(target=self.summary_loop, daemon=True)
+        
+        self.recorder_thread.start()
+        self.transcriber_thread.start()
+        self.summary_thread.start()
+        
+        self.update_status("正在录制...")
+
+    def stop_recording(self):
+        self.is_recording = False
+        self.start_button["state"] = "normal"
+        self.stop_button["state"] = "disabled"
+        if self.stop_event:
+            self.stop_event.set()
+        
+        self.audio_queue.put(None)
+        
+        if self.recorder_thread and self.recorder_thread.is_alive():
+            self.recorder_thread.join()
+        if self.transcriber_thread and self.transcriber_thread.is_alive():
+            self.transcriber_thread.join()
+        if self.summary_thread and self.summary_thread.is_alive():
+            self.summary_thread.join()
+        
+        self.update_status("录制已停止")
+        print("所有线程已停止。")
+        
     def on_closing(self):
         if self.is_recording:
             if messagebox.askokcancel("退出", "录制仍在进行中。确定要退出吗？"):
