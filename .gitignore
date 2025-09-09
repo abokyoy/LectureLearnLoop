@@ -1,0 +1,5 @@
+# 忽略虚拟环境目录
+env/
+
+# 忽略录音片段目录
+recorded_audio_segments/
