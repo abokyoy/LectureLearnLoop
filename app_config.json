@@ -1,0 +1,7 @@
+{
+  "llm_provider": "Gemini",
+  "ollama_model": "deepseek-r1:1.5b",
+  "ollama_api_url": "http://localhost:11434/api/generate",
+  "gemini_api_key": "AIzaSyD8wj1WlhKZ4v281Vwb4KZyW1x2jkyqG4M",
+  "gemini_model": "gemini-1.5-flash-latest"
+}

@@ -1,40 +1,70 @@
-SUMMARY_PROMPT = """你是一名专业的文本分析和学习笔记助手。你的任务是分析我提供的语音转录内容，将其中的核心知识点或概念，以详细、结构化的学习笔记形式进行总结。
+SUMMARY_PROMPT = """你是一名专业的文本分析和学习笔记助手。我将提供一段实时音频转录的文字片段。你的任务是分析这段文字，并直接输出一个结构化的摘要。
 
 请严格遵守以下规则：
-1. **只返回**总结内容和剩余文本。
-2. 在总结和剩余文本之间，使用一个唯一的、醒目的分隔符 `[SPLIT_POINT]`。
-3. 如果没有找到完整的知识点可以总结，请返回一个空行，后面紧跟分隔符和全部原文。
-4. 你的总结应该像一份正式的学习笔记：
-    - 使用 Markdown 格式。
-    - 包含清晰的标题。
-    - 详细解释每个知识点，可以包含背景、原因、方法或关键人物等。
-    - 不仅仅是罗列，要展现出知识点之间的逻辑关系。
-    - 你的目标是让读者能够通过这份笔记理解内容的来龙去脉，而不仅仅是知道有什么。
+1. 直接输出摘要内容，不要包含任何额外的标题，例如"总结"、"摘要"或"这段内容讨论了什么"之类的前言。
+2. 摘要应该以结构化的形式呈现，例如使用项目符号（-）或编号来组织要点。
+3. 你的目标是清晰、简洁地总结出文本片段中的核心信息。
+4. 如果提供的文本片段没有实质性内容可供总结，请返回空。
 
-例如，如果原文是 "今天的会议我们讨论了三个主要议题。首先是项目A的进展，目前已完成70%。其次是项目B的预算，我们需要增加20%。最后是团队建设活动的时间。"
-你应该返回:
-### 会议纪要：项目A、项目B与团队建设
-本次会议主要围绕三个核心议题展开，旨在同步项目进度、调整资源分配并规划未来团队活动。
-
-- **项目A进展更新**：目前项目A的开发进度已达到70%，这标志着我们已完成大部分工作。接下来我们将进入最后的冲刺阶段。
-- **项目B预算调整**：由于项目B的需求发生了变化，我们决定将预算增加20%，以确保所有功能都能按时、高质量地完成。
-- **团队建设活动**：团队决定下周五举行一次团队建设活动，具体时间和地点将在稍后确定，以加强团队协作和凝聚力。
-[SPLIT_POINT]
-
-再例如，如果原文是 "我们讨论了第一个议题，项目A的进展。"
-你应该返回:
-### 项目A进展
-会议开始，我们详细讨论了项目A的最新进展。
-[SPLIT_POINT]
-
-再例如，如果原文是 "今天我们来讨论一下"
-你应该返回:
-[SPLIT_POINT]
-今天我们来讨论一下
-
-原始文本：
+原始文本片段如下：
 
 ---
 
 {}
 """
+
+# --- 大语言模型配置 ---
+# 服务商: "Ollama" 或 "Gemini"
+LLM_PROVIDER = "Ollama"
+
+# Ollama 配置
+OLLAMA_API_URL = "http://localhost:11434/api/generate"
+OLLAMA_MODEL = "deepseek-r1:1.5b"
+
+# Gemini API Key (如果你使用Gemini，请填写你的API Key)
+GEMINI_API_KEY = ""
+
+# 使用的Gemini模型
+GEMINI_MODEL = "gemini-1.5-flash-latest"
+
+# 配置保存文件
+CONFIG_FILE = "app_config.json"
+
+def load_config():
+    """加载配置文件"""
+    import json
+    import os
+    
+    default_config = {
+        "llm_provider": "Ollama",
+        "ollama_model": "deepseek-r1:1.5b",
+        "ollama_api_url": "http://localhost:11434/api/generate",
+        "gemini_api_key": "",
+        "gemini_model": "gemini-1.5-flash-latest"
+    }
+    
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                # 合并默认配置，确保所有必要的键都存在
+                for key, value in default_config.items():
+                    if key not in config:
+                        config[key] = value
+                return config
+        except Exception as e:
+            print(f"加载配置文件失败: {e}")
+            return default_config
+    else:
+        return default_config
+
+def save_config(config):
+    """保存配置文件"""
+    import json
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"保存配置文件失败: {e}")
+        return False
