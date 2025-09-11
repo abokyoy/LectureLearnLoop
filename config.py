@@ -25,7 +25,7 @@ OLLAMA_MODEL = "deepseek-r1:1.5b"
 GEMINI_API_KEY = ""
 
 # 使用的Gemini模型
-GEMINI_MODEL = "gemini-1.5-flash-latest"
+GEMINI_MODEL = "gemini-1.5-flash-002"
 
 # 配置保存文件
 CONFIG_FILE = "app_config.json"
@@ -40,7 +40,7 @@ def load_config():
         "ollama_model": "deepseek-r1:1.5b",
         "ollama_api_url": "http://localhost:11434/api/generate",
         "gemini_api_key": "",
-        "gemini_model": "gemini-1.5-flash-latest"
+        "gemini_model": "gemini-1.5-flash-002"
     }
     
     if os.path.exists(CONFIG_FILE):

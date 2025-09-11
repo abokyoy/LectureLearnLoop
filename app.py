@@ -12,6 +12,9 @@ import whisper
 import requests
 import json
 import re
+import random
+
+# 导入配置文件
 
 # 导入配置文件
 from config import SUMMARY_PROMPT, load_config, save_config
@@ -29,14 +32,22 @@ SILENCE_SECONDS = 1.5
 MAX_RECORD_SECONDS = 30
 
 # Whisper 转写配置
-MODEL_SIZE = "large-v2" # large-v2, medium, small, base, tiny
-LANGUAGE = "zh" # 中文
+MODEL_SIZE = "large-v2"  # 可选：large-v2, medium, small, base, tiny
+LANGUAGE = "zh"  # 默认中文
 
 # --- 总结配置 ---
 SUMMARY_CHECK_INTERVAL = 300 # 每300秒（5分钟）检查一次
 MIN_TEXT_FOR_SUMMARY = 50 # 降低门槛，至少有50字新增文本才触发总结
 TRANSCRIPTION_LOG_FILE = "transcription.txt"
 # SUMMARY_PROMPT 在 config.py 中定义
+# 限制每次发送到LLM的最大字符数，避免请求过大导致连接被重置/503
+MAX_SUMMARY_CHARS = 8000
+
+# --- 请求重试与稳定性参数 ---
+RETRY_MAX_ATTEMPTS = 5
+RETRY_BASE_DELAY = 2.0
+RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
+JITTER_SECONDS = 0.5
 # --------------------------------------------------------------------
 
 class TranscriptionApp:
@@ -217,7 +228,7 @@ class TranscriptionApp:
             return self.call_gemini(prompt)
         else:
             print(f"未知的LLM提供商: {self.config["llm_provider"]}")
-            return prompt
+            return None
 
     def call_ollama(self, prompt):
         """调用 Ollama API，处理结构化 JSON 返回"""
@@ -228,7 +239,7 @@ class TranscriptionApp:
         }
         try:
             print("\n--- 发送给大模型的提示词（用于调试） ---")
-            print(prompt)
+            print((prompt[:2000] + ("...[truncated]" if len(prompt) > 2000 else "")))
             print("-------------------------------------------\n")
 
             response = requests.post(self.config["ollama_api_url"], json=payload, timeout=90)
@@ -237,31 +248,85 @@ class TranscriptionApp:
             response_text = response.text.strip()
 
             print("\n--- 大模型原始响应（用于调试） ---")
-            print(response_text)
+            print(response_text[:4000])
             print("---------------------------------------\n")
             
             # Ollama的原始响应可能包含多个JSON对象，只需要最后一个
             last_response_line = response_text.strip().split('\n')[-1]
             try:
                 data = json.loads(last_response_line)
-                raw_response = data['response']
+                raw_response = data.get('response', '')
                 
-                # 新增：使用正则表达式移除 <think> 标签及其内容
-                clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL)
-                return clean_response
+                # 使用正则表达式移除 <think> 标签及其内容
+                clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
+                return clean_response or None
             except (json.JSONDecodeError, IndexError, KeyError):
                 print("警告：无法解析大模型响应，返回原始文本。")
-                return response_text
+                return (response_text or None)
         except requests.exceptions.RequestException as e:
             print(f"Ollama API调用错误: {e}")
             self.update_status("Ollama API调用失败，请检查服务。")
-            return prompt
+            return None
 
     def summary_loop(self):
         """定期检查和总结文本"""
         while not self.stop_event.is_set():
             time.sleep(SUMMARY_CHECK_INTERVAL)
             self.process_summary()
+
+    def call_llm_with_retries(self, prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY):
+        """带重试的LLM调用（指数退避 + 抖动）"""
+        last_err = None
+        for attempt in range(1, retries + 1):
+            content = self.call_llm(prompt)
+            if content:
+                return content
+            delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, JITTER_SECONDS)
+            self.update_status(f"总结调用失败，{attempt}/{retries} 次尝试。{('稍后重试...' if attempt < retries else '放弃。')}")
+            if attempt < retries:
+                try:
+                    time.sleep(delay)
+                except Exception:
+                    pass
+        return None
+
+    def _resolve_gemini_models(self):
+        """根据配置解析 Gemini 备选模型名称列表，并提供稳定回退项。"""
+        raw = (self.config.get("gemini_model") or "gemini-2.5-flash").strip()
+        candidates = []
+        if raw.endswith("-latest"):
+            base = raw[:-7]
+            if base:
+                candidates.extend([f"{base}-002", f"{base}-001", base])
+            else:
+                candidates.append("gemini-2.5-flash")
+        else:
+            candidates.append(raw)
+            # 常见后缀组合
+            if not re.search(r"-(\d+)$", raw):
+                candidates.append(f"{raw}-001")
+                candidates.append(f"{raw}-002")
+            else:
+                # 同时加入去掉后缀的版本
+                candidates.append(re.sub(r"-(\d+)$", "", raw))
+        # 追加常见稳定可用模型（1.5 作为回退）
+        candidates += [
+            "gemini-2.5-flash-001",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash-002",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro-002",
+            "gemini-1.5-pro",
+            "gemini-1.5-flash-8b",
+        ]
+        # 去重并保持顺序
+        seen = set()
+        ordered = []
+        for name in candidates:
+            if name and name not in seen:
+                seen.add(name)
+                ordered.append(name)
+        return ordered
 
     def process_summary(self):
         """获取新增文本并生成总结"""
@@ -272,12 +337,17 @@ class TranscriptionApp:
             print(f"新增文本过短 ({len(text_to_analyze)}字)，不进行总结。")
             return
 
+        # 限制提交给模型的文本长度（取最近的内容，更利于上下文连贯）
+        bounded_text = text_to_analyze[-MAX_SUMMARY_CHARS:]
+
         self.update_status("正在生成总结...")
-        prompt = SUMMARY_PROMPT.format(text_to_analyze)
+        prompt = SUMMARY_PROMPT.format(bounded_text)
         
-        summary_content = self.call_llm(prompt).strip()
+        summary_content = self.call_llm_with_retries(prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY)
         
         # 只有当大模型返回了有效的总结内容时才进行更新
+        if summary_content:
+            summary_content = summary_content.strip()
         if summary_content:
             self.update_status("总结完成。")
             
@@ -285,7 +355,7 @@ class TranscriptionApp:
             self.summary_area.insert(tk.END, summary_content + "\n\n")
             self.summary_area.see(tk.END)
             
-            # 更新已总结文本的长度记录
+            # 更新已总结文本的长度记录（仅在成功时推进游标）
             self.last_summary_text_len = len(self.transcription_history)
             
         else:
@@ -365,45 +435,111 @@ class TranscriptionApp:
         print("所有线程已停止。")
         
     def call_gemini(self, prompt):
-        """调用 Gemini API"""
+        """调用 Gemini API（带状态码感知重试 + 404 模型回退 + v1beta 兜底）"""
         if not self.config["gemini_api_key"]:
             print("错误：Gemini API Key未配置")
             self.update_status("Gemini API Key未配置")
-            return prompt
+            return None
             
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.config['gemini_model']}:generateContent?key={self.config['gemini_api_key']}"
-        
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }]
+        headers = {
+            "Content-Type": "application/json",
+            "Connection": "close"
         }
-        
-        try:
-            print("\n--- 发送给Gemini的提示词（用于调试） ---")
-            print(prompt)
-            print("-------------------------------------------\n")
 
-            response = requests.post(url, json=payload, timeout=90)
-            response.raise_for_status()
-            
-            data = response.json()
-            
-            print("\n--- Gemini原始响应（用于调试） ---")
-            print(json.dumps(data, ensure_ascii=False, indent=2))
-            print("---------------------------------------\n")
-            
-            if "candidates" in data and len(data["candidates"]) > 0:
-                content = data["candidates"][0]["content"]["parts"][0]["text"]
-                return content
-            else:
-                print("警告：Gemini响应格式异常")
-                return prompt
-                
-        except requests.exceptions.RequestException as e:
-            print(f"Gemini API调用错误: {e}")
-            self.update_status("Gemini API调用失败，请检查网络和API Key。")
-            return prompt
+        model_candidates = self._resolve_gemini_models()
+        last_error = None
+        for model_name in model_candidates:
+            api_versions = ["v1", "v1beta"]
+            tried_versions = []
+            for api_version in api_versions:
+                url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={self.config['gemini_api_key']}"
+                payload = {
+                    "contents": [{
+                        "role": "user",
+                        "parts": [{"text": prompt}]
+                    }]
+                }
+                for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
+                    try:
+                        print("\n--- 发送给Gemini的提示词（用于调试） ---")
+                        print(prompt[:2000] + ("...[truncated]" if len(prompt) > 2000 else ""))
+                        print(f"使用模型: {model_name} | API: {api_version}")
+                        print("-------------------------------------------\n")
+
+                        response = requests.post(url, headers=headers, json=payload, timeout=30)
+
+                        # 404：如果是 v1，切换 v1beta；若 v1beta 也 404，换下一个模型
+                        if response.status_code == 404:
+                            print(f"{api_version} 上的模型 {model_name} 返回 404。")
+                            last_error = requests.HTTPError("404 Not Found")
+                            tried_versions.append(api_version)
+                            # 切换到下一个 API 版本
+                            break
+
+                        if response.status_code in RETRY_STATUS_CODES:
+                            retry_after = response.headers.get("Retry-After")
+                            if retry_after:
+                                try:
+                                    delay = float(retry_after)
+                                except ValueError:
+                                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, JITTER_SECONDS)
+                            else:
+                                delay = RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, JITTER_SECONDS)
+                            print(f"Gemini返回 {response.status_code}，第 {attempt}/{RETRY_MAX_ATTEMPTS} 次重试，{delay:.2f}s 后重试。")
+                            if attempt < RETRY_MAX_ATTEMPTS:
+                                time.sleep(delay)
+                                continue
+                            response.raise_for_status()
+
+                        response.raise_for_status()
+                        data = response.json()
+                        
+                        print("\n--- Gemini原始响应（用于调试） ---")
+                        print(json.dumps(data, ensure_ascii=False, indent=2)[:4000])
+                        print("---------------------------------------\n")
+                        
+                        if "candidates" in data and len(data["candidates"]) > 0:
+                            parts = data["candidates"][0].get("content", {}).get("parts", [])
+                            if parts and "text" in parts[0]:
+                                content = parts[0]["text"].strip()
+                                # 记住可用模型，便于下次直接使用
+                                if self.config.get("gemini_model") != model_name:
+                                    self.config["gemini_model"] = model_name
+                                    try:
+                                        save_config(self.config)
+                                    except Exception:
+                                        pass
+                                return content or None
+                        print("警告：Gemini响应格式异常")
+                        return None
+                            
+                    except requests.exceptions.RequestException as e:
+                        delay = RETRY_BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, JITTER_SECONDS)
+                        print(f"Gemini API调用错误: {e}，第 {attempt}/{RETRY_MAX_ATTEMPTS} 次重试。")
+                        last_error = e
+                        if attempt < RETRY_MAX_ATTEMPTS:
+                            time.sleep(delay)
+                            continue
+                        else:
+                            # 用尽当前 API 版本的重试，尝试下一个 API 版本或下一个模型
+                            break
+                    except (KeyError, IndexError, ValueError, json.JSONDecodeError) as e:
+                        print(f"Gemini 响应解析错误: {e}")
+                        last_error = e
+                        # 避免无限循环，切换 API 版本/模型
+                        break
+                # 如果当前版本为 v1 且刚才因 404 跳出循环，则继续尝试 v1beta
+                if tried_versions and tried_versions[-1] == api_version and api_version == "v1":
+                    continue
+                # 如果不是 404 场景或 v1beta 也失败，则跳出到下一个模型
+                # 由外层 for model_name 控制
+            # 尝试完所有 API 版本后，进入下一个模型
+            continue
+
+        if last_error:
+            print(f"Gemini 最终失败: {last_error}")
+            self.update_status("Gemini 多模型尝试后仍失败，请检查模型名或权限。")
+        return None
 
     def open_config_dialog(self):
         """打开配置对话框"""
