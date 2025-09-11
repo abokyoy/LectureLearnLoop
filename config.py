@@ -27,6 +27,14 @@ GEMINI_API_KEY = ""
 # 使用的Gemini模型
 GEMINI_MODEL = "gemini-1.5-flash-002"
 
+# 总结模式配置
+SUMMARY_MODE = "auto"  # "auto" 或 "manual"
+AUTO_SUMMARY_INTERVAL = 300  # 自动总结间隔时间（秒）
+
+# 文本截断配置
+AUTO_SUMMARY_MAX_CHARS = 8000  # 自动总结的最大字符数
+MANUAL_SUMMARY_MAX_CHARS = 20000  # 手动总结的最大字符数（更大，不截断）
+
 # 配置保存文件
 CONFIG_FILE = "app_config.json"
 
@@ -40,7 +48,12 @@ def load_config():
         "ollama_model": "deepseek-r1:1.5b",
         "ollama_api_url": "http://localhost:11434/api/generate",
         "gemini_api_key": "",
-        "gemini_model": "gemini-1.5-flash-002"
+        "gemini_model": "gemini-1.5-flash-002",
+        "summary_mode": "auto",
+        "auto_summary_interval": 300,
+        "whisper_language": "auto",
+        "auto_summary_max_chars": 8000,
+        "manual_summary_max_chars": 20000
     }
     
     if os.path.exists(CONFIG_FILE):

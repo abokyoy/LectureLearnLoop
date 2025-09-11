@@ -13,9 +13,11 @@ import requests
 import json
 import re
 import random
-from PIL import Image, ImageTk, ImageGrab
+from PIL import Image, ImageTk
 import io
 import base64
+
+# 导入配置文件
 
 # 导入配置文件
 from config import SUMMARY_PROMPT, load_config, save_config
@@ -34,7 +36,7 @@ MAX_RECORD_SECONDS = 30
 
 # Whisper 转写配置
 MODEL_SIZE = "large-v2"  # 可选：large-v2, medium, small, base, tiny
-LANGUAGE = None  # 设置为None让Whisper自动检测语言，或者使用"auto"
+LANGUAGE = "zh"  # 默认中文
 
 # --- 总结配置 ---
 SUMMARY_CHECK_INTERVAL = 300 # 每300秒（5分钟）检查一次
@@ -42,7 +44,7 @@ MIN_TEXT_FOR_SUMMARY = 50 # 降低门槛，至少有50字新增文本才触发�
 TRANSCRIPTION_LOG_FILE = "transcription.txt"
 # SUMMARY_PROMPT 在 config.py 中定义
 # 限制每次发送到LLM的最大字符数，避免请求过大导致连接被重置/503
-MAX_SUMMARY_CHARS = 8000  # 这个变量保留用于向后兼容，但会被配置覆盖
+MAX_SUMMARY_CHARS = 8000
 
 # --- 请求重试与稳定性参数 ---
 RETRY_MAX_ATTEMPTS = 5
@@ -50,147 +52,6 @@ RETRY_BASE_DELAY = 2.0
 RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 JITTER_SECONDS = 0.5
 # --------------------------------------------------------------------
-
-class ScreenshotTool:
-    """截图工具，类似微信截图功能"""
-    
-    def __init__(self, callback=None):
-        self.callback = callback  # 截图完成后的回调函数
-        self.root = None
-        self.canvas = None
-        self.start_x = 0
-        self.start_y = 0
-        self.rect_id = None
-        self.is_selecting = False
-        
-    def take_screenshot(self):
-        """开始截图流程"""
-        try:
-            # 截取整个屏幕
-            self.screenshot = ImageGrab.grab()
-            
-            # 创建全屏窗口
-            self.create_screenshot_window()
-            
-        except Exception as e:
-            messagebox.showerror("截图错误", f"截图失败: {e}")
-    
-    def create_screenshot_window(self):
-        """创建全屏截图选择窗口"""
-        # 创建顶级窗口
-        self.root = tk.Toplevel()
-        self.root.title("截图选择")
-        
-        # 设置全屏
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        self.root.geometry(f"{screen_width}x{screen_height}+0+0")
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-fullscreen", True)
-        self.root.configure(cursor="crosshair")
-        
-        # 创建画布
-        self.canvas = tk.Canvas(self.root, highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
-        
-        # 将截图显示在画布上
-        self.screenshot_tk = ImageTk.PhotoImage(self.screenshot)
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=self.screenshot_tk)
-        
-        # 添加半透明遮罩
-        self.canvas.create_rectangle(0, 0, screen_width, screen_height, 
-                                   fill="black", stipple="gray50", tags="mask")
-        
-        # 绑定事件
-        self.canvas.bind("<Button-1>", self.start_selection)
-        self.canvas.bind("<B1-Motion>", self.update_selection)
-        self.canvas.bind("<ButtonRelease-1>", self.end_selection)
-        self.root.bind("<Escape>", self.cancel_screenshot)
-        self.root.bind("<Return>", self.confirm_screenshot)
-        
-        # 添加提示文本
-        self.canvas.create_text(screen_width//2, 50, 
-                              text="拖拽鼠标选择区域，按Enter确认，按Esc取消", 
-                              fill="white", font=("微软雅黑", 14), tags="help")
-        
-        self.root.focus_set()
-    
-    def start_selection(self, event):
-        """开始选择区域"""
-        self.start_x = event.x
-        self.start_y = event.y
-        self.is_selecting = True
-        
-        # 删除之前的选择框
-        if self.rect_id:
-            self.canvas.delete(self.rect_id)
-            self.canvas.delete("selection_area")
-    
-    def update_selection(self, event):
-        """更新选择区域"""
-        if not self.is_selecting:
-            return
-            
-        # 删除之前的选择框
-        if self.rect_id:
-            self.canvas.delete(self.rect_id)
-            self.canvas.delete("selection_area")
-        
-        # 绘制新的选择框
-        self.rect_id = self.canvas.create_rectangle(
-            self.start_x, self.start_y, event.x, event.y,
-            outline="red", width=2, tags="selection"
-        )
-        
-        # 清除选择区域内的遮罩
-        self.canvas.create_rectangle(
-            self.start_x, self.start_y, event.x, event.y,
-            fill="", outline="", tags="selection_area"
-        )
-    
-    def end_selection(self, event):
-        """结束选择"""
-        self.is_selecting = False
-        self.end_x = event.x
-        self.end_y = event.y
-    
-    def confirm_screenshot(self, event=None):
-        """确认截图"""
-        if hasattr(self, 'end_x') and hasattr(self, 'end_y'):
-            # 计算选择区域
-            x1 = min(self.start_x, self.end_x)
-            y1 = min(self.start_y, self.end_y)
-            x2 = max(self.start_x, self.end_x)
-            y2 = max(self.start_y, self.end_y)
-            
-            # 确保选择区域有效
-            if abs(x2 - x1) > 10 and abs(y2 - y1) > 10:
-                # 裁剪截图
-                cropped = self.screenshot.crop((x1, y1, x2, y2))
-                
-                # 保存到临时文件
-                temp_path = os.path.join(os.getcwd(), f"screenshot_{int(time.time())}.png")
-                cropped.save(temp_path)
-                
-                # 调用回调函数
-                if self.callback:
-                    self.callback(temp_path)
-                
-                self.close_screenshot_window()
-            else:
-                messagebox.showwarning("选择区域太小", "请选择更大的区域")
-        else:
-            messagebox.showwarning("未选择区域", "请先拖拽选择截图区域")
-    
-    def cancel_screenshot(self, event=None):
-        """取消截图"""
-        self.close_screenshot_window()
-    
-    def close_screenshot_window(self):
-        """关闭截图窗口"""
-        if self.root:
-            self.root.destroy()
-            self.root = None
 
 class RichTextEditor:
     """富文本编辑器，支持图片粘贴和基本格式化"""
@@ -263,7 +124,6 @@ class RichTextEditor:
     def show_context_menu(self, event):
         """显示右键菜单"""
         context_menu = tk.Menu(self.parent, tearoff=0)
-        context_menu.add_command(label="📸 截图", command=self.take_screenshot)
         context_menu.add_command(label="插入图片", command=self.insert_image_dialog)
         context_menu.add_separator()
         context_menu.add_command(label="粗体", command=lambda: self.apply_format("bold"))
@@ -275,7 +135,7 @@ class RichTextEditor:
         try:
             context_menu.tk_popup(event.x_root, event.y_root)
         finally:
-            context_menu.grab_release()
+            context_menu.gdestroy()
     
     def apply_format(self, format_type):
         """应用文本格式"""
@@ -331,21 +191,6 @@ class RichTextEditor:
         """绑定事件"""
         return self.text_widget.bind(*args, **kwargs)
 
-    def take_screenshot(self):
-        """调用截图工具"""
-        screenshot_tool = ScreenshotTool(callback=self.insert_screenshot)
-        screenshot_tool.take_screenshot()
-    
-    def insert_screenshot(self, image_path):
-        """插入截图到文本中"""
-        try:
-            self.insert_image(image_path)
-            # 删除临时文件
-            if os.path.exists(image_path):
-                os.remove(image_path)
-        except Exception as e:
-            messagebox.showerror("插入截图失败", f"无法插入截图: {e}")
-
 class TranscriptionApp:
     def __init__(self, root):
         self.root = root
@@ -370,149 +215,6 @@ class TranscriptionApp:
         self.setup_ui()
         self.check_transcription_queue()
 
-    def update_status(self, message):
-        self.status_label.config(text=message)
-        self.root.update_idletasks()
-
-    def check_transcription_queue(self):
-        """定期检查转写队列并更新UI"""
-        try:
-            while not self.transcription_queue.empty():
-                new_text = self.transcription_queue.get_nowait()
-                # 更新原始语音转文字面板
-                self.transcription_area.insert(tk.END, new_text + " ")
-                self.transcription_area.see(tk.END)
-                # 更新完整的转录历史
-                self.transcription_history += (new_text + " ")
-                # 写入日志文件
-                try:
-                    with open(TRANSCRIPTION_LOG_FILE, "a", encoding="utf-8") as f:
-                        f.write(new_text + " ")
-                except Exception:
-                    pass
-        finally:
-            self.root.after(100, self.check_transcription_queue)
-
-    def save_as_markdown(self):
-        """将两个面板的内容合并保存为Markdown文件"""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".md",
-            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")])
-        if file_path:
-            try:
-                summary_content = self.summary_area.get("1.0", tk.END).strip()
-                transcription_content = self.transcription_area.get("1.0", tk.END).strip()
-                markdown_content = f"# 笔记总结\n\n{summary_content}\n\n---\n\n# 原始语音转文字\n\n{transcription_content}"
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(markdown_content)
-                messagebox.showinfo("保存成功", f"文件已成功保存到: {file_path}")
-            except Exception as e:
-                messagebox.showerror("保存失败", f"保存文件时发生错误: {e}")
-
-    def find_device_index(self, p, keyword):
-        for i in range(p.get_device_count()):
-            dev_info = p.get_device_info_by_index(i)
-            if keyword.lower() in dev_info.get("name", "").lower() and dev_info.get("maxInputChannels", 0) > 0:
-                return i
-        return None
-
-    def record_audio(self):
-        p = pyaudio.PyAudio()
-        if not os.path.exists(OUTPUT_DIR):
-            os.makedirs(OUTPUT_DIR)
-        self.update_status("正在寻找音频设备...")
-        device_index = self.find_device_index(p, DEVICE_INDEX_KEYWORD)
-        if device_index is None:
-            messagebox.showerror("设备错误", f"未找到音频输入设备 '{DEVICE_INDEX_KEYWORD}'")
-            self.stop_recording()
-            return
-        self.update_status(f'准备监听设备: "{p.get_device_info_by_index(device_index).get("name", "未知设备")}"')
-        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
-                        frames_per_buffer=CHUNK, input_device_index=device_index)
-        frames = []
-        silence_frames = 0
-        is_recording_segment = False
-        while not self.stop_event.is_set():
-            try:
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
-                is_silent = np.max(np.abs(audio_np)) < SILENCE_THRESHOLD
-                if is_silent:
-                    if is_recording_segment:
-                        silence_frames += 1
-                    if is_recording_segment and silence_frames >= int(SILENCE_SECONDS * RATE / CHUNK) and len(frames) > 0:
-                        filename = os.path.join(OUTPUT_DIR, f"segment_{int(time.time())}.wav")
-                        with wave.open(filename, "wb") as wf:
-                            wf.setnchannels(CHANNELS)
-                            wf.setsampwidth(p.get_sample_size(FORMAT))
-                            wf.setframerate(RATE)
-                            wf.writeframes(b"".join(frames))
-                        self.audio_queue.put(filename)
-                        frames = []
-                        is_recording_segment = False
-                        silence_frames = 0
-                else:
-                    is_recording_segment = True
-                    silence_frames = 0
-                    frames.append(data)
-                if len(frames) >= int(MAX_RECORD_SECONDS * RATE / CHUNK):
-                    filename = os.path.join(OUTPUT_DIR, f"segment_force_{int(time.time())}.wav")
-                    with wave.open(filename, "wb") as wf:
-                        wf.setnchannels(CHANNELS)
-                        wf.setsampwidth(p.get_sample_size(FORMAT))
-                        wf.setframerate(RATE)
-                        wf.writeframes(b"".join(frames))
-                    self.audio_queue.put(filename)
-                    frames = []
-                    is_recording_segment = False
-                    silence_frames = 0
-            except Exception as e:
-                print(f"音频录制错误: {e}")
-                self.stop_event.set()
-                break
-        try:
-            stream.stop_stream()
-            stream.close()
-        except Exception:
-            pass
-        try:
-            p.terminate()
-        except Exception:
-            pass
-
-    def transcribe_audio(self):
-        try:
-            self.update_status(f"正在加载 Whisper '{MODEL_SIZE}' 模型...")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.whisper_model = whisper.load_model(MODEL_SIZE, device=device)
-            self.update_status("模型加载完成。等待音频...")
-        except Exception as e:
-            messagebox.showerror("模型加载失败", f"加载 Whisper 模型时出错: {e}")
-            self.stop_recording()
-            return
-        while not self.stop_event.is_set():
-            try:
-                filepath = self.audio_queue.get(timeout=1)
-                if filepath is None:
-                    break
-                self.update_status(f"正在转写: {os.path.basename(filepath)}")
-                language_setting = self.config.get("whisper_language", "auto")
-                language = None if language_setting == "auto" else language_setting
-                result = self.whisper_model.transcribe(
-                    filepath,
-                    language=language,
-                    fp16=torch.cuda.is_available(),
-                    task="transcribe"
-                )
-                text = result.get("text", "").strip()
-                if text:
-                    self.transcription_queue.put(text)
-                self.update_status("正在录制...")
-            except queue.Empty:
-                continue
-            except Exception as e:
-                print(f"转写文件时发生错误: {e}")
-
     def setup_ui(self):
         # --- 控件框架 ---
         self.status_label = tk.Label(self.root, text="就绪", bd=1, relief=tk.SUNKEN, anchor=tk.W)
@@ -530,15 +232,6 @@ class TranscriptionApp:
         
         self.config_button = tk.Button(self.button_frame, text="配置模型", command=self.open_config_dialog)
         self.config_button.pack(side=tk.LEFT, padx=5)
-        
-        # 添加截图按钮
-        self.screenshot_button = tk.Button(self.button_frame, text="📸 截图", command=self.take_screenshot)
-        self.screenshot_button.pack(side=tk.LEFT, padx=5)
-        
-        # 添加手动总结按钮
-        self.manual_summary_button = tk.Button(self.button_frame, text="📝 手动总结", command=self.manual_summary)
-        self.manual_summary_button.pack(side=tk.LEFT, padx=5)
-        self.manual_summary_button["state"] = "disabled"  # 默认禁用，只有选中文本时才启用
         
         self.save_button = tk.Button(self.button_frame, text="保存为 Markdown", command=self.save_as_markdown)
         self.save_button.pack(side=tk.LEFT, padx=5)
@@ -566,126 +259,168 @@ class TranscriptionApp:
         self.transcription_frame = tk.Frame(self.paned_window)
         self.transcription_label = tk.Label(self.transcription_frame, text="原始语音转文字", font=("微软雅黑", 12, "bold"))
         self.transcription_label.pack(anchor=tk.W, pady=(0, 5))
-        
-        # 创建可选择的文本区域
-        self.transcription_area = scrolledtext.ScrolledText(
-            self.transcription_frame, 
-            wrap=tk.WORD, 
-            font=("微软雅黑", 12),
-            selectbackground="lightblue"
-        )
+        self.transcription_area = scrolledtext.ScrolledText(self.transcription_frame, wrap=tk.WORD, font=("微软雅黑", 12))
         self.transcription_area.pack(expand=True, fill="both")
-        
-        # 绑定选择事件，用于启用/禁用手动总结按钮
-        self.transcription_area.bind("<Button-1>", self.on_text_selection)
-        self.transcription_area.bind("<B1-Motion>", self.on_text_selection)
-        self.transcription_area.bind("<ButtonRelease-1>", self.on_text_selection)
-        self.transcription_area.bind("<KeyPress>", self.on_text_selection)
-        
         self.paned_window.add(self.transcription_frame, width=700) # 设置初始宽度
 
-    def on_text_selection(self, event=None):
-        """当文本选择改变时调用"""
-        try:
-            # 检查是否有选中的文本
-            if self.transcription_area.tag_ranges(tk.SEL):
-                self.manual_summary_button["state"] = "normal"
-            else:
-                self.manual_summary_button["state"] = "disabled"
-        except:
-            self.manual_summary_button["state"] = "disabled"
+    def update_status(self, message):
+        self.status_label.config(text=message)
+        self.root.update_idletasks()
 
-    def manual_summary(self):
-        """手动总结选中的文本"""
+    def find_device_index(self, p, keyword):
+        for i in range(p.get_device_count()):
+            dev_info = p.get_device_info_by_index(i)
+            if keyword.lower() in dev_info["name"].lower() and dev_info["maxInputChannels"] > 0:
+                return i
+        return None
+
+    def record_audio(self):
+        p = pyaudio.PyAudio()
+        if not os.path.exists(OUTPUT_DIR):
+            os.makedirs(OUTPUT_DIR)
+        
+        self.update_status("正在寻找音频设备...")
+        device_index = self.find_device_index(p, DEVICE_INDEX_KEYWORD)
+        if device_index is None:
+            messagebox.showerror("设备错误", f"未找到音频输入设备 \"{DEVICE_INDEX_KEYWORD}\"")
+            self.stop_recording()
+            return
+
+        self.update_status(f"准备监听设备: \"{p.get_device_info_by_index(device_index)[\"name\"]}\"")
+        stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
+                        frames_per_buffer=CHUNK, input_device_index=device_index)
+
+        frames = []
+        silence_frames = 0
+        is_recording_segment = False
+
+        while not self.stop_event.is_set():
+            try:
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                is_silent = np.max(np.abs(audio_np)) < SILENCE_THRESHOLD
+
+                if is_silent:
+                    if is_recording_segment:
+                        silence_frames += 1
+                    
+                    if is_recording_segment and silence_frames >= int(SILENCE_SECONDS * RATE / CHUNK) and len(frames) > 0:
+                        filename = os.path.join(OUTPUT_DIR, f"segment_{int(time.time())}.wav")
+                        with wave.open(filename, "wb") as wf:
+                            wf.setnchannels(CHANNELS)
+                            wf.setsampwidth(p.get_sample_size(FORMAT))
+                            wf.setframerate(RATE)
+                            wf.writeframes(b"".join(frames))
+                        self.audio_queue.put(filename)
+                        frames = []
+                        is_recording_segment = False
+                        silence_frames = 0
+                else:
+                    is_recording_segment = True
+                    silence_frames = 0
+                    frames.append(data)
+
+                if len(frames) >= int(MAX_RECORD_SECONDS * RATE / CHUNK):
+                    filename = os.path.join(OUTPUT_DIR, f"segment_force_{int(time.time())}.wav")
+                    with wave.open(filename, "wb") as wf:
+                        wf.setnchannels(CHANNELS)
+                        wf.setsampwidth(p.get_sample_size(FORMAT))
+                        wf.setframerate(RATE)
+                        wf.writeframes(b"".join(frames))
+                    self.audio_queue.put(filename)
+                    frames = []
+                    is_recording_segment = False
+                    silence_frames = 0
+            except Exception as e:
+                print(f"音频录制错误: {e}")
+                self.stop_event.set()
+                break
+
+    def transcribe_audio(self):
         try:
-            # 获取选中的文本
-            selected_text = self.transcription_area.get(tk.SEL_FIRST, tk.SEL_LAST)
-            if not selected_text.strip():
-                messagebox.showwarning("警告", "请先选择要总结的文本")
-                return
-            
-            # 检查文本长度
-            if len(selected_text.strip()) < 10:
-                messagebox.showwarning("警告", "选中的文本太短，请选择更多内容")
-                return
-            
-            # 禁用按钮，防止重复点击
-            self.manual_summary_button["state"] = "disabled"
-            self.update_status("正在生成手动总结...")
-            
-            # 在新线程中执行总结
-            threading.Thread(target=self._do_manual_summary, args=(selected_text,), daemon=True).start()
-            
-        except tk.TclError:
-            messagebox.showwarning("警告", "请先选择要总结的文本")
+            self.update_status(f"正在加载 Whisper \"{MODEL_SIZE}\" 模型...")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.whisper_model = whisper.load_model(MODEL_SIZE, device=device)
+            self.update_status("模型加载完成。等待音频...")
         except Exception as e:
-            messagebox.showerror("错误", f"手动总结失败: {e}")
-            self.manual_summary_button["state"] = "normal"
-
-    def _do_manual_summary(self, selected_text):
-        """执行手动总结"""
-        try:
-            # 手动总结使用更大的字符限制，或者不限制
-            max_chars = self.config.get("manual_summary_max_chars", 20000)
-            text_to_summarize = selected_text[-max_chars:] if len(selected_text) > max_chars else selected_text
-            
-            # 生成总结
-            prompt = SUMMARY_PROMPT.format(text_to_summarize)
-            summary_content = self.call_llm_with_retries(prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY)
-            
-            if summary_content and summary_content.strip():
-                # 在主线程中更新UI
-                self.root.after(0, self._update_manual_summary_ui, selected_text, summary_content.strip())
-            else:
-                self.root.after(0, self._manual_summary_failed)
+            messagebox.showerror("模型加载失败", f"加载 Whisper 模型时出错: {e}")
+            self.stop_recording()
+            return
+        
+        while not self.stop_event.is_set():
+            try:
+                filepath = self.audio_queue.get(timeout=1)
+                if filepath is None:
+                    break
                 
-        except Exception as e:
-            self.root.after(0, self._manual_summary_error, str(e))
+                self.update_status(f"正在转写: {os.path.basename(filepath)}")
+                
+                result = self.whisper_model.transcribe(filepath, language=LANGUAGE, fp16=torch.cuda.is_available())
+                text = result["text"].strip()
+                
+                if text:
+                    self.transcription_queue.put(text)
+                
+                self.update_status("正在录制...")
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"转写文件时发生错误: {e}")
 
-    def _update_manual_summary_ui(self, selected_text, summary_content):
-        """更新手动总结的UI"""
+    def call_llm(self, prompt):
+        """调用大语言模型API"""
+        if self.config["llm_provider"] == "Ollama":
+            return self.call_ollama(prompt)
+        elif self.config["llm_provider"] == "Gemini":
+            return self.call_gemini(prompt)
+        else:
+            print(f"未知的LLM提供商: {self.config[\"llm_provider\"]}")
+            return None
+
+    def call_ollama(self, prompt):
+        """调用 Ollama API，处理结构化 JSON 返回"""
+        payload = {
+            "model": self.config["ollama_model"],
+            "prompt": prompt,
+            "stream": False,
+        }
         try:
-            # 将总结添加到总结区域
-            self.summary_area.insert(tk.END, summary_content + "\n\n")
-            self.summary_area.see(tk.END)
-            
-            # 将选中的文本标记为已总结（蓝色）
-            self.transcription_area.tag_add("summarized", tk.SEL_FIRST, tk.SEL_LAST)
-            self.transcription_area.tag_configure("summarized", foreground="blue")
-            
-            # 清除选择
-            self.transcription_area.tag_remove(tk.SEL, "1.0", tk.END)
-            
-            self.update_status("手动总结完成")
-            self.manual_summary_button["state"] = "disabled"
-            
-        except Exception as e:
-            self._manual_summary_error(str(e))
+            print("\n--- 发送给大模型的提示词（用于调试） ---")
+            print((prompt[:2000] + ("...[truncated]" if len(prompt) > 2000 else "")))
+            print("-------------------------------------------\n")
 
-    def _manual_summary_failed(self):
-        """手动总结失败"""
-        self.update_status("手动总结失败，请重试")
-        self.manual_summary_button["state"] = "normal"
-        messagebox.showwarning("总结失败", "无法生成总结，请检查模型配置或重试")
+            response = requests.post(self.config["ollama_api_url"], json=payload, timeout=90)
+            response.raise_for_status()
+            
+            response_text = response.text.strip()
 
-    def _manual_summary_error(self, error_msg):
-        """手动总结出错"""
-        self.update_status("手动总结出错")
-        self.manual_summary_button["state"] = "normal"
-        messagebox.showerror("总结错误", f"总结过程中发生错误: {error_msg}")
+            print("\n--- 大模型原始响应（用于调试） ---")
+            print(response_text[:4000])
+            print("---------------------------------------\n")
+            
+            # Ollama的原始响应可能包含多个JSON对象，只需要最后一个
+            last_response_line = response_text.strip().split("\n")[-1]
+            try:
+                data = json.loads(last_response_line)
+                raw_response = data.get("response", "")
+                
+                # 使用正则表达式移除 <think> 标签及其内容
+                clean_response = re.sub(r"<think>.*?</think>", "", raw_response, flags=re.DOTALL).strip()
+                return clean_response or None
+            except (json.JSONDecodeError, IndexError, KeyError):
+                print("警告：无法解析大模型响应，返回原始文本。")
+                return (response_text or None)
+        except requests.exceptions.RequestException as e:
+            print(f"Ollama API调用错误: {e}")
+            self.update_status("Ollama API调用失败，请检查服务。")
+            return None
 
     def summary_loop(self):
-        """定期检查和总结文本（仅在自动模式下）"""
+        """定期检查和总结文本"""
         while not self.stop_event.is_set():
-            # 每次循环都检查配置，确保实时响应配置变化
-            if self.config.get("summary_mode", "auto") != "auto":
-                time.sleep(5)
-                continue
-            # 自动模式下按配置的间隔执行
-            time.sleep(self.config.get("auto_summary_interval", 300))
-            # 再次检查，防止间隔期间模式被切换
-            if self.config.get("summary_mode", "auto") == "auto":
-                self.process_summary()
+            time.sleep(SUMMARY_CHECK_INTERVAL)
+            self.process_summary()
 
     def call_llm_with_retries(self, prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY):
         """带重试的LLM调用（指数退避 + 抖动）"""
@@ -695,7 +430,7 @@ class TranscriptionApp:
             if content:
                 return content
             delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, JITTER_SECONDS)
-            self.update_status(f"总结调用失败，{attempt}/{retries} 次尝试。{('稍后重试...' if attempt < retries else '放弃。')}")
+            self.update_status(f"总结调用失败，{attempt}/{retries} 次尝试。{(\"稍后重试...\" if attempt < retries else \"放弃。\")}")
             if attempt < retries:
                 try:
                     time.sleep(delay)
@@ -742,33 +477,75 @@ class TranscriptionApp:
         return ordered
 
     def process_summary(self):
-        """获取新增文本并生成总结（仅在自动模式下）"""
-        if self.config.get("summary_mode", "auto") != "auto":
-            return  # 手动模式下不执行自动总结
+        """获取新增文本并生成总结"""
         # 提取上次总结后的新文本
         text_to_analyze = self.transcription_history[self.last_summary_text_len:]
+        
         if not text_to_analyze or len(text_to_analyze) < MIN_TEXT_FOR_SUMMARY:
             print(f"新增文本过短 ({len(text_to_analyze)}字)，不进行总结。")
             return
+
         # 限制提交给模型的文本长度（取最近的内容，更利于上下文连贯）
-        max_chars = self.config.get("auto_summary_max_chars", 8000)
-        bounded_text = text_to_analyze[-max_chars:]
+        bounded_text = text_to_analyze[-MAX_SUMMARY_CHARS:]
+
         self.update_status("正在生成总结...")
         prompt = SUMMARY_PROMPT.format(bounded_text)
+        
         summary_content = self.call_llm_with_retries(prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY)
+        
         # 只有当大模型返回了有效的总结内容时才进行更新
         if summary_content:
             summary_content = summary_content.strip()
         if summary_content:
             self.update_status("总结完成。")
+            
             # 将新总结追加到总结面板
             self.summary_area.insert(tk.END, summary_content + "\n\n")
             self.summary_area.see(tk.END)
+            
             # 更新已总结文本的长度记录（仅在成功时推进游标）
             self.last_summary_text_len = len(self.transcription_history)
+            
         else:
             self.update_status("大模型未返回有效总结，继续监听...")
             print("大模型未返回有效的总结，继续积累文本。")
+
+    def check_transcription_queue(self):
+        """定期检查转写队列并更新UI"""
+        while not self.transcription_queue.empty():
+            new_text = self.transcription_queue.get_nowait()
+            
+            # 更新原始语音转文字面板
+            self.transcription_area.insert(tk.END, new_text + " ")
+            self.transcription_area.see(tk.END)
+            
+            # 更新完整的转录历史
+            self.transcription_history += (new_text + " ")
+            
+            # 写入日志文件
+            with open(TRANSCRIPTION_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(new_text + " ")
+
+        self.root.after(100, self.check_transcription_queue)
+
+    def save_as_markdown(self):
+        """将两个面板的内容合并保存为Markdown文件"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".md",
+            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")])
+        if file_path:
+            try:
+                summary_content = self.summary_area.get("1.0", tk.END).strip()
+                transcription_content = self.transcription_area.get("1.0", tk.END).strip()
+                
+                # 构建Markdown内容
+                markdown_content = f"# 笔记总结\n\n{summary_content}\n\n---\n\n# 原始语音转文字\n\n{transcription_content}"
+                
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(markdown_content)
+                messagebox.showinfo("保存成功", f"文件已成功保存到: {file_path}")
+            except Exception as e:
+                messagebox.showerror("保存失败", f"保存文件时发生错误: {e}")
 
     def start_recording(self):
         self.is_recording = True
@@ -778,16 +555,11 @@ class TranscriptionApp:
         
         self.recorder_thread = threading.Thread(target=self.record_audio, daemon=True)
         self.transcriber_thread = threading.Thread(target=self.transcribe_audio, daemon=True)
-        
-        # 只有在自动模式下才启动总结线程
-        if self.config.get("summary_mode", "auto") == "auto":
-            self.summary_thread = threading.Thread(target=self.summary_loop, daemon=True)
-            self.summary_thread.start()
-        else:
-            self.summary_thread = None
+        self.summary_thread = threading.Thread(target=self.summary_loop, daemon=True)
         
         self.recorder_thread.start()
         self.transcriber_thread.start()
+        self.summary_thread.start()
         
         self.update_status("正在录制...")
 
@@ -810,54 +582,6 @@ class TranscriptionApp:
         self.update_status("录制已停止")
         print("所有线程已停止。")
         
-    def call_llm(self, prompt):
-        """调用大语言模型API"""
-        if self.config["llm_provider"] == "Ollama":
-            return self.call_ollama(prompt)
-        elif self.config["llm_provider"] == "Gemini":
-            return self.call_gemini(prompt)
-        else:
-            print(f"未知的LLM提供商: {self.config['llm_provider']}")
-            return None
-
-    def call_ollama(self, prompt):
-        """调用 Ollama API，处理结构化 JSON 返回"""
-        payload = {
-            "model": self.config["ollama_model"],
-            "prompt": prompt,
-            "stream": False,
-        }
-        try:
-            print("\n--- 发送给大模型的提示词（用于调试） ---")
-            print((prompt[:2000] + ("...[truncated]" if len(prompt) > 2000 else "")))
-            print("-------------------------------------------\n")
-
-            response = requests.post(self.config["ollama_api_url"], json=payload, timeout=90)
-            response.raise_for_status()
-            
-            response_text = response.text.strip()
-
-            print("\n--- 大模型原始响应（用于调试） ---")
-            print(response_text[:4000])
-            print("---------------------------------------\n")
-            
-            # Ollama的原始响应可能包含多个JSON对象，只需要最后一个
-            last_response_line = response_text.strip().split("\n")[-1]
-            try:
-                data = json.loads(last_response_line)
-                raw_response = data.get("response", "")
-                
-                # 使用正则表达式移除 <think> 标签及其内容
-                clean_response = re.sub(r"<think>.*?</think>", "", raw_response, flags=re.DOTALL).strip()
-                return clean_response or None
-            except (json.JSONDecodeError, IndexError, KeyError):
-                print("警告：无法解析大模型响应，返回原始文本。")
-                return (response_text or None)
-        except requests.exceptions.RequestException as e:
-            print(f"Ollama API调用错误: {e}")
-            self.update_status("Ollama API调用失败，请检查服务。")
-            return None
-
     def call_gemini(self, prompt):
         """调用 Gemini API（带状态码感知重试 + 404 模型回退 + v1beta 兜底）"""
         if not self.config["gemini_api_key"]:
@@ -876,7 +600,7 @@ class TranscriptionApp:
             api_versions = ["v1", "v1beta"]
             tried_versions = []
             for api_version in api_versions:
-                url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={self.config['gemini_api_key']}"
+                url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={self.config[\"gemini_api_key\"]}"
                 payload = {
                     "contents": [{
                         "role": "user",
@@ -969,7 +693,7 @@ class TranscriptionApp:
         """打开配置对话框"""
         config_window = tk.Toplevel(self.root)
         config_window.title("模型配置")
-        config_window.geometry("500x600")  # 增加高度
+        config_window.geometry("500x400")
         config_window.resizable(False, False)
         
         # 使配置窗口居中
@@ -994,65 +718,6 @@ class TranscriptionApp:
                       value="Ollama", command=self.on_provider_change).pack(side=tk.LEFT, padx=(0, 20))
         tk.Radiobutton(provider_radio_frame, text="Gemini (云端)", variable=self.provider_var, 
                       value="Gemini", command=self.on_provider_change).pack(side=tk.LEFT)
-        
-        # 语言检测配置
-        language_frame = tk.LabelFrame(main_frame, text="语言检测配置", font=("微软雅黑", 9))
-        language_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        self.language_var = tk.StringVar(value=self.config.get("whisper_language", "auto"))
-        language_radio_frame = tk.Frame(language_frame)
-        language_radio_frame.pack(anchor=tk.W, pady=(10, 5))
-        
-        tk.Radiobutton(language_radio_frame, text="自动检测", variable=self.language_var, 
-                      value="auto", command=self.on_language_change).pack(side=tk.LEFT, padx=(10, 20))
-        tk.Radiobutton(language_radio_frame, text="中文", variable=self.language_var, 
-                      value="zh", command=self.on_language_change).pack(side=tk.LEFT, padx=(0, 20))
-        tk.Radiobutton(language_radio_frame, text="英文", variable=self.language_var, 
-                      value="en", command=self.on_language_change).pack(side=tk.LEFT)
-        
-        # 总结模式配置
-        summary_mode_frame = tk.LabelFrame(main_frame, text="总结模式配置", font=("微软雅黑", 9))
-        summary_mode_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        self.summary_mode_var = tk.StringVar(value=self.config.get("summary_mode", "auto"))
-        summary_mode_radio_frame = tk.Frame(summary_mode_frame)
-        summary_mode_radio_frame.pack(anchor=tk.W, pady=(10, 5))
-        
-        tk.Radiobutton(summary_mode_radio_frame, text="自动总结", variable=self.summary_mode_var, 
-                      value="auto", command=self.on_summary_mode_change).pack(side=tk.LEFT, padx=(10, 20))
-        tk.Radiobutton(summary_mode_radio_frame, text="手动总结", variable=self.summary_mode_var, 
-                      value="manual", command=self.on_summary_mode_change).pack(side=tk.LEFT)
-        
-        # 自动总结间隔配置
-        self.auto_interval_frame = tk.Frame(summary_mode_frame)
-        self.auto_interval_frame.pack(fill=tk.X, pady=(5, 10), padx=10)
-        
-        tk.Label(self.auto_interval_frame, text="自动总结间隔（秒）:").pack(side=tk.LEFT)
-        self.auto_interval_var = tk.StringVar(value=str(self.config.get("auto_summary_interval", 300)))
-        auto_interval_entry = tk.Entry(self.auto_interval_frame, textvariable=self.auto_interval_var, width=10)
-        auto_interval_entry.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # 文本截断配置
-        truncation_frame = tk.LabelFrame(main_frame, text="文本截断配置", font=("微软雅黑", 9))
-        truncation_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # 自动总结截断长度
-        auto_truncation_frame = tk.Frame(truncation_frame)
-        auto_truncation_frame.pack(fill=tk.X, pady=(10, 5), padx=10)
-        
-        tk.Label(auto_truncation_frame, text="自动总结最大字符数:").pack(side=tk.LEFT)
-        self.auto_max_chars_var = tk.StringVar(value=str(self.config.get("auto_summary_max_chars", 8000)))
-        auto_max_chars_entry = tk.Entry(auto_truncation_frame, textvariable=self.auto_max_chars_var, width=10)
-        auto_max_chars_entry.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # 手动总结截断长度
-        manual_truncation_frame = tk.Frame(truncation_frame)
-        manual_truncation_frame.pack(fill=tk.X, pady=(5, 10), padx=10)
-        
-        tk.Label(manual_truncation_frame, text="手动总结最大字符数:").pack(side=tk.LEFT)
-        self.manual_max_chars_var = tk.StringVar(value=str(self.config.get("manual_summary_max_chars", 20000)))
-        manual_max_chars_entry = tk.Entry(manual_truncation_frame, textvariable=self.manual_max_chars_var, width=10)
-        manual_max_chars_entry.pack(side=tk.LEFT, padx=(5, 0))
         
         # Ollama配置框架
         self.ollama_frame = tk.LabelFrame(main_frame, text="Ollama 配置", font=("微软雅黑", 9))
@@ -1095,22 +760,10 @@ class TranscriptionApp:
         
         # 初始化显示状态
         self.on_provider_change()
-        self.on_summary_mode_change()
         
         # 绑定关闭事件
         config_window.protocol("WM_DELETE_WINDOW", config_window.destroy)
     
-    def on_language_change(self):
-        """当语言选择改变时更新界面"""
-        pass  # 暂时不需要特殊处理
-
-    def on_summary_mode_change(self):
-        """当总结模式改变时更新界面"""
-        if self.summary_mode_var.get() == "auto":
-            self.auto_interval_frame.pack(fill=tk.X, pady=(5, 10), padx=10)
-        else:
-            self.auto_interval_frame.pack_forget()
-
     def on_provider_change(self):
         """当提供商选择改变时更新界面"""
         if self.provider_var.get() == "Ollama":
@@ -1128,57 +781,9 @@ class TranscriptionApp:
         self.config["ollama_model"] = self.ollama_model_var.get()
         self.config["gemini_api_key"] = self.gemini_key_var.get()
         self.config["gemini_model"] = self.gemini_model_var.get()
-        self.config["summary_mode"] = self.summary_mode_var.get()
-        self.config["whisper_language"] = self.language_var.get()
-        
-        # 验证自动总结间隔
-        try:
-            interval = int(self.auto_interval_var.get())
-            if interval < 30:
-                messagebox.showwarning("警告", "自动总结间隔不能少于30秒")
-                return
-            self.config["auto_summary_interval"] = interval
-        except ValueError:
-            messagebox.showwarning("警告", "自动总结间隔必须是数字")
-            return
-        
-        # 验证截断长度配置
-        try:
-            auto_max_chars = int(self.auto_max_chars_var.get())
-            if auto_max_chars < 100:
-                messagebox.showwarning("警告", "自动总结最大字符数不能少于100")
-                return
-            self.config["auto_summary_max_chars"] = auto_max_chars
-        except ValueError:
-            messagebox.showwarning("警告", "自动总结最大字符数必须是数字")
-            return
-        
-        try:
-            manual_max_chars = int(self.manual_max_chars_var.get())
-            if manual_max_chars < 100:
-                messagebox.showwarning("警告", "手动总结最大字符数不能少于100")
-                return
-            self.config["manual_summary_max_chars"] = manual_max_chars
-        except ValueError:
-            messagebox.showwarning("警告", "手动总结最大字符数必须是数字")
-            return
         
         # 保存到文件
         if save_config(self.config):
-            # 如果正在录制，需要重新启动总结线程
-            if self.is_recording:
-                # 停止当前的总结线程
-                if self.summary_thread and self.summary_thread.is_alive():
-                    # 等待线程自然结束
-                    pass
-                
-                # 根据新配置启动或停止总结线程
-                if self.config.get("summary_mode", "auto") == "auto":
-                    self.summary_thread = threading.Thread(target=self.summary_loop, daemon=True)
-                    self.summary_thread.start()
-                else:
-                    self.summary_thread = None
-            
             messagebox.showinfo("配置保存", "配置已成功保存！")
             config_window.destroy()
         else:
@@ -1191,13 +796,6 @@ class TranscriptionApp:
                 self.root.destroy()
         else:
             self.root.destroy()
-
-    def take_screenshot(self):
-        """调用截图工具"""
-        if hasattr(self.summary_area, 'take_screenshot'):
-            self.summary_area.take_screenshot()
-        else:
-            messagebox.showerror("错误", "截图功能不可用")
 
 if __name__ == "__main__":
     root = tk.Tk()
