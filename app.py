@@ -16,6 +16,7 @@ import random
 from PIL import Image, ImageTk, ImageGrab
 import io
 import base64
+from datetime import datetime
 
 # 导入配置文件
 from config import SUMMARY_PROMPT, load_config, save_config
@@ -195,17 +196,23 @@ class ScreenshotTool:
 class RichTextEditor:
     """富文本编辑器，支持图片粘贴和基本格式化"""
     
-    def __init__(self, parent, **kwargs):
+    def __init__(self, parent, on_change=None, **kwargs):
         self.parent = parent
         self.text_widget = tk.Text(parent, **kwargs)
         self.setup_bindings()
         self.image_counter = 0
+        self.on_change = on_change
+        # 保存图片对象与原图
+        self.images = {}
+        self.images_pil = {}
         
     def setup_bindings(self):
         """设置键盘绑定"""
         self.text_widget.bind("<Control-v>", self.paste_image)
         self.text_widget.bind("<Button-3>", self.show_context_menu)  # 右键菜单
         self.text_widget.bind("<Control-Button-1>", self.insert_image_dialog)
+        # 文本改动监听，触发自动保存
+        self.text_widget.bind('<<Modified>>', self._on_modified)
         
     def paste_image(self, event=None):
         """处理Ctrl+V粘贴图片"""
@@ -217,6 +224,14 @@ class RichTextEditor:
         except:
             pass
         return "break"
+    
+    def _on_modified(self, event=None):
+        try:
+            if self.on_change:
+                self.on_change()
+        finally:
+            # 重置 modified 标志
+            self.text_widget.edit_modified(False)
     
     def insert_image_dialog(self, event=None):
         """插入图片对话框"""
@@ -248,14 +263,15 @@ class RichTextEditor:
             self.image_counter += 1
             image_name = f"image_{self.image_counter}"
             
-            # 保存图片引用，防止被垃圾回收
-            if not hasattr(self, "images"):
-                self.images = {}
+            # 保存图片引用，防止被垃圾回收，并记录PIL图像用于导出
             self.images[image_name] = photo
+            self.images_pil[image_name] = img
             
             # 插入图片到文本中
             self.text_widget.image_create(tk.END, image=photo, name=image_name)
             self.text_widget.insert(tk.END, "\n")  # 图片后换行
+            if self.on_change:
+                self.on_change()
             
         except Exception as e:
             messagebox.showerror("错误", f"插入图片失败: {e}")
@@ -293,6 +309,8 @@ class RichTextEditor:
                 elif format_type == "underline":
                     self.text_widget.tag_add("underline", start, end)
                     self.text_widget.tag_configure("underline", underline=True)
+                if self.on_change:
+                    self.on_change()
         except:
             pass
     
@@ -304,6 +322,8 @@ class RichTextEditor:
                 self.text_widget.tag_remove("bold", start, end)
                 self.text_widget.tag_remove("italic", start, end)
                 self.text_widget.tag_remove("underline", start, end)
+                if self.on_change:
+                    self.on_change()
         except:
             pass
     
@@ -313,7 +333,10 @@ class RichTextEditor:
     
     def insert(self, *args, **kwargs):
         """插入文本"""
-        return self.text_widget.insert(*args, **kwargs)
+        result = self.text_widget.insert(*args, **kwargs)
+        if self.on_change:
+            self.on_change()
+        return result
     
     def see(self, *args, **kwargs):
         """滚动到指定位置"""
@@ -346,6 +369,41 @@ class RichTextEditor:
         except Exception as e:
             messagebox.showerror("插入截图失败", f"无法插入截图: {e}")
 
+    def export_markdown_with_images(self, attachments_dir):
+        """将编辑器内容导出为Markdown，图片保存到指定目录并以 Obsidian 占位符形式输出。
+        返回 (markdown_text, image_name_to_file_map)
+        """
+        if not os.path.isdir(attachments_dir):
+            os.makedirs(attachments_dir, exist_ok=True)
+        dump = self.text_widget.dump('1.0', tk.END, image=True, text=True)
+        parts = []
+        image_map = {}
+        for item in dump:
+            kind = item[0]
+            if kind == 'text':
+                text = item[1]
+                parts.append(text)
+            elif kind == 'image':
+                img_name = item[1]
+                pil_img = self.images_pil.get(img_name)
+                if pil_img is None:
+                    continue
+                # 生成文件名
+                timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')[:-3]
+                filename = f"Pasted image {timestamp}.png"
+                out_path = os.path.join(attachments_dir, filename)
+                try:
+                    pil_img.save(out_path, format='PNG')
+                except Exception:
+                    # 回退到RGB再存
+                    try:
+                        pil_img.convert('RGB').save(out_path, format='PNG')
+                    except Exception:
+                        continue
+                image_map[img_name] = filename
+                parts.append(f"![[{filename}]]")
+        return ("".join(parts).strip(), image_map)
+
 class TranscriptionApp:
     def __init__(self, root):
         self.root = root
@@ -363,11 +421,17 @@ class TranscriptionApp:
         self.transcription_queue = queue.Queue()
         self.last_summary_text_len = 0 # 用于记录上次总结时转录文本的长度
         self.transcription_history = ""
+        # 文档保存状态
+        self.current_md_path = None
+        self.attachments_dir = None
+        self._autosave_after_id = None
         
         # 加载配置
         self.config = load_config()
 
         self.setup_ui()
+        # 启动时加载上次文档
+        self.load_last_document_if_any()
         self.check_transcription_queue()
 
     def update_status(self, message):
@@ -390,24 +454,133 @@ class TranscriptionApp:
                         f.write(new_text + " ")
                 except Exception:
                     pass
+                # 触发自动保存
+                self.schedule_autosave()
         finally:
             self.root.after(100, self.check_transcription_queue)
 
     def save_as_markdown(self):
         """将两个面板的内容合并保存为Markdown文件"""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".md",
-            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")])
-        if file_path:
+        # 第一次选择路径，否则使用当前文档路径
+        if not self.current_md_path:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".md",
+                filetypes=[("Markdown files", "*.md"), ("All files", "*.*")])
+            if not file_path:
+                return
+            self.set_current_document(file_path)
+        # 执行保存
+        self.save_document()
+        messagebox.showinfo("保存成功", f"文件已成功保存到: {self.current_md_path}")
+
+    def set_current_document(self, md_path):
+        self.current_md_path = md_path
+        base_dir = os.path.dirname(md_path)
+        self.attachments_dir = os.path.join(base_dir, "attachments")
+        os.makedirs(self.attachments_dir, exist_ok=True)
+        # 记录到配置
+        self.config["last_document_path"] = self.current_md_path
+        try:
+            save_config(self.config)
+        except Exception:
+            pass
+
+    def build_markdown(self):
+        # 导出富文本为Markdown并保存图片
+        summary_md, _ = self.summary_area.export_markdown_with_images(self.attachments_dir or os.getcwd())
+        transcription_content = self.transcription_area.get("1.0", tk.END).strip()
+        markdown_content = f"# 笔记总结\n\n{summary_md}\n\n---\n\n# 原始语音转文字\n\n{transcription_content}"
+        return markdown_content
+
+    def save_document(self):
+        # 若无路径，默认保存到程序目录
+        if not self.current_md_path:
+            default_path = os.path.join(os.getcwd(), "notes.md")
+            self.set_current_document(default_path)
+        # 确保附件目录存在
+        if not self.attachments_dir:
+            self.attachments_dir = os.path.join(os.path.dirname(self.current_md_path), "attachments")
+        os.makedirs(self.attachments_dir, exist_ok=True)
+        content = self.build_markdown()
+        try:
+            with open(self.current_md_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            print(f"自动保存失败: {e}")
+
+    def schedule_autosave(self, delay_ms=800):
+        # 防抖自动保存
+        if self._autosave_after_id is not None:
             try:
-                summary_content = self.summary_area.get("1.0", tk.END).strip()
-                transcription_content = self.transcription_area.get("1.0", tk.END).strip()
-                markdown_content = f"# 笔记总结\n\n{summary_content}\n\n---\n\n# 原始语音转文字\n\n{transcription_content}"
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(markdown_content)
-                messagebox.showinfo("保存成功", f"文件已成功保存到: {file_path}")
-            except Exception as e:
-                messagebox.showerror("保存失败", f"保存文件时发生错误: {e}")
+                self.root.after_cancel(self._autosave_after_id)
+            except Exception:
+                pass
+        self._autosave_after_id = self.root.after(delay_ms, self.save_document)
+
+    def on_editor_changed(self):
+        self.schedule_autosave()
+
+    def load_last_document_if_any(self):
+        path = self.config.get("last_document_path")
+        if not path:
+            return
+        if not os.path.isfile(path):
+            return
+        try:
+            self.set_current_document(path)
+            with open(path, "r", encoding="utf-8") as f:
+                data = f.read()
+            # 解析两部分
+            summary_text = ""
+            transcript_text = ""
+            if "# 原始语音转文字" in data:
+                parts = data.split("# 原始语音转文字", 1)
+                left = parts[0]
+                right = parts[1]
+                # 去掉标题
+                summary_text = re.sub(r"^#\s*笔记总结\s*\n?", "", left.strip())
+                transcript_text = right.strip()
+                # 去掉可能存在的 '---' 分隔线
+                summary_text = re.sub(r"\n?-{3,}\n?", "\n", summary_text).strip()
+            else:
+                summary_text = data.strip()
+            # 渲染 summary（处理图片占位符）
+            self.render_markdown_to_summary(summary_text)
+            # 填充转写
+            if transcript_text:
+                self.transcription_area.delete("1.0", tk.END)
+                self.transcription_area.insert(tk.END, transcript_text)
+                self.transcription_area.see(tk.END)
+        except Exception as e:
+            print(f"加载上次文档失败: {e}")
+
+    def render_markdown_to_summary(self, md_text):
+        """将Markdown渲染到富文本编辑区（仅处理文本与 Obsidian 图片占位符）。"""
+        self.summary_area.text_widget.delete("1.0", tk.END)
+        # 简单解析：按占位符拆分
+        pattern = re.compile(r"!\[\[(.*?)\]\]")
+        pos = 0
+        for m in pattern.finditer(md_text):
+            text_part = md_text[pos:m.start()]
+            if text_part:
+                self.summary_area.text_widget.insert(tk.END, text_part)
+            filename = m.group(1)
+            if self.attachments_dir:
+                img_path = os.path.join(self.attachments_dir, filename)
+                if os.path.isfile(img_path):
+                    try:
+                        self.summary_area.insert_image(img_path)
+                    except Exception:
+                        # 插入原始占位符
+                        self.summary_area.text_widget.insert(tk.END, m.group(0))
+                else:
+                    self.summary_area.text_widget.insert(tk.END, m.group(0))
+            else:
+                self.summary_area.text_widget.insert(tk.END, m.group(0))
+            pos = m.end()
+        # 余下文本
+        if pos < len(md_text):
+            self.summary_area.text_widget.insert(tk.END, md_text[pos:])
 
     def find_device_index(self, p, keyword):
         for i in range(p.get_device_count()):
@@ -554,8 +727,9 @@ class TranscriptionApp:
         
         # 创建富文本编辑器
         self.summary_area = RichTextEditor(
-            self.summary_frame, 
-            wrap=tk.WORD, 
+            self.summary_frame,
+            on_change=self.on_editor_changed,
+            wrap=tk.WORD,
             font=("微软雅黑", 12),
             height=20
         )
@@ -581,6 +755,7 @@ class TranscriptionApp:
         self.transcription_area.bind("<B1-Motion>", self.on_text_selection)
         self.transcription_area.bind("<ButtonRelease-1>", self.on_text_selection)
         self.transcription_area.bind("<KeyPress>", self.on_text_selection)
+        self.transcription_area.bind('<<Modified>>', self._on_transcription_modified)
         
         self.paned_window.add(self.transcription_frame, width=700) # 设置初始宽度
 
@@ -594,6 +769,12 @@ class TranscriptionApp:
                 self.manual_summary_button["state"] = "disabled"
         except:
             self.manual_summary_button["state"] = "disabled"
+
+    def _on_transcription_modified(self, event=None):
+        try:
+            self.on_editor_changed()
+        finally:
+            self.transcription_area.edit_modified(False)
 
     def manual_summary(self):
         """手动总结选中的文本"""
@@ -627,6 +808,9 @@ class TranscriptionApp:
         try:
             # 手动总结使用更大的字符限制，或者不限制
             max_chars = self.config.get("manual_summary_max_chars", 20000)
+            # 如果是 Gemini，适当降低上限，避免 429/超时
+            if self.config.get("llm_provider") == "Gemini":
+                max_chars = min(max_chars, 6000)
             text_to_summarize = selected_text[-max_chars:] if len(selected_text) > max_chars else selected_text
             
             # 生成总结
@@ -658,6 +842,8 @@ class TranscriptionApp:
             
             self.update_status("手动总结完成")
             self.manual_summary_button["state"] = "disabled"
+            # 触发保存
+            self.schedule_autosave()
             
         except Exception as e:
             self._manual_summary_error(str(e))
@@ -766,6 +952,8 @@ class TranscriptionApp:
             self.summary_area.see(tk.END)
             # 更新已总结文本的长度记录（仅在成功时推进游标）
             self.last_summary_text_len = len(self.transcription_history)
+            # 触发保存
+            self.schedule_autosave()
         else:
             self.update_status("大模型未返回有效总结，继续监听...")
             print("大模型未返回有效的总结，继续积累文本。")
@@ -866,8 +1054,7 @@ class TranscriptionApp:
             return None
             
         headers = {
-            "Content-Type": "application/json",
-            "Connection": "close"
+            "Content-Type": "application/json"
         }
 
         model_candidates = self._resolve_gemini_models()
@@ -879,7 +1066,6 @@ class TranscriptionApp:
                 url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={self.config['gemini_api_key']}"
                 payload = {
                     "contents": [{
-                        "role": "user",
                         "parts": [{"text": prompt}]
                     }]
                 }
@@ -890,7 +1076,7 @@ class TranscriptionApp:
                         print(f"使用模型: {model_name} | API: {api_version}")
                         print("-------------------------------------------\n")
 
-                        response = requests.post(url, headers=headers, json=payload, timeout=30)
+                        response = requests.post(url, headers=headers, json=payload, timeout=90)
 
                         # 404：如果是 v1，切换 v1beta；若 v1beta 也 404，换下一个模型
                         if response.status_code == 404:
@@ -1188,8 +1374,17 @@ class TranscriptionApp:
         if self.is_recording:
             if messagebox.askokcancel("退出", "录制仍在进行中。确定要退出吗？"):
                 self.stop_recording()
+                # 退出前保存一次
+                try:
+                    self.save_document()
+                except Exception:
+                    pass
                 self.root.destroy()
         else:
+            try:
+                self.save_document()
+            except Exception:
+                pass
             self.root.destroy()
 
     def take_screenshot(self):

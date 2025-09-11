@@ -8,5 +8,6 @@
   "auto_summary_interval": 100,
   "whisper_language": "auto",
   "auto_summary_max_chars": 8000,
-  "manual_summary_max_chars": 20000
+  "manual_summary_max_chars": 20000,
+  "last_document_path": "D:/obsidian/具体事务/学习/大模型相关学习/【機器學習2021】機器學習任務攻略 下.md"
 }
