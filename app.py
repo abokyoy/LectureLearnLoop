@@ -404,6 +404,58 @@ class RichTextEditor:
                 parts.append(f"![[{filename}]]")
         return ("".join(parts).strip(), image_map)
 
+class SimpleTextEditor:
+    """简单文本编辑器，基于 tk.Text，支持基本操作"""
+    
+    def __init__(self, parent, on_change=None, **kwargs):
+        self.parent = parent
+        self.text_widget = tk.Text(parent, **kwargs)
+        self.setup_bindings()
+        self.on_change = on_change
+        
+    def setup_bindings(self):
+        """设置键盘绑定"""
+        self.text_widget.bind('<<Modified>>', self._on_modified)
+        
+    def _on_modified(self, event=None):
+        try:
+            if self.on_change:
+                self.on_change()
+        finally:
+            # 重置 modified 标志
+            self.text_widget.edit_modified(False)
+    
+    def get(self, *args, **kwargs):
+        """获取文本内容"""
+        return self.text_widget.get(*args, **kwargs)
+    
+    def insert(self, *args, **kwargs):
+        """插入文本"""
+        result = self.text_widget.insert(*args, **kwargs)
+        if self.on_change:
+            self.on_change()
+        return result
+    
+    def see(self, *args, **kwargs):
+        """滚动到指定位置"""
+        return self.text_widget.see(*args, **kwargs)
+    
+    def pack(self, *args, **kwargs):
+        """打包组件"""
+        return self.text_widget.pack(*args, **kwargs)
+    
+    def configure(self, *args, **kwargs):
+        """配置组件"""
+        return self.text_widget.configure(*args, **kwargs)
+    
+    def bind(self, *args, **kwargs):
+        """绑定事件"""
+        return self.text_widget.bind(*args, **kwargs)
+    
+    def delete(self, *args, **kwargs):
+        """删除文本"""
+        return self.text_widget.delete(*args, **kwargs)
+
 class TranscriptionApp:
     def __init__(self, root):
         self.root = root
@@ -439,24 +491,38 @@ class TranscriptionApp:
         self.root.update_idletasks()
 
     def check_transcription_queue(self):
-        """定期检查转写队列并更新UI"""
+        """定期检查转写队列并更新UI（优化版）"""
         try:
+            # 1. 从队列中批量获取所有待处理的文本
+            texts_to_add = []
             while not self.transcription_queue.empty():
-                new_text = self.transcription_queue.get_nowait()
-                # 更新原始语音转文字面板
-                self.transcription_area.insert(tk.END, new_text + " ")
+                texts_to_add.append(self.transcription_queue.get_nowait())
+
+            # 2. 如果有新文本，则进行一次性UI更新
+            if texts_to_add:
+                full_text_chunk = " ".join(texts_to_add) + " "
+                
+                # --- 深度优化：在插入大量文本时临时禁用小部件 --- #
+                # 这可以防止在插入过程中进行昂贵的布局计算，从而使UI保持响应
+                self.transcription_area.text_widget.configure(state='disabled')
+                self.transcription_area.insert(tk.END, full_text_chunk)
+                self.transcription_area.text_widget.configure(state='normal')
                 self.transcription_area.see(tk.END)
-                # 更新完整的转录历史
-                self.transcription_history += (new_text + " ")
-                # 写入日志文件
+                # ---------------------------------------------------- #
+                
+                # 更新转录历史和日志文件
+                self.transcription_history += full_text_chunk
                 try:
                     with open(TRANSCRIPTION_LOG_FILE, "a", encoding="utf-8") as f:
-                        f.write(new_text + " ")
-                except Exception:
-                    pass
+                        f.write(full_text_chunk)
+                except Exception as e:
+                    print(f"写入转录日志失败: {e}")
+                
                 # 触发自动保存
                 self.schedule_autosave()
+
         finally:
+            # 3. 安排下一次检查
             self.root.after(100, self.check_transcription_queue)
 
     def save_as_markdown(self):
@@ -798,14 +864,18 @@ class TranscriptionApp:
         self.summary_label.pack(anchor=tk.W, pady=(0, 5))
         
         # 创建富文本编辑器
+        summary_scrollbar = tk.Scrollbar(self.summary_frame)
+        summary_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.summary_area = RichTextEditor(
             self.summary_frame,
             on_change=self.on_editor_changed,
             wrap=tk.WORD,
             font=("微软雅黑", 12),
-            height=20
+            height=20,
+            yscrollcommand=summary_scrollbar.set
         )
         self.summary_area.pack(expand=True, fill="both")
+        summary_scrollbar.config(command=self.summary_area.text_widget.yview)
         self.paned_window.add(self.summary_frame, width=500) # 设置初始宽度
 
         # --- 右侧：原始语音转文字 ---
@@ -813,21 +883,23 @@ class TranscriptionApp:
         self.transcription_label = tk.Label(self.transcription_frame, text="原始语音转文字", font=("微软雅黑", 12, "bold"))
         self.transcription_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # 创建可选择的文本区域
-        self.transcription_area = scrolledtext.ScrolledText(
+        # 创建可选择的文本区域，使用 SimpleTextEditor
+        transcription_scrollbar = tk.Scrollbar(self.transcription_frame)
+        transcription_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.transcription_area = SimpleTextEditor(
             self.transcription_frame, 
+            on_change=self.on_editor_changed,
             wrap=tk.WORD, 
             font=("微软雅黑", 12),
-            selectbackground="lightblue"
+            height=20,
+            yscrollcommand=transcription_scrollbar.set
         )
         self.transcription_area.pack(expand=True, fill="both")
+        transcription_scrollbar.config(command=self.transcription_area.text_widget.yview)
         
-        # 绑定选择事件，用于启用/禁用手动总结按钮
-        self.transcription_area.bind("<Button-1>", self.on_text_selection)
-        self.transcription_area.bind("<B1-Motion>", self.on_text_selection)
+        # 优化：仅在选择释放或按键时检查，避免拖动时卡顿
         self.transcription_area.bind("<ButtonRelease-1>", self.on_text_selection)
-        self.transcription_area.bind("<KeyPress>", self.on_text_selection)
-        self.transcription_area.bind('<<Modified>>', self._on_transcription_modified)
+        self.transcription_area.bind("<KeyRelease>", self.on_text_selection)
         
         self.paned_window.add(self.transcription_frame, width=700) # 设置初始宽度
 
@@ -835,18 +907,286 @@ class TranscriptionApp:
         """当文本选择改变时调用"""
         try:
             # 检查是否有选中的文本
-            if self.transcription_area.tag_ranges(tk.SEL):
+            if self.transcription_area.text_widget.tag_ranges(tk.SEL):
                 self.manual_summary_button["state"] = "normal"
             else:
                 self.manual_summary_button["state"] = "disabled"
-        except:
-            self.manual_summary_button["state"] = "disabled"
+        except tk.TclError:
+            # 窗口关闭时可能会出现此错误
+            pass
 
-    def _on_transcription_modified(self, event=None):
+    def manual_summary(self):
+        """手动总结选中的文本"""
         try:
-            self.on_editor_changed()
-        finally:
-            self.transcription_area.edit_modified(False)
+            selected_text = self.transcription_area.get(tk.SEL_FIRST, tk.SEL_LAST)
+            if not selected_text.strip():
+                messagebox.showwarning("警告", "请先选择要总结的文本")
+                return
+            
+            if len(selected_text.strip()) < 10:
+                messagebox.showwarning("警告", "选中的文本太短，请选择更多内容")
+                return
+            
+            self.manual_summary_button["state"] = "disabled"
+            self.update_status("正在生成手动总结...")
+            
+            threading.Thread(target=self._do_manual_summary, args=(selected_text,), daemon=True).start()
+            
+        except tk.TclError:
+            messagebox.showwarning("警告", "请先选择要总结的文本")
+        except Exception as e:
+            messagebox.showerror("错误", f"手动总结失败: {e}")
+            self.manual_summary_button["state"] = "normal"
+
+    def _do_manual_summary(self, selected_text):
+        """执行手动总结"""
+        try:
+            max_chars = self.config.get("manual_summary_max_chars", 20000)
+            if self.config.get("llm_provider") == "Gemini":
+                max_chars = min(max_chars, 6000)
+            text_to_summarize = selected_text[-max_chars:] if len(selected_text) > max_chars else selected_text
+            
+            prompt = SUMMARY_PROMPT.format(text_to_summarize)
+            summary_content = self.call_llm_with_retries(prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY)
+            
+            if summary_content and summary_content.strip():
+                self.root.after(0, self._update_manual_summary_ui, summary_content.strip())
+            else:
+                self.root.after(0, self._manual_summary_failed)
+                
+        except Exception as e:
+            self.root.after(0, self._manual_summary_error, str(e))
+
+    def _update_manual_summary_ui(self, summary_content):
+        """更新手动总结的UI并优化标签"""
+        try:
+            self.summary_area.insert(tk.END, summary_content + "\n\n")
+            self.summary_area.see(tk.END)
+            
+            text_widget = self.transcription_area.text_widget
+            start_index = text_widget.index(tk.SEL_FIRST)
+            end_index = text_widget.index(tk.SEL_LAST)
+
+            text_widget.tag_configure("summarized", foreground="blue")
+
+            if start_index != "1.0":
+                prev_char_index = text_widget.index(f"{start_index} - 1 char")
+                if "summarized" in text_widget.tag_names(prev_char_index):
+                    ranges = text_widget.tag_ranges("summarized")
+                    for i in range(0, len(ranges), 2):
+                        if text_widget.compare(ranges[i], "<=", prev_char_index) and text_widget.compare(ranges[i+1], ">=", prev_char_index):
+                            start_index = ranges[i]
+                            break
+            
+            next_char_index = text_widget.index(f"{end_index}")
+            if "summarized" in text_widget.tag_names(next_char_index):
+                ranges = text_widget.tag_ranges("summarized")
+                for i in range(0, len(ranges), 2):
+                    if text_widget.compare(ranges[i], "<=", next_char_index) and text_widget.compare(ranges[i+1], ">=", next_char_index):
+                        end_index = ranges[i+1]
+                        break
+            
+            text_widget.tag_remove("summarized", start_index, end_index)
+            text_widget.tag_add("summarized", start_index, end_index)
+            
+            text_widget.tag_remove(tk.SEL, "1.0", tk.END)
+            
+            self.update_status("手动总结完成")
+            self.manual_summary_button["state"] = "disabled"
+            self.schedule_autosave()
+            
+        except Exception as e:
+            self._manual_summary_error(str(e))
+
+    def _manual_summary_failed(self):
+        """手动总结失败"""
+        self.update_status("手动总结失败，请重试")
+        self.manual_summary_button["state"] = "normal"
+        messagebox.showwarning("总结失败", "无法生成总结，请检查模型配置或重试")
+
+    def _manual_summary_error(self, error_msg):
+        """手动总结出错"""
+        self.update_status("手动总结出错")
+        self.manual_summary_button["state"] = "normal"
+        messagebox.showerror("总结错误", f"总结过程中发生错误: {error_msg}")
+
+    def manual_summary(self):
+        """手动总结选中的文本"""
+        try:
+            selected_text = self.transcription_area.get(tk.SEL_FIRST, tk.SEL_LAST)
+            if not selected_text.strip():
+                messagebox.showwarning("警告", "请先选择要总结的文本")
+                return
+            
+            if len(selected_text.strip()) < 10:
+                messagebox.showwarning("警告", "选中的文本太短，请选择更多内容")
+                return
+            
+            self.manual_summary_button["state"] = "disabled"
+            self.update_status("正在生成手动总结...")
+            
+            threading.Thread(target=self._do_manual_summary, args=(selected_text,), daemon=True).start()
+            
+        except tk.TclError:
+            messagebox.showwarning("警告", "请先选择要总结的文本")
+        except Exception as e:
+            messagebox.showerror("错误", f"手动总结失败: {e}")
+            self.manual_summary_button["state"] = "normal"
+
+    def _do_manual_summary(self, selected_text):
+        """执行手动总结"""
+        try:
+            max_chars = self.config.get("manual_summary_max_chars", 20000)
+            if self.config.get("llm_provider") == "Gemini":
+                max_chars = min(max_chars, 6000)
+            text_to_summarize = selected_text[-max_chars:] if len(selected_text) > max_chars else selected_text
+            
+            prompt = SUMMARY_PROMPT.format(text_to_summarize)
+            summary_content = self.call_llm_with_retries(prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY)
+            
+            if summary_content and summary_content.strip():
+                self.root.after(0, self._update_manual_summary_ui, summary_content.strip())
+            else:
+                self.root.after(0, self._manual_summary_failed)
+                
+        except Exception as e:
+            self.root.after(0, self._manual_summary_error, str(e))
+
+    def _update_manual_summary_ui(self, summary_content):
+        """更新手动总结的UI并优化标签"""
+        try:
+            self.summary_area.insert(tk.END, summary_content + "\n\n")
+            self.summary_area.see(tk.END)
+            
+            text_widget = self.transcription_area.text_widget
+            start_index = text_widget.index(tk.SEL_FIRST)
+            end_index = text_widget.index(tk.SEL_LAST)
+
+            text_widget.tag_configure("summarized", foreground="blue")
+
+            if start_index != "1.0":
+                prev_char_index = text_widget.index(f"{start_index} - 1 char")
+                if "summarized" in text_widget.tag_names(prev_char_index):
+                    ranges = text_widget.tag_ranges("summarized")
+                    for i in range(0, len(ranges), 2):
+                        if text_widget.compare(ranges[i], "<=", prev_char_index) and text_widget.compare(ranges[i+1], ">=", prev_char_index):
+                            start_index = ranges[i]
+                            break
+            
+            next_char_index = text_widget.index(f"{end_index}")
+            if "summarized" in text_widget.tag_names(next_char_index):
+                ranges = text_widget.tag_ranges("summarized")
+                for i in range(0, len(ranges), 2):
+                    if text_widget.compare(ranges[i], "<=", next_char_index) and text_widget.compare(ranges[i+1], ">=", next_char_index):
+                        end_index = ranges[i+1]
+                        break
+            
+            text_widget.tag_remove("summarized", start_index, end_index)
+            text_widget.tag_add("summarized", start_index, end_index)
+            
+            text_widget.tag_remove(tk.SEL, "1.0", tk.END)
+            
+            self.update_status("手动总结完成")
+            self.manual_summary_button["state"] = "disabled"
+            self.schedule_autosave()
+            
+        except Exception as e:
+            self._manual_summary_error(str(e))
+
+    def _manual_summary_failed(self):
+        """手动总结失败"""
+        self.update_status("手动总结失败，请重试")
+        self.manual_summary_button["state"] = "normal"
+        messagebox.showwarning("总结失败", "无法生成总结，请检查模型配置或重试")
+
+    def manual_summary(self):
+        """手动总结选中的文本"""
+        try:
+            selected_text = self.transcription_area.get(tk.SEL_FIRST, tk.SEL_LAST)
+            if not selected_text.strip():
+                messagebox.showwarning("警告", "请先选择要总结的文本")
+                return
+            
+            if len(selected_text.strip()) < 10:
+                messagebox.showwarning("警告", "选中的文本太短，请选择更多内容")
+                return
+            
+            self.manual_summary_button["state"] = "disabled"
+            self.update_status("正在生成手动总结...")
+            
+            threading.Thread(target=self._do_manual_summary, args=(selected_text,), daemon=True).start()
+            
+        except tk.TclError:
+            messagebox.showwarning("警告", "请先选择要总结的文本")
+        except Exception as e:
+            messagebox.showerror("错误", f"手动总结失败: {e}")
+            self.manual_summary_button["state"] = "normal"
+
+    def _do_manual_summary(self, selected_text):
+        """执行手动总结"""
+        try:
+            max_chars = self.config.get("manual_summary_max_chars", 20000)
+            if self.config.get("llm_provider") == "Gemini":
+                max_chars = min(max_chars, 6000)
+            text_to_summarize = selected_text[-max_chars:] if len(selected_text) > max_chars else selected_text
+            
+            prompt = SUMMARY_PROMPT.format(text_to_summarize)
+            summary_content = self.call_llm_with_retries(prompt, retries=RETRY_MAX_ATTEMPTS, base_delay=RETRY_BASE_DELAY)
+            
+            if summary_content and summary_content.strip():
+                self.root.after(0, self._update_manual_summary_ui, summary_content.strip())
+            else:
+                self.root.after(0, self._manual_summary_failed)
+                
+        except Exception as e:
+            self.root.after(0, self._manual_summary_error, str(e))
+
+    def _update_manual_summary_ui(self, summary_content):
+        """更新手动总结的UI并优化标签"""
+        try:
+            self.summary_area.insert(tk.END, summary_content + "\n\n")
+            self.summary_area.see(tk.END)
+            
+            text_widget = self.transcription_area.text_widget
+            start_index = text_widget.index(tk.SEL_FIRST)
+            end_index = text_widget.index(tk.SEL_LAST)
+
+            text_widget.tag_configure("summarized", foreground="blue")
+
+            if start_index != "1.0":
+                prev_char_index = text_widget.index(f"{start_index} - 1 char")
+                if "summarized" in text_widget.tag_names(prev_char_index):
+                    ranges = text_widget.tag_ranges("summarized")
+                    for i in range(0, len(ranges), 2):
+                        if text_widget.compare(ranges[i], "<=", prev_char_index) and text_widget.compare(ranges[i+1], ">=", prev_char_index):
+                            start_index = ranges[i]
+                            break
+            
+            next_char_index = text_widget.index(f"{end_index}")
+            if "summarized" in text_widget.tag_names(next_char_index):
+                ranges = text_widget.tag_ranges("summarized")
+                for i in range(0, len(ranges), 2):
+                    if text_widget.compare(ranges[i], "<=", next_char_index) and text_widget.compare(ranges[i+1], ">=", next_char_index):
+                        end_index = ranges[i+1]
+                        break
+            
+            text_widget.tag_remove("summarized", start_index, end_index)
+            text_widget.tag_add("summarized", start_index, end_index)
+            
+            text_widget.tag_remove(tk.SEL, "1.0", tk.END)
+            
+            self.update_status("手动总结完成")
+            self.manual_summary_button["state"] = "disabled"
+            self.schedule_autosave()
+            
+        except Exception as e:
+            self._manual_summary_error(str(e))
+
+    def _manual_summary_failed(self):
+        """手动总结失败"""
+        self.update_status("手动总结失败，请重试")
+        self.manual_summary_button["state"] = "normal"
+        messagebox.showwarning("总结失败", "无法生成总结，请检查模型配置或重试")
 
     def manual_summary(self):
         """手动总结选中的文本"""
@@ -857,16 +1197,13 @@ class TranscriptionApp:
                 messagebox.showwarning("警告", "请先选择要总结的文本")
                 return
             
-            # 检查文本长度
             if len(selected_text.strip()) < 10:
                 messagebox.showwarning("警告", "选中的文本太短，请选择更多内容")
                 return
             
-            # 禁用按钮，防止重复点击
             self.manual_summary_button["state"] = "disabled"
             self.update_status("正在生成手动总结...")
             
-            # 在新线程中执行总结
             threading.Thread(target=self._do_manual_summary, args=(selected_text,), daemon=True).start()
             
         except tk.TclError:
@@ -891,26 +1228,52 @@ class TranscriptionApp:
             
             if summary_content and summary_content.strip():
                 # 在主线程中更新UI
-                self.root.after(0, self._update_manual_summary_ui, selected_text, summary_content.strip())
+                self.root.after(0, self._update_manual_summary_ui, summary_content.strip())
             else:
                 self.root.after(0, self._manual_summary_failed)
                 
         except Exception as e:
             self.root.after(0, self._manual_summary_error, str(e))
 
-    def _update_manual_summary_ui(self, selected_text, summary_content):
-        """更新手动总结的UI"""
+    def _update_manual_summary_ui(self, summary_content):
+        """更新手动总结的UI并优化标签"""
         try:
             # 将总结添加到总结区域
             self.summary_area.insert(tk.END, summary_content + "\n\n")
             self.summary_area.see(tk.END)
             
-            # 将选中的文本标记为已总结（蓝色）
-            self.transcription_area.tag_add("summarized", tk.SEL_FIRST, tk.SEL_LAST)
-            self.transcription_area.tag_configure("summarized", foreground="blue")
+            # --- 优化：标记已总结文本并合并相邻标签 ---
+            text_widget = self.transcription_area.text_widget
+            start_index = text_widget.index(tk.SEL_FIRST)
+            end_index = text_widget.index(tk.SEL_LAST)
+
+            text_widget.tag_configure("summarized", foreground="blue")
+
+            # 检查并合并前面的标签
+            if start_index != "1.0":
+                prev_char_index = text_widget.index(f"{start_index} - 1 char")
+                if "summarized" in text_widget.tag_names(prev_char_index):
+                    ranges = text_widget.tag_ranges("summarized")
+                    for i in range(0, len(ranges), 2):
+                        if text_widget.compare(ranges[i], "<=", prev_char_index) and text_widget.compare(ranges[i+1], ">=", prev_char_index):
+                            start_index = ranges[i]
+                            break
+            
+            # 检查并合并后面的标签
+            next_char_index = text_widget.index(f"{end_index}")
+            if "summarized" in text_widget.tag_names(next_char_index):
+                ranges = text_widget.tag_ranges("summarized")
+                for i in range(0, len(ranges), 2):
+                    if text_widget.compare(ranges[i], "<=", next_char_index) and text_widget.compare(ranges[i+1], ">=", next_char_index):
+                        end_index = ranges[i+1]
+                        break
+            
+            text_widget.tag_remove("summarized", start_index, end_index)
+            text_widget.tag_add("summarized", start_index, end_index)
+            # ------------------------------------------
             
             # 清除选择
-            self.transcription_area.tag_remove(tk.SEL, "1.0", tk.END)
+            text_widget.tag_remove(tk.SEL, "1.0", tk.END)
             
             self.update_status("手动总结完成")
             self.manual_summary_button["state"] = "disabled"
@@ -919,18 +1282,6 @@ class TranscriptionApp:
             
         except Exception as e:
             self._manual_summary_error(str(e))
-
-    def _manual_summary_failed(self):
-        """手动总结失败"""
-        self.update_status("手动总结失败，请重试")
-        self.manual_summary_button["state"] = "normal"
-        messagebox.showwarning("总结失败", "无法生成总结，请检查模型配置或重试")
-
-    def _manual_summary_error(self, error_msg):
-        """手动总结出错"""
-        self.update_status("手动总结出错")
-        self.manual_summary_button["state"] = "normal"
-        messagebox.showerror("总结错误", f"总结过程中发生错误: {error_msg}")
 
     def summary_loop(self):
         """定期检查和总结文本（仅在自动模式下）"""
@@ -1471,4 +1822,3 @@ if __name__ == "__main__":
     app = TranscriptionApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
-

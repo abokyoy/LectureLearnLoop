@@ -19,8 +19,6 @@ import io
 import base64
 
 # 导入配置文件
-
-# 导入配置文件
 from config import SUMMARY_PROMPT, load_config, save_config
 
 # ----- 从 audio_recorder.py 和 batch_transcribe.py 整合的配置 -----
@@ -165,7 +163,7 @@ class RichTextEditor:
         try:
             context_menu.tk_popup(event.x_root, event.y_root)
         finally:
-            context_menu.gdestroy()
+            context_menu.grab_release()  # 修正：gdestroy() 改为 grab_release()
     
     def apply_format(self, format_type):
         """应用文本格式"""
@@ -204,6 +202,53 @@ class RichTextEditor:
     def insert(self, *args, **kwargs):
         """插入文本"""
         return self.text_widget.insert(*args, **kwargs)
+    
+    def see(self, *args, **kwargs):
+        """滚动到指定位置"""
+        return self.text_widget.see(*args, **kwargs)
+    
+    def pack(self, *args, **kwargs):
+        """打包组件"""
+        return self.text_widget.pack(*args, **kwargs)
+    
+    def configure(self, *args, **kwargs):
+        """配置组件"""
+        return self.text_widget.configure(*args, **kwargs)
+    
+    def bind(self, *args, **kwargs):
+        """绑定事件"""
+        return self.text_widget.bind(*args, **kwargs)
+
+class SimpleTextEditor:
+    """简单文本编辑器，基于 tk.Text，支持基本操作"""
+    
+    def __init__(self, parent, on_change=None, **kwargs):
+        self.parent = parent
+        self.text_widget = tk.Text(parent, **kwargs)
+        self.setup_bindings()
+        self.on_change = on_change
+        
+    def setup_bindings(self):
+        """设置键盘绑定"""
+        self.text_widget.bind('<<Modified>>', self._on_modified)
+        
+    def _on_modified(self, event=None):
+        try:
+            if self.on_change:
+                self.on_change()
+        finally:
+            self.text_widget.edit_modified(False)
+    
+    def get(self, *args, **kwargs):
+        """获取文本内容"""
+        return self.text_widget.get(*args, **kwargs)
+    
+    def insert(self, *args, **kwargs):
+        """插入文本"""
+        result = self.text_widget.insert(*args, **kwargs)
+        if self.on_change:
+            self.on_change()
+        return result
     
     def see(self, *args, **kwargs):
         """滚动到指定位置"""
@@ -289,8 +334,24 @@ class TranscriptionApp:
         self.transcription_frame = tk.Frame(self.paned_window)
         self.transcription_label = tk.Label(self.transcription_frame, text="原始语音转文字", font=("微软雅黑", 12, "bold"))
         self.transcription_label.pack(anchor=tk.W, pady=(0, 5))
-        self.transcription_area = scrolledtext.ScrolledText(self.transcription_frame, wrap=tk.WORD, font=("微软雅黑", 12))
+
+        # 创建滚动条
+        self.transcription_scrollbar = tk.Scrollbar(self.transcription_frame)
+        self.transcription_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 创建 SimpleTextEditor
+        self.transcription_area = SimpleTextEditor(
+            self.transcription_frame, 
+            on_change=None,
+            wrap=tk.WORD, 
+            font=("微软雅黑", 12),
+            height=20,
+            yscrollcommand=self.transcription_scrollbar.set
+        )
         self.transcription_area.pack(expand=True, fill="both")
+        
+        # 配置滚动条
+        self.transcription_scrollbar.config(command=self.transcription_area.text_widget.yview)
         self.paned_window.add(self.transcription_frame, width=700) # 设置初始宽度
 
     def update_status(self, message):
@@ -542,21 +603,28 @@ class TranscriptionApp:
 
     def check_transcription_queue(self):
         """定期检查转写队列并更新UI"""
-        while not self.transcription_queue.empty():
-            new_text = self.transcription_queue.get_nowait()
+        try:
+            texts = []
+            while not self.transcription_queue.empty():
+                texts.append(self.transcription_queue.get_nowait())
             
-            # 更新原始语音转文字面板
-            self.transcription_area.insert(tk.END, new_text + " ")
-            self.transcription_area.see(tk.END)
-            
-            # 更新完整的转录历史
-            self.transcription_history += (new_text + " ")
-            
-            # 写入日志文件
-            with open(TRANSCRIPTION_LOG_FILE, "a", encoding="utf-8") as f:
-                f.write(new_text + " ")
-
-        self.root.after(100, self.check_transcription_queue)
+            if texts:
+                # 批量插入文本
+                self.transcription_area.text_widget.configure(state='normal')
+                for new_text in texts:
+                    self.transcription_area.insert(tk.END, new_text + " ")
+                    self.transcription_history += (new_text + " ")
+                    # 写入日志文件
+                    try:
+                        with open(TRANSCRIPTION_LOG_FILE, "a", encoding="utf-8") as f:
+                            f.write(new_text + " ")
+                    except Exception:
+                        pass
+                self.transcription_area.see(tk.END)
+                self.transcription_area.text_widget.configure(state='normal')
+                self.root.update_idletasks()  # 强制更新UI，减少卡顿
+        finally:
+            self.root.after(100, self.check_transcription_queue)
 
     def save_as_markdown(self):
         """将两个面板的内容合并保存为Markdown文件"""
@@ -832,4 +900,3 @@ if __name__ == "__main__":
     app = TranscriptionApp(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
-
