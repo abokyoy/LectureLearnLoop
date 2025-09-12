@@ -3,6 +3,7 @@ from tkinter import scrolledtext, messagebox, filedialog, ttk
 import threading
 import queue
 import os
+import traceback
 import time
 import wave
 import pyaudio
@@ -57,10 +58,18 @@ class RichTextEditor:
     """富文本编辑器，支持图片粘贴和基本格式化"""
     
     def __init__(self, parent, **kwargs):
+        print("\n=== 初始化 RichTextEditor ===")
+        print(f"父组件: {parent}")
+        print(f"初始化参数: {kwargs}")
+        
         self.parent = parent
         self.text_widget = tk.Text(parent, **kwargs)
         self.setup_bindings()
         self.image_counter = 0
+        
+        # 初始化图片引用字典
+        self.images = {}
+        print("RichTextEditor 初始化完成")
         
     def setup_bindings(self):
         """设置键盘绑定"""
@@ -93,33 +102,54 @@ class RichTextEditor:
     
     def insert_image(self, image_path):
         """在当前位置插入图片"""
+        print("\n=== 开始插入图片 ===")
+        print(f"图片路径: {image_path}")
+        print(f"文件存在: {os.path.isfile(image_path)}")
+        print(f"文件大小: {os.path.getsize(image_path) if os.path.isfile(image_path) else 0} 字节")
+        print(f"当前工作目录: {os.getcwd()}")
+        print(f"当前图片计数器: {getattr(self, 'image_counter', '未初始化')}")
+        print(f"当前图片引用: {getattr(self, 'images', '未初始化')}")
+
         try:
-            # 打开并调整图片大小
+            if not os.path.isfile(image_path):
+                raise FileNotFoundError(f"图片文件不存在: {image_path}")
+
             img = Image.open(image_path)
-            # 限制图片最大宽度为400像素
+            print(f"成功打开图片: {img.format}, 尺寸: {img.size}, 模式: {img.mode}")
+
             if img.width > 400:
                 ratio = 400 / img.width
                 new_height = int(img.height * ratio)
                 img = img.resize((400, new_height), Image.Resampling.LANCZOS)
-            
-            # 转换为PhotoImage
+                print(f"调整后尺寸: {img.size}")
+
             photo = ImageTk.PhotoImage(img)
-            
-            # 在文本中插入图片
+            print("成功创建PhotoImage")
+
+            if not hasattr(self, 'image_counter'):
+                self.image_counter = 0
             self.image_counter += 1
             image_name = f"image_{self.image_counter}"
-            
-            # 保存图片引用，防止被垃圾回收
+
             if not hasattr(self, "images"):
+                print("初始化图片引用字典")
                 self.images = {}
             self.images[image_name] = photo
-            
-            # 插入图片到文本中
+            print(f"已保存图片引用: {image_name} -> {photo}")
+            print(f"当前图片引用数量: {len(self.images)}")
+
             self.text_widget.image_create(tk.END, image=photo, name=image_name)
-            self.text_widget.insert(tk.END, "\n")  # 图片后换行
-            
+            self.text_widget.insert(tk.END, "\n")
+            print("成功插入图片到文本控件")
+            return True
         except Exception as e:
-            messagebox.showerror("错误", f"插入图片失败: {e}")
+            error_msg = f"插入图片失败 ({image_path}): {e}"
+            print(error_msg)
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("错误", error_msg)
+            self.text_widget.insert(tk.END, f"[图片加载失败: {os.path.basename(image_path)}]")
+            return False
     
     def show_context_menu(self, event):
         """显示右键菜单"""

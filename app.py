@@ -474,10 +474,14 @@ class TranscriptionApp:
         messagebox.showinfo("保存成功", f"文件已成功保存到: {self.current_md_path}")
 
     def set_current_document(self, md_path):
+        print(f"\n=== 设置当前文档 ===")
+        print(f"文档路径: {md_path}")
         self.current_md_path = md_path
         base_dir = os.path.dirname(md_path)
         self.attachments_dir = os.path.join(base_dir, "attachments")
+        print(f"附件目录: {self.attachments_dir}")
         os.makedirs(self.attachments_dir, exist_ok=True)
+        print(f"附件目录存在: {os.path.exists(self.attachments_dir)}")
         # 记录到配置
         self.config["last_document_path"] = self.current_md_path
         try:
@@ -521,66 +525,134 @@ class TranscriptionApp:
         self.schedule_autosave()
 
     def load_last_document_if_any(self):
+        """异步加载上次的文档"""
+        print("\n=== 开始加载上次的文档 ===")
         path = self.config.get("last_document_path")
-        if not path:
+        print(f"配置中的上次文档路径: {path}")
+        if not path or not os.path.isfile(path):
+            print(f"警告: 未找到上次的文档或路径无效: {path}")
             return
-        if not os.path.isfile(path):
-            return
+
+        # 先设置当前文档
+        self.set_current_document(path)
+
+        self.update_status("正在加载文档...")
+        self.root.update()
+
+        def load_document():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = f.read()
+                summary_text = ""
+                transcript_text = ""
+                if "# 原始语音转文字" in data:
+                    parts = data.partition("# 原始语音转文字")
+                    summary_text = parts[0].strip()
+                    transcript_text = parts[2].strip()
+                    if summary_text.startswith("# 笔记总结"):
+                        summary_text = summary_text[summary_text.find('\n')+1:].lstrip()
+                    summary_text = summary_text.replace('---', '').strip()
+                else:
+                    summary_text = data.strip()
+                self.root.after(0, lambda: self._update_ui_after_loading(summary_text, transcript_text, path))
+            except Exception as e:
+                error_msg = f"加载文档失败: {str(e)}"
+                print(error_msg)
+                self.root.after(0, lambda: self.update_status(error_msg))
+
+        threading.Thread(target=load_document, daemon=True).start()
+    
+    def _update_ui_after_loading(self, summary_text, transcript_text, path):
+        """在UI线程中更新界面"""
         try:
-            self.set_current_document(path)
-            with open(path, "r", encoding="utf-8") as f:
-                data = f.read()
-            # 解析两部分
-            summary_text = ""
-            transcript_text = ""
-            if "# 原始语音转文字" in data:
-                parts = data.split("# 原始语音转文字", 1)
-                left = parts[0]
-                right = parts[1]
-                # 去掉标题
-                summary_text = re.sub(r"^#\s*笔记总结\s*\n?", "", left.strip())
-                transcript_text = right.strip()
-                # 去掉可能存在的 '---' 分隔线
-                summary_text = re.sub(r"\n?-{3,}\n?", "\n", summary_text).strip()
-            else:
-                summary_text = data.strip()
-            # 渲染 summary（处理图片占位符）
+            # 先更新状态
+            self.update_status("正在渲染内容...")
+            self.root.update()
+            
+            # 渲染摘要
             self.render_markdown_to_summary(summary_text)
-            # 填充转写
+            
+            # 更新转写区域
             if transcript_text:
                 self.transcription_area.delete("1.0", tk.END)
                 self.transcription_area.insert(tk.END, transcript_text)
                 self.transcription_area.see(tk.END)
+            
+            # 设置当前文档
+            self.set_current_document(path)
+            self.update_status(f"已加载文档: {os.path.basename(path)}")
+            
         except Exception as e:
-            print(f"加载上次文档失败: {e}")
+            error_msg = f"更新UI失败: {str(e)}"
+            print(error_msg)
+            self.update_status(error_msg)
 
     def render_markdown_to_summary(self, md_text):
-        """将Markdown渲染到富文本编辑区（仅处理文本与 Obsidian 图片占位符）。"""
+        """将Markdown渲染到富文本编辑区（处理文本与 Obsidian 图片占位符）。"""
+        print("\n=== render_markdown_to_summary 被调用 ===")
+        if not md_text:
+            print("警告: 传入的md_text为空")
+            return
+
+        print(f"当前文档路径: {getattr(self, 'current_md_path', '未设置')}")
+        print(f"附件目录: {getattr(self, 'attachments_dir', '未设置')}")
+        print(f"Markdown内容长度: {len(md_text)} 字符")
+
         self.summary_area.text_widget.delete("1.0", tk.END)
-        # 简单解析：按占位符拆分
-        pattern = re.compile(r"!\[\[(.*?)\]\]")
-        pos = 0
-        for m in pattern.finditer(md_text):
-            text_part = md_text[pos:m.start()]
-            if text_part:
-                self.summary_area.text_widget.insert(tk.END, text_part)
-            filename = m.group(1)
-            if self.attachments_dir:
-                img_path = os.path.join(self.attachments_dir, filename)
-                if os.path.isfile(img_path):
-                    try:
-                        self.summary_area.insert_image(img_path)
-                    except Exception:
-                        # 插入原始占位符
-                        self.summary_area.text_widget.insert(tk.END, m.group(0))
-                else:
-                    self.summary_area.text_widget.insert(tk.END, m.group(0))
+
+        if not hasattr(self, 'attachments_dir') or not self.attachments_dir or not os.path.isdir(self.attachments_dir):
+            print("警告: 附件目录未设置或不存在，直接插入文本")
+            self.summary_area.text_widget.insert(tk.END, md_text)
+            return
+
+        pattern = re.compile(r'!\[\[(.*?)\]\]')
+        sample_size = 200
+        start_sample = md_text[:sample_size]
+        end_sample = md_text[-sample_size:] if len(md_text) > sample_size else md_text
+        print(f"Markdown内容示例:\n开始: {start_sample}...\n...{end_sample}")
+
+        last_end = 0
+        matches = list(pattern.finditer(md_text))
+        print(f"找到 {len(matches)} 个图片占位符")
+        for i, match in enumerate(matches[:5]):
+            print(f"  匹配 {i+1}: {match.group(0)}")
+        if len(matches) > 5:
+            print(f"  还有 {len(matches)-5} 个匹配项未显示...")
+
+        if not matches:
+            self.summary_area.text_widget.insert(tk.END, md_text)
+            return
+
+        for i, match in enumerate(matches):
+            if last_end < match.start():
+                self.summary_area.text_widget.insert(tk.END, md_text[last_end:match.start()])
+
+            filename = match.group(1)
+            img_path = os.path.join(self.attachments_dir, filename)
+            print(f"\n尝试加载图片: {img_path}")
+            print(f"文件存在: {os.path.isfile(img_path)}")
+            if os.path.isfile(img_path):
+                print(f"文件大小: {os.path.getsize(img_path)} 字节")
+                try:
+                    self.summary_area.text_widget.see(tk.END)
+                    self.root.update_idletasks()
+                    self.summary_area.text_widget.insert(tk.END, "\n")
+                    self.summary_area.insert_image(img_path)  # 移除返回值检查
+                    print(f"成功插入图片: {img_path}")
+                    self.summary_area.text_widget.insert(tk.END, "\n")
+                except Exception as e:
+                    print(f"图片加载异常: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.summary_area.text_widget.insert(tk.END, f"[图片加载错误: {os.path.basename(img_path)}]")
             else:
-                self.summary_area.text_widget.insert(tk.END, m.group(0))
-            pos = m.end()
-        # 余下文本
-        if pos < len(md_text):
-            self.summary_area.text_widget.insert(tk.END, md_text[pos:])
+                print(f"未找到图片: {filename}")
+                self.summary_area.text_widget.insert(tk.END, match.group(0))
+            last_end = match.end()
+
+        if last_end < len(md_text):
+            self.summary_area.text_widget.insert(tk.END, md_text[last_end:])
+        self.summary_area.text_widget.see("1.0")
 
     def find_device_index(self, p, keyword):
         for i in range(p.get_device_count()):
