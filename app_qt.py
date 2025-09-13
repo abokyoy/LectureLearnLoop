@@ -27,8 +27,12 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QRadioButton,
 )
-from PySide6.QtGui import QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor, QTextCharFormat, QPalette
-from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject
+from PySide6.QtGui import (
+    QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor,
+    QTextCharFormat, QPalette, QPixmap, QPainter, QPen, QBrush, QAction
+)
+from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint
+
 import queue
 import re
 from datetime import datetime
@@ -51,7 +55,7 @@ class RichTextEditor(QTextEdit):
     Includes simple image insertion helper.
     """
 
-    def __init__(self, on_change=None, parent=None):
+    def __init__(self, on_change=None, parent=None, enable_image_context: bool = False):
         super().__init__(parent)
         self.on_change = on_change
         if self.on_change:
@@ -63,6 +67,8 @@ class RichTextEditor(QTextEdit):
         # Track embedded images: name -> {image: QImage, src: Optional[str]}
         self._image_counter = 0
         self._images = {}
+        self._enable_image_context = enable_image_context
+
         # Add logging method for debugging
         self.log = lambda msg: self.parent().log(msg) if self.parent() and hasattr(self.parent(), 'log') else print(msg)
 
@@ -202,6 +208,38 @@ class RichTextEditor(QTextEdit):
             self._images[name] = {"image": img, "src": image_path}
         except Exception as e:
             QMessageBox.critical(self, "插入图片失败", str(e))
+
+    def insert_image_from_qimage(self, qimg: QImage) -> None:
+        try:
+            if qimg.isNull():
+                QMessageBox.warning(self, "图片错误", "无法插入空图片")
+                return
+            # Register as resource with a unique name
+            self._image_counter += 1
+            name = f"image_{self._image_counter}"
+            self.document().addResource(QTextDocument.ResourceType.ImageResource, QUrl(name), qimg)
+            fmt = QTextImageFormat()
+            fmt.setName(name)
+            cursor = self.textCursor()
+            cursor.movePosition(QTextCursor.MoveOperation.End)
+            cursor.insertImage(fmt)
+            self.setTextCursor(cursor)
+            self._images[name] = {"image": qimg, "src": None}
+        except Exception as e:
+            QMessageBox.critical(self, "插入图片失败", str(e))
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu()
+        if self._enable_image_context:
+            menu.addSeparator()
+            act = QAction("插入本地图片到摘要…", self)
+            def _pick_and_insert():
+                path, _ = QFileDialog.getOpenFileName(self, "选择图片", os.getcwd(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
+                if path:
+                    self.insert_image_from_path(path)
+            act.triggered.connect(_pick_and_insert)
+            menu.addAction(act)
+        menu.exec(event.globalPos())
 
     def export_markdown_with_images(self, attachments_dir: str) -> tuple[str, dict]:
         """
@@ -360,11 +398,15 @@ class TranscriptionAppQt(QMainWindow):
         self.btn_summary.clicked.connect(self._on_summarize_clicked)
         btn_row.addWidget(self.btn_summary)
 
+        # Screenshot button next to manual summary
+        self.btn_screenshot = QPushButton("截图笔记")
+        self.btn_screenshot.setToolTip("截图并插入到上方摘要")
+        self.btn_screenshot.clicked.connect(self._on_screenshot_note_clicked)
+        btn_row.addWidget(self.btn_screenshot)
+        
         btn_row.addStretch()
 
-        self.btn_insert_image = QPushButton("插入图片到摘要…")
-        self.btn_insert_image.clicked.connect(self._on_insert_image_clicked)
-        btn_row.addWidget(self.btn_insert_image)
+        # 移除顶部“插入图片到摘要…”按钮，改为在摘要编辑器右键菜单中提供
 
         root_layout.addLayout(btn_row)
 
@@ -378,7 +420,7 @@ class TranscriptionAppQt(QMainWindow):
         lbl_summary = QLabel("笔记总结")
         lbl_summary.setFont(QFont("微软雅黑", 12, QFont.Weight.Bold))
         summary_layout.addWidget(lbl_summary)
-        self.summary_area = RichTextEditor(on_change=self._on_editor_changed)
+        self.summary_area = RichTextEditor(on_change=self._on_editor_changed, enable_image_context=True)
         self.summary_area.setFont(QFont("微软雅黑", 12))
         summary_layout.addWidget(self.summary_area)
         splitter.addWidget(summary_panel)
@@ -535,7 +577,7 @@ class TranscriptionAppQt(QMainWindow):
         self._rec_worker.peakLevel.connect(self._on_peak_level)
         self._rec_worker.finished.connect(self._rec_thread.quit)
         self._rec_worker.finished.connect(lambda: self._cleanup_rec())
-        self._tr_thread.finished.connect(lambda: self._set_status("录音线程结束"))
+        self._tr_thread.finished.connect(lambda: self._set_status("转写线程结束"))
         self._rec_thread.start()
 
         self.status_label.setText("正在录制...")
@@ -559,12 +601,33 @@ class TranscriptionAppQt(QMainWindow):
     def _on_summarize_clicked(self):
         self._start_manual_summary()
 
-    def _on_insert_image_clicked(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "选择图片", os.getcwd(), "Images (*.png *.jpg *.jpeg *.bmp *.gif)"
-        )
-        if path:
-            self.summary_area.insert_image_from_path(path)
+    def _on_screenshot_note_clicked(self):
+        try:
+            self._open_screenshot_overlay()
+        except Exception as e:
+            QMessageBox.critical(self, "截图失败", str(e))
+
+    # 打开截图覆盖层
+    def _open_screenshot_overlay(self):
+        screen = QApplication.primaryScreen()
+        if not screen:
+            raise RuntimeError("无法获取屏幕来进行截图")
+        self._shot_overlay = ScreenshotOverlay(screen)
+        self._shot_overlay.captured.connect(self._on_screenshot_captured)
+        self._shot_overlay.showFullScreen()
+
+    # 截图完成回调：插入到摘要区
+    @Slot(QImage)
+    def _on_screenshot_captured(self, img: QImage):
+        try:
+            if img and not img.isNull():
+                self.summary_area.insert_image_from_qimage(img)
+        finally:
+            try:
+                self._shot_overlay.close()
+            except Exception:
+                pass
+            self._shot_overlay = None
 
     def _on_editor_changed(self):
         # TODO: debounce + autosave logic
@@ -786,13 +849,14 @@ class TranscriptionAppQt(QMainWindow):
             self.log(f"高亮失败：{e}")
         finally:
             self._pending_highlight = None
-    
+
     # ---- VU meter ----
     @Slot(float)
     def _on_peak_level(self, peak: float):
         # peak in 0..1, map to 0..100
         val = max(0, min(100, int(peak * 100)))
         self.vu.setValue(val)
+
     # ---- Device selection ----
     def choose_input_device(self):
         dlg = DeviceLevelDialog(self)
@@ -987,6 +1051,98 @@ class SummarizerWorker(QObject):
         except requests.exceptions.RequestException as e:
             self.status.emit(f"Gemini 请求异常: {e}")
             return ""
+class ScreenshotOverlay(QWidget):
+    captured = Signal(QImage)
+
+    def __init__(self, screen):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self._screen = screen
+        self._screen_geo = screen.geometry()
+        self._pixmap: QPixmap = screen.grabWindow(0)
+        # HiDPI awareness
+        self._dpr = float(self._pixmap.devicePixelRatio()) if hasattr(self._pixmap, 'devicePixelRatio') else 1.0
+        self._origin: QPoint | None = None
+        self._current: QPoint | None = None
+        self._selection: QRect | None = None
+        self._double_clicked = False
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        # Draw the captured screen scaled to the widget's rect to match logical coordinates
+        painter.drawPixmap(self.rect(), self._pixmap)
+        # Dim the whole screen
+        painter.fillRect(self.rect(), QBrush(QColor(0, 0, 0, 100)))
+        # Draw selection area: undim + border
+        if self._selection and not self._selection.isNull():
+            sel = self._selection.normalized()
+            # Re-draw original content inside selection to undim
+            # Map logical selection rect to device pixels when copying from pixmap
+            dev_sel = QRect(int(sel.x() * self._dpr), int(sel.y() * self._dpr), int(sel.width() * self._dpr), int(sel.height() * self._dpr))
+            crop = self._pixmap.copy(dev_sel)
+            painter.drawPixmap(sel, crop.scaled(sel.size()))
+            # Border
+            pen = QPen(QColor(0, 153, 255), 2, Qt.PenStyle.SolidLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(sel)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._origin = e.position().toPoint()
+            self._current = self._origin
+            self._update_selection()
+            self.update()
+
+    def mouseMoveEvent(self, e):
+        if self._origin is not None:
+            self._current = e.position().toPoint()
+            self._update_selection()
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self._origin is not None:
+            self._current = e.position().toPoint()
+            self._update_selection()
+            self.update()
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._double_clicked = True
+            self._confirm_capture()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._confirm_capture()
+        elif e.key() == Qt.Key.Key_Escape:
+            self.close()
+
+    def resizeEvent(self, e):
+        # Ensure overlay covers the target screen
+        self.setGeometry(self._screen_geo)
+        super().resizeEvent(e)
+
+    def showEvent(self, e):
+        # Fit overlay to screen geometry
+        self.setGeometry(self._screen_geo)
+        super().showEvent(e)
+
+    def _update_selection(self):
+        if self._origin is None or self._current is None:
+            self._selection = None
+            return
+        x1, y1 = self._origin.x(), self._origin.y()
+        x2, y2 = self._current.x(), self._current.y()
+        self._selection = QRect(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
+
+    def _confirm_capture(self):
+        if self._selection and not self._selection.isNull():
+            sel = self._selection.normalized()
+            dev_sel = QRect(int(sel.x() * self._dpr), int(sel.y() * self._dpr), int(sel.width() * self._dpr), int(sel.height() * self._dpr))
+            img = self._pixmap.copy(dev_sel).toImage()
+            self.captured.emit(img)
+        self.close()
 
 
 # ===== Device level monitor dialog =====
@@ -994,6 +1150,7 @@ class DeviceMonitorWorker(QObject):
     levelUpdated = Signal(int, float)  # (device_index, peak[0..1])
     listReady = Signal(list)           # list of tuples (index, label)
     finished = Signal()
+    screenshotReady = Signal(str)      # filepath
 
     def __init__(self):
         super().__init__()
