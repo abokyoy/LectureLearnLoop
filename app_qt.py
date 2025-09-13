@@ -20,6 +20,12 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QProgressBar,
     QDockWidget,
+    QLineEdit,
+    QComboBox,
+    QSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QRadioButton,
 )
 from PySide6.QtGui import QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument
 from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject
@@ -32,6 +38,8 @@ import numpy as np
 import pyaudio
 import torch
 import whisper
+from config import load_config, save_config, SUMMARY_PROMPT
+import requests
 
 
 class RichTextEditor(QTextEdit):
@@ -166,7 +174,15 @@ class TranscriptionAppQt(QMainWindow):
         self.current_md_path: str | None = None
         self.attachments_dir: str | None = None
         self.selected_device_index: int | None = None
+        # Load config
+        self.config = load_config()
+        # Auto summary tracking
+        self._auto_timer = QTimer(self)
+        self._auto_timer.timeout.connect(self._auto_summary_tick)
+        self._last_summary_len = 0
         self._setup_ui()
+        # Apply auto-summary timer based on config at startup
+        self._apply_auto_summary_timer()
 
         # Transcription queue and timer
         self.transcription_queue: "queue.Queue[str]" = queue.Queue()
@@ -179,7 +195,8 @@ class TranscriptionAppQt(QMainWindow):
         self._rec_worker: AudioRecorderWorker | None = None
         self._tr_thread: QThread | None = None
         self._tr_worker: TranscriberWorker | None = None
-
+    
+    
     # ---- UI ----
     def _setup_ui(self):
         # Menu bar
@@ -210,6 +227,9 @@ class TranscriptionAppQt(QMainWindow):
         act_clear_log.triggered.connect(self.clear_log)
         act_save_log = log_menu.addAction("保存日志…")
         act_save_log.triggered.connect(self.save_log)
+        # App settings
+        act_app_settings = settings_menu.addAction("应用设置…")
+        act_app_settings.triggered.connect(self.open_settings_dialog)
         self.setMenuBar(menubar)
 
         central = QWidget(self)
@@ -377,7 +397,7 @@ class TranscriptionAppQt(QMainWindow):
             self.file_save_as()
         # Create transcriber first (loads Whisper)
         self._tr_thread = QThread(self)
-        self._tr_worker = TranscriberWorker(model_size="large-v2")
+        self._tr_worker = TranscriberWorker(model_size="large-v2", language_setting=self.config.get("whisper_language", "auto"))
         self._tr_worker.moveToThread(self._tr_thread)
         self._tr_thread.started.connect(self._tr_worker.start)
         self._tr_worker.textReady.connect(self.add_transcription_text)
@@ -419,8 +439,7 @@ class TranscriptionAppQt(QMainWindow):
         self.file_save()
 
     def _on_summarize_clicked(self):
-        # TODO: Plug in LLM summarization logic
-        QMessageBox.information(self, "手动总结", "尚未接入总结逻辑。")
+        self._start_manual_summary()
 
     def _on_insert_image_clicked(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -519,13 +538,84 @@ class TranscriptionAppQt(QMainWindow):
         except Exception as e:
             self.log(f"入队失败: {e}")
 
+    # ---- Settings dialog ----
+    def open_settings_dialog(self):
+        dlg = SettingsDialog(self.config, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.config = dlg.result_config()
+            if save_config(self.config):
+                self._set_status("配置已保存")
+            else:
+                QMessageBox.warning(self, "配置", "无法保存配置文件")
+            # Apply auto summary timer
+            self._apply_auto_summary_timer()
+
+    def _apply_auto_summary_timer(self):
+        mode = self.config.get("summary_mode", "auto")
+        interval = int(self.config.get("auto_summary_interval", 300))
+        if mode == "auto":
+            self._auto_timer.start(max(5_000, interval * 1000))
+            self._set_status(f"自动总结已开启，每 {interval}s 触发")
+        else:
+            self._auto_timer.stop()
+            self._set_status("自动总结已关闭")
+
+    # ---- Summarization ----
+    def _collect_transcript_text(self, max_chars: int) -> str:
+        text = self.transcription_area.toPlainText()
+        if not text:
+            return ""
+        # Use tail max_chars
+        return text[-max(0, max_chars):]
+
+    def _start_manual_summary(self):
+        max_chars = int(self.config.get("manual_summary_max_chars", 20000))
+        text = self._collect_transcript_text(max_chars)
+        if not text.strip():
+            QMessageBox.information(self, "手动总结", "当前没有可总结的转写文本。")
+            return
+        self._run_summarizer(text)
+
+    def _auto_summary_tick(self):
+        if self.config.get("summary_mode", "auto") != "auto":
+            return
+        max_chars = int(self.config.get("auto_summary_max_chars", 8000))
+        text = self._collect_transcript_text(max_chars)
+        if not text or len(text) == self._last_summary_len:
+            return
+        self._last_summary_len = len(text)
+        self.log(f"自动总结触发，长度={self._last_summary_len}")
+        self._run_summarizer(text)
+
+    def _run_summarizer(self, transcript_text: str):
+        # Start summarizer worker
+        self._sum_thread = QThread(self)
+        self._sum_worker = SummarizerWorker(self.config, transcript_text, SUMMARY_PROMPT)
+        self._sum_worker.moveToThread(self._sum_thread)
+        self._sum_thread.started.connect(self._sum_worker.start)
+        self._sum_worker.summaryReady.connect(self._on_summary_ready)
+        self._sum_worker.status.connect(self._set_status)
+        self._sum_worker.finished.connect(self._sum_thread.quit)
+        self._sum_worker.finished.connect(lambda: setattr(self, "_sum_worker", None))
+        self._sum_thread.start()
+
+    @Slot(str)
+    def _on_summary_ready(self, content: str):
+        if not content:
+            self.log("总结为空")
+            return
+        # Append to summary area
+        if self.summary_area.toPlainText().strip():
+            self.summary_area.insertPlainText("\n\n")
+        self.summary_area.insertPlainText(content)
+        self.summary_area.scrollToBottom()
+    
     # ---- VU meter ----
     @Slot(float)
     def _on_peak_level(self, peak: float):
         # peak in 0..1, map to 0..100
         val = max(0, min(100, int(peak * 100)))
         self.vu.setValue(val)
-
     # ---- Device selection ----
     def choose_input_device(self):
         dlg = DeviceLevelDialog(self)
@@ -535,6 +625,157 @@ class TranscriptionAppQt(QMainWindow):
             if idx is not None:
                 self.selected_device_index = idx
                 self.status_label.setText(f"已选择设备: {label}")
+
+
+# ===== Settings Dialog =====
+class SettingsDialog(QDialog):
+    def __init__(self, cfg: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("应用设置")
+        self.resize(520, 460)
+        self._cfg = dict(cfg)  # copy
+
+        layout = QVBoxLayout(self)
+
+        # Provider group
+        grp_provider = QGroupBox("大语言模型提供商")
+        pv = QVBoxLayout(grp_provider)
+        self.rb_ollama = QRadioButton("Ollama (本地)")
+        self.rb_gemini = QRadioButton("Gemini (云端)")
+        pv.addWidget(self.rb_ollama)
+        pv.addWidget(self.rb_gemini)
+        layout.addWidget(grp_provider)
+
+        # Ollama settings
+        grp_ollama = QGroupBox("Ollama 设置")
+        form_o = QFormLayout(grp_ollama)
+        self.ed_ollama_url = QLineEdit()
+        self.ed_ollama_model = QLineEdit()
+        form_o.addRow("API URL", self.ed_ollama_url)
+        form_o.addRow("模型名称", self.ed_ollama_model)
+        layout.addWidget(grp_ollama)
+
+        # Gemini settings
+        grp_gemini = QGroupBox("Gemini 设置")
+        form_g = QFormLayout(grp_gemini)
+        self.ed_gemini_key = QLineEdit()
+        self.ed_gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ed_gemini_model = QLineEdit()
+        form_g.addRow("API Key", self.ed_gemini_key)
+        form_g.addRow("模型名称", self.ed_gemini_model)
+        layout.addWidget(grp_gemini)
+
+        # Summary settings
+        grp_summary = QGroupBox("总结设置")
+        form_s = QFormLayout(grp_summary)
+        self.cb_mode = QComboBox()
+        self.cb_mode.addItems(["auto", "manual"])
+        self.sp_interval = QSpinBox(); self.sp_interval.setRange(10, 3600)
+        self.sp_auto_max = QSpinBox(); self.sp_auto_max.setRange(100, 1000000)
+        self.sp_manual_max = QSpinBox(); self.sp_manual_max.setRange(100, 1000000)
+        self.cb_language = QComboBox(); self.cb_language.addItems(["auto", "zh", "en"]) 
+        form_s.addRow("总结模式", self.cb_mode)
+        form_s.addRow("自动总结间隔(秒)", self.sp_interval)
+        form_s.addRow("自动总结最大字符数", self.sp_auto_max)
+        form_s.addRow("手动总结最大字符数", self.sp_manual_max)
+        form_s.addRow("Whisper语言", self.cb_language)
+        layout.addWidget(grp_summary)
+
+        # Buttons
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        layout.addWidget(bb)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+
+        # Load cfg values
+        prov = self._cfg.get("llm_provider", "Ollama")
+        if prov == "Gemini":
+            self.rb_gemini.setChecked(True)
+        else:
+            self.rb_ollama.setChecked(True)
+        self.ed_ollama_url.setText(self._cfg.get("ollama_api_url", "http://localhost:11434/api/generate"))
+        self.ed_ollama_model.setText(self._cfg.get("ollama_model", "deepseek-r1:1.5b"))
+        self.ed_gemini_key.setText(self._cfg.get("gemini_api_key", ""))
+        self.ed_gemini_model.setText(self._cfg.get("gemini_model", "gemini-1.5-flash-002"))
+        self.cb_mode.setCurrentText(self._cfg.get("summary_mode", "auto"))
+        self.sp_interval.setValue(int(self._cfg.get("auto_summary_interval", 300)))
+        self.sp_auto_max.setValue(int(self._cfg.get("auto_summary_max_chars", 8000)))
+        self.sp_manual_max.setValue(int(self._cfg.get("manual_summary_max_chars", 20000)))
+        self.cb_language.setCurrentText(self._cfg.get("whisper_language", "auto"))
+
+        # Enable/disable groups by provider
+        self.rb_ollama.toggled.connect(lambda on: grp_ollama.setEnabled(on))
+        self.rb_gemini.toggled.connect(lambda on: grp_gemini.setEnabled(on))
+        grp_ollama.setEnabled(self.rb_ollama.isChecked())
+        grp_gemini.setEnabled(self.rb_gemini.isChecked())
+
+    def result_config(self) -> dict:
+        cfg = dict(self._cfg)
+        cfg["llm_provider"] = "Gemini" if self.rb_gemini.isChecked() else "Ollama"
+        cfg["ollama_api_url"] = self.ed_ollama_url.text().strip()
+        cfg["ollama_model"] = self.ed_ollama_model.text().strip()
+        cfg["gemini_api_key"] = self.ed_gemini_key.text().strip()
+        cfg["gemini_model"] = self.ed_gemini_model.text().strip()
+        cfg["summary_mode"] = self.cb_mode.currentText()
+        cfg["auto_summary_interval"] = int(self.sp_interval.value())
+        cfg["auto_summary_max_chars"] = int(self.sp_auto_max.value())
+        cfg["manual_summary_max_chars"] = int(self.sp_manual_max.value())
+        cfg["whisper_language"] = self.cb_language.currentText()
+        return cfg
+
+
+# ===== Summarizer Worker =====
+class SummarizerWorker(QObject):
+    summaryReady = Signal(str)
+    status = Signal(str)
+    finished = Signal()
+
+    def __init__(self, cfg: dict, transcript: str, prompt_tpl: str):
+        super().__init__()
+        self._cfg = cfg
+        self._transcript = transcript
+        self._prompt_tpl = prompt_tpl
+
+    @Slot()
+    def start(self):
+        try:
+            provider = self._cfg.get("llm_provider", "Ollama")
+            text = self._transcript.strip()
+            if not text:
+                self.summaryReady.emit("")
+                return
+            prompt = self._prompt_tpl.format(text)
+            if provider == "Ollama":
+                content = self._summarize_with_ollama(prompt)
+            else:
+                content = self._summarize_with_gemini(prompt)
+            self.summaryReady.emit(content or "")
+        except Exception as e:
+            self.status.emit(f"总结失败: {e}")
+        finally:
+            self.finished.emit()
+
+    def _summarize_with_ollama(self, prompt: str) -> str:
+        url = self._cfg.get("ollama_api_url", "http://localhost:11434/api/generate")
+        model = self._cfg.get("ollama_model", "deepseek-r1:1.5b")
+        self.status.emit(f"调用 Ollama: {model}")
+        try:
+            resp = requests.post(url, json={"model": model, "prompt": prompt, "stream": False}, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("response", "").strip()
+        except Exception as e:
+            self.status.emit(f"Ollama 调用失败: {e}")
+            return ""
+
+    def _summarize_with_gemini(self, prompt: str) -> str:
+        # Placeholder: here you can integrate official Gemini SDK or REST API
+        self.status.emit("Gemini 总结暂未实现，请切换到 Ollama 或提供 Gemini 集成信息。")
+        return ""
+
+    
+
+    
 
 
 # ===== Device level monitor dialog =====
