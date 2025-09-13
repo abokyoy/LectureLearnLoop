@@ -354,6 +354,10 @@ class RichTextEditor:
         """绑定事件"""
         return self.text_widget.bind(*args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        """删除文本"""
+        return self.text_widget.delete(*args, **kwargs)
+
     def take_screenshot(self):
         """调用截图工具"""
         screenshot_tool = ScreenshotTool(callback=self.insert_screenshot)
@@ -403,58 +407,6 @@ class RichTextEditor:
                 image_map[img_name] = filename
                 parts.append(f"![[{filename}]]")
         return ("".join(parts).strip(), image_map)
-
-class SimpleTextEditor:
-    """简单文本编辑器，基于 tk.Text，支持基本操作"""
-    
-    def __init__(self, parent, on_change=None, **kwargs):
-        self.parent = parent
-        self.text_widget = tk.Text(parent, **kwargs)
-        self.setup_bindings()
-        self.on_change = on_change
-        
-    def setup_bindings(self):
-        """设置键盘绑定"""
-        self.text_widget.bind('<<Modified>>', self._on_modified)
-        
-    def _on_modified(self, event=None):
-        try:
-            if self.on_change:
-                self.on_change()
-        finally:
-            # 重置 modified 标志
-            self.text_widget.edit_modified(False)
-    
-    def get(self, *args, **kwargs):
-        """获取文本内容"""
-        return self.text_widget.get(*args, **kwargs)
-    
-    def insert(self, *args, **kwargs):
-        """插入文本"""
-        result = self.text_widget.insert(*args, **kwargs)
-        if self.on_change:
-            self.on_change()
-        return result
-    
-    def see(self, *args, **kwargs):
-        """滚动到指定位置"""
-        return self.text_widget.see(*args, **kwargs)
-    
-    def pack(self, *args, **kwargs):
-        """打包组件"""
-        return self.text_widget.pack(*args, **kwargs)
-    
-    def configure(self, *args, **kwargs):
-        """配置组件"""
-        return self.text_widget.configure(*args, **kwargs)
-    
-    def bind(self, *args, **kwargs):
-        """绑定事件"""
-        return self.text_widget.bind(*args, **kwargs)
-    
-    def delete(self, *args, **kwargs):
-        """删除文本"""
-        return self.text_widget.delete(*args, **kwargs)
 
 class TranscriptionApp:
     def __init__(self, root):
@@ -883,14 +835,16 @@ class TranscriptionApp:
         self.transcription_label = tk.Label(self.transcription_frame, text="原始语音转文字", font=("微软雅黑", 12, "bold"))
         self.transcription_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # 创建可选择的文本区域，使用 SimpleTextEditor
+        # 创建可选择的文本区域，使用 RichTextEditor
         transcription_scrollbar = tk.Scrollbar(self.transcription_frame)
         transcription_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.transcription_area = SimpleTextEditor(
-            self.transcription_frame, 
+        self.transcription_area = RichTextEditor(
+            self.transcription_frame,
             on_change=self.on_editor_changed,
-            wrap=tk.WORD, 
-            font=("微软雅黑", 12),
+            wrap=tk.WORD,
+            font=("微软雅黑", 11),
+            state='normal',
+            undo=True,
             height=20,
             yscrollcommand=transcription_scrollbar.set
         )
