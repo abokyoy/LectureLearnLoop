@@ -769,9 +769,47 @@ class SummarizerWorker(QObject):
             return ""
 
     def _summarize_with_gemini(self, prompt: str) -> str:
-        # Placeholder: here you can integrate official Gemini SDK or REST API
-        self.status.emit("Gemini 总结暂未实现，请切换到 Ollama 或提供 Gemini 集成信息。")
-        return ""
+        api_key = self._cfg.get("gemini_api_key", "").strip()
+        model = self._cfg.get("gemini_model", "gemini-1.5-flash-002").strip()
+        if not api_key:
+            self.status.emit("Gemini 未配置 API Key")
+            return ""
+        if not model:
+            model = "gemini-1.5-flash-002"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [
+                {"parts": [{"text": prompt}]}  # simple text prompt
+            ]
+        }
+        self.status.emit(f"调用 Gemini: {model}")
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            if not resp.ok:
+                self.status.emit(f"Gemini 调用失败: HTTP {resp.status_code}")
+                # Try to surface short body for debugging
+                try:
+                    j = resp.json()
+                    self.status.emit(f"错误详情: {str(j)[:300]}")
+                except Exception:
+                    self.status.emit(f"错误文本: {resp.text[:300]}")
+                return ""
+            data = resp.json()
+            # Extract text
+            try:
+                candidates = data.get("candidates", [])
+                if candidates and "content" in candidates[0]:
+                    parts = candidates[0]["content"].get("parts", [])
+                    if parts and "text" in parts[0]:
+                        return (parts[0]["text"] or "").strip()
+            except Exception as e:
+                self.status.emit(f"Gemini 解析失败: {e}")
+            # Fallback: attempt to stringify data
+            return ""
+        except requests.exceptions.RequestException as e:
+            self.status.emit(f"Gemini 请求异常: {e}")
+            return ""
 
     
 
