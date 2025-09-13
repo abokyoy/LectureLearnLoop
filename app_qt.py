@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QRadioButton,
 )
-from PySide6.QtGui import QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument
+from PySide6.QtGui import QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor, QTextCharFormat, QPalette
 from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject
 import queue
 import re
@@ -63,6 +63,52 @@ class RichTextEditor(QTextEdit):
         # Track embedded images: name -> {image: QImage, src: Optional[str]}
         self._image_counter = 0
         self._images = {}
+        # Add logging method for debugging
+        self.log = lambda msg: self.parent().log(msg) if self.parent() and hasattr(self.parent(), 'log') else print(msg)
+
+    def _highlight_with_html(self, ranges: list[tuple[int, int]], color_name: str):
+        """
+        Apply HTML highlighting to multiple ranges, preserving all highlights.
+        ranges: List of (start, length) tuples.
+        color_name: CSS color name (e.g., "green").
+        """
+        full_text = self.toPlainText()
+        self.log(f"[DEBUG] Applying HTML highlights: ranges={ranges}, color={color_name}, text_length={len(full_text)}")
+        
+        # Sort ranges by start position to avoid overlap issues
+        ranges = sorted(ranges, key=lambda x: x[0])
+        # Validate and adjust ranges
+        valid_ranges = []
+        for start, length in ranges:
+            if start < 0 or length <= 0 or start >= len(full_text):
+                self.log(f"[DEBUG] Skipping invalid range: start={start}, length={length}")
+                continue
+            if start + length > len(full_text):
+                length = len(full_text) - start
+            valid_ranges.append((start, length))
+        
+        if not valid_ranges:
+            self.log("[DEBUG] No valid ranges to highlight")
+            return
+        
+        # Build HTML by splitting text and inserting <span> tags
+        html_parts = []
+        last_end = 0
+        for start, length in valid_ranges:
+            if start < last_end:
+                self.log(f"[DEBUG] Overlapping range skipped: start={start}, length={length}")
+                continue  # Skip overlapping ranges
+            html_parts.append(full_text[last_end:start])  # Unhighlighted text
+            selected = full_text[start:start + length]
+            html_parts.append(f'<span style="color:{color_name}">{selected}</span>')
+            last_end = start + length
+        html_parts.append(full_text[last_end:])  # Text after last highlight
+        
+        new_html = "".join(html_parts)
+        self.log(f"[DEBUG] Setting HTML: {new_html[:100]}...")  # Log first 100 chars for brevity
+        self.setHtml(new_html)
+        self.update()
+        self.repaint()
 
     # Keep the method name identical to QTextEdit API
     def insertPlainText(self, text: str) -> None:  # type: ignore[override]
@@ -79,6 +125,62 @@ class RichTextEditor(QTextEdit):
         bar = self.verticalScrollBar()
         if bar:
             bar.setValue(bar.maximum())
+
+    # ---- Formatting helpers ----
+    def text_length(self) -> int:
+        return len(self.toPlainText())
+
+    def selection_range(self) -> tuple[int, int]:
+        """Return (start, length) of current selection; if none, (pos, 0)."""
+        c = self.textCursor()
+        self.log(f"[DEBUG] selection_range: position={c.position()}, selectionStart={c.selectionStart()}, selectionEnd={c.selectionEnd()}")
+        if not c.hasSelection():
+            return (c.position(), 0)
+        start = min(c.selectionStart(), c.selectionEnd())
+        end = max(c.selectionStart(), c.selectionEnd())
+        return (start, max(0, end - start))
+
+    def selected_text(self) -> str:
+        return self.textCursor().selectedText()
+
+    def apply_color(self, start: int, length: int, color: QColor) -> None:
+        self.log(f"[DEBUG] apply_color: start={start}, length={length}, color={color.name()}")
+        if length <= 0:
+            self.log("[DEBUG] length <=0, skipping")
+            return
+        c = self.textCursor()
+        self.log(f"[DEBUG] Cursor before: position={c.position()}, hasSelection={c.hasSelection()}")
+        c.beginEditBlock()
+        # Apply color to the exact range
+        c.setPosition(start)
+        c.setPosition(start + length, QTextCursor.MoveMode.KeepAnchor)
+        self.log(f"[DEBUG] Selection set: start={c.selectionStart()}, end={c.selectionEnd()}")
+        fmt = QTextCharFormat()
+        fmt.setForeground(color)
+        self.log(f"[DEBUG] Format created: foreground={fmt.foreground().color().name()}")
+        c.mergeCharFormat(fmt)
+        self.log("[DEBUG] mergeCharFormat called")
+        # Reset format at the end position so subsequent inserted text is default (black)
+        default_color = self.palette().color(QPalette.ColorRole.Text)
+        self.log(f"[DEBUG] Default color: {default_color.name()}")
+        reset_fmt = QTextCharFormat()
+        reset_fmt.setForeground(default_color)
+        c.clearSelection()
+        c.setPosition(start + length)
+        c.setCharFormat(reset_fmt)
+        self.log("[DEBUG] Reset char format applied")
+        c.endEditBlock()
+        # Also reset the widget's current format to default to avoid carry-over
+        self.reset_current_format_to_default()
+        self.log("[DEBUG] apply_color completed, forcing update")
+        self.update()
+        self.repaint()
+
+    def reset_current_format_to_default(self) -> None:
+        default_color = self.palette().color(QPalette.ColorRole.Text)
+        fmt = QTextCharFormat()
+        fmt.setForeground(default_color)
+        self.setCurrentCharFormat(fmt)
 
     # ---- Image helpers (basic) ----
     def insert_image_from_path(self, image_path: str) -> None:
@@ -180,6 +282,9 @@ class TranscriptionAppQt(QMainWindow):
         self._auto_timer = QTimer(self)
         self._auto_timer.timeout.connect(self._auto_summary_tick)
         self._last_summary_len = 0
+        self._auto_pos = 0  # last auto-summarized end position in transcription text
+        self._pending_highlight: dict | None = None  # {type: 'auto'|'manual', start:int, length:int}
+        self._manual_highlight_ranges: list[tuple[int, int]] = []  # Store manual highlight ranges [(start, length), ...]
         self._setup_ui()
         # Apply auto-summary timer based on config at startup
         self._apply_auto_summary_timer()
@@ -195,7 +300,6 @@ class TranscriptionAppQt(QMainWindow):
         self._rec_worker: AudioRecorderWorker | None = None
         self._tr_thread: QThread | None = None
         self._tr_worker: TranscriberWorker | None = None
-    
     
     # ---- UI ----
     def _setup_ui(self):
@@ -321,6 +425,13 @@ class TranscriptionAppQt(QMainWindow):
         self.attachments_dir = os.path.join(base_dir, "attachments")
         os.makedirs(self.attachments_dir, exist_ok=True)
         self.status_label.setText(f"当前文档: {os.path.basename(md_path)}")
+        # Initialize auto summary position to current transcript length
+        try:
+            self._auto_pos = self.transcription_area.text_length()
+        except Exception:
+            self._auto_pos = 0
+        # Reset manual highlight ranges when opening a new document
+        self._manual_highlight_ranges = []
 
     def build_markdown(self) -> str:
         # Export summary with images
@@ -336,6 +447,8 @@ class TranscriptionAppQt(QMainWindow):
         self.current_md_path = None
         self.attachments_dir = None
         self.status_label.setText("新建文档")
+        self._auto_pos = 0
+        self._manual_highlight_ranges = []
 
     def file_open(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "打开 Markdown", os.getcwd(), "Markdown (*.md)")
@@ -365,6 +478,11 @@ class TranscriptionAppQt(QMainWindow):
             self.transcription_area.setText(transcript_text)
             self.transcription_area.scrollToBottom()
             self.status_label.setText(f"已打开: {os.path.basename(path)}")
+            # After loading, set auto position to current end to avoid summarizing historical content automatically
+            try:
+                self._auto_pos = self.transcription_area.text_length()
+            except Exception:
+                self._auto_pos = 0
         except Exception as e:
             QMessageBox.critical(self, "打开失败", str(e))
 
@@ -417,7 +535,7 @@ class TranscriptionAppQt(QMainWindow):
         self._rec_worker.peakLevel.connect(self._on_peak_level)
         self._rec_worker.finished.connect(self._rec_thread.quit)
         self._rec_worker.finished.connect(lambda: self._cleanup_rec())
-        self._rec_thread.finished.connect(lambda: self._set_status("录音线程结束"))
+        self._tr_thread.finished.connect(lambda: self._set_status("录音线程结束"))
         self._rec_thread.start()
 
         self.status_label.setText("正在录制...")
@@ -461,7 +579,11 @@ class TranscriptionAppQt(QMainWindow):
             self.transcription_queue.put_nowait(text)
         except Exception:
             # As a fallback, append immediately on UI thread
+            # Ensure default (black) format for appended text
+            self.transcription_area.moveCursor(QTextCursor.MoveOperation.End)
+            self.transcription_area.reset_current_format_to_default()
             self.transcription_area.insertPlainText(text + " ")
+            self.transcription_area.reset_current_format_to_default()
             self.transcription_area.scrollToBottom()
 
     def _flush_transcription_queue(self) -> None:
@@ -478,7 +600,10 @@ class TranscriptionAppQt(QMainWindow):
             return
         full_text_chunk = " ".join(chunk_list) + " "
         # Append and auto-scroll
+        self.transcription_area.moveCursor(QTextCursor.MoveOperation.End)
+        self.transcription_area.reset_current_format_to_default()
         self.transcription_area.insertPlainText(full_text_chunk)
+        self.transcription_area.reset_current_format_to_default()
         self.transcription_area.scrollToBottom()
 
     # ---- Status helper ----
@@ -567,25 +692,67 @@ class TranscriptionAppQt(QMainWindow):
             return ""
         # Use tail max_chars
         return text[-max(0, max_chars):]
-
+    
     def _start_manual_summary(self):
+        # Pause auto summary timer to prevent interference
+        self._auto_timer.stop()
+        self.log("暂停自动总结定时器")
+        
+        start, length = self.transcription_area.selection_range()
+        if length > 0:
+            text = self.transcription_area.selected_text()
+            if text.strip():
+                # Store the highlight range
+                self._manual_highlight_ranges.append((start, length))
+                try:
+                    self.log(f"手动总结：高亮选中文本 start={start}, length={length}")
+                    self.transcription_area._highlight_with_html(self._manual_highlight_ranges, "green")
+                except Exception as e:
+                    self.log(f"高亮失败：{e}")
+                self._run_summarizer(text)
+                # Restart auto timer after starting summarizer
+                self._apply_auto_summary_timer()
+                return
+        
+        # Fallback for no selection
         max_chars = int(self.config.get("manual_summary_max_chars", 20000))
         text = self._collect_transcript_text(max_chars)
         if not text.strip():
             QMessageBox.information(self, "手动总结", "当前没有可总结的转写文本。")
+            self._apply_auto_summary_timer()  # Restart timer
             return
+        full_len = self.transcription_area.text_length()
+        start2 = max(0, full_len - len(text))
+        self._manual_highlight_ranges.append((start2, len(text)))
+        try:
+            self.log(f"手动总结：高亮尾部文本 start={start2}, length={len(text)}")
+            self.transcription_area._highlight_with_html(self._manual_highlight_ranges, "green")
+        except Exception as e:
+            self.log(f"高亮失败：{e}")
         self._run_summarizer(text)
+        # Restart auto timer
+        self._apply_auto_summary_timer()
 
     def _auto_summary_tick(self):
         if self.config.get("summary_mode", "auto") != "auto":
             return
         max_chars = int(self.config.get("auto_summary_max_chars", 8000))
-        text = self._collect_transcript_text(max_chars)
-        if not text or len(text) == self._last_summary_len:
+        full_text = self.transcription_area.toPlainText()
+        end = len(full_text)
+        start = self._auto_pos
+        if end <= start:
             return
-        self._last_summary_len = len(text)
-        self.log(f"自动总结触发，长度={self._last_summary_len}")
-        self._run_summarizer(text)
+        win_start = max(start, end - max_chars)
+        segment = full_text[win_start:end]
+        if not segment.strip():
+            # nothing meaningful
+            self._auto_pos = end
+            return
+        self._last_summary_len = len(segment)
+        self.log(f"自动总结触发，窗口=({win_start}->{end}) 长度={self._last_summary_len}")
+        # Record pending highlight in blue; update _auto_pos after summary completes
+        self._pending_highlight = {"type": "auto", "start": win_start, "length": end - win_start}
+        self._run_summarizer(segment)
 
     def _run_summarizer(self, transcript_text: str):
         # Start summarizer worker
@@ -609,6 +776,16 @@ class TranscriptionAppQt(QMainWindow):
             self.summary_area.insertPlainText("\n\n")
         self.summary_area.insertPlainText(content)
         self.summary_area.scrollToBottom()
+        # Apply highlight to transcription window if pending (only for auto summaries)
+        try:
+            if self._pending_highlight and self._pending_highlight.get("type") == "auto":
+                info = self._pending_highlight
+                self.transcription_area.apply_color(int(info["start"]), int(info["length"]), QColor("blue"))
+                self._auto_pos = int(info["start"]) + int(info["length"])
+        except Exception as e:
+            self.log(f"高亮失败：{e}")
+        finally:
+            self._pending_highlight = None
     
     # ---- VU meter ----
     @Slot(float)
@@ -810,10 +987,6 @@ class SummarizerWorker(QObject):
         except requests.exceptions.RequestException as e:
             self.status.emit(f"Gemini 请求异常: {e}")
             return ""
-
-    
-
-    
 
 
 # ===== Device level monitor dialog =====
