@@ -19,5 +19,5 @@ if %errorlevel% neq 0 (
 )
 
 echo 启动应用程序...
-python app.py
+python -u app_qt.py
 
