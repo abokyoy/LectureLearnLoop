@@ -75,6 +75,9 @@ class RichTextEditor(QTextEdit):
         self._images = {}
         self._enable_image_context = enable_image_context
 
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.document().setDocumentMargin(4)    
+
         # Add logging method for debugging
         self.log = lambda msg: self.parent().log(msg) if self.parent() and hasattr(self.parent(), 'log') else print(msg)
 
@@ -201,6 +204,17 @@ class RichTextEditor(QTextEdit):
             if img.isNull():
                 QMessageBox.warning(self, "图片错误", f"无法加载图片: {os.path.basename(image_path)}")
                 return
+            
+            # Scale image to fit editor width while preserving aspect ratio
+            max_width = self.viewport().width() - 10  # Account for margins/padding
+            if img.width() > max_width:
+                img = img.scaled(
+                    max_width,
+                    img.height() * max_width // img.width(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+            
             # Register as resource with a unique name
             self._image_counter += 1
             name = f"image_{self._image_counter}"
@@ -220,6 +234,16 @@ class RichTextEditor(QTextEdit):
             if qimg.isNull():
                 QMessageBox.warning(self, "图片错误", "无法插入空图片")
                 return
+            
+            # Scale image to fit editor width while preserving aspect ratio
+            max_width = self.viewport().width() - 10  # Account for margins/padding
+            if qimg.width() > max_width:
+                qimg = qimg.scaled(
+                    max_width,
+                    qimg.height() * max_width // qimg.width(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation
+                )
             # Register as resource with a unique name
             self._image_counter += 1
             name = f"image_{self._image_counter}"
