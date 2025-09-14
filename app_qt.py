@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QRadioButton,
     QTextBrowser,
+    QScrollArea,
 )
 from PySide6.QtGui import (
     QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor,
@@ -259,7 +260,25 @@ class RichTextEditor(QTextEdit):
             QMessageBox.critical(self, "插入图片失败", str(e))
 
     def contextMenuEvent(self, event):
+        self.log("[右键菜单] 用户右键点击了文本编辑器")
         menu = self.createStandardContextMenu()
+        
+        # Add deep learning option if text is selected
+        cursor = self.textCursor()
+        has_selection = cursor.hasSelection()
+        self.log(f"[右键菜单] 是否有选中文本: {has_selection}")
+        
+        if has_selection:
+            selected_text = cursor.selectedText()
+            self.log(f"[右键菜单] 选中文本长度: {len(selected_text)}")
+            menu.addSeparator()
+            deep_learn_action = QAction("继续深入学习", self)
+            deep_learn_action.triggered.connect(self._on_deep_learning_requested)
+            menu.addAction(deep_learn_action)
+            self.log("[右键菜单] 已添加'继续深入学习'菜单项")
+        else:
+            self.log("[右键菜单] 没有选中文本，不显示'继续深入学习'选项")
+        
         if self._enable_image_context:
             menu.addSeparator()
             act = QAction("插入本地图片到摘要…", self)
@@ -269,7 +288,56 @@ class RichTextEditor(QTextEdit):
                     self.insert_image_from_path(path)
             act.triggered.connect(_pick_and_insert)
             menu.addAction(act)
+            self.log("[右键菜单] 已添加'插入本地图片'菜单项")
+        
+        self.log("[右键菜单] 显示右键菜单")
         menu.exec(event.globalPos())
+    
+    def _on_deep_learning_requested(self):
+        """Handle deep learning request for selected text"""
+        self.log("[深入学习] 用户点击了'继续深入学习'菜单项")
+        
+        selected_text = self.textCursor().selectedText()
+        self.log(f"[深入学习] 选中的文本长度: {len(selected_text)}")
+        self.log(f"[深入学习] 选中的文本内容: {selected_text[:100]}..." if len(selected_text) > 100 else f"[深入学习] 选中的文本内容: {selected_text}")
+        
+        if not selected_text.strip():
+            self.log("[深入学习] 错误: 没有选中任何文本")
+            return
+            
+        # Find the main application window by traversing up the widget hierarchy
+        main_window = self._find_main_window()
+        self.log(f"[深入学习] 找到的主窗口类型: {type(main_window).__name__ if main_window else 'None'}")
+        
+        if not main_window or not hasattr(main_window, 'open_chatbot_panel'):
+            self.log("[深入学习] 错误: 无法找到具有 open_chatbot_panel 方法的主窗口")
+            return
+            
+        # Get cursor position to know where to insert summary later
+        cursor = self.textCursor()
+        insert_position = cursor.selectionEnd()
+        self.log(f"[深入学习] 插入位置: {insert_position}")
+        
+        try:
+            self.log("[深入学习] 正在调用主窗口的 open_chatbot_panel 方法...")
+            main_window.open_chatbot_panel(selected_text, insert_position)
+            self.log("[深入学习] 成功调用 open_chatbot_panel 方法")
+        except Exception as e:
+            self.log(f"[深入学习] 调用 open_chatbot_panel 时发生错误: {e}")
+            import traceback
+            self.log(f"[深入学习] 错误堆栈: {traceback.format_exc()}")
+    
+    def _find_main_window(self):
+        """Find the main application window by traversing up the widget hierarchy"""
+        widget = self
+        while widget:
+            self.log(f"[深入学习] 检查widget: {type(widget).__name__}")
+            if hasattr(widget, 'open_chatbot_panel'):
+                self.log(f"[深入学习] 找到具有 open_chatbot_panel 方法的widget: {type(widget).__name__}")
+                return widget
+            widget = widget.parent()
+        self.log("[深入学习] 未找到具有 open_chatbot_panel 方法的widget")
+        return None
 
     def export_markdown_with_images(self, attachments_dir: str) -> tuple[str, dict]:
         """
@@ -407,6 +475,654 @@ class MarkdownHighlighter(QSyntaxHighlighter):
                 self.setFormat(m.capturedStart(), m.capturedLength(), fmt)
 
 
+class ChatbotPanel(QDialog):
+    """Chatbot panel for deep learning conversations"""
+    
+    def __init__(self, selected_text: str, insert_position: int, config: dict, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("AI深入学习助手")
+        self.resize(900, 700)
+        self.selected_text = selected_text
+        self.insert_position = insert_position
+        self.config = config
+        self.conversation_history = []
+        self.conversation_id = self._generate_conversation_id()
+        
+        # Setup UI
+        self._setup_ui()
+        
+        # Start initial conversation with LLM
+        self._start_initial_conversation()
+    
+    def _generate_conversation_id(self):
+        """Generate unique conversation ID"""
+        from datetime import datetime
+        return datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Toolbar with history and controls
+        toolbar_layout = QHBoxLayout()
+        
+        self.history_button = QPushButton("历史对话")
+        self.history_button.clicked.connect(self._show_history)
+        toolbar_layout.addWidget(self.history_button)
+        
+        self.new_chat_button = QPushButton("新对话")
+        self.new_chat_button.clicked.connect(self._start_new_conversation)
+        toolbar_layout.addWidget(self.new_chat_button)
+        
+        toolbar_layout.addStretch()
+        
+        self.conversation_label = QLabel(f"对话ID: {self.conversation_id}")
+        self.conversation_label.setStyleSheet("color: #666; font-size: 10px;")
+        toolbar_layout.addWidget(self.conversation_label)
+        
+        layout.addLayout(toolbar_layout)
+        
+        # Chat area (now takes full space)
+        chat_group = QGroupBox("AI深入学习对话")
+        chat_layout = QVBoxLayout(chat_group)
+        
+        # Scrollable chat area
+        self.chat_scroll = QScrollArea()
+        self.chat_widget = QWidget()
+        self.chat_layout = QVBoxLayout(self.chat_widget)
+        self.chat_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.chat_scroll.setWidget(self.chat_widget)
+        self.chat_scroll.setWidgetResizable(True)
+        chat_layout.addWidget(self.chat_scroll)
+        
+        # Input area
+        input_layout = QHBoxLayout()
+        self.input_field = QLineEdit()
+        self.input_field.setPlaceholderText("输入您的问题...")
+        self.input_field.returnPressed.connect(self._send_message)
+        
+        self.send_button = QPushButton("发送")
+        self.send_button.clicked.connect(self._send_message)
+        
+        self.summary_button = QPushButton("总结对话")
+        self.summary_button.clicked.connect(self._summarize_conversation)
+        
+        input_layout.addWidget(self.input_field)
+        input_layout.addWidget(self.send_button)
+        input_layout.addWidget(self.summary_button)
+        
+        chat_layout.addLayout(input_layout)
+        layout.addWidget(chat_group)
+        
+        # Bottom buttons
+        bottom_layout = QHBoxLayout()
+        
+        save_button = QPushButton("保存对话")
+        save_button.clicked.connect(self._save_conversation)
+        bottom_layout.addWidget(save_button)
+        
+        bottom_layout.addStretch()
+        
+        close_button = QPushButton("关闭")
+        close_button.clicked.connect(self.close)
+        bottom_layout.addWidget(close_button)
+        
+        layout.addLayout(bottom_layout)
+    
+    def _save_conversation(self):
+        """Save conversation to history file"""
+        if not self.conversation_history:
+            return
+            
+        try:
+            import os
+            import json
+            from datetime import datetime
+            
+            # Create conversations directory if it doesn't exist
+            conversations_dir = os.path.join(os.path.dirname(__file__), "conversations")
+            os.makedirs(conversations_dir, exist_ok=True)
+            
+            # Save conversation data
+            conversation_data = {
+                "id": self.conversation_id,
+                "timestamp": datetime.now().isoformat(),
+                "selected_text": self.selected_text,
+                "conversation_history": self.conversation_history
+            }
+            
+            filename = f"conversation_{self.conversation_id}.json"
+            filepath = os.path.join(conversations_dir, filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(conversation_data, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            print(f"保存对话失败: {e}")
+    
+    def _show_history(self):
+        """Show conversation history dialog"""
+        dialog = ConversationHistoryDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_conversation = dialog.get_selected_conversation()
+            if selected_conversation:
+                self._load_conversation(selected_conversation)
+    
+    def _load_conversation(self, conversation_data):
+        """Load a conversation from history"""
+        self.conversation_history = conversation_data.get("conversation_history", [])
+        self.selected_text = conversation_data.get("selected_text", "")
+        self.conversation_id = conversation_data.get("id", self._generate_conversation_id())
+        
+        # Update UI
+        self.conversation_label.setText(f"对话ID: {self.conversation_id}")
+        
+        # Clear and reload chat display
+        for i in reversed(range(self.chat_layout.count())):
+            self.chat_layout.itemAt(i).widget().setParent(None)
+        
+        # Redisplay all messages
+        for msg in self.conversation_history:
+            if msg["role"] == "user":
+                self._add_message("用户", msg["content"], True)
+            else:
+                self._add_message("AI助手", msg["content"], False)
+    
+    def _start_new_conversation(self):
+        """Start a new conversation"""
+        # Save current conversation if it has content
+        if self.conversation_history:
+            self._save_conversation()
+        
+        # Reset conversation state
+        self.conversation_history = []
+        self.conversation_id = self._generate_conversation_id()
+        self.conversation_label.setText(f"对话ID: {self.conversation_id}")
+        
+        # Clear chat display
+        for i in reversed(range(self.chat_layout.count())):
+            self.chat_layout.itemAt(i).widget().setParent(None)
+        
+        # Start new conversation with selected text
+        if self.selected_text.strip():
+            self._start_initial_conversation()
+    
+    def _render_message_markdown(self, browser: QTextBrowser, md_text: str):
+        """Render markdown text in a QTextBrowser widget"""
+        try:
+            import markdown
+        except ImportError:
+            # Fallback to plain text if markdown not available
+            browser.setPlainText(md_text)
+            return
+        
+        try:
+            # Convert markdown to HTML
+            html = markdown.markdown(md_text or "", extensions=["fenced_code", "tables", "nl2br"])
+            
+            # Add CSS styling to match the app theme
+            styled_html = f"""
+            <style>
+                body {{
+                    font-family: '微软雅黑', sans-serif;
+                    font-size: 12px;
+                    line-height: 1.6;
+                    color: #333;
+                    margin: 8px;
+                }}
+                h1, h2, h3, h4, h5, h6 {{
+                    color: #2c3e50;
+                    margin-top: 1em;
+                    margin-bottom: 0.5em;
+                }}
+                code {{
+                    background-color: #f4f4f4;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                    font-family: 'Consolas', 'Monaco', monospace;
+                }}
+                pre {{
+                    background-color: #f8f8f8;
+                    border: 1px solid #ddd;
+                    border-radius: 5px;
+                    padding: 10px;
+                    overflow-x: auto;
+                }}
+                blockquote {{
+                    border-left: 4px solid #ddd;
+                    margin: 0;
+                    padding-left: 16px;
+                    color: #666;
+                }}
+                table {{
+                    border-collapse: collapse;
+                    width: 100%;
+                }}
+                th, td {{
+                    border: 1px solid #ddd;
+                    padding: 8px;
+                    text-align: left;
+                }}
+                th {{
+                    background-color: #f2f2f2;
+                }}
+                ul, ol {{
+                    padding-left: 20px;
+                }}
+                li {{
+                    margin-bottom: 4px;
+                }}
+            </style>
+            <body>{html}</body>
+            """
+            
+            browser.setHtml(styled_html)
+        except Exception as e:
+            # Fallback to plain text with error message
+            browser.setPlainText(f"Markdown渲染失败: {e}\n\n原始内容:\n{md_text}")
+    
+    def _adjust_browser_height(self, browser: QTextBrowser):
+        """Adjust QTextBrowser height to fit content without scrollbars"""
+        # Get the document height
+        document = browser.document()
+        document_height = document.size().height()
+        
+        # Add some padding for margins and borders
+        padding = 20
+        new_height = int(document_height + padding)
+        
+        # Set minimum height to avoid too small widgets
+        min_height = 50
+        final_height = max(min_height, new_height)
+        
+        browser.setFixedHeight(final_height)
+    
+    def closeEvent(self, event):
+        """Save conversation when closing"""
+        self._save_conversation()
+        super().closeEvent(event)
+    
+    def _add_message(self, sender: str, message: str, is_user: bool = False):
+        """Add a message to the chat display with markdown rendering"""
+        message_widget = QWidget()
+        message_layout = QVBoxLayout(message_widget)
+        
+        # Sender label
+        sender_label = QLabel(sender)
+        sender_label.setFont(QFont("微软雅黑", 10, QFont.Weight.Bold))
+        sender_label.setStyleSheet(f"color: {'#0066cc' if is_user else '#cc6600'}")
+        
+        # Message content with markdown rendering
+        message_browser = QTextBrowser()
+        message_browser.setOpenExternalLinks(True)
+        message_browser.setReadOnly(True)
+        message_browser.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        message_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        message_browser.setStyleSheet("border: 1px solid #ccc; border-radius: 5px; padding: 5px;")
+        
+        # Render markdown content
+        self._render_message_markdown(message_browser, message)
+        
+        # Adjust height to fit content
+        self._adjust_browser_height(message_browser)
+        
+        message_layout.addWidget(sender_label)
+        message_layout.addWidget(message_browser)
+        message_layout.setContentsMargins(5, 5, 5, 10)
+        
+        self.chat_layout.addWidget(message_widget)
+        
+        # Scroll to bottom
+        QTimer.singleShot(100, lambda: self.chat_scroll.verticalScrollBar().setValue(
+            self.chat_scroll.verticalScrollBar().maximum()))
+    
+    def _start_initial_conversation(self):
+        """Start the conversation with the selected text"""
+        initial_prompt = f"""请用中文对以下内容进行深入分析和详细描述：
+
+{self.selected_text}
+
+请从以下角度进行分析：
+1. 核心概念解释
+2. 具体应用场景
+3. 相关技术原理
+4. 实际案例分析"""
+        
+        self.conversation_history.append({"role": "user", "content": initial_prompt})
+        self._add_message("用户", f"选中内容：{self.selected_text[:100]}{'...' if len(self.selected_text) > 100 else ''}", True)
+        
+        # Send to LLM
+        self._send_to_llm(initial_prompt)
+    
+    def _send_message(self):
+        """Send user message"""
+        user_message = self.input_field.text().strip()
+        if not user_message:
+            return
+        
+        self.conversation_history.append({"role": "user", "content": user_message})
+        self._add_message("用户", user_message, True)
+        self.input_field.clear()
+        
+        # Send to LLM
+        self._send_to_llm(user_message)
+    
+    def _send_to_llm(self, message: str):
+        """Send message to LLM and get response"""
+        # Start LLM worker
+        self._llm_thread = QThread(self)
+        self._llm_worker = ChatbotWorker(self.config, message, self.conversation_history)
+        self._llm_worker.moveToThread(self._llm_thread)
+        
+        self._llm_thread.started.connect(self._llm_worker.start)
+        self._llm_worker.responseReady.connect(self._on_llm_response)
+        self._llm_worker.finished.connect(self._llm_thread.quit)
+        self._llm_worker.finished.connect(lambda: setattr(self, "_llm_worker", None))
+        
+        self._llm_thread.start()
+    
+    @Slot(str)
+    def _on_llm_response(self, response: str):
+        """Handle LLM response"""
+        if response.strip():
+            self.conversation_history.append({"role": "assistant", "content": response})
+            self._add_message("AI助手", response, False)
+    
+    def _summarize_conversation(self):
+        """Summarize the conversation and insert into markdown editor"""
+        if not self.conversation_history:
+            QMessageBox.information(self, "总结对话", "没有对话内容可以总结。")
+            return
+        
+        # Create Chinese summary prompt for better Chinese output
+        conversation_text = "\n\n".join([
+            f"{msg['role']}: {msg['content']}" for msg in self.conversation_history
+        ])
+        
+        summary_prompt = f"""请用中文对以下对话进行知识点总结，要求：
+1. 使用中文回答
+2. 提取关键知识点和要点
+3. 结构化展示，使用标题和列表
+4. 突出重要概念和原理
+
+对话内容：
+{conversation_text}"""
+        
+        # Start summary worker
+        self._summary_thread = QThread(self)
+        self._summary_worker = ChatbotWorker(self.config, summary_prompt, [])
+        self._summary_worker.moveToThread(self._summary_thread)
+        
+        self._summary_thread.started.connect(self._summary_worker.start)
+        self._summary_worker.responseReady.connect(self._on_summary_ready)
+        self._summary_worker.finished.connect(self._summary_thread.quit)
+        self._summary_worker.finished.connect(lambda: setattr(self, "_summary_worker", None))
+        
+        self._summary_thread.start()
+    
+    @Slot(str)
+    def _on_summary_ready(self, summary: str):
+        """Handle summary ready and insert into parent editor"""
+        if summary.strip():
+            # Save conversation before closing
+            self._save_conversation()
+            
+            # Find main window and insert summary
+            main_window = self._find_main_window()
+            if main_window and hasattr(main_window, 'insert_summary_at_position'):
+                main_window.insert_summary_at_position(summary, self.insert_position)
+            
+            QMessageBox.information(self, "总结完成", "对话总结已插入到笔记中。")
+            self.close()
+    
+    def _find_main_window(self):
+        """Find the main application window"""
+        widget = self.parent()
+        while widget:
+            if hasattr(widget, 'insert_summary_at_position'):
+                return widget
+            widget = widget.parent()
+        return None
+
+
+class ConversationHistoryDialog(QDialog):
+    """Dialog for viewing and selecting conversation history"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("对话历史")
+        self.resize(600, 400)
+        self.selected_conversation = None
+        self._setup_ui()
+        self._load_conversations()
+    
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Search and filter
+        search_layout = QHBoxLayout()
+        search_layout.addWidget(QLabel("搜索:"))
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("输入关键词搜索对话...")
+        self.search_input.textChanged.connect(self._filter_conversations)
+        search_layout.addWidget(self.search_input)
+        layout.addLayout(search_layout)
+        
+        # Conversation list
+        self.conversation_list = QListWidget()
+        self.conversation_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+        layout.addWidget(self.conversation_list)
+        
+        # Preview area
+        preview_group = QGroupBox("对话预览")
+        preview_layout = QVBoxLayout(preview_group)
+        self.preview_text = QTextEdit()
+        self.preview_text.setReadOnly(True)
+        self.preview_text.setMaximumHeight(150)
+        preview_layout.addWidget(self.preview_text)
+        layout.addWidget(preview_group)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        delete_button = QPushButton("删除选中")
+        delete_button.clicked.connect(self._delete_selected)
+        button_layout.addWidget(delete_button)
+        
+        button_layout.addStretch()
+        
+        load_button = QPushButton("加载对话")
+        load_button.clicked.connect(self.accept)
+        button_layout.addWidget(load_button)
+        
+        cancel_button = QPushButton("取消")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect selection change
+        self.conversation_list.currentItemChanged.connect(self._on_selection_changed)
+    
+    def _load_conversations(self):
+        """Load conversation files from disk"""
+        try:
+            import os
+            import json
+            from datetime import datetime
+            
+            conversations_dir = os.path.join(os.path.dirname(__file__), "conversations")
+            if not os.path.exists(conversations_dir):
+                return
+            
+            conversations = []
+            for filename in os.listdir(conversations_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(conversations_dir, filename)
+                    try:
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            conversations.append(data)
+                    except Exception as e:
+                        print(f"加载对话文件失败 {filename}: {e}")
+            
+            # Sort by timestamp (newest first)
+            conversations.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            for conv in conversations:
+                timestamp = conv.get('timestamp', '')
+                conv_id = conv.get('id', '')
+                selected_text = conv.get('selected_text', '')[:50]
+                
+                # Format timestamp
+                try:
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    time_str = dt.strftime('%Y-%m-%d %H:%M')
+                except:
+                    time_str = timestamp[:16] if timestamp else 'Unknown'
+                
+                item_text = f"[{time_str}] {conv_id} - {selected_text}..."
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.ItemDataRole.UserRole, conv)
+                self.conversation_list.addItem(item)
+                
+        except Exception as e:
+            print(f"加载对话历史失败: {e}")
+    
+    def _filter_conversations(self):
+        """Filter conversations based on search text"""
+        search_text = self.search_input.text().lower()
+        for i in range(self.conversation_list.count()):
+            item = self.conversation_list.item(i)
+            visible = search_text in item.text().lower()
+            item.setHidden(not visible)
+    
+    def _on_selection_changed(self, current, previous):
+        """Update preview when selection changes"""
+        if current:
+            conv_data = current.data(Qt.ItemDataRole.UserRole)
+            if conv_data:
+                # Show conversation preview
+                preview_text = f"选中内容: {conv_data.get('selected_text', '')[:200]}...\n\n"
+                history = conv_data.get('conversation_history', [])
+                for i, msg in enumerate(history[:3]):  # Show first 3 messages
+                    role = '用户' if msg['role'] == 'user' else 'AI助手'
+                    content = msg['content'][:100] + '...' if len(msg['content']) > 100 else msg['content']
+                    preview_text += f"{role}: {content}\n\n"
+                if len(history) > 3:
+                    preview_text += f"... 还有 {len(history) - 3} 条消息"
+                self.preview_text.setPlainText(preview_text)
+    
+    def _on_item_double_clicked(self, item):
+        """Handle double click to load conversation"""
+        self.accept()
+    
+    def _delete_selected(self):
+        """Delete selected conversation"""
+        current_item = self.conversation_list.currentItem()
+        if not current_item:
+            return
+        
+        reply = QMessageBox.question(self, "删除对话", "确定要删除这个对话吗？")
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                conv_data = current_item.data(Qt.ItemDataRole.UserRole)
+                conv_id = conv_data.get('id', '')
+                
+                # Delete file
+                import os
+                conversations_dir = os.path.join(os.path.dirname(__file__), "conversations")
+                filename = f"conversation_{conv_id}.json"
+                filepath = os.path.join(conversations_dir, filename)
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                
+                # Remove from list
+                row = self.conversation_list.row(current_item)
+                self.conversation_list.takeItem(row)
+                
+            except Exception as e:
+                QMessageBox.warning(self, "删除失败", f"删除对话失败: {e}")
+    
+    def get_selected_conversation(self):
+        """Get the selected conversation data"""
+        current_item = self.conversation_list.currentItem()
+        if current_item:
+            return current_item.data(Qt.ItemDataRole.UserRole)
+        return None
+
+
+class ChatbotWorker(QObject):
+    """Worker for chatbot LLM interactions"""
+    responseReady = Signal(str)
+    finished = Signal()
+    
+    def __init__(self, config: dict, message: str, conversation_history: list):
+        super().__init__()
+        self.config = config
+        self.message = message
+        self.conversation_history = conversation_history
+    
+    @Slot()
+    def start(self):
+        try:
+            provider = self.config.get("llm_provider", "Ollama")
+            if provider == "Ollama":
+                response = self._call_ollama()
+            else:
+                response = self._call_gemini()
+            self.responseReady.emit(response or "抱歉，无法获取回复。")
+        except Exception as e:
+            self.responseReady.emit(f"错误：{str(e)}")
+        finally:
+            self.finished.emit()
+    
+    def _call_ollama(self) -> str:
+        url = self.config.get("ollama_api_url", "http://localhost:11434/api/generate")
+        model = self.config.get("ollama_model", "deepseek-r1:1.5b")
+        
+        try:
+            resp = requests.post(url, json={
+                "model": model,
+                "prompt": self.message,
+                "stream": False
+            }, timeout=120)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("response", "").strip()
+        except Exception as e:
+            return f"Ollama调用失败：{str(e)}"
+    
+    def _call_gemini(self) -> str:
+        api_key = self.config.get("gemini_api_key", "").strip()
+        model = self.config.get("gemini_model", "gemini-1.5-flash-002").strip()
+        
+        if not api_key:
+            return "Gemini未配置API Key"
+        
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [
+                {"parts": [{"text": self.message}]}
+            ]
+        }
+        
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=60)
+            if not resp.ok:
+                return f"Gemini调用失败：HTTP {resp.status_code}"
+            
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if candidates and "content" in candidates[0]:
+                parts = candidates[0]["content"].get("parts", [])
+                if parts and "text" in parts[0]:
+                    return parts[0]["text"].strip()
+            return "无法解析Gemini响应"
+        except Exception as e:
+            return f"Gemini请求异常：{str(e)}"
+
+
 class TranscriptionAppQt(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -420,6 +1136,7 @@ class TranscriptionAppQt(QMainWindow):
         # Load config
         self.config = load_config()
         # Auto summary tracking
+        self._summary_countdown: int | None = None  # Initialize countdown before UI setup
         self._auto_timer = QTimer(self)
         self._auto_timer.timeout.connect(self._auto_summary_tick)
         self._last_summary_len = 0
@@ -441,6 +1158,12 @@ class TranscriptionAppQt(QMainWindow):
         self._rec_worker: AudioRecorderWorker | None = None
         self._tr_thread: QThread | None = None
         self._tr_worker: TranscriberWorker | None = None
+        
+        # Chatbot panels
+        self._chatbot_panels: list[ChatbotPanel] = []
+        
+        # Restore layout
+        self._restore_layout()
     
     # ---- UI ----
     def _setup_ui(self):
@@ -474,6 +1197,18 @@ class TranscriptionAppQt(QMainWindow):
         act_save_log.triggered.connect(self.save_log)
         # View menu for showing docks
         view_menu = menubar.addMenu("视图(&V)")
+        
+        # Chatbot menu
+        chatbot_menu = view_menu.addMenu("AI深入学习")
+        act_new_chatbot = chatbot_menu.addAction("新建对话")
+        act_new_chatbot.triggered.connect(self._create_new_chatbot)
+        act_chatbot_history = chatbot_menu.addAction("对话历史")
+        act_chatbot_history.triggered.connect(self._show_chatbot_history)
+        act_show_all_chatbots = chatbot_menu.addAction("显示所有对话窗口")
+        act_show_all_chatbots.triggered.connect(self._show_all_chatbot_panels)
+        act_close_all_chatbots = chatbot_menu.addAction("关闭所有对话窗口")
+        act_close_all_chatbots.triggered.connect(self._close_all_chatbot_panels)
+        
         # App settings
         act_app_settings = settings_menu.addAction("应用设置…")
         act_app_settings.triggered.connect(self.open_settings_dialog)
@@ -603,6 +1338,18 @@ class TranscriptionAppQt(QMainWindow):
         self.setStatusBar(QStatusBar(self))
         self.status_label = QLabel("就绪")
         self.statusBar().addWidget(self.status_label)
+        # 新增：状态详情标签
+        self.state_detail_label = QLabel("")
+        self.state_detail_label.setMinimumWidth(300)  # 确保足够空间显示状态
+        self.statusBar().addWidget(self.state_detail_label)
+        # 初始化状态详情
+        self._update_state_detail()
+        # 倒计时定时器（每秒更新）
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.timeout.connect(self._update_countdown)
+        self._countdown_timer.start(1000)  # 每秒更新
+        # VU meter
+
         # VU meter
         self.vu = QProgressBar()
         self.vu.setRange(0, 100)
@@ -1038,11 +1785,46 @@ class TranscriptionAppQt(QMainWindow):
         mode = self.config.get("summary_mode", "auto")
         interval = int(self.config.get("auto_summary_interval", 300))
         if mode == "auto":
+            self._summary_countdown = interval  # 初始化倒计时
             self._auto_timer.start(max(5_000, interval * 1000))
             self._set_status(f"自动总结已开启，每 {interval}s 触发")
         else:
             self._auto_timer.stop()
             self._set_status("自动总结已关闭")
+
+
+
+
+    # 新增：更新状态详情
+    def _update_state_detail(self):
+        """更新状态栏中的详细状态（总结模式、模型、倒计时等）"""
+        parts = []
+        # 总结模式
+        mode = self.config.get("summary_mode", "auto")
+        parts.append(f"总结: {'自动' if mode == 'auto' else '手动'}")
+        # 倒计时（仅自动模式）
+        if mode == "auto" and self._summary_countdown is not None:
+            parts.append(f"{self._summary_countdown}s后自动总结")
+        # 总结模型
+        provider = self.config.get("llm_provider", "Ollama")
+        if provider == "Gemini":
+            model = self.config.get("gemini_model", "gemini-1.5-flash-002")
+        else:
+            model = self.config.get("ollama_model", "deepseek-r1:1.5b")
+        parts.append(f"模型: {model}")
+        # 设置状态详情
+        self.state_detail_label.setText(" | ".join(parts))
+
+    def _update_countdown(self):
+        """每秒更新自动总结倒计时"""
+        if self.config.get("summary_mode", "auto") == "auto" and self._summary_countdown is not None:
+            self._summary_countdown -= 1
+            if self._summary_countdown <= 0:
+                interval = int(self.config.get("auto_summary_interval", 300))
+                self._summary_countdown = interval  # 重置倒计时
+            self._update_state_detail()
+
+
 
     # ---- Layout persistence ----
     def _restore_layout(self) -> None:
@@ -1139,6 +1921,7 @@ class TranscriptionAppQt(QMainWindow):
             return
         self._last_summary_len = len(segment)
         self.log(f"自动总结触发，窗口=({win_start}->{end}) 长度={self._last_summary_len}")
+        self._summary_countdown = int(self.config.get("auto_summary_interval", 300))  # 重置倒计时
         # Record pending highlight in blue; update _auto_pos after summary completes
         self._pending_highlight = {"type": "auto", "start": win_start, "length": end - win_start}
         self._run_summarizer(segment)
@@ -1147,6 +1930,11 @@ class TranscriptionAppQt(QMainWindow):
         # Start summarizer worker
         self._sum_thread = QThread(self)
         self._sum_worker = SummarizerWorker(self.config, transcript_text, SUMMARY_PROMPT)
+
+                # 更新动态状态
+        summary_type = "手动" if transcript_text != self._collect_transcript_text(int(self.config.get("auto_summary_max_chars", 8000))) else "自动"
+        self._set_status(f"录音中…转写中…{summary_type}总结中…" if self._rec_thread and self._tr_thread else f"{summary_type}总结中…")
+        self._update_state_detail()
         self._sum_worker.moveToThread(self._sum_thread)
         self._sum_thread.started.connect(self._sum_worker.start)
         self._sum_worker.summaryReady.connect(self._on_summary_ready)
@@ -1175,6 +1963,7 @@ class TranscriptionAppQt(QMainWindow):
             self.log(f"高亮失败：{e}")
         finally:
             self._pending_highlight = None
+            self._update_state_detail()
 
     # ---- VU meter ----
     @Slot(float)
@@ -1192,6 +1981,84 @@ class TranscriptionAppQt(QMainWindow):
             if idx is not None:
                 self.selected_device_index = idx
                 self.status_label.setText(f"已选择设备: {label}")
+
+    def open_chatbot_panel(self, selected_text: str, insert_position: int):
+        """Open a new chatbot panel for deep learning"""
+        self.log(f"[聊天面板] 正在打开深入学习面板")
+        self.log(f"[聊天面板] 选中文本长度: {len(selected_text)}")
+        self.log(f"[聊天面板] 插入位置: {insert_position}")
+        
+        try:
+            self.log(f"[聊天面板] 正在创建 ChatbotPanel 实例...")
+            chatbot_panel = ChatbotPanel(selected_text, insert_position, self.config, self)
+            self.log(f"[聊天面板] ChatbotPanel 实例创建成功")
+            
+            self._chatbot_panels.append(chatbot_panel)
+            self.log(f"[聊天面板] 已将面板添加到列表，当前面板数量: {len(self._chatbot_panels)}")
+            
+            chatbot_panel.show()
+            self.log(f"[聊天面板] 成功显示深入学习面板")
+            
+        except Exception as e:
+            self.log(f"[聊天面板] 创建或显示面板时发生错误: {e}")
+            import traceback
+            self.log(f"[聊天面板] 错误堆栈: {traceback.format_exc()}")
+            QMessageBox.critical(self, "打开聊天面板失败", str(e))
+    
+    def _create_new_chatbot(self):
+        """Create a new chatbot panel from menu"""
+        from PySide6.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getMultiLineText(self, "新建对话", "请输入要讨论的内容:")
+        if ok and text.strip():
+            self.open_chatbot_panel(text.strip(), 0)
+    
+    def _show_chatbot_history(self):
+        """Show chatbot history dialog"""
+        dialog = ConversationHistoryDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_conversation = dialog.get_selected_conversation()
+            if selected_conversation:
+                # Create new chatbot panel with loaded conversation
+                selected_text = selected_conversation.get("selected_text", "")
+                chatbot_panel = ChatbotPanel(selected_text, 0, self.config, self)
+                chatbot_panel._load_conversation(selected_conversation)
+                self._chatbot_panels.append(chatbot_panel)
+                chatbot_panel.show()
+    
+    def _show_all_chatbot_panels(self):
+        """Show all chatbot panels"""
+        for panel in self._chatbot_panels:
+            if panel and not panel.isVisible():
+                panel.show()
+                panel.raise_()
+                panel.activateWindow()
+    
+    def _close_all_chatbot_panels(self):
+        """Close all chatbot panels"""
+        panels_to_close = self._chatbot_panels.copy()
+        for panel in panels_to_close:
+            if panel:
+                panel.close()
+        self._chatbot_panels.clear()
+
+    def insert_summary_at_position(self, summary: str, position: int):
+        """Insert summary text at the specified position in the summary area"""
+        try:
+            cursor = self.summary_area.textCursor()
+            cursor.setPosition(position)
+            cursor.insertText(f"\n\n## 深入学习总结\n\n{summary}\n")
+            self.summary_area.setTextCursor(cursor)
+            self.summary_area.scrollToBottom()
+            self.log(f"已插入深入学习总结，长度: {len(summary)}")
+        except Exception as e:
+            self.log(f"插入总结失败: {e}")
+            # Fallback: append to end
+            try:
+                self.summary_area.moveCursor(QTextCursor.MoveOperation.End)
+                self.summary_area.insertPlainText(f"\n\n## 深入学习总结\n\n{summary}\n")
+                self.summary_area.scrollToBottom()
+            except Exception as e2:
+                self.log(f"备用插入方法也失败: {e2}")
 
 
 # ===== Settings Dialog =====
