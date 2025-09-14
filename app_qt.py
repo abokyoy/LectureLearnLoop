@@ -441,6 +441,7 @@ class TranscriptionAppQt(QMainWindow):
         self._rec_worker: AudioRecorderWorker | None = None
         self._tr_thread: QThread | None = None
         self._tr_worker: TranscriberWorker | None = None
+        self._summary_countdown: int | None = None  # Tracks remaining seconds for auto summary
     
     # ---- UI ----
     def _setup_ui(self):
@@ -603,6 +604,18 @@ class TranscriptionAppQt(QMainWindow):
         self.setStatusBar(QStatusBar(self))
         self.status_label = QLabel("就绪")
         self.statusBar().addWidget(self.status_label)
+        # 新增：状态详情标签
+        self.state_detail_label = QLabel("")
+        self.state_detail_label.setMinimumWidth(300)  # 确保足够空间显示状态
+        self.statusBar().addWidget(self.state_detail_label)
+        # 初始化状态详情
+        self._update_state_detail()
+        # 倒计时定时器（每秒更新）
+        self._countdown_timer = QTimer(self)
+        self._countdown_timer.timeout.connect(self._update_countdown)
+        self._countdown_timer.start(1000)  # 每秒更新
+        # VU meter
+
         # VU meter
         self.vu = QProgressBar()
         self.vu.setRange(0, 100)
@@ -1038,11 +1051,46 @@ class TranscriptionAppQt(QMainWindow):
         mode = self.config.get("summary_mode", "auto")
         interval = int(self.config.get("auto_summary_interval", 300))
         if mode == "auto":
+            self._summary_countdown = interval  # 初始化倒计时
             self._auto_timer.start(max(5_000, interval * 1000))
             self._set_status(f"自动总结已开启，每 {interval}s 触发")
         else:
             self._auto_timer.stop()
             self._set_status("自动总结已关闭")
+
+
+
+
+    # 新增：更新状态详情
+    def _update_state_detail(self):
+        """更新状态栏中的详细状态（总结模式、模型、倒计时等）"""
+        parts = []
+        # 总结模式
+        mode = self.config.get("summary_mode", "auto")
+        parts.append(f"总结: {'自动' if mode == 'auto' else '手动'}")
+        # 倒计时（仅自动模式）
+        if mode == "auto" and self._summary_countdown is not None:
+            parts.append(f"{self._summary_countdown}s后自动总结")
+        # 总结模型
+        provider = self.config.get("llm_provider", "Ollama")
+        if provider == "Gemini":
+            model = self.config.get("gemini_model", "gemini-1.5-flash-002")
+        else:
+            model = self.config.get("ollama_model", "deepseek-r1:1.5b")
+        parts.append(f"模型: {model}")
+        # 设置状态详情
+        self.state_detail_label.setText(" | ".join(parts))
+
+    def _update_countdown(self):
+        """每秒更新自动总结倒计时"""
+        if self.config.get("summary_mode", "auto") == "auto" and self._summary_countdown is not None:
+            self._summary_countdown -= 1
+            if self._summary_countdown <= 0:
+                interval = int(self.config.get("auto_summary_interval", 300))
+                self._summary_countdown = interval  # 重置倒计时
+            self._update_state_detail()
+
+
 
     # ---- Layout persistence ----
     def _restore_layout(self) -> None:
@@ -1139,6 +1187,7 @@ class TranscriptionAppQt(QMainWindow):
             return
         self._last_summary_len = len(segment)
         self.log(f"自动总结触发，窗口=({win_start}->{end}) 长度={self._last_summary_len}")
+        self._summary_countdown = int(self.config.get("auto_summary_interval", 300))  # 重置倒计时
         # Record pending highlight in blue; update _auto_pos after summary completes
         self._pending_highlight = {"type": "auto", "start": win_start, "length": end - win_start}
         self._run_summarizer(segment)
@@ -1147,6 +1196,11 @@ class TranscriptionAppQt(QMainWindow):
         # Start summarizer worker
         self._sum_thread = QThread(self)
         self._sum_worker = SummarizerWorker(self.config, transcript_text, SUMMARY_PROMPT)
+
+                # 更新动态状态
+        summary_type = "手动" if transcript_text != self._collect_transcript_text(int(self.config.get("auto_summary_max_chars", 8000))) else "自动"
+        self._set_status(f"录音中…转写中…{summary_type}总结中…" if self._rec_thread and self._tr_thread else f"{summary_type}总结中…")
+        self._update_state_detail()
         self._sum_worker.moveToThread(self._sum_thread)
         self._sum_thread.started.connect(self._sum_worker.start)
         self._sum_worker.summaryReady.connect(self._on_summary_ready)
@@ -1175,6 +1229,7 @@ class TranscriptionAppQt(QMainWindow):
             self.log(f"高亮失败：{e}")
         finally:
             self._pending_highlight = None
+            self._update_state_detail()
 
     # ---- VU meter ----
     @Slot(float)
