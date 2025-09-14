@@ -1,8 +1,11 @@
 # 忽略虚拟环境目录
 env/
 __pycache__/
+attachments/
 # 忽略录音片段目录
 recorded_audio_segments/
 transcription_results.txt
 summary_results.txt
 transcription.txt
+测试.md
+测试.md

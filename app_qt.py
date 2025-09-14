@@ -26,12 +26,14 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QRadioButton,
+    QTextBrowser,
 )
 from PySide6.QtGui import (
     QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor,
-    QTextCharFormat, QPalette, QPixmap, QPainter, QPen, QBrush, QAction
+    QTextCharFormat, QPalette, QPixmap, QPainter, QPen, QBrush, QAction,
+    QSyntaxHighlighter
 )
-from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint, QByteArray
+from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint, QByteArray, QRegularExpression
 
 import queue
 import re
@@ -45,6 +47,10 @@ import whisper
 from config import load_config, save_config, SUMMARY_PROMPT
 import requests
 
+try:
+    import markdown  # pip install markdown
+except Exception:
+    markdown = None
 
 class RichTextEditor(QTextEdit):
     """
@@ -304,6 +310,79 @@ class RichTextEditor(QTextEdit):
             self.insertPlainText(md_text[last_end:])
 
 
+class MarkdownHighlighter(QSyntaxHighlighter):
+    """Lightweight Markdown syntax highlighter for QTextDocument."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self._rules: list[tuple[QRegularExpression, QTextCharFormat]] = []
+
+        # Headings
+        for level, size, weight in (
+            (1, 18, QFont.Weight.Bold),
+            (2, 16, QFont.Weight.DemiBold),
+            (3, 14, QFont.Weight.DemiBold),
+            (4, 13, QFont.Weight.Normal),
+        ):
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(weight)
+            fmt.setForeground(QColor("#2b6cb0"))
+            pattern = QRegularExpression(r"^\s{0,3}" + ("#" * level) + r"\s.*$")
+            self._rules.append((pattern, fmt))
+
+        # Bold **text**
+        fmt_b = QTextCharFormat(); fmt_b.setFontWeight(QFont.Weight.Bold)
+        self._rules.append((QRegularExpression(r"\*\*[^\n]+?\*\*"), fmt_b))
+        # Italic *text*
+        fmt_i = QTextCharFormat(); fmt_i.setFontItalic(True)
+        self._rules.append((QRegularExpression(r"(?<!\*)\*[^\n]+?\*(?!\*)"), fmt_i))
+        # Inline code `code`
+        fmt_code = QTextCharFormat(); fmt_code.setForeground(QColor("#d19a66"))
+        fmt_code.setFontFamily("Consolas")
+        self._rules.append((QRegularExpression(r"`[^\n`]+`"), fmt_code))
+        # Code block ```
+        self._codeblock_start = QRegularExpression(r"^\s*```.*$")
+        self._codeblock_end = QRegularExpression(r"^\s*```\s*$")
+        self._codeblock_fmt = QTextCharFormat(); self._codeblock_fmt.setForeground(QColor("#a371f7"))
+        self._codeblock_fmt.setFontFamily("Consolas")
+        # Blockquote
+        fmt_q = QTextCharFormat(); fmt_q.setForeground(QColor("#6a737d"))
+        self._rules.append((QRegularExpression(r"^\s*>.*$"), fmt_q))
+        # Lists - / * / + / 1.
+        fmt_list = QTextCharFormat(); fmt_list.setForeground(QColor("#2f855a"))
+        self._rules.append((QRegularExpression(r"^\s*([-*+]\s+).*$"), fmt_list))
+        self._rules.append((QRegularExpression(r"^\s*(\d+)\.(\s+).*$"), fmt_list))
+        # Links [text](url)
+        fmt_link = QTextCharFormat(); fmt_link.setForeground(QColor("#0366d6"))
+        self._rules.append((QRegularExpression(r"\[[^\]]+\]\([^\)]+\)"), fmt_link))
+        # HR ---
+        fmt_hr = QTextCharFormat(); fmt_hr.setForeground(QColor("#999"))
+        self._rules.append((QRegularExpression(r"^\s*([-*_]){3,}\s*$"), fmt_hr))
+
+    def highlightBlock(self, text: str) -> None:
+        # Code block handling (multi-line)
+        in_block = (self.previousBlockState() == 1)
+        if in_block:
+            self.setFormat(0, len(text), self._codeblock_fmt)
+            if self._codeblock_end.match(text).hasMatch():
+                self.setCurrentBlockState(0)
+            else:
+                self.setCurrentBlockState(1)
+            return
+        else:
+            if self._codeblock_start.match(text).hasMatch():
+                self.setFormat(0, len(text), self._codeblock_fmt)
+                self.setCurrentBlockState(1)
+                return
+            self.setCurrentBlockState(0)
+
+        # Single-line rules
+        for pattern, fmt in self._rules:
+            it = pattern.globalMatch(text)
+            while it.hasNext():
+                m = it.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), fmt)
+
+
 class TranscriptionAppQt(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -433,6 +512,12 @@ class TranscriptionAppQt(QMainWindow):
         self.summary_area = RichTextEditor(on_change=self._on_editor_changed, enable_image_context=True)
         self.summary_area.setFont(QFont("微软雅黑", 12))
         summary_layout.addWidget(self.summary_area)
+        # Apply markdown syntax highlighting to summary editor
+        try:
+            self._summary_highlighter = MarkdownHighlighter(self.summary_area.document())
+        except Exception:
+            self._summary_highlighter = None
+
         self.summary_dock.setWidget(summary_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.summary_dock)
 
@@ -455,6 +540,30 @@ class TranscriptionAppQt(QMainWindow):
         trans_layout.addWidget(self.transcription_area)
         self.transcription_dock.setWidget(trans_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.transcription_dock)
+
+        # Markdown Preview dock (live HTML preview)
+        self.preview_dock = QDockWidget("Markdown 预览", self)
+        self.preview_dock.setObjectName("MarkdownPreviewDock")
+        self.preview_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        self.preview_view = QTextBrowser(self.preview_dock)
+        self.preview_view.setOpenExternalLinks(True)
+        # As a fallback, set a search path so relative images might resolve
+        try:
+            if self.attachments_dir:
+                self.preview_view.setSearchPaths([self.attachments_dir])
+        except Exception:
+            pass
+        self.preview_dock.setWidget(self.preview_view)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.preview_dock)
+        try:
+            # Keep preview updated
+            self.summary_area.textChanged.connect(self._update_md_preview)
+        except Exception:
+            pass
 
         # Default vertical stacking: Controls -> Summary -> Transcription
         try:
@@ -497,6 +606,11 @@ class TranscriptionAppQt(QMainWindow):
 
         # Restore previous layout (geometry + dock state) if available
         self._restore_layout()
+        # Initial preview render
+        try:
+            self._update_md_preview()
+        except Exception:
+            pass
 
     # ---- File operations ----
     def set_current_document(self, md_path: str) -> None:
@@ -528,7 +642,12 @@ class TranscriptionAppQt(QMainWindow):
         self.attachments_dir = None
         self.status_label.setText("新建文档")
         self._auto_pos = 0
+        # Reset manual highlight ranges when opening a new document
         self._manual_highlight_ranges = []
+        try:
+            self._update_md_preview()
+        except Exception:
+            pass
 
     def file_open(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "打开 Markdown", os.getcwd(), "Markdown (*.md)")
@@ -563,6 +682,10 @@ class TranscriptionAppQt(QMainWindow):
                 self._auto_pos = self.transcription_area.text_length()
             except Exception:
                 self._auto_pos = 0
+            try:
+                self._update_md_preview()
+            except Exception:
+                pass
         except Exception as e:
             QMessageBox.critical(self, "打开失败", str(e))
 
@@ -686,6 +809,52 @@ class TranscriptionAppQt(QMainWindow):
             self.transcription_area.insertPlainText(text + " ")
             self.transcription_area.reset_current_format_to_default()
             self.transcription_area.scrollToBottom()
+
+    def _update_md_preview(self) -> None:
+        """Render current summary markdown (with images) to the right-side preview."""
+        try:
+            # Prefer exporting markdown with embedded images serialized to attachments
+            if self.attachments_dir:
+                md_text, _ = self.summary_area.export_markdown_with_images(self.attachments_dir)
+            else:
+                md_text = self.summary_area.toPlainText()
+        except Exception:
+            md_text = self.summary_area.toPlainText()
+
+        # Convert Obsidian image placeholders ![[file.png]] to absolute file URLs for QTextBrowser
+        try:
+            import re as _re, os as _os
+            from PySide6.QtCore import QUrl as _QUrl
+            def _repl(m):
+                fname = m.group(1)
+                if self.attachments_dir:
+                    p = _os.path.join(self.attachments_dir, fname)
+                    return f"![{fname}]({_QUrl.fromLocalFile(p).toString()})"
+                return f"![{fname}]({fname})"
+            md_text = _re.sub(r"!\[\[(.*?)\]\]", _repl, md_text or "")
+        except Exception:
+            pass
+
+        if not markdown:
+            # Fallback: show raw text with a hint
+            esc = (md_text or "").replace("&", "&amp;").replace("<", "&lt;")
+            self.preview_view.setHtml("<p style='color:#a00'>未安装 markdown 库。请运行: <code>pip install markdown</code></p><pre>" + esc + "</pre>")
+            return
+
+        # Set search path for relative resources
+        try:
+            if self.attachments_dir:
+                self.preview_view.setSearchPaths([self.attachments_dir])
+        except Exception:
+            pass
+
+        try:
+            html = markdown.markdown(md_text or "", extensions=["fenced_code", "tables"])
+            self.preview_view.setHtml(html)
+        except Exception as e:
+            esc = (md_text or "").replace("&", "&amp;").replace("<", "&lt;")
+            self.preview_view.setHtml(f"<p style='color:#a00'>Markdown 解析失败: {e}</p><pre>" + esc + "</pre>")
+
 
     def _flush_transcription_queue(self) -> None:
         """Drain the queue and append to the transcription area efficiently."""
