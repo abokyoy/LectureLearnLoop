@@ -508,10 +508,30 @@ class TranscriptionAppQt(QMainWindow):
         summary_layout = QVBoxLayout(summary_panel)
         lbl_summary = QLabel("笔记总结")
         lbl_summary.setFont(QFont("微软雅黑", 12, QFont.Weight.Bold))
-        summary_layout.addWidget(lbl_summary)
+        # Header row with title and mode toggle
+        header = QWidget(summary_panel)
+        header_lay = QHBoxLayout(header)
+        header_lay.setContentsMargins(0, 0, 0, 0)
+        header_lay.addWidget(lbl_summary)
+        header_lay.addStretch(1)
+        self.btn_toggle_summary_mode = QPushButton("预览")  # click to switch to preview mode
+        self.btn_toggle_summary_mode.setToolTip("切换为预览模式 (不影响底层内容更新)")
+        self.btn_toggle_summary_mode.clicked.connect(self._toggle_summary_mode)
+        header_lay.addWidget(self.btn_toggle_summary_mode)
+        summary_layout.addWidget(header)
         self.summary_area = RichTextEditor(on_change=self._on_editor_changed, enable_image_context=True)
         self.summary_area.setFont(QFont("微软雅黑", 12))
         summary_layout.addWidget(self.summary_area)
+        # In-panel Markdown preview (hidden by default)
+        self.summary_preview = QTextBrowser(summary_panel)
+        self.summary_preview.setOpenExternalLinks(True)
+        # Match editor font in preview for consistent size
+        try:
+            self.summary_preview.setFont(self.summary_area.font())
+        except Exception:
+            pass
+        self.summary_preview.hide()
+        summary_layout.addWidget(self.summary_preview)
         # Apply markdown syntax highlighting to summary editor
         try:
             self._summary_highlighter = MarkdownHighlighter(self.summary_area.document())
@@ -541,26 +561,8 @@ class TranscriptionAppQt(QMainWindow):
         self.transcription_dock.setWidget(trans_panel)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.transcription_dock)
 
-        # Markdown Preview dock (live HTML preview)
-        self.preview_dock = QDockWidget("Markdown 预览", self)
-        self.preview_dock.setObjectName("MarkdownPreviewDock")
-        self.preview_dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetMovable
-            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
-            | QDockWidget.DockWidgetFeature.DockWidgetClosable
-        )
-        self.preview_view = QTextBrowser(self.preview_dock)
-        self.preview_view.setOpenExternalLinks(True)
-        # As a fallback, set a search path so relative images might resolve
+        # Keep preview updated when editing
         try:
-            if self.attachments_dir:
-                self.preview_view.setSearchPaths([self.attachments_dir])
-        except Exception:
-            pass
-        self.preview_dock.setWidget(self.preview_view)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.preview_dock)
-        try:
-            # Keep preview updated
             self.summary_area.textChanged.connect(self._update_md_preview)
         except Exception:
             pass
@@ -810,8 +812,33 @@ class TranscriptionAppQt(QMainWindow):
             self.transcription_area.reset_current_format_to_default()
             self.transcription_area.scrollToBottom()
 
+    def _toggle_summary_mode(self):
+        """Toggle between edit and preview modes for the summary panel (Obsidian-like)."""
+        try:
+            if self.summary_preview.isVisible():
+                # Switch to edit mode
+                ratio = self._get_view_center_ratio(self.summary_preview)
+                self.summary_preview.hide()
+                self.summary_area.show()
+                self.btn_toggle_summary_mode.setText("预览")
+                self.btn_toggle_summary_mode.setToolTip("切换为预览模式 (不影响底层内容更新)")
+                # Apply center alignment
+                self._scroll_to_center_ratio(self.summary_area, ratio)
+            else:
+                # Switch to preview mode
+                self._update_md_preview()
+                ratio = self._get_view_center_ratio(self.summary_area)
+                self.summary_area.hide()
+                self.summary_preview.show()
+                self.btn_toggle_summary_mode.setText("编辑")
+                self.btn_toggle_summary_mode.setToolTip("切换为编辑模式 (不影响底层内容更新)")
+                # Apply center alignment
+                self._scroll_to_center_ratio(self.summary_preview, ratio)
+        except Exception:
+            pass
+
     def _update_md_preview(self) -> None:
-        """Render current summary markdown (with images) to the right-side preview."""
+        """Render current summary markdown (with images) to the in-panel preview."""
         try:
             # Prefer exporting markdown with embedded images serialized to attachments
             if self.attachments_dir:
@@ -838,22 +865,55 @@ class TranscriptionAppQt(QMainWindow):
         if not markdown:
             # Fallback: show raw text with a hint
             esc = (md_text or "").replace("&", "&amp;").replace("<", "&lt;")
-            self.preview_view.setHtml("<p style='color:#a00'>未安装 markdown 库。请运行: <code>pip install markdown</code></p><pre>" + esc + "</pre>")
+            self.summary_preview.setHtml("<p style='color:#a00'>未安装 markdown 库。请运行: <code>pip install markdown</code></p><pre>" + esc + "</pre>")
             return
 
         # Set search path for relative resources
         try:
             if self.attachments_dir:
-                self.preview_view.setSearchPaths([self.attachments_dir])
+                self.summary_preview.setSearchPaths([self.attachments_dir])
         except Exception:
             pass
 
         try:
             html = markdown.markdown(md_text or "", extensions=["fenced_code", "tables"])
-            self.preview_view.setHtml(html)
+            # Inject base CSS to match editor font and size
+            try:
+                f = self.summary_area.font()
+                base_css = f"<style> body {{ font-family: '{f.family()}'; font-size: {f.pointSize()}pt; }} pre, code {{ font-family: Consolas, monospace; }} </style>"
+                html = base_css + html
+            except Exception:
+                pass
+            self.summary_preview.setHtml(html)
         except Exception as e:
             esc = (md_text or "").replace("&", "&amp;").replace("<", "&lt;")
-            self.preview_view.setHtml(f"<p style='color:#a00'>Markdown 解析失败: {e}</p><pre>" + esc + "</pre>")
+            self.summary_preview.setHtml(f"<p style='color:#a00'>Markdown 解析失败: {e}</p><pre>" + esc + "</pre>")
+
+    # ---- Viewport sync helpers ----
+    def _get_view_center_ratio(self, widget: QWidget) -> float:
+        try:
+            bar = widget.verticalScrollBar()
+            if not bar:
+                return 0.0
+            maxv = max(1, bar.maximum() + bar.pageStep())
+            center = bar.value() + bar.pageStep() / 2.0
+            ratio = max(0.0, min(1.0, center / maxv))
+            return float(ratio)
+        except Exception:
+            return 0.0
+
+    def _scroll_to_center_ratio(self, widget: QWidget, ratio: float) -> None:
+        try:
+            bar = widget.verticalScrollBar()
+            if not bar:
+                return
+            maxv = bar.maximum() + bar.pageStep()
+            target_center = ratio * max(1, maxv)
+            value = int(round(target_center - bar.pageStep() / 2.0))
+            value = max(0, min(bar.maximum(), value))
+            bar.setValue(value)
+        except Exception:
+            pass
 
 
     def _flush_transcription_queue(self) -> None:
