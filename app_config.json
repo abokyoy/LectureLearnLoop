@@ -5,9 +5,11 @@
   "gemini_api_key": "AIzaSyD8wj1WlhKZ4v281Vwb4KZyW1x2jkyqG4M",
   "gemini_model": "gemini-1.5-flash-002",
   "summary_mode": "manual",
-  "auto_summary_interval": 100,
+  "auto_summary_interval": 20,
   "whisper_language": "auto",
   "auto_summary_max_chars": 8000,
   "manual_summary_max_chars": 20000,
-  "last_document_path": "D:/obsidian/具体事务/学习/大模型相关学习/【機器學習2021】機器學習任務攻略 下.md"
+  "last_document_path": "D:/obsidian/具体事务/学习/大模型相关学习/【機器學習2021】機器學習任務攻略 下.md",
+  "main_window_geometry": "AdnQywADAAAAAAD+AAAAggAABa0AAANbAAAA/gAAAKAAAAWtAAADWwAAAAAAAAAABqsAAAD+AAAAoAAABa0AAANb",
+  "main_window_state_v1": "AAAA/wAAAAH9AAAAAgAAAAAAAASaAAACf/wCAAAAAfwAAAAhAAACfwAAAH0A/////AEAAAAD+wAAABYAUwB1AG0AbQBhAHIAeQBEAG8AYwBrAQAAAAAAAAEpAAAAUgD////7AAAAGABDAG8AbgB0AHIAbwBsAHMARABvAGMAawEAAAEpAAABvQAAAbUA////+wAAACIAVAByAGEAbgBzAGMAcgBpAHAAdABpAG8AbgBEAG8AYwBrAQAAAuYAAAG0AAAAbQD///8AAAADAAAAAAAAAAD8AQAAAAH7AAAADgBMAG8AZwBEAG8AYwBrAAAAAAD/////AAAATwD///8AAAASAAACfwAAAAQAAAAEAAAACAAAAAj8AAAAAA=="
 }

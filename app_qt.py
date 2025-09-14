@@ -31,7 +31,7 @@ from PySide6.QtGui import (
     QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor,
     QTextCharFormat, QPalette, QPixmap, QPainter, QPen, QBrush, QAction
 )
-from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint
+from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint, QByteArray
 
 import queue
 import re
@@ -369,53 +369,63 @@ class TranscriptionAppQt(QMainWindow):
         act_clear_log.triggered.connect(self.clear_log)
         act_save_log = log_menu.addAction("保存日志…")
         act_save_log.triggered.connect(self.save_log)
+        # View menu for showing docks
+        view_menu = menubar.addMenu("视图(&V)")
         # App settings
         act_app_settings = settings_menu.addAction("应用设置…")
         act_app_settings.triggered.connect(self.open_settings_dialog)
         self.setMenuBar(menubar)
 
+        # Minimal central widget (docks hold all panels)
         central = QWidget(self)
         self.setCentralWidget(central)
-        root_layout = QVBoxLayout(central)
+        _ = QVBoxLayout(central)
 
-        # Top buttons
-        btn_row = QHBoxLayout()
+        # Controls dock (top buttons)
+        self.controls_dock = QDockWidget("控制面板", self)
+        self.controls_dock.setObjectName("ControlsDock")
+        self.controls_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        controls_panel = QWidget(self.controls_dock)
+        controls_layout = QHBoxLayout(controls_panel)
         self.btn_start = QPushButton("开始录制")
         self.btn_start.setToolTip("开始音频录制并实时转写")
         self.btn_start.clicked.connect(self._on_start_clicked)
-        btn_row.addWidget(self.btn_start)
+        controls_layout.addWidget(self.btn_start)
 
         self.btn_stop = QPushButton("停止录制")
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self._on_stop_clicked)
-        btn_row.addWidget(self.btn_stop)
+        controls_layout.addWidget(self.btn_stop)
 
         self.btn_save = QPushButton("保存笔记")
         self.btn_save.clicked.connect(self._on_save_clicked)
-        btn_row.addWidget(self.btn_save)
+        controls_layout.addWidget(self.btn_save)
 
         self.btn_summary = QPushButton("手动总结")
         self.btn_summary.clicked.connect(self._on_summarize_clicked)
-        btn_row.addWidget(self.btn_summary)
+        controls_layout.addWidget(self.btn_summary)
 
-        # Screenshot button next to manual summary
         self.btn_screenshot = QPushButton("截图笔记")
         self.btn_screenshot.setToolTip("截图并插入到上方摘要")
         self.btn_screenshot.clicked.connect(self._on_screenshot_note_clicked)
-        btn_row.addWidget(self.btn_screenshot)
-        
-        btn_row.addStretch()
+        controls_layout.addWidget(self.btn_screenshot)
+        controls_layout.addStretch(1)
+        self.controls_dock.setWidget(controls_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.controls_dock)
 
-        # 移除顶部“插入图片到摘要…”按钮，改为在摘要编辑器右键菜单中提供
-
-        root_layout.addLayout(btn_row)
-
-        # Splitter with two editors
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        root_layout.addWidget(splitter)
-
-        # Summary panel
-        summary_panel = QWidget()
+        # Summary dock
+        self.summary_dock = QDockWidget("笔记总结", self)
+        self.summary_dock.setObjectName("SummaryDock")
+        self.summary_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        summary_panel = QWidget(self.summary_dock)
         summary_layout = QVBoxLayout(summary_panel)
         lbl_summary = QLabel("笔记总结")
         lbl_summary.setFont(QFont("微软雅黑", 12, QFont.Weight.Bold))
@@ -423,10 +433,18 @@ class TranscriptionAppQt(QMainWindow):
         self.summary_area = RichTextEditor(on_change=self._on_editor_changed, enable_image_context=True)
         self.summary_area.setFont(QFont("微软雅黑", 12))
         summary_layout.addWidget(self.summary_area)
-        splitter.addWidget(summary_panel)
+        self.summary_dock.setWidget(summary_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.summary_dock)
 
-        # Transcription panel
-        trans_panel = QWidget()
+        # Transcription dock
+        self.transcription_dock = QDockWidget("实时语音转文字", self)
+        self.transcription_dock.setObjectName("TranscriptionDock")
+        self.transcription_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
+        trans_panel = QWidget(self.transcription_dock)
         trans_layout = QVBoxLayout(trans_panel)
         lbl_trans = QLabel("实时语音转文字")
         lbl_trans.setFont(QFont("微软雅黑", 10))
@@ -435,9 +453,16 @@ class TranscriptionAppQt(QMainWindow):
         self.transcription_area.setReadOnly(True)
         self.transcription_area.setFont(QFont("微软雅黑", 10))
         trans_layout.addWidget(self.transcription_area)
-        splitter.addWidget(trans_panel)
+        self.transcription_dock.setWidget(trans_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.transcription_dock)
 
-        splitter.setSizes([450, 250])
+        # Default vertical stacking: Controls -> Summary -> Transcription
+        try:
+            self.setDockNestingEnabled(True)
+            self.splitDockWidget(self.controls_dock, self.summary_dock, Qt.Orientation.Vertical)
+            self.splitDockWidget(self.summary_dock, self.transcription_dock, Qt.Orientation.Vertical)
+        except Exception:
+            pass
 
         # Status bar
         self.setStatusBar(QStatusBar(self))
@@ -459,6 +484,19 @@ class TranscriptionAppQt(QMainWindow):
         self.log_dock.setWidget(self.log_view)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.log_dock)
         self.log_dock.hide()
+
+        # View menu actions to re-show docks
+        act_show_controls = view_menu.addAction("显示控制面板")
+        act_show_controls.triggered.connect(self.controls_dock.show)
+        act_show_summary = view_menu.addAction("显示笔记总结面板")
+        act_show_summary.triggered.connect(self.summary_dock.show)
+        act_show_trans = view_menu.addAction("显示转写面板")
+        act_show_trans.triggered.connect(self.transcription_dock.show)
+        act_show_log_view = view_menu.addAction("显示日志面板")
+        act_show_log_view.triggered.connect(self.show_log_dock)
+
+        # Restore previous layout (geometry + dock state) if available
+        self._restore_layout()
 
     # ---- File operations ----
     def set_current_document(self, md_path: str) -> None:
@@ -685,6 +723,11 @@ class TranscriptionAppQt(QMainWindow):
 
     # ---- Close handling ----
     def closeEvent(self, event):
+        # Save layout before exiting
+        try:
+            self._save_layout()
+        except Exception:
+            pass
         # Attempt to stop threads
         try:
             if self._rec_worker:
@@ -747,6 +790,36 @@ class TranscriptionAppQt(QMainWindow):
         else:
             self._auto_timer.stop()
             self._set_status("自动总结已关闭")
+
+    # ---- Layout persistence ----
+    def _restore_layout(self) -> None:
+        """Restore window geometry and dock layout from config if present."""
+        try:
+            geo_b64 = self.config.get("main_window_geometry")
+            state_b64 = self.config.get("main_window_state_v1")
+            if geo_b64:
+                try:
+                    self.restoreGeometry(QByteArray.fromBase64(geo_b64.encode("ascii")))
+                except Exception:
+                    pass
+            if state_b64:
+                try:
+                    self.restoreState(QByteArray.fromBase64(state_b64.encode("ascii")), 1)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _save_layout(self) -> None:
+        """Save window geometry and dock layout into config (base64 strings)."""
+        try:
+            geo_b64 = bytes(self.saveGeometry().toBase64()).decode("ascii")
+            state_b64 = bytes(self.saveState(1).toBase64()).decode("ascii")
+            self.config["main_window_geometry"] = geo_b64
+            self.config["main_window_state_v1"] = state_b64
+            save_config(self.config)
+        except Exception:
+            pass
 
     # ---- Summarization ----
     def _collect_transcript_text(self, max_chars: int) -> str:
