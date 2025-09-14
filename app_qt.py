@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QTextBrowser,
     QScrollArea,
+    QSizePolicy,
 )
 from PySide6.QtGui import (
     QFont, QTextCursor, QImage, QTextImageFormat, QTextDocument, QColor,
@@ -429,13 +430,13 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         self._rules.append((QRegularExpression(r"(?<!\*)\*[^\n]+?\*(?!\*)"), fmt_i))
         # Inline code `code`
         fmt_code = QTextCharFormat(); fmt_code.setForeground(QColor("#d19a66"))
-        fmt_code.setFontFamily("Consolas")
+        fmt_code.setFont(QFont("Consolas", 10))
         self._rules.append((QRegularExpression(r"`[^\n`]+`"), fmt_code))
         # Code block ```
         self._codeblock_start = QRegularExpression(r"^\s*```.*$")
         self._codeblock_end = QRegularExpression(r"^\s*```\s*$")
         self._codeblock_fmt = QTextCharFormat(); self._codeblock_fmt.setForeground(QColor("#a371f7"))
-        self._codeblock_fmt.setFontFamily("Consolas")
+        self._codeblock_fmt.setFont(QFont("Consolas", 10))
         # Blockquote
         fmt_q = QTextCharFormat(); fmt_q.setForeground(QColor("#6a737d"))
         self._rules.append((QRegularExpression(r"^\s*>.*$"), fmt_q))
@@ -491,13 +492,27 @@ class ChatbotPanel(QDialog):
         # Setup UI
         self._setup_ui()
         
-        # Start initial conversation with LLM
-        self._start_initial_conversation()
+        # Initialize message widgets list
+        self._message_widgets = []
+        
+        # Only start initial conversation if not loading from history
+        self._loading_from_history = False
+        if not self._loading_from_history:
+            self._start_initial_conversation()
     
     def _generate_conversation_id(self):
         """Generate unique conversation ID"""
         from datetime import datetime
         return datetime.now().strftime('%Y%m%d_%H%M%S')
+    
+    def resizeEvent(self, event):
+        """Handle window resize to update message widths"""
+        super().resizeEvent(event)
+        # Update all message dimensions when window is resized
+        if hasattr(self, '_message_widgets'):
+            for message_widget, browser in self._message_widgets:
+                if message_widget and browser:
+                    QTimer.singleShot(10, lambda w=message_widget, b=browser: self._set_message_dimensions(w, b))
     
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -609,6 +624,7 @@ class ChatbotPanel(QDialog):
     
     def _load_conversation(self, conversation_data):
         """Load a conversation from history"""
+        self._loading_from_history = True
         self.conversation_history = conversation_data.get("conversation_history", [])
         self.selected_text = conversation_data.get("selected_text", "")
         self.conversation_id = conversation_data.get("id", self._generate_conversation_id())
@@ -716,25 +732,52 @@ class ChatbotPanel(QDialog):
             """
             
             browser.setHtml(styled_html)
+            
+            # Force document to adjust size immediately
+            browser.document().adjustSize()
         except Exception as e:
             # Fallback to plain text with error message
             browser.setPlainText(f"Markdown渲染失败: {e}\n\n原始内容:\n{md_text}")
     
-    def _adjust_browser_height(self, browser: QTextBrowser):
-        """Adjust QTextBrowser height to fit content without scrollbars"""
-        # Get the document height
-        document = browser.document()
-        document_height = document.size().height()
-        
-        # Add some padding for margins and borders
-        padding = 20
-        new_height = int(document_height + padding)
-        
-        # Set minimum height to avoid too small widgets
-        min_height = 50
-        final_height = max(min_height, new_height)
-        
-        browser.setFixedHeight(final_height)
+    
+    def _set_message_dimensions(self, message_widget: QWidget, browser: QTextBrowser):
+        """Set dimensions for message widget and browser with responsive width"""
+        try:
+            if not browser or not message_widget:
+                return
+            
+            # Get available width from scroll area
+            available_width = self.chat_scroll.viewport().width()
+            if available_width <= 0:
+                available_width = 800  # fallback width
+            
+            # Remove fixed width constraints and use expanding policy
+            message_widget.setMaximumWidth(16777215)
+            message_widget.setMinimumWidth(0)
+            browser.setMaximumWidth(16777215)
+            browser.setMinimumWidth(0)
+            
+            # Set size policies for responsive behavior
+            message_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            browser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            
+            # Set document text width to available width minus margins
+            # Use a much larger maximum width to allow full expansion
+            text_width = max(available_width - 50, 1200)  # Minimum 1200px width, or available width
+            browser.document().setTextWidth(text_width)
+            browser.document().adjustSize()
+            
+            # Calculate and set height based on content
+            content_height = browser.document().size().height()
+            browser_height = max(60, int(content_height + 20))  # 20px padding
+            browser.setFixedHeight(browser_height)
+            
+            # Force layout update
+            message_widget.updateGeometry()
+            self.chat_widget.updateGeometry()
+            
+        except Exception as e:
+            print(f"Dimension setting error: {e}")
     
     def closeEvent(self, event):
         """Save conversation when closing"""
@@ -759,17 +802,25 @@ class ChatbotPanel(QDialog):
         message_browser.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         message_browser.setStyleSheet("border: 1px solid #ccc; border-radius: 5px; padding: 5px;")
         
-        # Render markdown content
-        self._render_message_markdown(message_browser, message)
+        # Set line wrap mode
+        message_browser.setLineWrapMode(QTextBrowser.LineWrapMode.WidgetWidth)
         
-        # Adjust height to fit content
-        self._adjust_browser_height(message_browser)
+        # Render markdown content first
+        self._render_message_markdown(message_browser, message)
         
         message_layout.addWidget(sender_label)
         message_layout.addWidget(message_browser)
         message_layout.setContentsMargins(5, 5, 5, 10)
         
         self.chat_layout.addWidget(message_widget)
+        
+        # Store message widgets for resize handling
+        if not hasattr(self, '_message_widgets'):
+            self._message_widgets = []
+        self._message_widgets.append((message_widget, message_browser))
+        
+        # Force immediate width and height adjustment
+        QTimer.singleShot(1, lambda: self._set_message_dimensions(message_widget, message_browser))
         
         # Scroll to bottom
         QTimer.singleShot(100, lambda: self.chat_scroll.verticalScrollBar().setValue(
@@ -2021,6 +2072,7 @@ class TranscriptionAppQt(QMainWindow):
                 # Create new chatbot panel with loaded conversation
                 selected_text = selected_conversation.get("selected_text", "")
                 chatbot_panel = ChatbotPanel(selected_text, 0, self.config, self)
+                chatbot_panel._loading_from_history = True
                 chatbot_panel._load_conversation(selected_conversation)
                 self._chatbot_panels.append(chatbot_panel)
                 chatbot_panel.show()
