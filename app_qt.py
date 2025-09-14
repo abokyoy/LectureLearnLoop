@@ -48,6 +48,7 @@ import torch
 import whisper
 from config import load_config, save_config, SUMMARY_PROMPT
 import requests
+from practice_panel import PracticePanel
 
 try:
     import markdown  # pip install markdown
@@ -276,7 +277,11 @@ class RichTextEditor(QTextEdit):
             deep_learn_action = QAction("继续深入学习", self)
             deep_learn_action.triggered.connect(self._on_deep_learning_requested)
             menu.addAction(deep_learn_action)
-            self.log("[右键菜单] 已添加'继续深入学习'菜单项")
+            
+            practice_action = QAction("开启练习", self)
+            practice_action.triggered.connect(self._on_practice_requested)
+            menu.addAction(practice_action)
+            self.log("[右键菜单] 已添加'继续深入学习'和'开启练习'菜单项")
         else:
             self.log("[右键菜单] 没有选中文本，不显示'继续深入学习'选项")
         
@@ -316,17 +321,48 @@ class RichTextEditor(QTextEdit):
             
         # Get cursor position to know where to insert summary later
         cursor = self.textCursor()
-        insert_position = cursor.selectionEnd()
-        self.log(f"[深入学习] 插入位置: {insert_position}")
+        cursor_position = cursor.position()
+        self.log(f"[深入学习] 光标位置: {cursor_position}")
         
         try:
             self.log("[深入学习] 正在调用主窗口的 open_chatbot_panel 方法...")
-            main_window.open_chatbot_panel(selected_text, insert_position)
-            self.log("[深入学习] 成功调用 open_chatbot_panel 方法")
+            main_window.open_chatbot_panel(selected_text, cursor_position)
+            self.log("[深入学习] 已成功打开聊天机器人面板")
         except Exception as e:
             self.log(f"[深入学习] 调用 open_chatbot_panel 时发生错误: {e}")
             import traceback
             self.log(f"[深入学习] 错误堆栈: {traceback.format_exc()}")
+    
+    def _on_practice_requested(self):
+        """Handle practice request for selected text"""
+        self.log("[练习模式] 用户点击了'开启练习'菜单项")
+        
+        selected_text = self.textCursor().selectedText()
+        self.log(f"[练习模式] 选中的文本长度: {len(selected_text)}")
+        
+        if not selected_text.strip():
+            self.log("[练习模式] 错误: 没有选中任何文本")
+            return
+            
+        # Find the main application window
+        main_window = self._find_main_window()
+        self.log(f"[练习模式] 找到的主窗口类型: {type(main_window).__name__ if main_window else 'None'}")
+        
+        if not main_window or not hasattr(main_window, 'open_practice_panel'):
+            self.log("[练习模式] 错误: 无法找到具有 open_practice_panel 方法的主窗口")
+            return
+            
+        cursor_position = self.textCursor().position()
+        self.log(f"[练习模式] 光标位置: {cursor_position}")
+        
+        try:
+            self.log("[练习模式] 正在调用主窗口的 open_practice_panel 方法...")
+            main_window.open_practice_panel(selected_text, cursor_position)
+            self.log("[练习模式] 已成功打开练习面板")
+        except Exception as e:
+            self.log(f"[练习模式] 调用 open_practice_panel 时发生错误: {e}")
+            import traceback
+            self.log(f"[练习模式] 错误堆栈: {traceback.format_exc()}")
     
     def _find_main_window(self):
         """Find the main application window by traversing up the widget hierarchy"""
@@ -2040,22 +2076,35 @@ class TranscriptionAppQt(QMainWindow):
         self.log(f"[聊天面板] 插入位置: {insert_position}")
         
         try:
-            self.log(f"[聊天面板] 正在创建 ChatbotPanel 实例...")
             chatbot_panel = ChatbotPanel(selected_text, insert_position, self.config, self)
-            self.log(f"[聊天面板] ChatbotPanel 实例创建成功")
-            
             self._chatbot_panels.append(chatbot_panel)
-            self.log(f"[聊天面板] 已将面板添加到列表，当前面板数量: {len(self._chatbot_panels)}")
-            
             chatbot_panel.show()
-            self.log(f"[聊天面板] 成功显示深入学习面板")
-            
+            self.log("[聊天面板] 深入学习面板已成功创建并显示")
         except Exception as e:
-            self.log(f"[聊天面板] 创建或显示面板时发生错误: {e}")
+            self.log(f"[聊天面板] 创建深入学习面板时发生错误: {e}")
             import traceback
             self.log(f"[聊天面板] 错误堆栈: {traceback.format_exc()}")
-            QMessageBox.critical(self, "打开聊天面板失败", str(e))
-    
+            QMessageBox.critical(self, "错误", f"无法打开深入学习面板: {e}")
+
+    def open_practice_panel(self, selected_text: str, insert_position: int):
+        """Open a new practice panel for generating and solving practice questions"""
+        self.log(f"[练习面板] 正在打开练习面板")
+        self.log(f"[练习面板] 选中文本长度: {len(selected_text)}")
+        self.log(f"[练习面板] 插入位置: {insert_position}")
+        
+        try:
+            practice_panel = PracticePanel(selected_text, insert_position, self.config, self)
+            if not hasattr(self, '_practice_panels'):
+                self._practice_panels = []
+            self._practice_panels.append(practice_panel)
+            practice_panel.show()
+            self.log("[练习面板] 练习面板已成功创建并显示")
+        except Exception as e:
+            self.log(f"[练习面板] 创建练习面板时发生错误: {e}")
+            import traceback
+            self.log(f"[练习面板] 错误堆栈: {traceback.format_exc()}")
+            QMessageBox.critical(self, "错误", f"无法打开练习面板: {e}")
+
     def _create_new_chatbot(self):
         """Create a new chatbot panel from menu"""
         from PySide6.QtWidgets import QInputDialog
