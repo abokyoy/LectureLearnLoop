@@ -17,6 +17,7 @@ from datetime import datetime
 try:
     from enhanced_practice_integration import EnhancedPracticeProcessor
     from llm_logger import log_gemini_call, log_ollama_call
+    from error_import_dialog import ErrorImportDialog
     KNOWLEDGE_INTEGRATION_AVAILABLE = True
 except ImportError:
     KNOWLEDGE_INTEGRATION_AVAILABLE = False
@@ -34,8 +35,11 @@ class PracticeWorker(QObject):
         super().__init__()
         self.config = config
         self.selected_text = ""
+        self.questions_text = ""
         self.user_answers = ""
         self.mode = "generate"  # "generate" or "evaluate"
+        # 防重入：标识当前是否有任务在运行，避免重复触发
+        self.running = False
     
     def update_config(self, new_config: dict):
         """动态更新配置"""
@@ -46,17 +50,23 @@ class PracticeWorker(QObject):
         """Generate practice questions based on selected text"""
         self.selected_text = selected_text
         self.mode = "generate"
-        self.start_work()
+        # 不在此处直接启动，改由 QThread.started 统一触发，避免双重调用
     
-    def evaluate_answers(self, selected_text: str, user_answers: str):
+    def evaluate_answers(self, selected_text: str, questions_text: str, user_answers: str):
         """Evaluate user answers and provide explanations"""
         self.selected_text = selected_text
+        self.questions_text = questions_text
         self.user_answers = user_answers
         self.mode = "evaluate"
-        self.start_work()
+        # 不在此处直接启动，改由 QThread.started 统一触发，避免双重调用
     
     def start_work(self):
         """Start the work based on mode"""
+        if self.running:
+            # 已有任务在执行，忽略重复启动
+            self.status.emit("任务进行中，已忽略重复启动")
+            return
+        self.running = True
         try:
             if self.mode == "generate":
                 self._generate_practice_questions()
@@ -65,6 +75,7 @@ class PracticeWorker(QObject):
         except Exception as e:
             self.status.emit(f"处理错误: {e}")
         finally:
+            self.running = False
             self.finished.emit()
     
     def _generate_practice_questions(self):
@@ -354,72 +365,43 @@ class PracticeWorker(QObject):
         """Evaluate user answers using LLM"""
         self.status.emit("正在评估答案...")
         
-        prompt = f"""请作为专业技术面试官，对以下用户答案进行评估和讲解。
+        # 评估时要求先罗列原题，再给出用户答案与判定、分析，便于后续错题切片精确抓取原题
+        prompt = f"""请作为专业技术面试官，对以下“技术练习答卷”进行严格的逐题评估，并务必按规定的结构化纯文本格式输出。
 
-原始学习内容：
+【背景学习内容】
 {self.selected_text}
 
-用户的答题内容：
+【试卷原题（严格按原文逐条列出）】
+{self.questions_text}
+
+【用户作答（按题号或题目前缀对应）】
 {self.user_answers}
 
-请按以下格式提供纯文本评估报告：
+【重要的输出要求——务必完全遵守】
+1) 全部输出使用纯文本，不要使用任何HTML或Markdown标记。
+2) 严格按“逐题报告”结构列出每一道题，且每题包含以下小节，并使用这些准确的小节标题：
+   - 原题：
+   - 用户答案：
+   - 判定：（只能是“正确”/“错误”/“无法判断”三选一）
+   - 分析与要点：
+3) 每题之间使用一行仅包含“----”的分隔线。
+4) 在所有题目之后，给出“整体评价”与“知识点掌握程度评估”，掌握程度评估需包含：
+   基础概念理解、实际应用能力、深度思考能力、综合运用能力 四项，各用1-5分表示，并给出一句简要说明。
 
-**重要要求：**
-1. 使用纯文本格式输出，不要使用HTML或Markdown格式
-2. 结构清晰，使用适当的分隔线和空行
-3. 包含以下部分：
-   - 整体评价
-   - 逐题分析
-   - 知识点掌握程度评估（1-5分制）
-   - 改进建议和学习重点
-
-请生成纯文本格式的评估报告："""
-
-        # 根据用户配置选择模型
-        llm_provider = self.config.get("llm_provider", "DeepSeek")
-        print(f"[模型选择] 练习评估使用的LLM提供商: {llm_provider}")
+【请输出】
+先输出逐题报告（每题按照“原题/用户答案/判定/分析与要点”的顺序完整展示原题文本），然后输出整体评价与知识点掌握程度评估。
+"""
         
-        if llm_provider == "DeepSeek":
-            print(f"[模型选择] 使用DeepSeek模型: {self.config.get('deepseek_model', 'deepseek-chat')}")
-            try:
-                self._evaluate_with_deepseek(prompt)
-            except Exception as deepseek_error:
-                print(f"[LLM调用] DeepSeek API失败: {deepseek_error}")
-                print(f"[模型选择] DeepSeek失败，尝试Gemini作为备用")
-                try:
-                    self._evaluate_with_gemini(prompt)
-                except Exception as gemini_error:
-                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
-                    print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
-                    try:
-                        self._evaluate_with_ollama(prompt)
-                    except Exception as ollama_error:
-                        print(f"[LLM调用] Ollama API也失败: {ollama_error}")
-                        self.status.emit(f"所有API都失败了: DeepSeek({deepseek_error}), Gemini({gemini_error}), Ollama({ollama_error})")
-        elif llm_provider == "Gemini":
-            print(f"[模型选择] 使用Gemini模型: {self.config.get('gemini_model', 'gemini-1.5-flash-latest')}")
+        try:
+            self._evaluate_with_ollama(prompt)
+        except Exception as ollama_error:
+            print(f"[LLM调用] Ollama API失败: {ollama_error}")
+            print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
             try:
                 self._evaluate_with_gemini(prompt)
             except Exception as gemini_error:
-                print(f"[LLM调用] Gemini API失败: {gemini_error}")
-                print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
-                try:
-                    self._evaluate_with_ollama(prompt)
-                except Exception as ollama_error:
-                    print(f"[LLM调用] Ollama API也失败: {ollama_error}")
-                    self.status.emit(f"所有API都失败了: Gemini({gemini_error}), Ollama({ollama_error})")
-        else:
-            print(f"[模型选择] 使用Ollama模型: {self.config.get('ollama_model', 'deepseek-coder')}")
-            try:
-                self._evaluate_with_ollama(prompt)
-            except Exception as ollama_error:
-                print(f"[LLM调用] Ollama API失败: {ollama_error}")
-                print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
-                try:
-                    self._evaluate_with_gemini(prompt)
-                except Exception as gemini_error:
-                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
-                    self.status.emit(f"所有API都失败了: Ollama({ollama_error}), Gemini({gemini_error})")
+                print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                self.status.emit(f"所有API都失败了: Ollama({ollama_error}), Gemini({gemini_error})")
     
     def _evaluate_with_deepseek(self, prompt: str):
         """使用DeepSeek API评估答案"""
@@ -801,7 +783,9 @@ class PracticePanel(QWidget):
         self.current_questions = ""
         self.current_answers = ""
         self.user_answers_before_evaluation = ""
-        
+        # Track submit button mode to avoid redundant disconnect warnings
+        self._submit_mode = None
+
         # Setup UI
         self._setup_ui()
         
@@ -837,6 +821,12 @@ class PracticePanel(QWidget):
         self.submit_btn.clicked.connect(self._submit_practice)
         self.submit_btn.setEnabled(False)
         toolbar_layout.addWidget(self.submit_btn)
+
+        # 错题入库按钮（仅当有评估结果时可用）
+        self.error_import_btn = QPushButton("错题入库")
+        self.error_import_btn.setEnabled(False)
+        self.error_import_btn.clicked.connect(self._open_error_import_dialog)
+        toolbar_layout.addWidget(self.error_import_btn)
         
         toolbar_layout.addStretch()
         
@@ -959,14 +949,29 @@ class PracticePanel(QWidget):
     
     def _generate_questions(self):
         """Generate practice questions"""
+        # 确保读取到最新配置（例如模型切换）
+        try:
+            with open('app_config.json', 'r', encoding='utf-8') as f:
+                latest = json.load(f)
+                self.update_config(latest)
+        except Exception as e:
+            print(f"[配置] 加载最新配置失败，继续使用内存配置: {e}")
         self.status_label.setText("正在生成练习题目...")
         self.progress_bar.show()
         self.regenerate_btn.setEnabled(False)
         self.submit_btn.setEnabled(False)
         
-        if not self.worker_thread.isRunning():
-            self.worker.generate_questions(self.selected_text)
-            self.worker_thread.start()
+        # 防重复启动：若线程或任务仍在运行，直接忽略
+        if self.worker_thread.isRunning() or getattr(self.worker, "running", False):
+            self.status_label.setText("已有任务在进行中，请稍候…")
+            return
+        # 额外打印当前提供商用于排查
+        try:
+            print(f"[模型选择] 生成题目前的提供商: {self.config.get('llm_provider')}")
+        except Exception:
+            pass
+        self.worker.generate_questions(self.selected_text)
+        self.worker_thread.start()
     
     def _regenerate_questions(self):
         """Regenerate practice questions"""
@@ -982,6 +987,53 @@ class PracticePanel(QWidget):
         # Save user answers before evaluation
         self.user_answers_before_evaluation = user_answers
         self._start_evaluation(user_answers)
+
+    def _save_only(self):
+        """只保存当前评估结果与练习内容，不触发二次评估"""
+        # 直接走保存与知识库集成
+        self._save_practice_with_evaluation()
+        self.status_label.setText("评估结果已保存")
+
+    def _disconnect_submit(self):
+        """安全断开 submit 按钮所有已知连接，避免重复绑定"""
+        # 仅按当前模式断开，减少 PySide 的 RuntimeWarning 噪音
+        mode = getattr(self, "_submit_mode", None)
+        if mode == "evaluate":
+            try:
+                self.submit_btn.clicked.disconnect(self._submit_practice)
+            except Exception:
+                pass
+        elif mode == "save":
+            try:
+                self.submit_btn.clicked.disconnect(self._save_only)
+            except Exception:
+                pass
+        else:
+            # 未知状态时尽力断开两者
+            try:
+                self.submit_btn.clicked.disconnect(self._submit_practice)
+            except Exception:
+                pass
+            try:
+                self.submit_btn.clicked.disconnect(self._save_only)
+            except Exception:
+                pass
+
+    def _set_submit_mode_evaluate(self):
+        """设置提交按钮为‘提交练习’模式：触发一次评估"""
+        self._disconnect_submit()
+        self.submit_btn.setText("提交练习")
+        self.submit_btn.setEnabled(True)
+        self.submit_btn.clicked.connect(self._submit_practice)
+        self._submit_mode = "evaluate"
+
+    def _set_submit_mode_save(self):
+        """设置提交按钮为‘保存评估结果’模式：仅保存不评估"""
+        self._disconnect_submit()
+        self.submit_btn.setText("保存评估结果")
+        self.submit_btn.setEnabled(True)
+        self.submit_btn.clicked.connect(self._save_only)
+        self._submit_mode = "save"
     
     def _extract_answers_from_html(self):
         """Extract answers from HTML form using JavaScript"""
@@ -1053,15 +1105,25 @@ class PracticePanel(QWidget):
     
     def _start_evaluation(self, user_answers):
         """Start the evaluation process"""
-        
+        # 确保读取到最新配置（例如模型切换）
+        try:
+            with open('app_config.json', 'r', encoding='utf-8') as f:
+                latest = json.load(f)
+                self.update_config(latest)
+        except Exception as e:
+            print(f"[配置] 加载最新配置失败，继续使用内存配置: {e}")
         self.status_label.setText("正在评估答案...")
         self.progress_bar.show()
         self.regenerate_btn.setEnabled(False)
         self.submit_btn.setEnabled(False)
         
-        if not self.worker_thread.isRunning():
-            self.worker.evaluate_answers(self.selected_text, user_answers)
-            self.worker_thread.start()
+        # 防重复启动：若线程或任务仍在运行，直接忽略
+        if self.worker_thread.isRunning() or getattr(self.worker, "running", False):
+            self.status_label.setText("已有任务在进行中，请稍候…")
+            return
+        # 传入完整题目文本，评估报告可按“原题/用户答案/判定/分析”结构输出
+        self.worker.evaluate_answers(self.selected_text, self.current_questions, user_answers)
+        self.worker_thread.start()
     
     def _on_questions_ready(self, questions: str):
         """Handle generated questions"""
@@ -1072,6 +1134,8 @@ class PracticePanel(QWidget):
         
         # Display formatted plain text questions
         self.practice_display.setPlainText(formatted_text)
+        # 题目就绪 -> 按钮应处于“提交评估”模式
+        self._set_submit_mode_evaluate()
         
     def _format_plain_text(self, content: str) -> str:
         """Format plain text content for better readability"""
@@ -1173,10 +1237,16 @@ class PracticePanel(QWidget):
         
         # Add option to start new practice
         self.regenerate_btn.setText("开始新练习")
+        # 评估完成 -> 提交按钮切换为“保存评估结果”且仅保存不二次评估
         self.submit_btn.setText("保存评估结果")
+        self._set_submit_mode_save()
         
         # Auto-save the evaluation result
         self._save_practice_with_evaluation()
+
+        # 启用“错题入库”按钮
+        if hasattr(self, 'error_import_btn'):
+            self.error_import_btn.setEnabled(True)
         
     def _save_practice(self):
         """Save practice content"""
@@ -1243,42 +1313,43 @@ class PracticePanel(QWidget):
         self.progress_bar.hide()
         self.regenerate_btn.setEnabled(True)
         self.submit_btn.setEnabled(True)
-        
-        if self.worker_thread.isRunning():
-            self.worker_thread.quit()
-            self.worker_thread.wait()
-    
+        # 确保线程在本次任务结束后正确停止，避免后续操作被 isRunning() 阻塞
+        try:
+            if self.worker_thread.isRunning():
+                self.worker_thread.quit()
+                self.worker_thread.wait()
+        except Exception:
+            pass
+
     def _integrate_with_knowledge_system(self):
         """Integrate practice results with knowledge management system"""
         if not KNOWLEDGE_INTEGRATION_AVAILABLE:
             return
-        
+
         try:
-            # Get practice content and evaluation
-            practice_content = f"学习内容: {self.selected_text}\n\n题目和答案:\n{self.user_answers_before_evaluation}"
+            # Compose practice content including full questions and user answers for robust slicing
+            questions_block = (self.current_questions or "").strip()
+            practice_content = (
+                f"学习内容: {self.selected_text}\n\n"
+                f"题目:\n{questions_block}\n\n"
+                f"题目和答案:\n{self.user_answers_before_evaluation}"
+            )
             evaluation_result = self.evaluation_result
-            
+
             if not practice_content or not evaluation_result:
                 return
-            
-            # Initialize enhanced practice processor
+
             processor = EnhancedPracticeProcessor(self.config)
-            
-            # Process the completed practice with error question slicing and knowledge point matching
             result = processor.process_practice_results(
                 practice_content, evaluation_result, self.selected_text, self.parent()
             )
-            
-            if result["success"]:
-                # Update status with integration results
+
+            if result.get("success"):
                 message = f"练习已保存并集成到知识库 - {result['message']}"
                 self.status_label.setText(message)
-                
-                # Log the integration results
                 print(f"知识管理集成成功: {result}")
             else:
-                print(f"知识管理集成失败: {result['message']}")
-                
+                print(f"知识管理集成失败: {result.get('message')}")
         except Exception as e:
             print(f"知识管理集成异常: {e}")
     
@@ -1312,7 +1383,11 @@ class PracticePanel(QWidget):
             formatted_evaluation = self._format_plain_text(self.evaluation_result)
             self.practice_display.setPlainText(formatted_evaluation)
             self.regenerate_btn.setText("开始新练习")
+            # 已评估的历史记录 -> 提交按钮应为保存模式
             self.submit_btn.setText("保存评估结果")
+            self._set_submit_mode_save()
+            if hasattr(self, 'error_import_btn'):
+                self.error_import_btn.setEnabled(True)
         elif self.current_questions:
             # Show questions in plain text format
             formatted_questions = self._format_plain_text(self.current_questions)
@@ -1321,6 +1396,7 @@ class PracticePanel(QWidget):
                 self.answer_editor.setPlainText(self.current_answers)
             self.regenerate_btn.setEnabled(True)
             self.submit_btn.setEnabled(True)
+            self._set_submit_mode_evaluate()
         else:
             # Load practice content as fallback
             practice_content = practice_data.get("practice_content", "")
@@ -1328,6 +1404,24 @@ class PracticePanel(QWidget):
             self.practice_display.setPlainText(formatted_content)
         
         self.status_label.setText(f"已加载练习: {self.practice_id}")
+
+    def _open_error_import_dialog(self):
+        """打开错题入库面板：从当前评估报告中切片并允许调整后入库"""
+        if not self.evaluation_result:
+            QMessageBox.information(self, "提示", "请先完成评估后再入库错题。")
+            return
+        # 组装用于切片的 practice_content：包含学习内容与用户答案
+        questions_block = (self.current_questions or "").strip()
+        practice_content = (
+            f"学习内容: {self.selected_text}\n\n"
+            f"题目:\n{questions_block}\n\n"
+            f"题目和答案:\n{self.user_answers_before_evaluation}"
+        )
+        try:
+            dlg = ErrorImportDialog(self.config, practice_content, self.evaluation_result, self.selected_text, self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开错题入库面板失败：{e}")
     
     def _start_new_practice(self):
         """Start a new practice session"""
@@ -1349,7 +1443,7 @@ class PracticePanel(QWidget):
         
         # Reset buttons
         self.regenerate_btn.setText("重新生成题目")
-        self.submit_btn.setText("提交练习")
+        self._set_submit_mode_evaluate()
         
         # Start new practice with selected text - questions will be generated automatically
     

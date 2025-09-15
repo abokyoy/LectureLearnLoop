@@ -1328,6 +1328,9 @@ class TranscriptionAppQt(QMainWindow):
         knowledge_menu = view_menu.addMenu("知识管理")
         act_error_review = knowledge_menu.addAction("错题复习")
         act_error_review.triggered.connect(self.open_error_question_review_panel)
+        # 新增：技术练习（从菜单打开练习面板，不自动生成题目）
+        act_practice_panel = knowledge_menu.addAction("技术练习")
+        act_practice_panel.triggered.connect(self.open_practice_panel_from_menu)
         act_show_all_chatbots = chatbot_menu.addAction("显示所有对话窗口")
         act_show_all_chatbots.triggered.connect(self._show_all_chatbot_panels)
         act_close_all_chatbots = chatbot_menu.addAction("关闭所有对话窗口")
@@ -2170,6 +2173,21 @@ class TranscriptionAppQt(QMainWindow):
             self.log(f"[练习面板] 创建练习面板时发生错误: {e}")
             import traceback
             self.log(f"[练习面板] 错误堆栈: {traceback.format_exc()}")
+            QMessageBox.critical(self, "错误", f"无法打开练习面板: {e}")
+
+    def open_practice_panel_from_menu(self):
+        """通过菜单打开技术练习面板：不依赖选中文本，也不自动生成题目"""
+        try:
+            # 传入空的 selected_text，PracticePanel 内部会避免自动生成
+            practice_panel = PracticePanel("", 0, self.config, self)
+            if not hasattr(self, '_practice_panels'):
+                self._practice_panels = []
+            self._practice_panels.append(practice_panel)
+            practice_panel.show()
+            self.log("[练习面板] 通过菜单打开练习面板（不自动生成题目）")
+        except Exception as e:
+            import traceback
+            self.log(f"[练习面板] 通过菜单打开失败: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(self, "错误", f"无法打开练习面板: {e}")
 
     def open_knowledge_extraction_panel(self, selected_text: str):
