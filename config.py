@@ -44,11 +44,14 @@ def load_config():
     import os
     
     default_config = {
-        "llm_provider": "Ollama",
+        "llm_provider": "DeepSeek",
         "ollama_model": "deepseek-r1:1.5b",
         "ollama_api_url": "http://localhost:11434/api/generate",
         "gemini_api_key": "",
         "gemini_model": "gemini-1.5-flash-002",
+        "deepseek_api_key": "",
+        "deepseek_model": "deepseek-chat",
+        "deepseek_api_url": "https://api.deepseek.com/v1/chat/completions",
         "summary_mode": "auto",
         "auto_summary_interval": 300,
         "whisper_language": "auto",

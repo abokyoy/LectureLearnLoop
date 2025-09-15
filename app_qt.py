@@ -281,7 +281,11 @@ class RichTextEditor(QTextEdit):
             practice_action = QAction("开启练习", self)
             practice_action.triggered.connect(self._on_practice_requested)
             menu.addAction(practice_action)
-            self.log("[右键菜单] 已添加'继续深入学习'和'开启练习'菜单项")
+            
+            knowledge_action = QAction("知识点提取", self)
+            knowledge_action.triggered.connect(self._on_knowledge_extraction_requested)
+            menu.addAction(knowledge_action)
+            self.log("[右键菜单] 已添加'继续深入学习'、'开启练习'和'知识点提取'菜单项")
         else:
             self.log("[右键菜单] 没有选中文本，不显示'继续深入学习'选项")
         
@@ -363,6 +367,34 @@ class RichTextEditor(QTextEdit):
             self.log(f"[练习模式] 调用 open_practice_panel 时发生错误: {e}")
             import traceback
             self.log(f"[练习模式] 错误堆栈: {traceback.format_exc()}")
+    
+    def _on_knowledge_extraction_requested(self):
+        """Handle knowledge point extraction request for selected text"""
+        self.log("[知识点提取] 用户点击了'知识点提取'菜单项")
+        
+        selected_text = self.textCursor().selectedText()
+        self.log(f"[知识点提取] 选中的文本长度: {len(selected_text)}")
+        
+        if not selected_text.strip():
+            self.log("[知识点提取] 错误: 没有选中任何文本")
+            return
+            
+        # Find the main application window
+        main_window = self._find_main_window()
+        self.log(f"[知识点提取] 找到的主窗口类型: {type(main_window).__name__ if main_window else 'None'}")
+        
+        if not main_window or not hasattr(main_window, 'open_knowledge_extraction_panel'):
+            self.log("[知识点提取] 错误: 无法找到具有 open_knowledge_extraction_panel 方法的主窗口")
+            return
+            
+        try:
+            self.log("[知识点提取] 正在调用主窗口的 open_knowledge_extraction_panel 方法...")
+            main_window.open_knowledge_extraction_panel(selected_text)
+            self.log("[知识点提取] 已成功打开知识点提取面板")
+        except Exception as e:
+            self.log(f"[知识点提取] 调用 open_knowledge_extraction_panel 时发生错误: {e}")
+            import traceback
+            self.log(f"[知识点提取] 错误堆栈: {traceback.format_exc()}")
     
     def _find_main_window(self):
         """Find the main application window by traversing up the widget hierarchy"""
@@ -1291,6 +1323,11 @@ class TranscriptionAppQt(QMainWindow):
         act_new_chatbot.triggered.connect(self._create_new_chatbot)
         act_chatbot_history = chatbot_menu.addAction("对话历史")
         act_chatbot_history.triggered.connect(self._show_chatbot_history)
+        
+        # Knowledge Management menu
+        knowledge_menu = view_menu.addMenu("知识管理")
+        act_error_review = knowledge_menu.addAction("错题复习")
+        act_error_review.triggered.connect(self.open_error_question_review_panel)
         act_show_all_chatbots = chatbot_menu.addAction("显示所有对话窗口")
         act_show_all_chatbots.triggered.connect(self._show_all_chatbot_panels)
         act_close_all_chatbots = chatbot_menu.addAction("关闭所有对话窗口")
@@ -1360,6 +1397,13 @@ class TranscriptionAppQt(QMainWindow):
         header_lay.setContentsMargins(0, 0, 0, 0)
         header_lay.addWidget(lbl_summary)
         header_lay.addStretch(1)
+        
+        # Knowledge extraction button
+        self.btn_knowledge_extract = QPushButton("知识提取")
+        self.btn_knowledge_extract.setToolTip("提取当前笔记的知识点并进行管理")
+        self.btn_knowledge_extract.clicked.connect(self._open_knowledge_management_panel)
+        header_lay.addWidget(self.btn_knowledge_extract)
+        
         self.btn_toggle_summary_mode = QPushButton("预览")  # click to switch to preview mode
         self.btn_toggle_summary_mode.setToolTip("切换为预览模式 (不影响底层内容更新)")
         self.btn_toggle_summary_mode.clicked.connect(self._toggle_summary_mode)
@@ -1860,15 +1904,38 @@ class TranscriptionAppQt(QMainWindow):
     def open_settings_dialog(self):
         dlg = SettingsDialog(self.config, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
+            old_provider = self.config.get("llm_provider", "Gemini")
             self.config = dlg.result_config()
+            new_provider = self.config.get("llm_provider", "Gemini")
+            
             if save_config(self.config):
                 self._set_status("配置已保存")
+                
+                # 如果LLM提供商发生变化，通知所有练习面板更新配置
+                if old_provider != new_provider:
+                    self.log(f"[配置更新] LLM提供商从 {old_provider} 切换到 {new_provider}")
+                    self._notify_practice_panels_config_update()
+                else:
+                    # 即使提供商没变，也要更新配置（可能是模型名称等其他配置变了）
+                    self._notify_practice_panels_config_update()
             else:
                 QMessageBox.warning(self, "配置", "无法保存配置文件")
             # Apply auto summary timer
             self._apply_auto_summary_timer()
+    
+    def _notify_practice_panels_config_update(self):
+        """通知所有打开的练习面板更新配置"""
+        if hasattr(self, '_practice_panels'):
+            for panel in self._practice_panels:
+                if panel and not panel.isHidden():
+                    try:
+                        panel.update_config(self.config)
+                        self.log(f"[配置更新] 已通知练习面板更新配置")
+                    except Exception as e:
+                        self.log(f"[配置更新] 通知练习面板失败: {e}")
 
     def _apply_auto_summary_timer(self):
+        """Apply auto summary timer settings"""
         mode = self.config.get("summary_mode", "auto")
         interval = int(self.config.get("auto_summary_interval", 300))
         if mode == "auto":
@@ -2105,12 +2172,52 @@ class TranscriptionAppQt(QMainWindow):
             self.log(f"[练习面板] 错误堆栈: {traceback.format_exc()}")
             QMessageBox.critical(self, "错误", f"无法打开练习面板: {e}")
 
+    def open_knowledge_extraction_panel(self, selected_text: str):
+        """Open knowledge point extraction panel"""
+        self.log(f"[知识点提取] 正在打开知识点提取面板")
+        self.log(f"[知识点提取] 选中文本长度: {len(selected_text)}")
+        
+        try:
+            from knowledge_point_ui import KnowledgePointExtractionPanel
+            
+            # Create and show the knowledge extraction panel
+            panel = KnowledgePointExtractionPanel(selected_text, self.config, self)
+            panel.show()
+            
+            self.log("[知识点提取] 知识点提取面板已打开")
+            
+        except Exception as e:
+            self.log(f"[知识点提取] 打开知识点提取面板时发生错误: {e}")
+            import traceback
+            self.log(f"[知识点提取] 错误堆栈: {traceback.format_exc()}")
+            QMessageBox.critical(self, "错误", f"无法打开知识点提取面板: {e}")
+
+    def open_error_question_review_panel(self):
+        """Open error question review panel"""
+        try:
+            from error_question_ui import ErrorQuestionReviewDialog
+            from knowledge_management import KnowledgeManagementSystem
+            
+            km_system = KnowledgeManagementSystem(self.config)
+            dialog = ErrorQuestionReviewDialog(km_system, self)
+            dialog.exec()
+            
+        except Exception as e:
+            self.log(f"[错题复习] 打开错题复习面板时发生错误: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开错题复习面板: {e}")
+    
     def _create_new_chatbot(self):
-        """Create a new chatbot panel from menu"""
-        from PySide6.QtWidgets import QInputDialog
-        text, ok = QInputDialog.getMultiLineText(self, "新建对话", "请输入要讨论的内容:")
-        if ok and text.strip():
-            self.open_chatbot_panel(text.strip(), 0)
+        """Create a new chatbot panel"""
+        try:
+            from chatbot_panel import ChatbotPanel
+            chatbot_panel = ChatbotPanel(self.config, parent=self)
+            self._chatbot_panels.append(chatbot_panel)
+            chatbot_panel.show()
+            chatbot_panel.raise_()
+            chatbot_panel.activateWindow()
+        except Exception as e:
+            self.log(f"[AI深入学习] 创建新对话面板时发生错误: {e}")
+            QMessageBox.critical(self, "错误", f"无法创建新对话面板: {e}")
     
     def _show_chatbot_history(self):
         """Show chatbot history dialog"""
@@ -2141,6 +2248,23 @@ class TranscriptionAppQt(QMainWindow):
             if panel:
                 panel.close()
         self._chatbot_panels.clear()
+    
+    def _open_knowledge_management_panel(self):
+        """打开知识管理面板"""
+        try:
+            # 获取当前笔记内容
+            note_content = self.summary_area.toPlainText()
+            if not note_content.strip():
+                QMessageBox.warning(self, "提示", "当前笔记内容为空，请先编写笔记内容")
+                return
+            
+            # 导入并打开知识管理面板
+            from note_knowledge_panel import open_note_knowledge_panel
+            open_note_knowledge_panel(note_content, self.config, self)
+            
+        except Exception as e:
+            self.log(f"[知识管理] 打开知识管理面板时发生错误: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开知识管理面板: {e}")
 
     def insert_summary_at_position(self, summary: str, position: int):
         """Insert summary text at the specified position in the summary area"""
@@ -2175,10 +2299,12 @@ class SettingsDialog(QDialog):
         # Provider group
         grp_provider = QGroupBox("大语言模型提供商")
         pv = QVBoxLayout(grp_provider)
-        self.rb_ollama = QRadioButton("Ollama (本地)")
+        self.rb_deepseek = QRadioButton("DeepSeek (在线)")
         self.rb_gemini = QRadioButton("Gemini (云端)")
-        pv.addWidget(self.rb_ollama)
+        self.rb_ollama = QRadioButton("Ollama (本地)")
+        pv.addWidget(self.rb_deepseek)
         pv.addWidget(self.rb_gemini)
+        pv.addWidget(self.rb_ollama)
         layout.addWidget(grp_provider)
 
         # Ollama settings
@@ -2189,6 +2315,18 @@ class SettingsDialog(QDialog):
         form_o.addRow("API URL", self.ed_ollama_url)
         form_o.addRow("模型名称", self.ed_ollama_model)
         layout.addWidget(grp_ollama)
+
+        # DeepSeek settings
+        grp_deepseek = QGroupBox("DeepSeek 设置")
+        form_d = QFormLayout(grp_deepseek)
+        self.ed_deepseek_key = QLineEdit()
+        self.ed_deepseek_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ed_deepseek_model = QLineEdit()
+        self.ed_deepseek_url = QLineEdit()
+        form_d.addRow("API Key", self.ed_deepseek_key)
+        form_d.addRow("模型名称", self.ed_deepseek_model)
+        form_d.addRow("API URL", self.ed_deepseek_url)
+        layout.addWidget(grp_deepseek)
 
         # Gemini settings
         grp_gemini = QGroupBox("Gemini 设置")
@@ -2223,13 +2361,18 @@ class SettingsDialog(QDialog):
         bb.rejected.connect(self.reject)
 
         # Load cfg values
-        prov = self._cfg.get("llm_provider", "Ollama")
-        if prov == "Gemini":
+        prov = self._cfg.get("llm_provider", "DeepSeek")
+        if prov == "DeepSeek":
+            self.rb_deepseek.setChecked(True)
+        elif prov == "Gemini":
             self.rb_gemini.setChecked(True)
         else:
             self.rb_ollama.setChecked(True)
         self.ed_ollama_url.setText(self._cfg.get("ollama_api_url", "http://localhost:11434/api/generate"))
         self.ed_ollama_model.setText(self._cfg.get("ollama_model", "deepseek-r1:1.5b"))
+        self.ed_deepseek_key.setText(self._cfg.get("deepseek_api_key", ""))
+        self.ed_deepseek_model.setText(self._cfg.get("deepseek_model", "deepseek-chat"))
+        self.ed_deepseek_url.setText(self._cfg.get("deepseek_api_url", "https://api.deepseek.com/v1/chat/completions"))
         self.ed_gemini_key.setText(self._cfg.get("gemini_api_key", ""))
         self.ed_gemini_model.setText(self._cfg.get("gemini_model", "gemini-1.5-flash-002"))
         self.cb_mode.setCurrentText(self._cfg.get("summary_mode", "auto"))
@@ -2239,16 +2382,26 @@ class SettingsDialog(QDialog):
         self.cb_language.setCurrentText(self._cfg.get("whisper_language", "auto"))
 
         # Enable/disable groups by provider
-        self.rb_ollama.toggled.connect(lambda on: grp_ollama.setEnabled(on))
+        self.rb_deepseek.toggled.connect(lambda on: grp_deepseek.setEnabled(on))
         self.rb_gemini.toggled.connect(lambda on: grp_gemini.setEnabled(on))
-        grp_ollama.setEnabled(self.rb_ollama.isChecked())
+        self.rb_ollama.toggled.connect(lambda on: grp_ollama.setEnabled(on))
+        grp_deepseek.setEnabled(self.rb_deepseek.isChecked())
         grp_gemini.setEnabled(self.rb_gemini.isChecked())
+        grp_ollama.setEnabled(self.rb_ollama.isChecked())
 
     def result_config(self) -> dict:
         cfg = dict(self._cfg)
-        cfg["llm_provider"] = "Gemini" if self.rb_gemini.isChecked() else "Ollama"
+        if self.rb_deepseek.isChecked():
+            cfg["llm_provider"] = "DeepSeek"
+        elif self.rb_gemini.isChecked():
+            cfg["llm_provider"] = "Gemini"
+        else:
+            cfg["llm_provider"] = "Ollama"
         cfg["ollama_api_url"] = self.ed_ollama_url.text().strip()
         cfg["ollama_model"] = self.ed_ollama_model.text().strip()
+        cfg["deepseek_api_key"] = self.ed_deepseek_key.text().strip()
+        cfg["deepseek_model"] = self.ed_deepseek_model.text().strip()
+        cfg["deepseek_api_url"] = self.ed_deepseek_url.text().strip()
         cfg["gemini_api_key"] = self.ed_gemini_key.text().strip()
         cfg["gemini_model"] = self.ed_gemini_model.text().strip()
         cfg["summary_mode"] = self.cb_mode.currentText()

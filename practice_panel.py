@@ -3,13 +3,24 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTextEdit,
     QScrollArea, QSplitter, QMessageBox, QProgressBar, QGroupBox,
-    QDialog, QListWidget, QListWidgetItem, QDialogButtonBox, QTextBrowser
+    QDialog, QListWidget, QListWidgetItem, QDialogButtonBox, QTextBrowser,
+    QTableWidget, QTableWidgetItem, QAbstractItemView
 )
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtGui import QFont, QTextCursor
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject
 import requests
 import json
 from datetime import datetime
+
+# Import knowledge management integration
+try:
+    from enhanced_practice_integration import EnhancedPracticeProcessor
+    from llm_logger import log_gemini_call, log_ollama_call
+    KNOWLEDGE_INTEGRATION_AVAILABLE = True
+except ImportError:
+    KNOWLEDGE_INTEGRATION_AVAILABLE = False
+    print("Knowledge management integration not available")
 
 
 class PracticeWorker(QObject):
@@ -25,6 +36,11 @@ class PracticeWorker(QObject):
         self.selected_text = ""
         self.user_answers = ""
         self.mode = "generate"  # "generate" or "evaluate"
+    
+    def update_config(self, new_config: dict):
+        """动态更新配置"""
+        self.config = new_config
+        print(f"[配置更新] PracticeWorker配置已更新，LLM提供商: {self.config.get('llm_provider', 'Gemini')}")
     
     def generate_questions(self, selected_text: str):
         """Generate practice questions based on selected text"""
@@ -55,58 +71,284 @@ class PracticeWorker(QObject):
         """Generate practice questions using LLM"""
         self.status.emit("正在生成练习题目...")
         
-        prompt = f"""请基于以下内容生成一套技术面试/笔试题目。要求：
+        prompt = f"""请基于以下内容生成一套技术面试/笔试题目。
 
-1. 生成5-8道题目，包含不同类型：选择题、简答题、编程题、案例分析题
-2. 题目要有一定难度梯度，从基础到进阶
-3. 只提供题目，不要提供答案
-4. 使用Markdown格式输出
-5. 每道题目之间留出足够的答题空间
+**重要要求：**
+1. 使用纯文本格式输出，不要使用HTML或Markdown格式
+2. 生成5-8道题目，包含不同类型：选择题、填空题、简答题、编程题、案例分析题
+3. 题目要有一定难度梯度，从基础到进阶
+4. 只提供题目，不要提供答案
+5. 每道题目之间用空行分隔
+6. 题目编号使用数字格式：1. 2. 3. 等
+7. 选择题的选项使用 A) B) C) D) 格式
+8. 为每道题目留出足够的答题空间提示
 
 基础内容：
 {self.selected_text}
 
-请生成练习题目："""
+请生成纯文本格式的练习题目："""
 
-        try:
-            # Use Gemini API
-            api_key = self.config.get("gemini_api_key", "")
-            if not api_key:
-                self.status.emit("错误: 未配置Gemini API密钥")
-                return
+        # 根据用户配置选择模型
+        llm_provider = self.config.get("llm_provider", "Gemini")
+        print(f"[模型选择] 练习面板使用的LLM提供商: {llm_provider}")
+        
+        if llm_provider == "DeepSeek":
+            print(f"[模型选择] 使用DeepSeek模型: {self.config.get('deepseek_model', 'deepseek-chat')}")
+            try:
+                self._generate_with_deepseek(prompt)
+            except Exception as deepseek_error:
+                print(f"[LLM调用] DeepSeek API失败: {deepseek_error}")
+                print(f"[模型选择] DeepSeek失败，尝试Gemini作为备用")
+                try:
+                    self._generate_with_gemini(prompt)
+                except Exception as gemini_error:
+                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
+                    try:
+                        self._generate_with_ollama(prompt)
+                    except Exception as ollama_error:
+                        print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                        self.status.emit(f"所有API都失败了: DeepSeek({deepseek_error}), Gemini({gemini_error}), Ollama({ollama_error})")
+        elif llm_provider == "Gemini":
+            print(f"[模型选择] 使用Gemini模型: {self.config.get('gemini_model', 'gemini-1.5-flash-latest')}")
+            try:
+                self._generate_with_gemini(prompt)
+            except Exception as gemini_error:
+                print(f"[LLM调用] Gemini API失败: {gemini_error}")
+                print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
+                try:
+                    self._generate_with_ollama(prompt)
+                except Exception as ollama_error:
+                    print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                    self.status.emit(f"所有API都失败了: Gemini({gemini_error}), Ollama({ollama_error})")
+        else:
+            print(f"[模型选择] 使用Ollama模型: {self.config.get('ollama_model', 'deepseek-coder')}")
+            try:
+                self._generate_with_ollama(prompt)
+            except Exception as ollama_error:
+                print(f"[LLM调用] Ollama API失败: {ollama_error}")
+                print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
+                try:
+                    self._generate_with_gemini(prompt)
+                except Exception as gemini_error:
+                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    self.status.emit(f"所有API都失败了: Ollama({ollama_error}), Gemini({gemini_error})")
+    
+    def _generate_with_deepseek(self, prompt: str):
+        """使用DeepSeek API生成练习题目"""
+        import time
+        
+        api_key = self.config.get("deepseek_api_key", "")
+        if not api_key:
+            error_msg = "错误: 未配置DeepSeek API密钥"
+            self.status.emit(error_msg)
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("generate_practice_questions", "deepseek-chat", prompt, error=error_msg)
+            raise Exception(error_msg)
+        
+        # 使用用户配置的DeepSeek模型
+        deepseek_model = self.config.get("deepseek_model", "deepseek-chat")
+        deepseek_url = self.config.get("deepseek_api_url", "https://api.deepseek.com/v1/chat/completions")
+        print(f"[模型调用] 实际调用的DeepSeek模型: {deepseek_model}")
+        
+        payload = {
+            "model": deepseek_model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "stream": False
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        print(f"[LLM调用] 开始生成练习题目")
+        print(f"[LLM调用] 输入prompt长度: {len(prompt)}")
+        print(f"[LLM调用] 输入内容: {prompt[:300]}...")
+        
+        self.status.emit(f"正在调用DeepSeek API生成题目 ({deepseek_model})...")
+        start_time = time.time()
+        response = requests.post(deepseek_url, json=payload, headers=headers, timeout=60)
+        response_time = time.time() - start_time
+        
+        print(f"[LLM调用] DeepSeek响应状态码: {response.status_code}")
+        print(f"[LLM调用] 响应时间: {response_time:.2f}秒")
+        
+        if response.status_code == 200:
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            print(f"[LLM调用] DeepSeek原始响应内容: {content[:500]}...")
             
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("generate_practice_questions", deepseek_model, prompt, content, response_time=response_time)
             
-            payload = {
-                "contents": [{
-                    "parts": [{"text": prompt}]
-                }],
-                "generationConfig": {
-                    "temperature": 0.7,
-                    "topK": 40,
-                    "topP": 0.95,
-                    "maxOutputTokens": 2048,
-                }
+            self.questionsReady.emit(content)
+            self.status.emit("题目生成完成")
+        else:
+            error_msg = f"DeepSeek API调用失败: {response.status_code} - {response.text}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("generate_practice_questions", deepseek_model, prompt, error=error_msg, response_time=response_time)
+            raise Exception(error_msg)
+
+    def _generate_with_gemini(self, prompt: str):
+        """使用Gemini API生成练习题目"""
+        import time
+        
+        api_key = self.config.get("gemini_api_key", "")
+        if not api_key:
+            error_msg = "错误: 未配置Gemini API密钥"
+            self.status.emit(error_msg)
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_gemini_call("generate_practice_questions", prompt, error=error_msg)
+            raise Exception(error_msg)
+        
+        # 使用用户配置的Gemini模型
+        gemini_model = self.config.get("gemini_model", "gemini-1.5-flash-latest")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+        print(f"[模型调用] 实际调用的Gemini模型: {gemini_model}")
+        
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.7,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 2048,
             }
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        
+        print(f"[LLM调用] 开始生成练习题目")
+        print(f"[LLM调用] 输入prompt长度: {len(prompt)}")
+        print(f"[LLM调用] 输入内容: {prompt[:300]}...")
+        
+        self.status.emit("正在调用Gemini API生成题目...")
+        start_time = time.time()
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response_time = time.time() - start_time
+        
+        print(f"[LLM调用] 题目生成API响应状态码: {response.status_code}")
+        print(f"[LLM调用] 响应时间: {response_time:.2f}秒")
+        
+        if response.status_code == 200:
+            data = response.json()
             
-            headers = {"Content-Type": "application/json"}
+            # 检查是否有错误信息
+            if "error" in data:
+                error_info = data["error"]
+                error_msg = f"Gemini API错误: {error_info.get('message', '未知错误')}"
+                if "QUOTA_EXCEEDED" in str(error_info):
+                    error_msg += " (配额已用完，请检查API使用限制)"
+                print(f"[LLM调用] {error_msg}")
+                if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                    log_gemini_call("generate_practice_questions", prompt, error=error_msg, response_time=response_time)
+                raise Exception(error_msg)
             
-            self.status.emit("正在调用Gemini API生成题目...")
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "candidates" in data and len(data["candidates"]) > 0:
-                    content = data["candidates"][0]["content"]["parts"][0]["text"]
-                    self.questionsReady.emit(content)
-                    self.status.emit("题目生成完成")
-                else:
-                    self.status.emit("API返回格式异常")
-            else:
-                self.status.emit(f"API调用失败: {response.status_code}")
+            if "candidates" in data and len(data["candidates"]) > 0:
+                content = data["candidates"][0]["content"]["parts"][0]["text"]
+                print(f"[LLM调用] 题目生成成功，内容长度: {len(content)}")
                 
-        except Exception as e:
-            self.status.emit(f"生成题目时发生错误: {e}")
+                if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                    log_gemini_call("generate_practice_questions", prompt, content, 
+                                  response_time=response_time, config=payload["generationConfig"])
+                
+                self.questionsReady.emit(content)
+                self.status.emit("题目生成完成")
+            else:
+                error_msg = f"API返回格式异常: {data}"
+                print(f"[LLM调用] {error_msg}")
+                if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                    log_gemini_call("generate_practice_questions", prompt, error=error_msg, response_time=response_time)
+                raise Exception(error_msg)
+        else:
+            error_msg = f"API调用失败: {response.status_code}, 响应: {response.text[:500]}"
+            print(f"[LLM调用] {error_msg}")
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_gemini_call("generate_practice_questions", prompt, error=error_msg, response_time=response_time)
+            raise Exception(error_msg)
+    
+    def _generate_with_ollama(self, prompt: str):
+        """使用Ollama API生成练习题目"""
+        import time
+        
+        ollama_url = self.config.get("ollama_api_url", "http://localhost:11434/api/generate")
+        model = self.config.get("ollama_model", "deepseek-coder")
+        
+        print(f"[LLM调用] 尝试使用Ollama API: {ollama_url}")
+        print(f"[LLM调用] 使用模型: {model}")
+        
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.7,
+                "top_p": 0.9
+            }
+        }
+        
+        self.status.emit(f"正在调用Ollama API生成题目 ({model})...")
+        start_time = time.time()
+        response = requests.post(ollama_url, json=payload, timeout=60)
+        response_time = time.time() - start_time
+        
+        print(f"[LLM调用] Ollama响应状态码: {response.status_code}")
+        print(f"[LLM调用] 响应时间: {response_time:.2f}秒")
+        
+        if response.status_code == 200:
+            data = response.json()
+            content = data.get("response", "")
+            print(f"[LLM调用] Ollama原始响应内容: {content[:500]}...")
+            
+            # 处理DeepSeek特有的think标签
+            content = self._filter_deepseek_think_content(content)
+            print(f"[LLM调用] 过滤think后的内容: {content[:300]}...")
+            
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("generate_practice_questions", model, prompt, content, response_time=response_time)
+            
+            self.questionsReady.emit(content)
+            self.status.emit("题目生成完成")
+        else:
+            error_msg = f"Ollama API调用失败: {response.status_code}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("generate_practice_questions", model, prompt, error=error_msg, response_time=response_time)
+            raise Exception(error_msg)
+    
+    def _filter_deepseek_think_content(self, content: str) -> str:
+        """过滤DeepSeek模型返回的think标签内容"""
+        import re
+        
+        # 特殊处理：如果内容以<think>开头，直接查找第一个</think>后的内容
+        if content.strip().startswith('<think>'):
+            think_end = content.find('</think>')
+            if think_end != -1:
+                filtered_content = content[think_end + 8:].strip()
+                print(f"[内容过滤] 检测到内容以<think>开头，直接截取</think>后的内容")
+                return filtered_content
+        
+        # DeepSeek模型会返回<think>...</think>标签，需要过滤掉
+        think_patterns = [
+            r'<think>.*?</think>',  # 标准think标签
+            r'<thinking>.*?</thinking>',  # thinking标签
+        ]
+        
+        filtered_content = content
+        for pattern in think_patterns:
+            filtered_content = re.sub(pattern, '', filtered_content, flags=re.DOTALL | re.IGNORECASE)
+        
+        # 清理多余的空行和空格
+        filtered_content = re.sub(r'\n\s*\n\s*\n', '\n\n', filtered_content)
+        filtered_content = filtered_content.strip()
+        
+        return filtered_content
     
     def _evaluate_user_answers(self):
         """Evaluate user answers using LLM"""
@@ -120,71 +362,233 @@ class PracticeWorker(QObject):
 用户的答题内容：
 {self.user_answers}
 
-请按以下格式提供评估：
+请按以下格式提供纯文本评估报告：
 
-## 答题评估报告
+**重要要求：**
+1. 使用纯文本格式输出，不要使用HTML或Markdown格式
+2. 结构清晰，使用适当的分隔线和空行
+3. 包含以下部分：
+   - 整体评价
+   - 逐题分析
+   - 知识点掌握程度评估（1-5分制）
+   - 改进建议和学习重点
 
-### 整体评价
-[对用户整体答题情况的评价]
+请生成纯文本格式的评估报告："""
 
-### 逐题分析
-[对每道题目进行详细分析，包括：]
-- 题目要点
-- 用户答案分析
-- 正确答案要点
-- 改进建议
-
-### 知识点掌握程度评估
-请对以下知识点的掌握程度进行评估（1-5分，5分为完全掌握）：
-- 基础概念理解: [分数]/5 - [简要说明]
-- 实际应用能力: [分数]/5 - [简要说明]
-- 深度思考能力: [分数]/5 - [简要说明]
-- 综合运用能力: [分数]/5 - [简要说明]
-
-### 学习建议
-[基于答题情况和掌握程度评估提供的学习建议]
-
-请用Markdown格式输出，内容要专业、详细、有建设性。"""
-
-        try:
-            # Use Gemini API
-            api_key = self.config.get("gemini_api_key", "")
-            if not api_key:
-                self.status.emit("错误: 未配置Gemini API密钥")
-                return
+        # 根据用户配置选择模型
+        llm_provider = self.config.get("llm_provider", "DeepSeek")
+        print(f"[模型选择] 练习评估使用的LLM提供商: {llm_provider}")
+        
+        if llm_provider == "DeepSeek":
+            print(f"[模型选择] 使用DeepSeek模型: {self.config.get('deepseek_model', 'deepseek-chat')}")
+            try:
+                self._evaluate_with_deepseek(prompt)
+            except Exception as deepseek_error:
+                print(f"[LLM调用] DeepSeek API失败: {deepseek_error}")
+                print(f"[模型选择] DeepSeek失败，尝试Gemini作为备用")
+                try:
+                    self._evaluate_with_gemini(prompt)
+                except Exception as gemini_error:
+                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
+                    try:
+                        self._evaluate_with_ollama(prompt)
+                    except Exception as ollama_error:
+                        print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                        self.status.emit(f"所有API都失败了: DeepSeek({deepseek_error}), Gemini({gemini_error}), Ollama({ollama_error})")
+        elif llm_provider == "Gemini":
+            print(f"[模型选择] 使用Gemini模型: {self.config.get('gemini_model', 'gemini-1.5-flash-latest')}")
+            try:
+                self._evaluate_with_gemini(prompt)
+            except Exception as gemini_error:
+                print(f"[LLM调用] Gemini API失败: {gemini_error}")
+                print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
+                try:
+                    self._evaluate_with_ollama(prompt)
+                except Exception as ollama_error:
+                    print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                    self.status.emit(f"所有API都失败了: Gemini({gemini_error}), Ollama({ollama_error})")
+        else:
+            print(f"[模型选择] 使用Ollama模型: {self.config.get('ollama_model', 'deepseek-coder')}")
+            try:
+                self._evaluate_with_ollama(prompt)
+            except Exception as ollama_error:
+                print(f"[LLM调用] Ollama API失败: {ollama_error}")
+                print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
+                try:
+                    self._evaluate_with_gemini(prompt)
+                except Exception as gemini_error:
+                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    self.status.emit(f"所有API都失败了: Ollama({ollama_error}), Gemini({gemini_error})")
+    
+    def _evaluate_with_deepseek(self, prompt: str):
+        """使用DeepSeek API评估答案"""
+        import time
+        
+        api_key = self.config.get("deepseek_api_key", "")
+        if not api_key:
+            error_msg = "错误: 未配置DeepSeek API密钥"
+            self.status.emit(error_msg)
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("evaluate_practice_answers", "deepseek-chat", prompt, error=error_msg)
+            raise Exception(error_msg)
+        
+        # 使用用户配置的DeepSeek模型
+        deepseek_model = self.config.get("deepseek_model", "deepseek-chat")
+        deepseek_url = self.config.get("deepseek_api_url", "https://api.deepseek.com/v1/chat/completions")
+        print(f"[模型调用] 实际调用的DeepSeek模型: {deepseek_model}")
+        
+        payload = {
+            "model": deepseek_model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.3,
+            "max_tokens": 3072,
+            "stream": False
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        self.status.emit(f"正在调用DeepSeek API评估答案 ({deepseek_model})...")
+        start_time = time.time()
+        response = requests.post(deepseek_url, json=payload, headers=headers, timeout=60)
+        response_time = time.time() - start_time
+        
+        print(f"[LLM调用] DeepSeek响应状态码: {response.status_code}")
+        print(f"[LLM调用] 响应时间: {response_time:.2f}秒")
+        
+        if response.status_code == 200:
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            print(f"[LLM调用] DeepSeek原始响应内容: {content[:500]}...")
             
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("evaluate_practice_answers", deepseek_model, prompt, content, response_time=response_time)
             
-            payload = {
-                "contents": [{
-                    "parts": [{"text": prompt}]
-                }],
-                "generationConfig": {
-                    "temperature": 0.3,
-                    "topK": 40,
-                    "topP": 0.95,
-                    "maxOutputTokens": 3072,
-                }
+            self.evaluationReady.emit(content)
+            self.status.emit("答案评估完成")
+        else:
+            error_msg = f"DeepSeek API调用失败: {response.status_code} - {response.text}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("evaluate_practice_answers", deepseek_model, prompt, error=error_msg, response_time=response_time)
+            raise Exception(error_msg)
+
+    def _evaluate_with_gemini(self, prompt: str):
+        """使用Gemini API评估答案"""
+        import time
+        
+        api_key = self.config.get("gemini_api_key", "")
+        if not api_key:
+            error_msg = "错误: 未配置Gemini API密钥"
+            self.status.emit(error_msg)
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_gemini_call("evaluate_practice_answers", prompt, error=error_msg)
+            raise Exception(error_msg)
+        
+        # 使用用户配置的Gemini模型
+        gemini_model = self.config.get("gemini_model", "gemini-1.5-flash-latest")
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+        print(f"[模型调用] 实际调用的Gemini模型: {gemini_model}")
+        
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.3,
+                "topK": 40,
+                "topP": 0.95,
+                "maxOutputTokens": 3072,
             }
+        }
+        
+        headers = {"Content-Type": "application/json"}
+        
+        self.status.emit("正在调用Gemini API评估答案...")
+        start_time = time.time()
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response_time = time.time() - start_time
+        
+        if response.status_code == 200:
+            data = response.json()
             
-            headers = {"Content-Type": "application/json"}
+            # 检查是否有错误信息
+            if "error" in data:
+                error_info = data["error"]
+                error_msg = f"Gemini API错误: {error_info.get('message', '未知错误')}"
+                if "QUOTA_EXCEEDED" in str(error_info):
+                    error_msg += " (配额已用完，请检查API使用限制)"
+                print(f"[LLM调用] {error_msg}")
+                if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                    log_gemini_call("evaluate_practice_answers", prompt, error=error_msg, response_time=response_time)
+                raise Exception(error_msg)
             
-            self.status.emit("正在调用Gemini API评估答案...")
-            response = requests.post(url, json=payload, headers=headers, timeout=30)
-            
-            if response.status_code == 200:
-                data = response.json()
-                if "candidates" in data and len(data["candidates"]) > 0:
-                    content = data["candidates"][0]["content"]["parts"][0]["text"]
-                    self.evaluationReady.emit(content)
-                    self.status.emit("答案评估完成")
-                else:
-                    self.status.emit("API返回格式异常")
-            else:
-                self.status.emit(f"API调用失败: {response.status_code}")
+            if "candidates" in data and len(data["candidates"]) > 0:
+                content = data["candidates"][0]["content"]["parts"][0]["text"]
                 
-        except Exception as e:
-            self.status.emit(f"评估答案时发生错误: {e}")
+                if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                    log_gemini_call("evaluate_practice_answers", prompt, content, 
+                                  response_time=response_time, config=payload["generationConfig"])
+                
+                self.evaluationReady.emit(content)
+                self.status.emit("答案评估完成")
+            else:
+                error_msg = f"API返回格式异常: {data}"
+                if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                    log_gemini_call("evaluate_practice_answers", prompt, error=error_msg, response_time=response_time)
+                raise Exception(error_msg)
+        else:
+            error_msg = f"API调用失败: {response.status_code}, 响应: {response.text[:500]}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_gemini_call("evaluate_practice_answers", prompt, error=error_msg, response_time=response_time)
+            raise Exception(error_msg)
+    
+    def _evaluate_with_ollama(self, prompt: str):
+        """使用Ollama API评估答案"""
+        import time
+        
+        ollama_url = self.config.get("ollama_api_url", "http://localhost:11434/api/generate")
+        model = self.config.get("ollama_model", "deepseek-coder")
+        
+        print(f"[LLM调用] 尝试使用Ollama API: {ollama_url}")
+        print(f"[LLM调用] 使用模型: {model}")
+        
+        payload = {
+            "model": model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.3,
+                "top_p": 0.9
+            }
+        }
+        
+        self.status.emit(f"正在调用Ollama API评估答案 ({model})...")
+        start_time = time.time()
+        response = requests.post(ollama_url, json=payload, timeout=60)
+        response_time = time.time() - start_time
+        
+        if response.status_code == 200:
+            data = response.json()
+            content = data.get("response", "")
+            
+            # 处理DeepSeek特有的think标签
+            content = self._filter_deepseek_think_content(content)
+            
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("evaluate_practice_answers", model, prompt, content, response_time=response_time)
+            
+            self.evaluationReady.emit(content)
+            self.status.emit("答案评估完成")
+        else:
+            error_msg = f"Ollama API调用失败: {response.status_code}"
+            if KNOWLEDGE_INTEGRATION_AVAILABLE:
+                log_ollama_call("evaluate_practice_answers", model, prompt, error=error_msg, response_time=response_time)
+            raise Exception(error_msg)
 
 
 class PracticeHistoryDialog(QDialog):
@@ -403,7 +807,7 @@ class PracticePanel(QWidget):
         
         # Only start generating questions if not loading from history
         self._loading_from_history = False
-        if not self._loading_from_history:
+        if not self._loading_from_history and self.selected_text.strip():
             self._generate_questions()
     
     def _generate_practice_id(self):
@@ -456,11 +860,39 @@ class PracticePanel(QWidget):
         practice_group = QGroupBox("技术练习")
         practice_layout = QVBoxLayout(practice_group)
         
-        # Practice editor with proper styling
-        self.practice_editor = QTextEdit()
-        self.practice_editor.setPlaceholderText("练习题目将在这里显示，您可以在题目下方填写答案...")
-        self.practice_editor.setFont(QFont("微软雅黑", 11))
-        practice_layout.addWidget(self.practice_editor)
+        # Practice display using text browser for better plain text formatting
+        self.practice_display = QTextBrowser()
+        self.practice_display.setFont(QFont("微软雅黑", 11))
+        self.practice_display.setStyleSheet("""
+            QTextBrowser {
+                background-color: #f8f9fa;
+                border: 1px solid #dee2e6;
+                border-radius: 8px;
+                padding: 15px;
+                line-height: 1.6;
+            }
+        """)
+        practice_layout.addWidget(self.practice_display)
+        
+        # Answer editor for user input
+        answer_group = QGroupBox("答题区域")
+        answer_layout = QVBoxLayout(answer_group)
+        
+        self.answer_editor = QTextEdit()
+        self.answer_editor.setPlaceholderText("请在此处填写您的答案...\n\n提示：\n- 选择题请写明题号和选项，如：1. A\n- 填空题请写明题号和答案，如：2. 答案内容\n- 简答题请详细作答")
+        self.answer_editor.setFont(QFont("微软雅黑", 11))
+        self.answer_editor.setMaximumHeight(250)
+        self.answer_editor.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #ced4da;
+                border-radius: 6px;
+                padding: 10px;
+                background-color: white;
+            }
+        """)
+        answer_layout.addWidget(self.answer_editor)
+        
+        practice_layout.addWidget(answer_group)
         
         layout.addWidget(practice_group)
         
@@ -510,6 +942,13 @@ class PracticePanel(QWidget):
         
         self.worker_thread.started.connect(self.worker.start_work)
     
+    def update_config(self, new_config: dict):
+        """动态更新配置，确保练习面板感知模型切换"""
+        self.config = new_config
+        if hasattr(self, 'worker') and self.worker:
+            self.worker.update_config(new_config)
+        print(f"[配置更新] PracticePanel配置已更新，LLM提供商: {self.config.get('llm_provider', 'Gemini')}")
+    
     def _toggle_content_display(self, checked):
         """Toggle the visibility of content display"""
         self.content_display.setVisible(checked)
@@ -535,13 +974,85 @@ class PracticePanel(QWidget):
     
     def _submit_practice(self):
         """Submit practice for evaluation"""
-        user_answers = self.practice_editor.toPlainText().strip()
+        user_answers = self.answer_editor.toPlainText().strip()
         if not user_answers:
             QMessageBox.warning(self, "提示", "请先完成练习题目再提交。")
             return
         
         # Save user answers before evaluation
         self.user_answers_before_evaluation = user_answers
+        self._start_evaluation(user_answers)
+    
+    def _extract_answers_from_html(self):
+        """Extract answers from HTML form using JavaScript"""
+        js_code = """
+        function collectAnswers() {
+            var answers = {};
+            
+            // Collect radio button answers
+            var radios = document.querySelectorAll('input[type="radio"]:checked');
+            radios.forEach(function(radio) {
+                answers[radio.name] = radio.value;
+            });
+            
+            // Collect checkbox answers
+            var checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+            checkboxes.forEach(function(checkbox) {
+                if (!answers[checkbox.name]) {
+                    answers[checkbox.name] = [];
+                }
+                answers[checkbox.name].push(checkbox.value);
+            });
+            
+            // Collect text input answers
+            var textInputs = document.querySelectorAll('input[type="text"]');
+            textInputs.forEach(function(input) {
+                if (input.value.trim()) {
+                    answers[input.name] = input.value.trim();
+                }
+            });
+            
+            // Collect textarea answers
+            var textareas = document.querySelectorAll('textarea');
+            textareas.forEach(function(textarea) {
+                if (textarea.value.trim()) {
+                    answers[textarea.name] = textarea.value.trim();
+                }
+            });
+            
+            return JSON.stringify(answers);
+        }
+        collectAnswers();
+        """
+        
+        self.practice_display.page().runJavaScript(js_code, self._on_answers_extracted)
+    
+    def _on_answers_extracted(self, answers_json):
+        """Handle extracted answers from JavaScript"""
+        try:
+            import json
+            answers_dict = json.loads(answers_json) if answers_json else {}
+            
+            if not answers_dict:
+                QMessageBox.warning(self, "提示", "请先完成练习题目再提交。")
+                return
+            
+            # Format answers for evaluation
+            user_answers = ""
+            for question_name, answer in answers_dict.items():
+                if isinstance(answer, list):
+                    user_answers += f"{question_name}: {', '.join(answer)}\n"
+                else:
+                    user_answers += f"{question_name}: {answer}\n"
+            
+            self.user_answers_before_evaluation = user_answers
+            self._start_evaluation(user_answers)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"提取答案时出错: {e}")
+    
+    def _start_evaluation(self, user_answers):
+        """Start the evaluation process"""
         
         self.status_label.setText("正在评估答案...")
         self.progress_bar.show()
@@ -555,14 +1066,110 @@ class PracticePanel(QWidget):
     def _on_questions_ready(self, questions: str):
         """Handle generated questions"""
         self.current_questions = questions
-        self.practice_editor.setPlainText(questions)
+        
+        # Format plain text for better display
+        formatted_text = self._format_plain_text(questions)
+        
+        # Display formatted plain text questions
+        self.practice_display.setPlainText(formatted_text)
+        
+    def _format_plain_text(self, content: str) -> str:
+        """Format plain text content for better readability"""
+        import re
+        
+        # Remove common LLM response prefixes and suffixes
+        prefixes_to_remove = [
+            r'好的！以下是.*?：\s*',
+            r'以下是.*?：\s*',
+            r'这是.*?：\s*',
+            r'根据.*?，以下是.*?：\s*'
+        ]
+        
+        for prefix in prefixes_to_remove:
+            content = re.sub(prefix, '', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Remove trailing explanations
+        suffixes_to_remove = [
+            r'\s*这个设计包含：.*',
+            r'\s*如果你需要.*',
+            r'\s*请告诉我.*'
+        ]
+        
+        for suffix in suffixes_to_remove:
+            content = re.sub(suffix, '', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Clean up extra whitespace and ensure proper spacing
+        content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)  # Remove excessive blank lines
+        content = content.strip()
+        
+        # Add some formatting improvements
+        lines = content.split('\n')
+        formatted_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            if line:
+                # Add extra spacing after question numbers
+                if re.match(r'^\d+\.', line):
+                    if formatted_lines and formatted_lines[-1]:  # Add blank line before new question
+                        formatted_lines.append('')
+                    formatted_lines.append(line)
+                # Add indentation for options
+                elif re.match(r'^[A-D]\)', line):
+                    formatted_lines.append('    ' + line)
+                else:
+                    formatted_lines.append(line)
+            else:
+                formatted_lines.append('')
+        
+        return '\n'.join(formatted_lines)
+        
+    def _clean_html_content(self, content: str) -> str:
+        """Clean HTML content by removing markdown code blocks and extra text"""
+        import re
+        
+        # Remove markdown code blocks
+        content = re.sub(r'```html\s*', '', content, flags=re.IGNORECASE)
+        content = re.sub(r'```\s*', '', content)
+        
+        # Remove common LLM response prefixes
+        prefixes_to_remove = [
+            r'好的！以下是.*?：\s*',
+            r'以下是.*?：\s*',
+            r'这是.*?：\s*',
+            r'根据.*?，以下是.*?：\s*'
+        ]
+        
+        for prefix in prefixes_to_remove:
+            content = re.sub(prefix, '', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Remove trailing explanations
+        suffixes_to_remove = [
+            r'\s*这个设计包含：.*',
+            r'\s*如果你需要.*',
+            r'\s*请告诉我.*'
+        ]
+        
+        for suffix in suffixes_to_remove:
+            content = re.sub(suffix, '', content, flags=re.IGNORECASE | re.DOTALL)
+        
+        # Ensure it starts with <!DOCTYPE html> or <html>
+        content = content.strip()
+        if not content.lower().startswith(('<!doctype html>', '<html>')):
+            # If it doesn't start properly, try to find the HTML start
+            html_match = re.search(r'<!DOCTYPE html>|<html[^>]*>', content, re.IGNORECASE)
+            if html_match:
+                content = content[html_match.start():]
+        
+        return content.strip()
         
     def _on_evaluation_ready(self, evaluation: str):
         """Handle evaluation results"""
         self.evaluation_result = evaluation
         
-        # Show evaluation in a new window or replace current content
-        self.practice_editor.setPlainText(evaluation)
+        # Format and show evaluation in plain text
+        formatted_evaluation = self._format_plain_text(evaluation)
+        self.practice_display.setPlainText(formatted_evaluation)
         
         # Add option to start new practice
         self.regenerate_btn.setText("开始新练习")
@@ -583,7 +1190,7 @@ class PracticePanel(QWidget):
             os.makedirs(practice_dir, exist_ok=True)
             
             # Determine status and current answers
-            current_content = self.practice_editor.toPlainText()
+            current_content = self.answer_editor.toPlainText()
             status = "in_progress"
             current_answers = ""
             
@@ -623,6 +1230,9 @@ class PracticePanel(QWidget):
         # Keep the user answers that were submitted for evaluation
         self.current_answers = self.user_answers_before_evaluation
         self._save_practice()
+        
+        # Integrate with knowledge management system
+        self._integrate_with_knowledge_system()
     
     def _on_status_update(self, status: str):
         """Handle status updates"""
@@ -637,6 +1247,40 @@ class PracticePanel(QWidget):
         if self.worker_thread.isRunning():
             self.worker_thread.quit()
             self.worker_thread.wait()
+    
+    def _integrate_with_knowledge_system(self):
+        """Integrate practice results with knowledge management system"""
+        if not KNOWLEDGE_INTEGRATION_AVAILABLE:
+            return
+        
+        try:
+            # Get practice content and evaluation
+            practice_content = f"学习内容: {self.selected_text}\n\n题目和答案:\n{self.user_answers_before_evaluation}"
+            evaluation_result = self.evaluation_result
+            
+            if not practice_content or not evaluation_result:
+                return
+            
+            # Initialize enhanced practice processor
+            processor = EnhancedPracticeProcessor(self.config)
+            
+            # Process the completed practice with error question slicing and knowledge point matching
+            result = processor.process_practice_results(
+                practice_content, evaluation_result, self.selected_text, self.parent()
+            )
+            
+            if result["success"]:
+                # Update status with integration results
+                message = f"练习已保存并集成到知识库 - {result['message']}"
+                self.status_label.setText(message)
+                
+                # Log the integration results
+                print(f"知识管理集成成功: {result}")
+            else:
+                print(f"知识管理集成失败: {result['message']}")
+                
+        except Exception as e:
+            print(f"知识管理集成异常: {e}")
     
     def _show_history(self):
         """Show practice history dialog"""
@@ -665,28 +1309,30 @@ class PracticePanel(QWidget):
         # Load appropriate content based on status
         status = practice_data.get("status", "")
         if status == "evaluated" and self.evaluation_result:
-            self.practice_editor.setPlainText(self.evaluation_result)
+            formatted_evaluation = self._format_plain_text(self.evaluation_result)
+            self.practice_display.setPlainText(formatted_evaluation)
             self.regenerate_btn.setText("开始新练习")
             self.submit_btn.setText("保存评估结果")
         elif self.current_questions:
-            # Show questions with any existing answers
-            content = self.current_questions
+            # Show questions in plain text format
+            formatted_questions = self._format_plain_text(self.current_questions)
+            self.practice_display.setPlainText(formatted_questions)
             if self.current_answers:
-                content += "\n\n" + self.current_answers
-            self.practice_editor.setPlainText(content)
+                self.answer_editor.setPlainText(self.current_answers)
             self.regenerate_btn.setEnabled(True)
             self.submit_btn.setEnabled(True)
         else:
             # Load practice content as fallback
             practice_content = practice_data.get("practice_content", "")
-            self.practice_editor.setPlainText(practice_content)
+            formatted_content = self._format_plain_text(practice_content)
+            self.practice_display.setPlainText(formatted_content)
         
         self.status_label.setText(f"已加载练习: {self.practice_id}")
     
     def _start_new_practice(self):
         """Start a new practice session"""
         # Save current practice if it has content
-        if self.practice_editor.toPlainText().strip():
+        if self.answer_editor.toPlainText().strip():
             self._save_practice()
         
         # Reset practice state
@@ -697,21 +1343,20 @@ class PracticePanel(QWidget):
         self.evaluation_result = ""
         self.user_answers_before_evaluation = ""
         
-        # Clear editors
-        self.practice_editor.clear()
+        # Clear display
+        self.answer_editor.clear()
+        self.practice_display.clear()
         
         # Reset buttons
         self.regenerate_btn.setText("重新生成题目")
         self.submit_btn.setText("提交练习")
         
-        # Start new practice with selected text
-        if self.selected_text.strip():
-            self._generate_questions()
+        # Start new practice with selected text - questions will be generated automatically
     
     def closeEvent(self, event):
         """Handle window close event"""
         # Auto-save before closing if there's content
-        if self.practice_editor.toPlainText().strip():
+        if self.answer_editor.toPlainText().strip():
             self._save_practice()
         
         if self.worker_thread.isRunning():
