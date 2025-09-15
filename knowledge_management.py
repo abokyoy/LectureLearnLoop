@@ -911,13 +911,18 @@ class ErrorQuestionManager:
     }}
 ]"""
 
-        try:
+        # 构建统一的生成流程，遵循 llm_provider 选择与 enable_llm_fallback
+        llm_provider = str(self.config.get("llm_provider", "Gemini")).strip()
+        provider_norm = llm_provider.lower()
+        allow_fallback = bool(self.config.get("enable_llm_fallback", False))
+        print(f"[模型选择][针对性新题] 提供商: {llm_provider} (fallback={'on' if allow_fallback else 'off'})")
+
+        def _gen_with_gemini() -> List[Dict]:
             api_key = self.config.get("gemini_api_key", "")
             if not api_key:
                 raise Exception("未配置Gemini API密钥")
-            
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
-            
+            gemini_model = self.config.get("gemini_model", "gemini-1.5-flash-latest")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
             payload = {
                 "contents": [{
                     "parts": [{"text": prompt}]
@@ -929,33 +934,142 @@ class ErrorQuestionManager:
                     "maxOutputTokens": 3072,
                 }
             }
-            
             headers = {"Content-Type": "application/json"}
             response = requests.post(url, json=payload, headers=headers, timeout=30)
-            
             if response.status_code == 200:
                 data = response.json()
                 if "candidates" in data and len(data["candidates"]) > 0:
-                    content = data["candidates"][0]["content"]["parts"][0]["text"]
-                    
-                    # 清理和解析JSON
-                    content = content.strip()
+                    content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
                     if content.startswith("```json"):
                         content = content[7:]
                     if content.endswith("```"):
                         content = content[:-3]
                     content = content.strip()
-                    
-                    questions = json.loads(content)
-                    return questions
-                else:
-                    raise Exception("API返回格式异常")
-            else:
-                raise Exception(f"API调用失败: {response.status_code}")
-                
-        except Exception as e:
-            print(f"生成新题失败: {e}")
+                    return json.loads(content)
+                raise Exception("API返回格式异常")
+            raise Exception(f"API调用失败: {response.status_code}, 响应: {response.text[:300]}")
+
+        def _gen_with_ollama() -> List[Dict]:
+            # 兼容两种配置键：ollama_api_url 或 ollama_url
+            base_url = self.config.get("ollama_api_url") or (self.config.get("ollama_url", "http://localhost:11434") + "/api/generate")
+            url = base_url if base_url.endswith("/api/generate") else base_url
+            model = self.config.get("ollama_model", "deepseek-coder")
+            print(f"[LLM调用][Ollama] url={url}, model={model}")
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.7, "top_p": 0.9}
+            }
+            response = requests.post(url, json=payload, timeout=60)
+            if response.status_code == 200:
+                data = response.json()
+                content = data.get("response", "").strip()
+                # 清理可能的 think 标签
+                content = self._filter_deepseek_think_content(content)
+                try:
+                    if content.startswith("```json"):
+                        content = content[7:]
+                    if content.endswith("```"):
+                        content = content[:-3]
+                    content = content.strip()
+                    return json.loads(content)
+                except Exception as je:
+                    print(f"[Ollama] JSON解析失败: {je}，内容前200: {content[:200]}")
+                    raise
+            raise Exception(f"Ollama API调用失败: {response.status_code}, 响应: {response.text[:300]}")
+
+        def _gen_with_deepseek() -> List[Dict]:
+            api_key = self.config.get("deepseek_api_key", "")
+            if not api_key:
+                raise Exception("未配置DeepSeek API密钥")
+            deepseek_model = self.config.get("deepseek_model", "deepseek-chat")
+            deepseek_url = self.config.get("deepseek_api_url", "https://api.deepseek.com/v1/chat/completions")
+            payload = {
+                "model": deepseek_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.7,
+                "max_tokens": 3072,
+                "stream": False
+            }
+            headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+            response = requests.post(deepseek_url, json=payload, headers=headers, timeout=60)
+            if response.status_code == 200:
+                data = response.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                if not content:
+                    raise Exception("DeepSeek响应空内容")
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
+                return json.loads(content)
+            raise Exception(f"DeepSeek API调用失败: {response.status_code}, 响应: {response.text[:300]}")
+
+        # 执行选择与回退
+        try:
+            if provider_norm == "ollama":
+                try:
+                    return _gen_with_ollama()
+                except Exception as ollama_error:
+                    print(f"[LLM调用][针对性新题] Ollama失败: {ollama_error}")
+                    if not allow_fallback:
+                        raise
+                    # 回退到Gemini
+                    try:
+                        return _gen_with_gemini()
+                    except Exception as gemini_error:
+                        print(f"[LLM调用][针对性新题] Gemini失败: {gemini_error}")
+                        # 最后再尝试DeepSeek
+                        return _gen_with_deepseek()
+            elif provider_norm == "deepseek":
+                try:
+                    return _gen_with_deepseek()
+                except Exception as deepseek_error:
+                    print(f"[LLM调用][针对性新题] DeepSeek失败: {deepseek_error}")
+                    if not allow_fallback:
+                        raise
+                    try:
+                        return _gen_with_gemini()
+                    except Exception as gemini_error:
+                        print(f"[LLM调用][针对性新题] Gemini失败: {gemini_error}")
+                        return _gen_with_ollama()
+            else:  # 默认Gemini
+                try:
+                    return _gen_with_gemini()
+                except Exception as gemini_error:
+                    print(f"[LLM调用][针对性新题] Gemini失败: {gemini_error}")
+                    if not allow_fallback:
+                        raise
+                    try:
+                        return _gen_with_ollama()
+                    except Exception as ollama_error:
+                        print(f"[LLM调用][针对性新题] Ollama失败: {ollama_error}")
+                        return _gen_with_deepseek()
+        except Exception as final_error:
+            print(f"生成新题失败（最终）: {final_error}")
             return []
+
+    def _filter_deepseek_think_content(self, content: str) -> str:
+        """过滤DeepSeek/类DeepSeek模型返回的think标签及分析段落，保留纯输出正文"""
+        try:
+            import re
+            text = content or ""
+            # 快速截断：若以<think>开头，截取</think>之后
+            if text.strip().startswith('<think>'):
+                end = text.find('</think>')
+                if end != -1:
+                    text = text[end + len('</think>'):]
+            # 通用去除 think/thinking 块
+            patterns = [r'<think>.*?</think>', r'<thinking>.*?</thinking>']
+            for p in patterns:
+                text = re.sub(p, '', text, flags=re.DOTALL | re.IGNORECASE)
+            # 清理多余空行
+            text = re.sub(r'\n\s*\n\s*\n', '\n\n', text).strip()
+            return text
+        except Exception:
+            return content
 
 
 class KnowledgeManagementSystem:
@@ -968,6 +1082,18 @@ class KnowledgeManagementSystem:
         self.knowledge_manager = KnowledgePointManager(self.db_manager, config)
         self.practice_manager = PracticeRecordManager(self.db_manager)
         self.error_manager = ErrorQuestionManager(self.db_manager, config)
+
+    def update_config(self, new_config: dict):
+        """更新配置并下发至子管理器（用于动态切换LLM提供商等）"""
+        try:
+            self.config = new_config
+            if hasattr(self, 'knowledge_manager') and self.knowledge_manager:
+                self.knowledge_manager.config = new_config
+            if hasattr(self, 'error_manager') and self.error_manager:
+                self.error_manager.config = new_config
+            print(f"[配置更新][KMS] llm_provider={new_config.get('llm_provider')} fallback={new_config.get('enable_llm_fallback')}")
+        except Exception as e:
+            print(f"[配置更新][KMS] 更新失败: {e}")
     
     def get_subjects(self) -> List[str]:
         """获取用户所有学科"""

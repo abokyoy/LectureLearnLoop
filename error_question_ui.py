@@ -271,6 +271,17 @@ class ErrorQuestionReviewDialog(QDialog):
         self.generate_button.setText("正在生成...")
         
         try:
+            # 读取最新配置并下发到 KMS，确保使用用户当前选择的 LLM 提供商
+            try:
+                import json
+                with open('app_config.json', 'r', encoding='utf-8') as f:
+                    latest = json.load(f)
+                if hasattr(self.km_system, 'update_config'):
+                    self.km_system.update_config(latest)
+                print(f"[配置][针对性新题] llm_provider={latest.get('llm_provider')} fallback={latest.get('enable_llm_fallback')}")
+            except Exception as cfg_err:
+                print(f"[配置][针对性新题] 加载最新配置失败，使用现有配置: {cfg_err}")
+
             new_questions = self.km_system.generate_new_questions(
                 self.current_subject, self.current_knowledge_point, question_count
             )

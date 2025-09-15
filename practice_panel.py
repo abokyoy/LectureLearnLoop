@@ -99,33 +99,41 @@ class PracticeWorker(QObject):
 
 请生成纯文本格式的练习题目："""
 
-        # 根据用户配置选择模型
-        llm_provider = self.config.get("llm_provider", "Gemini")
-        print(f"[模型选择] 练习面板使用的LLM提供商: {llm_provider}")
+        # 根据用户配置选择模型（大小写不敏感）
+        llm_provider = str(self.config.get("llm_provider", "Gemini")).strip()
+        provider_norm = llm_provider.lower()
+        allow_fallback = bool(self.config.get("enable_llm_fallback", False))
+        print(f"[模型选择] 练习面板使用的LLM提供商: {llm_provider} (fallback={'on' if allow_fallback else 'off'})")
         
-        if llm_provider == "DeepSeek":
+        if provider_norm == "deepseek":
             print(f"[模型选择] 使用DeepSeek模型: {self.config.get('deepseek_model', 'deepseek-chat')}")
             try:
                 self._generate_with_deepseek(prompt)
             except Exception as deepseek_error:
                 print(f"[LLM调用] DeepSeek API失败: {deepseek_error}")
+                if not allow_fallback:
+                    raise
                 print(f"[模型选择] DeepSeek失败，尝试Gemini作为备用")
                 try:
                     self._generate_with_gemini(prompt)
                 except Exception as gemini_error:
                     print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    if not allow_fallback:
+                        raise
                     print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
                     try:
                         self._generate_with_ollama(prompt)
                     except Exception as ollama_error:
                         print(f"[LLM调用] Ollama API也失败: {ollama_error}")
                         self.status.emit(f"所有API都失败了: DeepSeek({deepseek_error}), Gemini({gemini_error}), Ollama({ollama_error})")
-        elif llm_provider == "Gemini":
+        elif provider_norm == "gemini":
             print(f"[模型选择] 使用Gemini模型: {self.config.get('gemini_model', 'gemini-1.5-flash-latest')}")
             try:
                 self._generate_with_gemini(prompt)
             except Exception as gemini_error:
                 print(f"[LLM调用] Gemini API失败: {gemini_error}")
+                if not allow_fallback:
+                    raise
                 print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
                 try:
                     self._generate_with_ollama(prompt)
@@ -138,6 +146,8 @@ class PracticeWorker(QObject):
                 self._generate_with_ollama(prompt)
             except Exception as ollama_error:
                 print(f"[LLM调用] Ollama API失败: {ollama_error}")
+                if not allow_fallback:
+                    raise
                 print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
                 try:
                     self._generate_with_gemini(prompt)
@@ -328,7 +338,8 @@ class PracticeWorker(QObject):
             self.questionsReady.emit(content)
             self.status.emit("题目生成完成")
         else:
-            error_msg = f"Ollama API调用失败: {response.status_code}"
+            # 打印更多上下文帮助定位为何回退到Gemini
+            error_msg = f"Ollama API调用失败: {response.status_code}, 响应: {response.text[:500]}"
             if KNOWLEDGE_INTEGRATION_AVAILABLE:
                 log_ollama_call("generate_practice_questions", model, prompt, error=error_msg, response_time=response_time)
             raise Exception(error_msg)
@@ -392,16 +403,59 @@ class PracticeWorker(QObject):
 先输出逐题报告（每题按照“原题/用户答案/判定/分析与要点”的顺序完整展示原题文本），然后输出整体评价与知识点掌握程度评估。
 """
         
-        try:
-            self._evaluate_with_ollama(prompt)
-        except Exception as ollama_error:
-            print(f"[LLM调用] Ollama API失败: {ollama_error}")
-            print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
+        # 根据用户配置选择模型（大小写不敏感），并控制是否允许回退
+        llm_provider = str(self.config.get("llm_provider", "Gemini")).strip()
+        provider_norm = llm_provider.lower()
+        allow_fallback = bool(self.config.get("enable_llm_fallback", False))
+        print(f"[模型选择] 评估使用的LLM提供商: {llm_provider} (fallback={'on' if allow_fallback else 'off'})")
+
+        if provider_norm == "deepseek":
+            try:
+                self._evaluate_with_deepseek(prompt)
+            except Exception as deepseek_error:
+                print(f"[LLM调用] DeepSeek API失败: {deepseek_error}")
+                if not allow_fallback:
+                    raise
+                print(f"[模型选择] DeepSeek失败，尝试Gemini作为备用")
+                try:
+                    self._evaluate_with_gemini(prompt)
+                except Exception as gemini_error:
+                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    if not allow_fallback:
+                        raise
+                    print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
+                    try:
+                        self._evaluate_with_ollama(prompt)
+                    except Exception as ollama_error:
+                        print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                        self.status.emit(f"所有API都失败了: DeepSeek({deepseek_error}), Gemini({gemini_error}), Ollama({ollama_error})")
+        elif provider_norm == "gemini":
             try:
                 self._evaluate_with_gemini(prompt)
             except Exception as gemini_error:
-                print(f"[LLM调用] Gemini API也失败: {gemini_error}")
-                self.status.emit(f"所有API都失败了: Ollama({ollama_error}), Gemini({gemini_error})")
+                print(f"[LLM调用] Gemini API失败: {gemini_error}")
+                if not allow_fallback:
+                    raise
+                print(f"[模型选择] Gemini失败，尝试Ollama作为备用")
+                try:
+                    self._evaluate_with_ollama(prompt)
+                except Exception as ollama_error:
+                    print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                    self.status.emit(f"所有API都失败了: Gemini({gemini_error}), Ollama({ollama_error})")
+        else:
+            # 默认：Ollama
+            try:
+                self._evaluate_with_ollama(prompt)
+            except Exception as ollama_error:
+                print(f"[LLM调用] Ollama API失败: {ollama_error}")
+                if not allow_fallback:
+                    raise
+                print(f"[模型选择] Ollama失败，尝试Gemini作为备用")
+                try:
+                    self._evaluate_with_gemini(prompt)
+                except Exception as gemini_error:
+                    print(f"[LLM调用] Gemini API也失败: {gemini_error}")
+                    self.status.emit(f"所有API都失败了: Ollama({ollama_error}), Gemini({gemini_error})")
     
     def _evaluate_with_deepseek(self, prompt: str):
         """使用DeepSeek API评估答案"""
