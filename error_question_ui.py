@@ -9,10 +9,12 @@ from PySide6.QtWidgets import (
     QDialog, QListWidget, QListWidgetItem, QDialogButtonBox, QComboBox,
     QLineEdit, QGroupBox, QCheckBox, QSpinBox, QTextBrowser, QProgressBar,
     QMessageBox, QSplitter, QTableWidget, QTableWidgetItem, QHeaderView,
-    QScrollArea
+    QScrollArea, QAbstractItemView, QSizePolicy
 )
 from PySide6.QtGui import QFont
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject, QPoint
+from PySide6.QtCharts import QChart, QChartView, QLineSeries, QDateTimeAxis, QValueAxis
+from PySide6.QtCore import QDateTime
 from knowledge_management import KnowledgeManagementSystem
 
 
@@ -25,6 +27,8 @@ class ErrorQuestionReviewDialog(QDialog):
         self.current_subject = None
         self.current_knowledge_point = None
         self.error_questions = []
+        self._time_sort_asc = True
+        self._prof_sort_asc = True
         
         self.setWindowTitle("错题复习")
         self.resize(900, 700)
@@ -34,9 +38,10 @@ class ErrorQuestionReviewDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         
-        # 标题
+        # 标题（缩小占用）
         title_label = QLabel("错题复习与针对性练习")
-        title_label.setFont(QFont("微软雅黑", 14, QFont.Weight.Bold))
+        title_label.setFont(QFont("微软雅黑", 11, QFont.Weight.DemiBold))
+        title_label.setStyleSheet("padding: 2px 6px; color: #333;")
         layout.addWidget(title_label)
         
         # 选择区域
@@ -65,75 +70,34 @@ class ErrorQuestionReviewDialog(QDialog):
         
         selection_layout.addLayout(point_layout)
         
-        # 查看错题按钮
-        self.view_errors_button = QPushButton("查看该知识点错题")
-        self.view_errors_button.clicked.connect(self._load_error_questions)
-        self.view_errors_button.setEnabled(False)
-        selection_layout.addWidget(self.view_errors_button)
+        # 取消“查看错题”按钮，改为自动刷新
         
         layout.addWidget(selection_group)
         
-        # 主要内容区域
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # 错题列表
+        # 主要内容区域：直接使用错题列表占据主体
         error_group = QGroupBox("错题列表")
         error_layout = QVBoxLayout(error_group)
         
         self.error_table = QTableWidget()
         self.error_table.setColumnCount(4)
-        self.error_table.setHorizontalHeaderLabels(["题目内容", "错误答案", "练习时间", "复习状态"])
+        self.error_table.setHorizontalHeaderLabels(["题目内容", "答案（用户/正确）", "练习时间", "熟练度"])
         self.error_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.error_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.error_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.error_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        # 禁止编辑，行选择
+        self.error_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.error_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.error_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.error_table.verticalHeader().setVisible(False)
+        self.error_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.error_table.itemSelectionChanged.connect(self._on_error_selected)
+        self.error_table.cellDoubleClicked.connect(self._open_detail_for_row)
+        # 双击表头排序
+        self.error_table.horizontalHeader().sectionDoubleClicked.connect(self._on_header_double_clicked)
         error_layout.addWidget(self.error_table)
-        
-        # 错题操作按钮
-        error_button_layout = QHBoxLayout()
-        
-        self.mark_reviewed_button = QPushButton("标记为已复习")
-        self.mark_reviewed_button.clicked.connect(self._mark_as_reviewed)
-        self.mark_reviewed_button.setEnabled(False)
-        error_button_layout.addWidget(self.mark_reviewed_button)
-        
-        error_button_layout.addStretch()
-        error_layout.addLayout(error_button_layout)
-        
-        main_splitter.addWidget(error_group)
-        
-        # 新题生成区域
-        generation_group = QGroupBox("针对性新题生成")
-        generation_layout = QVBoxLayout(generation_group)
-        
-        # 生成设置
-        gen_settings_layout = QHBoxLayout()
-        gen_settings_layout.addWidget(QLabel("生成题数:"))
-        
-        self.question_count_spin = QSpinBox()
-        self.question_count_spin.setRange(1, 5)
-        self.question_count_spin.setValue(2)
-        gen_settings_layout.addWidget(self.question_count_spin)
-        
-        self.generate_button = QPushButton("生成针对性新题")
-        self.generate_button.clicked.connect(self._generate_new_questions)
-        self.generate_button.setEnabled(False)
-        gen_settings_layout.addWidget(self.generate_button)
-        
-        gen_settings_layout.addStretch()
-        generation_layout.addLayout(gen_settings_layout)
-        
-        # 新题显示
-        self.new_questions_browser = QTextBrowser()
-        self.new_questions_browser.setPlaceholderText("生成的新题将在这里显示...")
-        generation_layout.addWidget(self.new_questions_browser)
-        
-        main_splitter.addWidget(generation_group)
-        
-        # 设置分割比例
-        main_splitter.setSizes([400, 500])
-        layout.addWidget(main_splitter)
+
+        layout.addWidget(error_group)
         
         # 底部按钮
         button_layout = QHBoxLayout()
@@ -150,6 +114,18 @@ class ErrorQuestionReviewDialog(QDialog):
         """加载学科列表"""
         subjects = self.km_system.get_subjects()
         self.subject_combo.addItems(subjects)
+        # 默认选中最近一次配置的学科
+        try:
+            import json
+            with open('app_config.json', 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            last_subject = cfg.get('last_selected_subject')
+            if last_subject and last_subject in subjects:
+                idx = self.subject_combo.findText(last_subject)
+                if idx >= 0:
+                    self.subject_combo.setCurrentIndex(idx)
+        except Exception:
+            pass
     
     def _on_subject_changed(self, subject_name):
         """学科选择改变"""
@@ -163,10 +139,29 @@ class ErrorQuestionReviewDialog(QDialog):
         # 加载知识点
         try:
             knowledge_points = self.km_system.get_knowledge_points_by_subject(subject_name)
-            
+            counts_map = {}
+            try:
+                counts_map = self.km_system.get_error_counts_map(subject_name)
+            except Exception:
+                counts_map = {}
             self.point_combo.setPlaceholderText("请选择知识点...")
             for point in knowledge_points:
-                self.point_combo.addItem(f"{point['point_name']} - {point['core_description']}", point['id'])
+                cnt = counts_map.get(point['id'], 0)
+                self.point_combo.addItem(f"{point['point_name']} ({cnt}题)", point['id'])
+
+            # 写回最近使用的学科
+            try:
+                import json
+                with open('app_config.json', 'r', encoding='utf-8') as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+            cfg['last_selected_subject'] = subject_name
+            try:
+                with open('app_config.json', 'w', encoding='utf-8') as f:
+                    json.dump(cfg, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
         
         except Exception as e:
             QMessageBox.warning(self, "错误", f"加载知识点失败: {e}")
@@ -175,13 +170,10 @@ class ErrorQuestionReviewDialog(QDialog):
     def _on_knowledge_point_changed(self, point_text):
         """知识点选择改变"""
         if not point_text or not self.point_combo.currentData():
-            self.view_errors_button.setEnabled(False)
-            self.generate_button.setEnabled(False)
             return
-        
         self.current_knowledge_point = self.point_combo.currentData()
-        self.view_errors_button.setEnabled(True)
-        self.generate_button.setEnabled(True)
+        # 自动刷新错题列表
+        self._load_error_questions()
     
     def _load_error_questions(self):
         """加载错题"""
@@ -192,113 +184,74 @@ class ErrorQuestionReviewDialog(QDialog):
             self.error_questions = self.km_system.get_error_questions(
                 self.current_subject, self.current_knowledge_point
             )
-            
             # 更新表格
             self.error_table.setRowCount(len(self.error_questions))
-            
             for row, error in enumerate(self.error_questions):
-                # 题目内容
-                question_item = QTableWidgetItem(error['question_content'][:100] + "..." if len(error['question_content']) > 100 else error['question_content'])
-                question_item.setToolTip(error['question_content'])
+                # 题目内容（尽量显示全，tooltip 原文）
+                q_text = error.get('question_content', '')
+                question_item = QTableWidgetItem(q_text)
+                question_item.setToolTip(q_text)
                 self.error_table.setItem(row, 0, question_item)
-                
-                # 错误答案
-                answer_item = QTableWidgetItem(error['user_answer'][:50] + "..." if len(error['user_answer']) > 50 else error['user_answer'])
-                answer_item.setToolTip(error['user_answer'])
+
+                # 答案（用户/正确）
+                user_ans = error.get('user_answer', '') or '-'
+                corr_ans = error.get('correct_answer', None)
+                corr_ans = corr_ans if corr_ans else '-'
+                ans_text = f"用户: {user_ans} | 正确: {corr_ans}"
+                answer_item = QTableWidgetItem(ans_text)
                 self.error_table.setItem(row, 1, answer_item)
-                
+
                 # 练习时间
-                time_item = QTableWidgetItem(error['practice_time'][:16])  # 只显示日期和时间
+                time_item = QTableWidgetItem(str(error.get('practice_time', ''))[:19])
                 self.error_table.setItem(row, 2, time_item)
-                
-                # 复习状态
-                status_text = "已复习" if error['review_status'] else "未复习"
-                status_item = QTableWidgetItem(status_text)
-                if error['review_status']:
-                    status_item.setBackground(Qt.GlobalColor.lightGray)
-                self.error_table.setItem(row, 3, status_item)
-            
+
+                # 熟练度
+                prof = int(error.get('current_proficiency', 20) or 20)
+                prof_item = QTableWidgetItem(str(prof))
+                prof_item.setData(Qt.ItemDataRole.UserRole, prof)
+                self.error_table.setItem(row, 3, prof_item)
+
             if not self.error_questions:
                 QMessageBox.information(self, "提示", "该知识点暂无错题记录")
-        
         except Exception as e:
             QMessageBox.warning(self, "错误", f"加载错题失败: {e}")
     
     def _on_error_selected(self):
         """错题选择改变"""
-        current_row = self.error_table.currentRow()
-        if current_row >= 0 and current_row < len(self.error_questions):
-            error = self.error_questions[current_row]
-            self.mark_reviewed_button.setEnabled(error['review_status'] == 0)
-        else:
-            self.mark_reviewed_button.setEnabled(False)
+        # 保留占位，当前无额外操作
+        return
     
-    def _mark_as_reviewed(self):
-        """标记为已复习"""
-        current_row = self.error_table.currentRow()
-        if current_row < 0 or current_row >= len(self.error_questions):
-            return
-        
-        error = self.error_questions[current_row]
-        
-        try:
-            success = self.km_system.mark_error_reviewed(error['id'])
-            if success:
-                # 更新本地数据
-                self.error_questions[current_row]['review_status'] = 1
-                
-                # 更新表格显示
-                status_item = QTableWidgetItem("已复习")
-                status_item.setBackground(Qt.GlobalColor.lightGray)
-                self.error_table.setItem(current_row, 3, status_item)
-                
-                self.mark_reviewed_button.setEnabled(False)
-                QMessageBox.information(self, "成功", "已标记为已复习")
-            else:
-                QMessageBox.warning(self, "失败", "标记失败")
-        
-        except Exception as e:
-            QMessageBox.warning(self, "错误", f"标记失败: {e}")
-    
-    def _generate_new_questions(self):
-        """生成新题"""
-        if not self.current_subject or not self.current_knowledge_point:
-            return
-        
-        question_count = self.question_count_spin.value()
-        
-        self.generate_button.setEnabled(False)
-        self.generate_button.setText("正在生成...")
-        
-        try:
-            # 读取最新配置并下发到 KMS，确保使用用户当前选择的 LLM 提供商
-            try:
-                import json
-                with open('app_config.json', 'r', encoding='utf-8') as f:
-                    latest = json.load(f)
-                if hasattr(self.km_system, 'update_config'):
-                    self.km_system.update_config(latest)
-                print(f"[配置][针对性新题] llm_provider={latest.get('llm_provider')} fallback={latest.get('enable_llm_fallback')}")
-            except Exception as cfg_err:
-                print(f"[配置][针对性新题] 加载最新配置失败，使用现有配置: {cfg_err}")
+    def _on_header_double_clicked(self, section: int):
+        """表头双击排序：时间、熟练度"""
+        if section == 2:
+            # 时间排序
+            self.error_table.sortItems(2, Qt.SortOrder.AscendingOrder if self._time_sort_asc else Qt.SortOrder.DescendingOrder)
+            self._time_sort_asc = not self._time_sort_asc
+        elif section == 3:
+            # 熟练度排序（根据UserRole中的数值）
+            # 将所有单元格的显示文本替换为带前导零的，以便字符串排序；更稳妥方式是自定义排序，但这里简化处理
+            for r in range(self.error_table.rowCount()):
+                item = self.error_table.item(r, 3)
+                if item:
+                    val = int(item.data(Qt.ItemDataRole.UserRole) or 0)
+                    item.setText(f"{val:03d}")
+            self.error_table.sortItems(3, Qt.SortOrder.AscendingOrder if self._prof_sort_asc else Qt.SortOrder.DescendingOrder)
+            # 恢复显示为正常数字
+            for r in range(self.error_table.rowCount()):
+                item = self.error_table.item(r, 3)
+                if item:
+                    val = int(item.text())
+                    item.setText(str(val))
+            self._prof_sort_asc = not self._prof_sort_asc
 
-            new_questions = self.km_system.generate_new_questions(
-                self.current_subject, self.current_knowledge_point, question_count
-            )
-            
-            if new_questions:
-                # 格式化显示新题
-                formatted_questions = self._format_questions(new_questions)
-                self.new_questions_browser.setHtml(formatted_questions)
-            else:
-                self.new_questions_browser.setPlainText("生成失败或该知识点暂无错题记录")
-        
-        except Exception as e:
-            self.new_questions_browser.setPlainText(f"生成失败: {e}")
-        
-        finally:
-            self.generate_button.setEnabled(True)
-            self.generate_button.setText("生成针对性新题")
+    def _open_detail_for_row(self, row: int, col: int):
+        if row < 0 or row >= len(self.error_questions):
+            return
+        error = self.error_questions[row]
+        dlg = ErrorQuestionDetailDialog(self.km_system, self.current_subject, self.current_knowledge_point, error, self)
+        dlg.exec()
+    
+    # 生成新题逻辑迁移到详情面板
     
     def _format_questions(self, questions):
         """格式化题目显示"""
@@ -333,6 +286,444 @@ class ErrorQuestionReviewDialog(QDialog):
         
         return "".join(html_parts)
 
+
+class ErrorQuestionDetailDialog(QDialog):
+    """错题复习详情面板"""
+    def __init__(self, km_system, subject_name: str, knowledge_point_id: int, error: dict, parent=None):
+        super().__init__(parent)
+        self.km_system = km_system
+        self.subject_name = subject_name
+        self.knowledge_point_id = knowledge_point_id
+        self.error = error
+        self._slider_adjusted = False
+        self._history = []
+        self.setWindowTitle("错题复习")
+        self.resize(900, 700)
+        self._setup_ui()
+        self._load_history()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # 顶部原始信息
+        info_group = QGroupBox("题目信息")
+        info_layout = QVBoxLayout(info_group)
+        info_layout.addWidget(QLabel(f"原题：{self.error.get('question_content', '')}"))
+        info_layout.addWidget(QLabel(f"用户答案：{self.error.get('user_answer', '-') or '-'}"))
+        info_layout.addWidget(QLabel(f"正确答案：{self.error.get('correct_answer', '-') or '-'}"))
+        info_layout.addWidget(QLabel(f"解析：{self.error.get('explanation', '-') or '-'}"))
+        layout.addWidget(info_group)
+
+        # 熟练度滑杆
+        prof_group = QGroupBox("熟练度调整（0-100，默认20；不调整则+1）")
+        prof_layout = QHBoxLayout(prof_group)
+        self.prof_slider = QSpinBox()  # 使用SpinBox更直观存取精确值
+        self.prof_slider.setRange(0, 100)
+        self.prof_slider.setValue(int(self.error.get('current_proficiency', 20) or 20))
+        self.prof_slider.valueChanged.connect(self._on_slider_changed)
+        prof_layout.addWidget(QLabel("熟练度："))
+        prof_layout.addWidget(self.prof_slider)
+        prof_layout.addStretch()
+        self.save_prof_button = QPushButton("记录本次熟练度")
+        self.save_prof_button.clicked.connect(self._save_proficiency)
+        prof_layout.addWidget(self.save_prof_button)
+        layout.addWidget(prof_group)
+
+        # 曲线图
+        chart_group = QGroupBox("熟练度随时间变化曲线")
+        chart_v = QVBoxLayout(chart_group)
+        self.chart = QChart()
+        self.chart.setTitle("")
+        self.series = QLineSeries()
+        self.chart.addSeries(self.series)
+        self.axis_x = QDateTimeAxis()
+        self.axis_x.setFormat("MM-dd HH:mm")
+        self.axis_x.setTitleText("时间")
+        self.axis_y = QValueAxis()
+        self.axis_y.setRange(0, 100)
+        self.axis_y.setTitleText("熟练度")
+        self.chart.addAxis(self.axis_x, Qt.AlignmentFlag.AlignBottom)
+        self.chart.addAxis(self.axis_y, Qt.AlignmentFlag.AlignLeft)
+        self.series.attachAxis(self.axis_x)
+        self.series.attachAxis(self.axis_y)
+        self.chart_view = QChartView(self.chart)
+        chart_v.addWidget(self.chart_view)
+        layout.addWidget(chart_group)
+
+        # 针对性新题生成
+        gen_group = QGroupBox("针对性新题生成")
+        gen_layout = QVBoxLayout(gen_group)
+        control_layout = QHBoxLayout()
+        control_layout.addWidget(QLabel("生成题数:"))
+        self.count_spin = QSpinBox()
+        self.count_spin.setRange(1, 5)
+        self.count_spin.setValue(2)
+        control_layout.addWidget(self.count_spin)
+        self.gen_btn = QPushButton("生成类似题目")
+        self.gen_btn.clicked.connect(self._generate_similar_questions)
+        control_layout.addStretch()
+        control_layout.addWidget(self.gen_btn)
+        gen_layout.addLayout(control_layout)
+        self.questions_browser = QTextBrowser()
+        # 防止点击锚点跳转导致页面变白
+        self.questions_browser.setOpenLinks(False)
+        self.questions_browser.setOpenExternalLinks(False)
+        # 自定义右键菜单
+        self.questions_browser.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.questions_browser.customContextMenuRequested.connect(self._on_questions_context_menu)
+        gen_layout.addWidget(self.questions_browser)
+        layout.addWidget(gen_group)
+
+        # 关闭按钮
+        bottom = QHBoxLayout()
+        bottom.addStretch()
+        close_btn = QPushButton("关闭")
+        close_btn.clicked.connect(self.accept)
+        bottom.addWidget(close_btn)
+        layout.addLayout(bottom)
+
+    def _on_slider_changed(self, _):
+        self._slider_adjusted = True
+
+    def _load_history(self):
+        try:
+            history = self.km_system.get_proficiency_history(self.error['id'])
+        except Exception:
+            history = []
+        self._history = history
+        self._refresh_series()
+
+    def _refresh_series(self):
+        self.series.clear()
+        if not self._history:
+            # 初始点
+            dt = QDateTime.currentDateTime()
+            self.series.append(dt.toMSecsSinceEpoch(), int(self.error.get('current_proficiency', 20) or 20))
+        else:
+            for ts, prof in self._history:
+                try:
+                    dt = QDateTime.fromString(ts.replace('T', ' ').replace('Z', ''), 'yyyy-MM-dd HH:mm:ss')
+                    if not dt.isValid():
+                        dt = QDateTime.fromString(ts.split('.')[0], 'yyyy-MM-dd HH:mm:ss')
+                    if not dt.isValid():
+                        dt = QDateTime.currentDateTime()
+                except Exception:
+                    dt = QDateTime.currentDateTime()
+                self.series.append(dt.toMSecsSinceEpoch(), int(prof))
+        # 调整X轴范围
+        if self.series.count() >= 1:
+            x_values = [int(self.series.at(i).x()) for i in range(self.series.count())]
+            x_min = min(x_values)
+            x_max = max(x_values)
+            # 避免相等导致范围无效
+            if x_min == x_max:
+                x_min -= 60_000  # -1分钟
+                x_max += 60_000  # +1分钟
+            # 限制到有效的int范围并设置范围
+            self.axis_x.setRange(QDateTime.fromMSecsSinceEpoch(int(x_min)), QDateTime.fromMSecsSinceEpoch(int(x_max)))
+
+    def _save_proficiency(self):
+        try:
+            current = int(self.error.get('current_proficiency', 20) or 20)
+            if self._slider_adjusted:
+                new_prof = int(self.prof_slider.value())
+            else:
+                new_prof = min(100, current + 1)
+            self.km_system.append_proficiency(self.error['id'], new_prof)
+            # 更新本地状态
+            self.error['current_proficiency'] = new_prof
+            self.prof_slider.setValue(new_prof)
+            # 重新加载历史
+            self._load_history()
+            QMessageBox.information(self, "成功", "已记录本次熟练度")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"记录失败: {e}")
+
+    def _generate_similar_questions(self):
+        try:
+            # 同步配置
+            try:
+                import json
+                with open('app_config.json', 'r', encoding='utf-8') as f:
+                    latest = json.load(f)
+                if hasattr(self.km_system, 'update_config'):
+                    self.km_system.update_config(latest)
+            except Exception:
+                pass
+
+            count = int(self.count_spin.value())
+            ref_text = self.error.get('question_content', '') if isinstance(self.error, dict) else ''
+
+            questions = self.km_system.generate_new_questions(
+                self.subject_name,
+                self.knowledge_point_id,
+                count,
+                reference_text=ref_text
+            )
+            if not questions:
+                self.questions_browser.setPlainText("暂无可生成的新题或生成失败")
+                return
+
+            # 将题目转换为练习面板所需的“纯文本题目”格式（不包含答案）
+            lines = []
+            for i, q in enumerate(questions, 1):
+                stem = (q.get('question') or '').strip()
+                if not stem:
+                    continue
+                lines.append(f"{i}. {stem}")
+                opts = q.get('options') or {}
+                # 使用 A) B) C) D) 风格
+                for key in ["A", "B", "C", "D"]:
+                    if key in opts and (opts.get(key) or '').strip():
+                        lines.append(f"{key}) {opts[key].strip()}")
+                # 题目间空行
+                lines.append("")
+            questions_text = "\n".join(lines).strip()
+
+            # 打开技术练习面板并注入题目
+            mw = self._find_main_window()
+            if not mw or not hasattr(mw, 'open_practice_panel'):
+                self.questions_browser.setPlainText("无法打开练习面板：主窗口不可用")
+                return
+            # 通过open_practice_panel传入空selected_text，避免自动生成
+            try:
+                mw.open_practice_panel("", 0)
+                panel = getattr(mw, '_practice_panels', [])[-1]
+            except Exception:
+                # 回退：通过菜单打开
+                if hasattr(mw, 'open_practice_panel_from_menu'):
+                    mw.open_practice_panel_from_menu()
+                    panel = getattr(mw, '_practice_panels', [])[-1]
+                else:
+                    self.questions_browser.setPlainText("无法创建练习面板")
+                    return
+
+            try:
+                # 设置学习内容为原错题文本，便于用户溯源
+                panel.selected_text = ref_text or panel.selected_text
+                if hasattr(panel, 'content_display'):
+                    panel.content_display.setPlainText(panel.selected_text)
+                # 注入题目并更新面板状态
+                if hasattr(panel, '_on_questions_ready'):
+                    panel._on_questions_ready(questions_text)
+                else:
+                    # 最小注入以保证后续评估流程可用
+                    panel.current_questions = questions_text
+                    if hasattr(panel, 'practice_display'):
+                        panel.practice_display.setPlainText(questions_text)
+                    if hasattr(panel, '_set_submit_mode_evaluate'):
+                        panel._set_submit_mode_evaluate()
+                # 给出状态提示
+                if hasattr(panel, 'status_label'):
+                    panel.status_label.setText("已载入相似题目（来自错题复习）")
+                # 关闭当前详情对话框，避免模态阻塞导致练习面板被遮挡
+                try:
+                    self.accept()
+                except Exception:
+                    pass
+            except Exception as e:
+                self.questions_browser.setPlainText(f"注入练习面板失败: {e}")
+        except Exception as e:
+            self.questions_browser.setPlainText(f"生成失败: {e}")
+
+    def _on_anchor_clicked(self, url):
+        try:
+            spec = url.toString()
+            if spec.startswith('show://'):
+                idx = spec.split('://')[-1]
+                frame = self.questions_browser.page()
+                # 简单方式：重新注入一段脚本隐藏/显示答案
+                js = f"""
+                    var a=document.getElementById('ans_{idx}'); if(a) a.style.display='block';
+                    var b=document.getElementById('exp_{idx}'); if(b) b.style.display='block';
+                """
+                # QTextBrowser 不执行JS，这里通过替换HTML中对应段落的display属性实现逐条展开
+                html = self.questions_browser.toHtml()
+                html = html.replace(f"id=\"ans_{idx}\" class='ans' style='display:none;'", f"id=\"ans_{idx}\" class='ans' style='display:block;'")
+                html = html.replace(f"id=\"exp_{idx}\" style='display:none;'", f"id=\"exp_{idx}\" style='display:block;'")
+                self.questions_browser.setHtml(html)
+        except Exception:
+            pass
+
+    def _on_questions_context_menu(self, pos: QPoint):
+        menu = self.questions_browser.createStandardContextMenu()
+        menu.addSeparator()
+        act_deep = QPushButton  # type: ignore
+        from PySide6.QtWidgets import QAction
+        deep_action = QAction("深入学习", self)
+        deep_action.triggered.connect(lambda: self._deep_learn_selected_question(pos))
+        menu.addAction(deep_action)
+
+        fav_action = QAction("收藏这道题", self)
+        fav_action.triggered.connect(lambda: self._favorite_selected_question(pos))
+        menu.addAction(fav_action)
+
+        menu.exec(self.questions_browser.mapToGlobal(pos))
+
+    def _locate_question_index_at_pos(self, pos: QPoint) -> int:
+        """根据点选位置，向上查找最近的“题目 N”标题，返回N（1基），找不到返回-1"""
+        cursor = self.questions_browser.cursorForPosition(pos)
+        block = cursor.block()
+        while block.isValid():
+            text = block.text().strip()
+            if text.startswith("题目 "):
+                try:
+                    num = int(''.join(ch for ch in text if ch.isdigit()))
+                    return num
+                except Exception:
+                    return -1
+            block = block.previous()
+        return -1
+
+    def _get_question_text_by_index(self, idx: int) -> str:
+        html = self.questions_browser.toHtml()
+        # 粗略提取题块：以 <h3>题目 idx</h3> 为起点，到下一个 <h3> 或结束
+        start_tag = f"<h3>题目 {idx}</h3>"
+        start = html.find(start_tag)
+        if start < 0:
+            return ""
+        end = html.find("<h3>题目 ", start + len(start_tag))
+        block_html = html[start:end] if end > start else html[start:]
+        # 去掉HTML标签，得到纯文本用于传递到AI助手
+        from re import sub
+        text = sub(r"<[^>]+>", "", block_html)
+        return text.strip()
+
+    def _find_main_window(self):
+        w = self
+        while w:
+            if hasattr(w, 'open_chatbot_panel'):
+                return w
+            w = w.parent()
+        return None
+
+    def _deep_learn_selected_question(self, pos: QPoint):
+        idx = self._locate_question_index_at_pos(pos)
+        if idx <= 0:
+            QMessageBox.information(self, "提示", "请在某一道题目区域内右键以使用深入学习。")
+            return
+        text = self._get_question_text_by_index(idx)
+        if not text:
+            QMessageBox.warning(self, "提示", "未能获取题目文本。")
+            return
+        mw = self._find_main_window()
+        if not mw or not hasattr(mw, 'open_chatbot_panel'):
+            QMessageBox.warning(self, "提示", "无法打开AI深入学习助手面板。")
+            return
+        try:
+            mw.open_chatbot_panel(text, 0)
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"打开深入学习失败: {e}")
+
+    def _favorite_selected_question(self, pos: QPoint):
+        idx = self._locate_question_index_at_pos(pos)
+        if idx <= 0:
+            QMessageBox.information(self, "提示", "请在某一道题目区域内右键以收藏。")
+            return
+        # 提取题干与解析
+        text = self._get_question_text_by_index(idx)
+        if not text:
+            QMessageBox.warning(self, "提示", "未能获取题目文本。")
+            return
+        # 简单切分出 题干/选项/答案/解析（若存在）
+        q = {"question": "", "options": {}, "correct_answer": "", "explanation": ""}
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        mode = "question"
+        for ln in lines:
+            if ln.startswith("题干："):
+                q["question"] = ln.replace("题干：", "", 1).strip()
+                mode = "options"
+            elif ln.startswith("选项："):
+                mode = "options"
+            elif ln.startswith("正确答案："):
+                q["correct_answer"] = ln.replace("正确答案：", "", 1).strip()
+                mode = "explain"
+            elif ln.startswith("解析："):
+                q["explanation"] = ln.replace("解析：", "", 1).strip()
+                mode = "done"
+            else:
+                if mode == "options" and len(ln) >= 3 and ln[1] == '.' or (ln[:2] in ["A ", "B ", "C ", "D "]):
+                    # 兼容 "A. xxx" 或 "A xxx"
+                    key = ln[0]
+                    val = ln[2:].strip() if ln[1] == '.' else ln[1:].strip()
+                    q["options"][key] = val
+                elif mode == "question" and not q["question"]:
+                    q["question"] = ln
+        # 打开收藏对话框
+        dlg = FavoriteQuestionDialog(self.km_system, self.subject_name, self.knowledge_point_id, q, self)
+        dlg.exec()
+
+
+class FavoriteQuestionDialog(QDialog):
+    """收藏题目对话框（单题，自动匹配知识点，允许用户调整后保存）"""
+    def __init__(self, km_system, subject_name: str, knowledge_point_id: int, question: dict, parent=None):
+        super().__init__(parent)
+        self.km_system = km_system
+        self.subject_name = subject_name
+        self.knowledge_point_id = knowledge_point_id
+        self.question = question
+        self.setWindowTitle("收藏题目")
+        self.resize(700, 500)
+        self._setup_ui()
+        self._load_points_and_rank()
+
+    def _setup_ui(self):
+        from PySide6.QtWidgets import QVBoxLayout, QLabel, QTextEdit, QHBoxLayout, QPushButton, QComboBox
+        self.layout = QVBoxLayout(self)
+        self.layout.addWidget(QLabel("题目预览："))
+        self.preview = QTextEdit()
+        self.preview.setReadOnly(True)
+        # 构建预览
+        parts = [f"题干：{self.question.get('question','')}"]
+        if self.question.get('options'):
+            parts.append("选项：")
+            for k, v in self.question['options'].items():
+                parts.append(f"{k}. {v}")
+        self.preview.setPlainText("\n".join(parts))
+        self.layout.addWidget(self.preview)
+
+        row = QHBoxLayout()
+        row.addWidget(QLabel("匹配知识点："))
+        self.combo = QComboBox()
+        row.addWidget(self.combo)
+        self.layout.addLayout(row)
+
+        btns = QHBoxLayout()
+        save = QPushButton("收藏")
+        cancel = QPushButton("取消")
+        save.clicked.connect(self._save)
+        cancel.clicked.connect(self.reject)
+        btns.addStretch()
+        btns.addWidget(save)
+        btns.addWidget(cancel)
+        self.layout.addLayout(btns)
+
+    def _load_points_and_rank(self):
+        try:
+            from similarity_matcher import rank_matches
+            points = self.km_system.get_knowledge_points_by_subject(self.subject_name)
+            ranked = rank_matches(self.question.get('question',''), points, cfg=getattr(self.km_system, 'config', {}) , min_score=0.0)
+            score_map = {r['id']: r['score'] for r in ranked}
+            ordered = sorted(points, key=lambda p: score_map.get(p['id'], -1.0), reverse=True)
+            self.combo.clear()
+            for p in ordered:
+                self.combo.addItem(f"{p['point_name']} ({score_map.get(p['id'],0.0):.2f})", p['id'])
+            if ordered:
+                self.combo.setCurrentIndex(0)
+        except Exception as e:
+            QMessageBox.warning(self, "提示", f"匹配知识点失败：{e}")
+
+    def _save(self):
+        try:
+            kp_id = self.combo.currentData()
+            qtext = self.question.get('question','')
+            correct = self.question.get('correct_answer','')
+            expl = self.question.get('explanation','')
+            self.km_system.save_favorite_question(self.subject_name, kp_id, qtext, correct, expl)
+            QMessageBox.information(self, "成功", "已收藏该题目。")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"收藏失败：{e}")
 
 class QuestionGenerationWorker(QObject):
     """新题生成工作线程"""

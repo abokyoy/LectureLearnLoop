@@ -25,6 +25,7 @@ from PySide6.QtCore import Qt
 
 from knowledge_management import KnowledgeManagementSystem
 from enhanced_practice_integration import ErrorQuestionSlicer, KnowledgePointMatcher
+from similarity_matcher import rank_matches
 
 
 class ErrorImportDialog(QDialog):
@@ -59,7 +60,16 @@ class ErrorImportDialog(QDialog):
         self.table.setHorizontalHeaderLabels(["序号", "题目片段", "用户答案", "匹配知识点"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        # 显示完整内容：开启自动换行、禁用省略号，并自适应行高
+        self.table.setWordWrap(True)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, header.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, header.ResizeMode.Stretch)  # 题目片段占最大空间
+        header.setSectionResizeMode(2, header.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, header.ResizeMode.ResizeToContents)
+        # 行高按内容自适应，配合自动换行显示完整文本
+        self.table.verticalHeader().setSectionResizeMode(self.table.verticalHeader().ResizeMode.ResizeToContents)
         layout.addWidget(self.table)
 
         btn_layout = QHBoxLayout()
@@ -96,7 +106,7 @@ class ErrorImportDialog(QDialog):
         # 2) 错题切片
         self.error_questions = self.slicer.slice_error_questions(self.practice_content, self.evaluation_result)
 
-        # 3) 预匹配知识点
+        # 3) 预匹配知识点（基于Embedding/回退规则），并在下拉框中显示相似度
         self.table.setRowCount(len(self.error_questions))
         for i, err in enumerate(self.error_questions):
             idx_item = QTableWidgetItem(str(err.get("question_index", i) + 1))
@@ -104,30 +114,57 @@ class ErrorImportDialog(QDialog):
             self.table.setItem(i, 0, idx_item)
 
             q_text = (err.get("question_content") or "").strip()
-            q_text_short = (q_text[:80] + "...") if len(q_text) > 80 else q_text
-            q_item = QTableWidgetItem(q_text_short)
+            # 显示完整文本，不截断
+            q_item = QTableWidgetItem(q_text)
             q_item.setToolTip(q_text)
+            q_item.setTextAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             q_item.setFlags(q_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 1, q_item)
 
             a_text = (err.get("user_answer") or "").strip()
-            a_text_short = (a_text[:80] + "...") if len(a_text) > 80 else a_text
-            a_item = QTableWidgetItem(a_text_short)
+            # 用户答案长度通常较短，直接显示
+            a_item = QTableWidgetItem(a_text)
             a_item.setToolTip(a_text)
+            a_item.setTextAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             a_item.setFlags(a_item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(i, 2, a_item)
 
-            # Combo for knowledge points
+            # 针对该错题推断学科并取该学科下的知识点
+            try:
+                subject = self.matcher._infer_subject(self.note_content, [
+                    {
+                        "question_content": err.get("question_content", ""),
+                        "knowledge_point_hint": err.get("knowledge_point_hint", "")
+                    }
+                ])
+                subject_points = self.km_system.get_knowledge_points_by_subject(subject)
+            except Exception:
+                subject = None
+                subject_points = []
+
+            # 计算相似度排名（使用配置中的 embedding_* 参数；默认 Ollama nomic-embed-text:latest）
+            try:
+                ranked = rank_matches(err.get("question_content", ""), subject_points, cfg=self.config, min_score=0.0)
+            except Exception:
+                ranked = []
+            score_map = {r["id"]: r["score"] for r in ranked}
+
+            # 构建带分数的下拉框（按分数降序显示，未评分的放最后）
+            ordered_points = sorted(subject_points, key=lambda p: score_map.get(p["id"], -1.0), reverse=True)
             combo = QComboBox()
-            for kp in self.all_knowledge_points:
-                combo.addItem(kp["display"], kp["id"])
-            # Try match
-            matched_id = self._match_point_for_error(err)
-            if matched_id:
-                idx = self._index_of_point(matched_id)
-                if idx is not None:
-                    combo.setCurrentIndex(idx)
+            for kp in ordered_points:
+                pid = kp["id"]
+                display_name = f"{subject or ''} - {kp['point_name']} ({score_map.get(pid, 0.0):.2f})"
+                combo.addItem(display_name, pid)
+
+            # 默认选中最高分项
+            if ordered_points:
+                combo.setCurrentIndex(0)
+
             self.table.setCellWidget(i, 3, combo)
+
+        # 填充完成后自适应行高，确保长文本完整显示
+        self.table.resizeRowsToContents()
 
     def _index_of_point(self, pid: int) -> Optional[int]:
         for i, kp in enumerate(self.all_knowledge_points):
@@ -136,26 +173,8 @@ class ErrorImportDialog(QDialog):
         return None
 
     def _match_point_for_error(self, err: Dict) -> Optional[int]:
-        try:
-            subject = self.matcher._infer_subject(self.note_content, [
-                {
-                    "question_content": err.get("question_content", ""),
-                    "knowledge_point_hint": err.get("knowledge_point_hint", "")
-                }
-            ])
-            points = self.km_system.get_knowledge_points_by_subject(subject)
-            # 回退：若该学科无点，则用全集
-            if not points:
-                points = [
-                    {
-                        "id": kp["id"],
-                        "point_name": kp["point_name"],
-                        "core_description": kp.get("core_description", "")
-                    } for kp in self.all_knowledge_points
-                ]
-            return self.matcher._match_single_question(err, points)
-        except Exception:
-            return None
+        """Deprecated by embedding-based rank in _load_data; keep for compatibility."""
+        return None
 
     def _collect_selection(self) -> List[int]:
         rows = {i.row() for i in self.table.selectionModel().selectedRows()}
@@ -194,7 +213,10 @@ class ErrorImportDialog(QDialog):
                     "knowledge_point_id": kp_id,
                     "question_content": err.get("question_content", ""),
                     "user_answer": err.get("user_answer", ""),
-                    "is_correct": False
+                    "is_correct": False,
+                    # 透传正确答案与解析（若切片提取到）
+                    "correct_answer": err.get("correct_answer"),
+                    "explanation": err.get("explanation"),
                 })
 
             if not records:

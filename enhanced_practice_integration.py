@@ -53,10 +53,11 @@ class ErrorQuestionSlicer:
             error_questions: List[Dict] = []
             for idx, info in error_analysis.items():
                 if not info.get("is_correct", False):
-                    q_data = all_questions[idx] if 0 <= idx < len(all_questions) else {"question": f"问题{idx+1}", "user_answer": ""}
+                    q_data = all_questions[idx] if 0 <= idx < len(all_questions) else {"question": f"问题{idx+1}", "user_answer": "", "full_block": f"问题{idx+1}"}
                     error_questions.append({
                         "question_index": idx,
-                        "question_content": q_data.get("question", f"问题{idx+1}"),
+                        # 使用完整题块作为题目内容，包含选项/用户答案/判定/分析与要点
+                        "question_content": q_data.get("full_block") or q_data.get("question", f"问题{idx+1}"),
                         "user_answer": q_data.get("user_answer", ""),
                         "correct_answer": info.get("correct_answer", ""),
                         "explanation": info.get("explanation", ""),
@@ -101,30 +102,62 @@ class ErrorQuestionSlicer:
         return questions
 
     def _parse_questions_from_evaluation(self, evaluation_result: str) -> List[Dict]:
-        """从结构化评估报告中解析每题的原题与用户答案。
+        """从结构化评估报告中解析每题块（完整原文片段）及用户答案。
         预期格式（每题）：
-        1. 原题：<全文>
+        1. 原题：<题干全文>
         [可选]选项：...
         用户答案：...
         判定：正确/错误/无法判断
         分析与要点：...
-        ----
+        [分隔线 ---- 或 下一题号 或 整体评价 或 文末]
+        返回的每个元素包含：
+          - index: 题号(0基)
+          - full_block: 从“原题：”开始到下一个分隔边界的完整文本
+          - question: 尽力提取的题干文本（不含选项/答案部分，尽量用于兜底）
+          - user_answer: 解析到的用户答案文本
         """
         try:
-            pattern = r"(?ms)^\s*(\d+)\.[ \t]*原题[：:][ \t]*\n?(.*?)(?:\n选项[：:].*?)?\n用户答案[：:][ \t]*(.*?)\n判定[：:][ \t]*([^\n]+)\n(?:分析与要点[：:][ \t]*(.*?))?(?=(?:\n----|\n\d+\.|\n整体评价|$))"
-            matches = re.findall(pattern, evaluation_result)
-            if not matches:
-                return []
-            questions: List[Dict] = []
-            for m in matches:
-                # m: (idx_str, question_text, user_answer, verdict, analysis)
-                q_text = m[1].strip()
-                ua_text = (m[2] or "").strip()
-                questions.append({
+            blocks: List[Dict] = []
+            # 使用 finditer 拿到整段 span 实现完整切片
+            pattern = r"(?ms)^\s*(\d+)\.[ \t]*原题[：:][ \t]*\n?(.*?)(?=(?:\n----\s*$|\n\d+\.[ \t]*原题[：:]|\n整体评价|\Z))"
+            for m in re.finditer(pattern, evaluation_result):
+                try:
+                    idx = int(m.group(1)) - 1
+                except Exception:
+                    continue
+                full_block = m.group(0).strip()
+                inner = m.group(2) or ""
+                # 提取用户答案
+                ua_match = re.search(r"用户答案[：:][ \t]*(.*)", full_block)
+                user_answer = ua_match.group(1).strip() if ua_match else ""
+                # 提取题干（尽量取到“选项/用户答案”之前）
+                q_text = inner
+                cut_points = []
+                for tag in [r"\n选项[：:]", r"\n用户答案[：:]", r"\n判定[：:]", r"\n分析与要点[：:]"]:
+                    mm = re.search(tag, inner)
+                    if mm:
+                        cut_points.append(mm.start())
+                if cut_points:
+                    q_text = inner[:min(cut_points)].strip()
+                blocks.append({
+                    "index": idx,
+                    "full_block": full_block,
                     "question": q_text,
-                    "user_answer": ua_text
+                    "user_answer": user_answer,
                 })
-            return questions
+            # 按索引排序，组装成顺序列表（缺失位置以空占位）
+            if not blocks:
+                return []
+            max_idx = max(b["index"] for b in blocks)
+            by_idx = {b["index"]: b for b in blocks}
+            result: List[Dict] = []
+            for i in range(max_idx + 1):
+                b = by_idx.get(i)
+                if b:
+                    result.append({"question": b["question"], "user_answer": b["user_answer"], "full_block": b["full_block"]})
+                else:
+                    result.append({"question": f"问题{i+1}", "user_answer": "", "full_block": f"问题{i+1}"})
+            return result
         except Exception:
             return []
 
@@ -642,7 +675,9 @@ class EnhancedPracticeProcessor:
                             "knowledge_point_id": error["matched_knowledge_point_id"],
                             "question_content": error["question_content"],
                             "user_answer": error["user_answer"],
-                            "is_correct": False
+                            "is_correct": False,
+                            "correct_answer": error.get("correct_answer"),
+                            "explanation": error.get("explanation"),
                         }]
                         
                         record_ids = self.km_system.save_practice_results(practice_results)

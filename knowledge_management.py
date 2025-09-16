@@ -10,6 +10,7 @@ import time
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 from llm_logger import log_gemini_call
+from dataclasses import dataclass
 
 
 class DatabaseManager:
@@ -74,9 +75,52 @@ class DatabaseManager:
                 knowledge_point_id INTEGER NOT NULL,
                 practice_record_id INTEGER NOT NULL,
                 review_status INTEGER DEFAULT 0,
+                current_proficiency INTEGER DEFAULT 20,
+                correct_answer TEXT DEFAULT NULL,
+                explanation TEXT DEFAULT NULL,
                 created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id),
                 FOREIGN KEY (practice_record_id) REFERENCES practice_records (id)
+            )
+        ''')
+
+        # 轻量级迁移：为已存在的表增加新列（如果缺失）
+        try:
+            cursor.execute("ALTER TABLE error_questions ADD COLUMN current_proficiency INTEGER DEFAULT 20")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE error_questions ADD COLUMN correct_answer TEXT DEFAULT NULL")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE error_questions ADD COLUMN explanation TEXT DEFAULT NULL")
+        except Exception:
+            pass
+
+        # 错题熟练度历史表（时间序列）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS error_proficiency_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                error_question_id INTEGER NOT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                proficiency INTEGER NOT NULL,
+                FOREIGN KEY (error_question_id) REFERENCES error_questions (id)
+            )
+        ''')
+
+        # 收藏题目表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS favorite_questions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                subject_name TEXT NOT NULL,
+                knowledge_point_id INTEGER NOT NULL,
+                question_content TEXT NOT NULL,
+                correct_answer TEXT DEFAULT NULL,
+                explanation TEXT DEFAULT NULL,
+                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id)
             )
         ''')
         
@@ -86,6 +130,8 @@ class DatabaseManager:
     def get_connection(self):
         """获取数据库连接"""
         return sqlite3.connect(self.db_path)
+
+    # 注意：与错题相关的业务方法在 ErrorQuestionManager 中实现
 
 
 class SubjectManager:
@@ -322,7 +368,7 @@ class KnowledgePointManager:
                     raise Exception(error_msg)
                 
                 if "candidates" in data and len(data["candidates"]) > 0:
-                    content = data["candidates"][0]["content"]["parts"][0]["text"]
+                    content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
                     print(f"[LLM调用] 原始响应内容: {content}")
                     
                     # 记录成功的API调用
@@ -689,6 +735,7 @@ class KnowledgePointManager:
         )
         
         point_id = cursor.lastrowid
+        
         conn.commit()
         conn.close()
         
@@ -727,88 +774,330 @@ class KnowledgePointManager:
         conn.commit()
         conn.close()
         return True
-    
-    def _merge_descriptions(self, existing_desc: str, new_desc: str) -> str:
-        """合并知识点描述"""
-        # 简单合并逻辑，可以后续优化为AI合并
-        if len(new_desc) > len(existing_desc):
-            return new_desc
-        return existing_desc
-    
-    def _merge_names(self, existing_name: str, new_name: str) -> str:
-        """合并知识点名称"""
-        # 简单合并逻辑，保持较短的名称
-        if len(new_name) < len(existing_name):
-            return new_name
-        return existing_name
-    
-    def get_subject_knowledge_points(self, subject_name: str, user_id: str = "0001") -> List[Dict]:
-        """获取学科下的所有知识点"""
-        conn = self.db_manager.get_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(
-            """SELECT id, point_name, core_description, mastery_score, created_time 
-               FROM knowledge_points 
-               WHERE user_id = ? AND subject_name = ? 
-               ORDER BY created_time DESC""",
-            (user_id, subject_name)
-        )
-        
-        points = []
-        for row in cursor.fetchall():
-            points.append({
-                "id": row[0],
-                "point_name": row[1],
-                "core_description": row[2],
-                "mastery_score": row[3],
-                "created_time": row[4]
-            })
-        
-        conn.close()
-        return points
 
 
 class PracticeRecordManager:
     """练习记录管理器"""
-    
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-    
-    def save_practice_record(self, subject_name: str, knowledge_point_id: int, 
-                           question_content: str, user_answer: str, is_correct: bool,
-                           user_id: str = "0001") -> int:
-        """保存练习记录"""
+
+    def save_practice_record(self, subject_name: str, knowledge_point_id: int,
+                             question_content: str, user_answer: str, is_correct: bool,
+                             user_id: str = "0001",
+                             correct_answer: Optional[str] = None,
+                             explanation: Optional[str] = None) -> int:
+        """保存练习记录，并在错误时写入错题表（含正确答案与解析）"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        
+
         cursor.execute(
             """INSERT INTO practice_records 
                (user_id, subject_name, knowledge_point_id, question_content, user_answer, is_correct) 
                VALUES (?, ?, ?, ?, ?, ?)""",
             (user_id, subject_name, knowledge_point_id, question_content, user_answer, int(is_correct))
         )
-        
         record_id = cursor.lastrowid
-        
-        # 如果答错了，自动创建错题记录
+
         if not is_correct:
             cursor.execute(
                 """INSERT INTO error_questions 
-                   (user_id, subject_name, knowledge_point_id, practice_record_id) 
-                   VALUES (?, ?, ?, ?)""",
-                (user_id, subject_name, knowledge_point_id, record_id)
+                   (user_id, subject_name, knowledge_point_id, practice_record_id, correct_answer, explanation) 
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (user_id, subject_name, knowledge_point_id, record_id, correct_answer, explanation)
             )
-        
+
         conn.commit()
         conn.close()
-        
         return record_id
 
 
 class ErrorQuestionManager:
     """错题管理器"""
-    
+    def __init__(self, db_manager: DatabaseManager, config: dict):
+        self.db_manager = db_manager
+        self.config = config
+
+    def get_error_questions_by_knowledge_point(self, subject_name: str, knowledge_point_id: int, 
+                                               user_id: str = "0001") -> List[Dict]:
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.review_status, eq.current_proficiency, eq.correct_answer, eq.explanation
+               FROM error_questions eq
+               JOIN practice_records pr ON eq.practice_record_id = pr.id
+               WHERE eq.user_id = ? AND eq.subject_name = ? AND eq.knowledge_point_id = ?
+               ORDER BY pr.practice_time DESC""",
+            (user_id, subject_name, knowledge_point_id)
+        )
+        errors = []
+        for row in cursor.fetchall():
+            errors.append({
+                "id": row[0],
+                "question_content": row[1],
+                "user_answer": row[2],
+                "practice_time": row[3],
+                "review_status": row[4],
+                "current_proficiency": row[5] if row[5] is not None else 20,
+                "correct_answer": row[6] if len(row) > 6 else None,
+                "explanation": row[7] if len(row) > 7 else None,
+            })
+        conn.close()
+        return errors
+
+    def get_error_counts_by_knowledge_points(self, subject_name: str, user_id: str = "0001") -> Dict[int, int]:
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT knowledge_point_id, COUNT(*) as cnt
+            FROM error_questions
+            WHERE user_id = ? AND subject_name = ?
+            GROUP BY knowledge_point_id
+            """,
+            (user_id, subject_name)
+        )
+        result = {row[0]: row[1] for row in cursor.fetchall()}
+        conn.close()
+        return result
+
+    def mark_as_reviewed(self, error_question_id: int) -> bool:
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE error_questions SET review_status = 1 WHERE id = ?", (error_question_id,))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+
+    def get_proficiency_history(self, error_question_id: int) -> List[Tuple[str, int]]:
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT timestamp, proficiency FROM error_proficiency_history
+            WHERE error_question_id = ?
+            ORDER BY timestamp ASC
+            """,
+            (error_question_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [(r[0], int(r[1])) for r in rows]
+
+    def append_proficiency(self, error_question_id: int, proficiency: int) -> None:
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        p = int(max(0, min(100, proficiency)))
+        cursor.execute(
+            "INSERT INTO error_proficiency_history (error_question_id, proficiency) VALUES (?, ?)",
+            (error_question_id, p)
+        )
+        cursor.execute(
+            "UPDATE error_questions SET current_proficiency = ? WHERE id = ?",
+            (p, error_question_id)
+        )
+        conn.commit()
+        conn.close()
+
+    def generate_targeted_questions(self, subject_name: str, knowledge_point_id: int, 
+                                    question_count: int = 2, user_id: str = "0001",
+                                    reference_text: Optional[str] = None) -> List[Dict]:
+        # 1) 获取知识点信息
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT point_name, core_description FROM knowledge_points WHERE id = ?",
+            (knowledge_point_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return []
+        point_name, core_description = row[0], row[1]
+
+        # 2) 获取该知识点最近错题（作为参考）
+        cursor.execute(
+            """
+            SELECT pr.question_content
+            FROM error_questions eq
+            JOIN practice_records pr ON pr.id = eq.practice_record_id
+            WHERE eq.subject_name = ? AND eq.knowledge_point_id = ?
+            ORDER BY pr.practice_time DESC
+            LIMIT 3
+            """,
+            (subject_name, knowledge_point_id)
+        )
+        err_rows = cursor.fetchall()
+        conn.close()
+        ref_errors = "\n".join([f"错题{i+1}: {r[0]}" for i, r in enumerate(err_rows)]) if err_rows else "(无参考错题，按知识点说明生成)"
+
+        # 3) 组装提示词
+        ref_original = reference_text.strip() if reference_text else ""
+        ref_block = f"\n原题：\n{ref_original}\n" if ref_original else ""
+        prompt = f"""基于以下信息生成{question_count}道针对性练习题：\n\n学科：{subject_name}\n知识点：{point_name}\n知识点描述：{core_description}{ref_block}\n参考错题：\n{ref_errors}\n\n要求：\n1. 新题与原题考点一致，但题干和表述需有明显变化\n2. 题目使用中文表述，尽量提供客观问法\n3. 输出以清晰编号列出每道题目\n仅输出题目文本，不要包含解析。"""
+
+        provider = (self.config or {}).get("llm_provider", "Ollama")
+        # 将 None 视作 True，保证有回退
+        enable_fallback = (self.config or {}).get("enable_llm_fallback", True)
+        enable_fallback = True if enable_fallback is None else bool(enable_fallback)
+
+        # 4) 优先使用 Ollama
+        try:
+            if provider == "Ollama":
+                text = self._ollama_generate(prompt)
+            elif provider == "Gemini":
+                text = self._gemini_generate(prompt)
+            else:  # DeepSeek 等未实现则先走 Ollama
+                text = self._ollama_generate(prompt)
+        except Exception as e:
+            text = ""
+
+        # 清洗 think/思考 标签
+        def _clean_text(t: str) -> str:
+            try:
+                import re
+                patterns = [r"<think>.*?</think>", r"<thinking>.*?</thinking>", r"<Thought>.*?</Thought>"]
+                for p in patterns:
+                    t = re.sub(p, "", t, flags=re.DOTALL | re.IGNORECASE)
+                # 常见中文思考块（简单裁剪）
+                t = re.sub(r"(?s)^\s*思考[:：].*?\n", "", t)
+                return t.strip()
+            except Exception:
+                return t
+
+        # 5) 回退：另一个提供商
+        if not text and enable_fallback:
+            try:
+                if provider == "Ollama":
+                    text = self._gemini_generate(prompt)
+                else:
+                    text = self._ollama_generate(prompt)
+            except Exception:
+                text = ""
+
+        # 6) 最终兜底：规则生成
+        if not text:
+            text = self._rule_based_generate(point_name, core_description, question_count, reference_text or "")
+        text = _clean_text(text)
+
+        # 7) 解析为题目列表（按编号切分 + 提取题干/选项/答案/解析）
+        items: List[Dict] = []
+        lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+        buf: list[str] = []
+
+        import re
+        def _flush_buf():
+            if not buf:
+                return
+            q_text_lines: list[str] = []
+            options: dict[str, str] = {}
+            correct = ""
+            expl = ""
+            for ln in buf:
+                # 选项
+                m = re.match(r"^([A-D])[).．。\s]\s*(.+)$", ln)
+                if m:
+                    options[m.group(1)] = m.group(2).strip()
+                    continue
+                # 正确答案
+                if ln.startswith("正确答案") or ln.startswith("答案"):
+                    part = ln.split("：", 1)
+                    if len(part) == 2:
+                        correct = part[1].strip()
+                    else:
+                        part = ln.split(":", 1)
+                        if len(part) == 2:
+                            correct = part[1].strip()
+                    continue
+                # 解析
+                if ln.startswith("解析"):
+                    part = ln.split("：", 1)
+                    expl = part[1].strip() if len(part) == 2 else ""
+                    continue
+                q_text_lines.append(ln)
+            q_text = "\n".join(q_text_lines).strip()
+            items.append({
+                "question": q_text,
+                "options": options,
+                "correct_answer": correct,
+                "explanation": expl,
+                "knowledge_point_id": knowledge_point_id,
+                "subject_name": subject_name,
+                "source": provider,
+            })
+            buf.clear()
+
+        for ln in lines:
+            if re.match(r"^(\d+)[).、.]\s*", ln):
+                _flush_buf()
+                ln = re.sub(r"^(\d+)[).、.]\s*", "", ln)
+                buf.append(ln)
+            else:
+                buf.append(ln)
+        _flush_buf()
+
+        # 截断到需求数量
+        if len(items) > question_count:
+            items = items[:question_count]
+        return items
+
+    # ---- LLM helpers ----
+    def _ollama_generate(self, prompt: str) -> str:
+        try:
+            import requests
+            model = (self.config or {}).get("ollama_model", "qwen2.5:14b")
+            # 兼容用户只填主机或 /api 前缀的情况
+            base = (self.config or {}).get("ollama_api_url", "http://localhost:11434")
+            url = base.rstrip('/')
+            if url.endswith('/api/generate'):
+                pass
+            elif url.endswith('/api'):
+                url = url + '/generate'
+            else:
+                url = url + '/api/generate'
+            payload = {"model": model, "prompt": prompt, "stream": False}
+            resp = requests.post(url, json=payload, timeout=60)
+            if not resp.ok:
+                return ""
+            data = resp.json()
+            return (data.get("response") or "").strip()
+        except Exception:
+            return ""
+
+    def _gemini_generate(self, prompt: str) -> str:
+        try:
+            import requests
+            api_key = (self.config or {}).get("gemini_api_key", "")
+            model = (self.config or {}).get("gemini_model", "gemini-1.5-flash")
+            if not api_key:
+                return ""
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            resp = requests.post(url, json=payload, timeout=60)
+            if not resp.ok:
+                return ""
+            data = resp.json()
+            cands = data.get("candidates", [])
+            if cands:
+                parts = cands[0].get("content", {}).get("parts", [])
+                if parts and "text" in parts[0]:
+                    return (parts[0]["text"] or "").strip()
+            return ""
+        except Exception:
+            return ""
+
+    def _rule_based_generate(self, point_name: str, core_desc: str, count: int, reference_text: str = "") -> str:
+        stems = [
+            (f"改写原题表达，保持考点‘{point_name}’不变：{reference_text[:120]}" if reference_text else f"请解释概念‘{point_name}’的核心要点，并举一个简单例子。"),
+            f"围绕‘{point_name}’，给出一道判断题（不出现‘对/错’字样），使其与原题表述不同。",
+            f"针对‘{point_name}’的应用场景，给出一道简答题，要求能区分是否真正理解该概念。",
+        ]
+        items = stems[:max(1, count)]
+        return "\n".join([f"{i+1}. {s}" for i, s in enumerate(items)])
+
+
+class LegacyKnowledgeManagementSystem:
+    """已废弃：请使用新的 KnowledgeManagementSystem(config)"""
     def __init__(self, db_manager: DatabaseManager, config: dict):
         self.db_manager = db_manager
         self.config = config
@@ -820,7 +1109,7 @@ class ErrorQuestionManager:
         cursor = conn.cursor()
         
         cursor.execute(
-            """SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.review_status
+            """SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.review_status, eq.current_proficiency, eq.correct_answer, eq.explanation
                FROM error_questions eq
                JOIN practice_records pr ON eq.practice_record_id = pr.id
                WHERE eq.user_id = ? AND eq.subject_name = ? AND eq.knowledge_point_id = ?
@@ -835,27 +1124,62 @@ class ErrorQuestionManager:
                 "question_content": row[1],
                 "user_answer": row[2],
                 "practice_time": row[3],
-                "review_status": row[4]
+                "review_status": row[4],
+                "current_proficiency": row[5] if row[5] is not None else 20,
+                "correct_answer": row[6] if len(row) > 6 else None,
+                "explanation": row[7] if len(row) > 7 else None,
             })
-        
+
         conn.close()
         return errors
-    
-    def mark_as_reviewed(self, error_question_id: int) -> bool:
-        """标记错题为已复习"""
+
+    def get_error_counts_by_knowledge_points(self, subject_name: str, user_id: str = "0001") -> Dict[int, int]:
+        """返回某学科下每个知识点的错题数量映射: {knowledge_point_id: count}"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
-        
         cursor.execute(
-            "UPDATE error_questions SET review_status = 1 WHERE id = ?",
+            """
+            SELECT knowledge_point_id, COUNT(*) as cnt
+            FROM error_questions
+            WHERE user_id = ? AND subject_name = ?
+            GROUP BY knowledge_point_id
+            """,
+            (user_id, subject_name)
+        )
+        result = {row[0]: row[1] for row in cursor.fetchall()}
+        conn.close()
+        return result
+
+    def get_proficiency_history(self, error_question_id: int) -> List[Tuple[str, int]]:
+        """获取某错题的熟练度时间序列 [(timestamp_iso, proficiency), ...]"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT timestamp, proficiency FROM error_proficiency_history
+            WHERE error_question_id = ?
+            ORDER BY timestamp ASC
+            """,
             (error_question_id,)
         )
-        
-        success = cursor.rowcount > 0
+        rows = cursor.fetchall()
+        conn.close()
+        return [(r[0], int(r[1])) for r in rows]
+
+    def append_proficiency(self, error_question_id: int, proficiency: int) -> None:
+        """追加一条熟练度记录，并更新当前熟练度"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO error_proficiency_history (error_question_id, proficiency) VALUES (?, ?)",
+            (error_question_id, int(max(0, min(100, proficiency))))
+        )
+        cursor.execute(
+            "UPDATE error_questions SET current_proficiency = ? WHERE id = ?",
+            (int(max(0, min(100, proficiency))), error_question_id)
+        )
         conn.commit()
         conn.close()
-        
-        return success
     
     def generate_targeted_questions(self, subject_name: str, knowledge_point_id: int, 
                                   question_count: int = 2, user_id: str = "0001") -> List[Dict]:
@@ -1072,6 +1396,31 @@ class ErrorQuestionManager:
             return content
 
 
+# 确保在使用前已定义 FavoriteQuestionManager（避免导入时 NameError）
+try:
+    FavoriteQuestionManager
+except NameError:
+    class FavoriteQuestionManager:
+        """收藏题目管理器（保障定义顺序）"""
+        def __init__(self, db_manager: DatabaseManager):
+            self.db_manager = db_manager
+
+        def save_favorite_question(self, subject_name: str, knowledge_point_id: int,
+                                   question_content: str, correct_answer: Optional[str] = None,
+                                   explanation: Optional[str] = None, user_id: str = "0001") -> int:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO favorite_questions
+                       (user_id, subject_name, knowledge_point_id, question_content, correct_answer, explanation)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                (user_id, subject_name, knowledge_point_id, question_content, correct_answer, explanation)
+            )
+            fav_id = cursor.lastrowid
+            conn.commit()
+            conn.close()
+            return fav_id
+
 class KnowledgeManagementSystem:
     """知识管理系统主类"""
     
@@ -1082,6 +1431,7 @@ class KnowledgeManagementSystem:
         self.knowledge_manager = KnowledgePointManager(self.db_manager, config)
         self.practice_manager = PracticeRecordManager(self.db_manager)
         self.error_manager = ErrorQuestionManager(self.db_manager, config)
+        self.favorite_manager = FavoriteQuestionManager(self.db_manager)
 
     def update_config(self, new_config: dict):
         """更新配置并下发至子管理器（用于动态切换LLM提供商等）"""
@@ -1098,10 +1448,175 @@ class KnowledgeManagementSystem:
     def get_subjects(self) -> List[str]:
         """获取用户所有学科"""
         return self.subject_manager.get_user_subjects()
+
+    # ---- 错题复习 & 熟练度 相关外部接口 ----
+    def get_error_questions(self, subject_name: str, knowledge_point_id: int) -> List[Dict]:
+        """获取错题（包含当前熟练度等扩展信息）"""
+        return self.error_manager.get_error_questions_by_knowledge_point(subject_name, knowledge_point_id)
+
+    def get_knowledge_points_by_subject(self, subject_name: str) -> List[Dict]:
+        """获取学科下的知识点（直接查询数据库）"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT id, point_name, core_description, mastery_score, created_time
+                   FROM knowledge_points
+                   WHERE user_id = ? AND subject_name = ?
+                   ORDER BY created_time DESC""",
+            ("0001", subject_name)
+        )
+        points: List[Dict] = []
+        for row in cursor.fetchall():
+            points.append({
+                "id": row[0],
+                "point_name": row[1],
+                "core_description": row[2],
+                "mastery_score": row[3],
+                "created_time": row[4],
+            })
+        conn.close()
+        return points
+
+    def get_error_counts_map(self, subject_name: str) -> Dict[int, int]:
+        """获取某学科下每个知识点的错题数量映射"""
+        return self.error_manager.get_error_counts_by_knowledge_points(subject_name)
+
+    def mark_error_reviewed(self, error_question_id: int) -> bool:
+        """标记错题为已复习"""
+        return self.error_manager.mark_as_reviewed(error_question_id)
+
+    def save_favorite_question(self, subject_name: str, knowledge_point_id: int,
+                               question_content: str, correct_answer: Optional[str] = None,
+                               explanation: Optional[str] = None, user_id: str = "0001") -> int:
+        """收藏题目写入数据库"""
+        return self.favorite_manager.save_favorite_question(subject_name, knowledge_point_id,
+                                                           question_content, correct_answer, explanation, user_id)
+
+    def save_practice_results(self, records: List[Dict]) -> List[int]:
+        """批量保存练习结果，并对错误项写入错题库。
+        传入 records = [{
+            'subject_name', 'knowledge_point_id', 'question_content',
+            'user_answer', 'is_correct', 'correct_answer'?, 'explanation'?
+        }]
+        返回写入的 practice_record_id 列表（仅对处理成功的条目）。
+        """
+        saved_ids: List[int] = []
+        for r in records or []:
+            try:
+                subject_name = r.get('subject_name', '通用学科')
+                kp_id = int(r.get('knowledge_point_id') or 0)
+                q = r.get('question_content', '')
+                a = r.get('user_answer', '')
+                is_correct = bool(r.get('is_correct', False))
+                correct = r.get('correct_answer')
+                expl = r.get('explanation')
+                rec_id = self.practice_manager.save_practice_record(
+                    subject_name, kp_id, q, a, is_correct, "0001", correct, expl
+                )
+                saved_ids.append(rec_id)
+            except Exception as e:
+                # 单条失败不影响其它记录
+                print(f"[KMS] save_practice_results 单条保存失败: {e}")
+                continue
+        return saved_ids
+
+    def get_proficiency_history(self, error_question_id: int) -> List[Tuple[str, int]]:
+        return self.error_manager.get_proficiency_history(error_question_id)
+
+    def append_proficiency(self, error_question_id: int, proficiency: int) -> None:
+        self.error_manager.append_proficiency(error_question_id, proficiency)
     
     def add_subject(self, subject_name: str) -> bool:
         """添加新学科"""
         return self.subject_manager.add_subject(subject_name)
+    
+    # ---- 题库管理支持API ----
+    def get_subject_stats(self) -> List[Dict]:
+        """返回每个学科的知识点数量与错题/收藏数量: [{subject_name, kp_count, error_count, favorite_count}]"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        # 知识点数量
+        cursor.execute("SELECT subject_name, COUNT(*) FROM knowledge_points GROUP BY subject_name")
+        kp_map = {row[0]: row[1] for row in cursor.fetchall()}
+        # 错题数量
+        cursor.execute("SELECT subject_name, COUNT(*) FROM error_questions GROUP BY subject_name")
+        err_map = {row[0]: row[1] for row in cursor.fetchall()}
+        # 收藏数量
+        cursor.execute("SELECT subject_name, COUNT(*) FROM favorite_questions GROUP BY subject_name")
+        fav_map = {row[0]: row[1] for row in cursor.fetchall()}
+        # 所有学科
+        subjects = set(kp_map) | set(err_map) | set(fav_map)
+        result = []
+        for s in sorted(subjects):
+            result.append({
+                "subject_name": s,
+                "kp_count": kp_map.get(s, 0),
+                "error_count": err_map.get(s, 0),
+                "favorite_count": fav_map.get(s, 0),
+            })
+        conn.close()
+        return result
+
+    def search_error_questions(self, subject_name: str, knowledge_point_id: Optional[int] = None,
+                               keyword: str = "") -> List[Dict]:
+        """查询错题，按学科/可选知识点/关键词过滤"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        base_sql = (
+            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id "
+            "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
+            "WHERE eq.subject_name = ?"
+        )
+        params: List = [subject_name]
+        if knowledge_point_id:
+            base_sql += " AND eq.knowledge_point_id = ?"
+            params.append(knowledge_point_id)
+        if keyword:
+            base_sql += " AND pr.question_content LIKE ?"
+            params.append(f"%{keyword}%")
+        base_sql += " ORDER BY pr.practice_time DESC"
+        cursor.execute(base_sql, params)
+        rows = cursor.fetchall()
+        conn.close()
+        return [{
+            "id": r[0],
+            "question_content": r[1],
+            "user_answer": r[2],
+            "practice_time": r[3],
+            "current_proficiency": r[4],
+            "correct_answer": r[5],
+            "explanation": r[6],
+            "knowledge_point_id": r[7],
+        } for r in rows]
+
+    def get_favorite_questions(self, subject_name: str, knowledge_point_id: Optional[int] = None,
+                               keyword: str = "") -> List[Dict]:
+        """查询收藏题，按学科/可选知识点/关键词过滤"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        sql = (
+            "SELECT id, question_content, correct_answer, explanation, knowledge_point_id, created_time "
+            "FROM favorite_questions WHERE subject_name = ?"
+        )
+        params: List = [subject_name]
+        if knowledge_point_id:
+            sql += " AND knowledge_point_id = ?"
+            params.append(knowledge_point_id)
+        if keyword:
+            sql += " AND question_content LIKE ?"
+            params.append(f"%{keyword}%")
+        sql += " ORDER BY created_time DESC"
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        conn.close()
+        return [{
+            "id": r[0],
+            "question_content": r[1],
+            "correct_answer": r[2],
+            "explanation": r[3],
+            "knowledge_point_id": r[4],
+            "created_time": r[5],
+        } for r in rows]
     
     def extract_knowledge_points(self, subject_name: str, note_content: str) -> Dict:
         """提取知识点（简化接口）"""
@@ -1154,51 +1669,35 @@ class KnowledgeManagementSystem:
         return result
     
     def confirm_knowledge_points(self, confirmations: List[Dict]) -> List[int]:
-        """确认知识点并保存"""
-        saved_point_ids = []
-        
+        """确认知识点并保存
+        confirmations: List of items with fields:
+          - action: 'merge' | 'new' | 'skip'
+          - point_data: {point_name, core_description}
+          - existing_id: int (when action == 'merge')
+          - subject_name: str (when action == 'new')
+        返回保存/合并后的知识点ID列表。
+        """
+        saved_point_ids: List[int] = []
         for confirmation in confirmations:
-            action = confirmation["action"]  # "merge", "new", "skip"
-            point_data = confirmation["point_data"]
-            
+            action = confirmation.get("action")
+            point_data = confirmation.get("point_data", {})
             if action == "merge":
-                # 合并到已有知识点
-                existing_id = confirmation["existing_id"]
-                success = self.knowledge_manager.merge_to_existing_point(existing_id, point_data)
-                if success:
-                    saved_point_ids.append(existing_id)
-            
+                existing_id = confirmation.get("existing_id")
+                if existing_id:
+                    if self.knowledge_manager.merge_to_existing_point(existing_id, point_data):
+                        saved_point_ids.append(existing_id)
             elif action == "new":
-                # 创建新知识点
-                subject_name = confirmation["subject_name"]
-                point_id = self.knowledge_manager.save_knowledge_point(
-                    subject_name, 
-                    point_data["point_name"], 
-                    point_data["core_description"]
+                subject_name = confirmation.get("subject_name", "通用学科")
+                pid = self.knowledge_manager.save_knowledge_point(
+                    subject_name,
+                    point_data.get("point_name", "未命名知识点"),
+                    point_data.get("core_description", "")
                 )
-                saved_point_ids.append(point_id)
-        
+                saved_point_ids.append(pid)
+            else:
+                # skip
+                continue
         return saved_point_ids
-    
-    def get_knowledge_points_by_subject(self, subject_name: str) -> List[Dict]:
-        """获取学科下的知识点"""
-        return self.knowledge_manager.get_subject_knowledge_points(subject_name)
-    
-    def save_practice_results(self, practice_results: List[Dict]) -> List[int]:
-        """保存练习结果"""
-        record_ids = []
-        
-        for result in practice_results:
-            record_id = self.practice_manager.save_practice_record(
-                result["subject_name"],
-                result["knowledge_point_id"],
-                result["question_content"],
-                result["user_answer"],
-                result["is_correct"]
-            )
-            record_ids.append(record_id)
-        
-        return record_ids
     
     def get_error_questions(self, subject_name: str, knowledge_point_id: int) -> List[Dict]:
         """获取错题"""
@@ -1208,6 +1707,9 @@ class KnowledgeManagementSystem:
         """标记错题为已复习"""
         return self.error_manager.mark_as_reviewed(error_question_id)
     
-    def generate_new_questions(self, subject_name: str, knowledge_point_id: int, count: int = 2) -> List[Dict]:
-        """生成新题"""
-        return self.error_manager.generate_targeted_questions(subject_name, knowledge_point_id, count)
+    def generate_new_questions(self, subject_name: str, knowledge_point_id: int, count: int = 2,
+                               reference_text: Optional[str] = None) -> List[Dict]:
+        """生成新题（可选传入原题文本以增强相似度）"""
+        return self.error_manager.generate_targeted_questions(
+            subject_name, knowledge_point_id, count, reference_text=reference_text
+        )

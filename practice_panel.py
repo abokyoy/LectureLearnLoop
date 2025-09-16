@@ -823,7 +823,8 @@ class PracticePanel(QWidget):
         self.resize(1000, 800)
         
         # Set window flags to make it a proper window (like ChatbotPanel)
-        self.setWindowFlags(Qt.WindowType.Window)
+        # 初始短暂置顶，确保从对话框打开时也能在最前显示；随后自动撤销置顶
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         
         # Set background color to avoid transparency
         self.setStyleSheet("QWidget { background-color: #f0f0f0; }")
@@ -847,6 +848,29 @@ class PracticePanel(QWidget):
         self._loading_from_history = False
         if not self._loading_from_history and self.selected_text.strip():
             self._generate_questions()
+
+        # 显示后将窗口前置，并在短时间后取消置顶属性，避免长期置顶打扰
+        try:
+            QTimer.singleShot(0, self._bring_to_front)
+            QTimer.singleShot(800, self._drop_always_on_top)
+        except Exception:
+            pass
+
+    def _bring_to_front(self):
+        try:
+            self.raise_()
+            self.activateWindow()
+        except Exception:
+            pass
+
+    def _drop_always_on_top(self):
+        try:
+            if self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
+                self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+                # 变更窗口标志后需要调用 show() 使其生效
+                self.show()
+        except Exception:
+            pass
     
     def _generate_practice_id(self):
         """Generate unique practice ID"""
@@ -1052,6 +1076,9 @@ class PracticePanel(QWidget):
         """安全断开 submit 按钮所有已知连接，避免重复绑定"""
         # 仅按当前模式断开，减少 PySide 的 RuntimeWarning 噪音
         mode = getattr(self, "_submit_mode", None)
+        # 首次未设置模式时，不进行任何断开操作，避免 Qt 发出 Failed to disconnect 警告
+        if mode is None:
+            return
         if mode == "evaluate":
             try:
                 self.submit_btn.clicked.disconnect(self._submit_practice)
@@ -1063,15 +1090,8 @@ class PracticePanel(QWidget):
             except Exception:
                 pass
         else:
-            # 未知状态时尽力断开两者
-            try:
-                self.submit_btn.clicked.disconnect(self._submit_practice)
-            except Exception:
-                pass
-            try:
-                self.submit_btn.clicked.disconnect(self._save_only)
-            except Exception:
-                pass
+            # 未知状态（理论不出现），稳妥返回
+            return
 
     def _set_submit_mode_evaluate(self):
         """设置提交按钮为‘提交练习’模式：触发一次评估"""

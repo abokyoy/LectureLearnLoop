@@ -1281,9 +1281,6 @@ class TranscriptionAppQt(QMainWindow):
         # Chatbot panels
         self._chatbot_panels: list[ChatbotPanel] = []
         
-        # Restore layout
-        self._restore_layout()
-    
     # ---- UI ----
     def _setup_ui(self):
         # Menu bar
@@ -1301,10 +1298,11 @@ class TranscriptionAppQt(QMainWindow):
         file_menu.addSeparator()
         act_exit = file_menu.addAction("退出(&X)")
         act_exit.triggered.connect(self.close)
-        # Settings menu
+
+        # Settings menu (must be created before use)
         settings_menu = menubar.addMenu("设置(&S)")
-        act_pick_device = settings_menu.addAction("选择输入设备…")
-        act_pick_device.triggered.connect(self.choose_input_device)
+        act_app_settings = settings_menu.addAction("应用设置…")
+        act_app_settings.triggered.connect(self.open_settings_dialog)
 
         # Logs menu
         log_menu = menubar.addMenu("日志(&L)")
@@ -1316,6 +1314,10 @@ class TranscriptionAppQt(QMainWindow):
         act_save_log.triggered.connect(self.save_log)
         # View menu for showing docks
         view_menu = menubar.addMenu("视图(&V)")
+        # 知识管理子菜单
+        knowledge_menu = view_menu.addMenu("知识管理")
+        act_global_km = knowledge_menu.addAction("全局知识管理…")
+        act_global_km.triggered.connect(self.open_global_knowledge_manager)
         
         # Chatbot menu
         chatbot_menu = view_menu.addMenu("AI深入学习")
@@ -1324,8 +1326,7 @@ class TranscriptionAppQt(QMainWindow):
         act_chatbot_history = chatbot_menu.addAction("对话历史")
         act_chatbot_history.triggered.connect(self._show_chatbot_history)
         
-        # Knowledge Management menu
-        knowledge_menu = view_menu.addMenu("知识管理")
+        # (知识管理菜单已创建)
         act_error_review = knowledge_menu.addAction("错题复习")
         act_error_review.triggered.connect(self.open_error_question_review_panel)
         # 新增：技术练习（从菜单打开练习面板，不自动生成题目）
@@ -1518,6 +1519,15 @@ class TranscriptionAppQt(QMainWindow):
             self._update_md_preview()
         except Exception:
             pass
+
+    def open_global_knowledge_manager(self):
+        try:
+            from global_knowledge_panel import GlobalKnowledgeManagerDialog
+            dlg = GlobalKnowledgeManagerDialog(self.config, self)
+            dlg.exec()
+        except Exception as e:
+            self.log(f"[题库管理] 打开失败: {e}")
+            QMessageBox.critical(self, "错误", f"无法打开题库管理面板: {e}")
 
     # ---- File operations ----
     def set_current_document(self, md_path: str) -> None:
@@ -2168,6 +2178,11 @@ class TranscriptionAppQt(QMainWindow):
                 self._practice_panels = []
             self._practice_panels.append(practice_panel)
             practice_panel.show()
+            try:
+                practice_panel.raise_()
+                practice_panel.activateWindow()
+            except Exception:
+                pass
             self.log("[练习面板] 练习面板已成功创建并显示")
         except Exception as e:
             self.log(f"[练习面板] 创建练习面板时发生错误: {e}")
@@ -2184,6 +2199,11 @@ class TranscriptionAppQt(QMainWindow):
                 self._practice_panels = []
             self._practice_panels.append(practice_panel)
             practice_panel.show()
+            try:
+                practice_panel.raise_()
+                practice_panel.activateWindow()
+            except Exception:
+                pass
             self.log("[练习面板] 通过菜单打开练习面板（不自动生成题目）")
         except Exception as e:
             import traceback
