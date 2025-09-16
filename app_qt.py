@@ -2173,11 +2173,27 @@ class TranscriptionAppQt(QMainWindow):
         self.log(f"[练习面板] 插入位置: {insert_position}")
         
         try:
-            practice_panel = PracticePanel(selected_text, insert_position, self.config, self)
+            # 若当前存在活动的应用级模态窗口，先暂时解除其模态，避免全局输入被阻塞
+            try:
+                from PySide6.QtWidgets import QApplication
+                amw = QApplication.activeModalWidget()
+                if amw is not None and hasattr(amw, 'setWindowModality'):
+                    amw.setWindowModality(Qt.WindowModality.NonModal)
+                    amw.show()
+            except Exception:
+                pass
+
+            # 独立对话框（无父级），应用级模态，确保可编辑与置前
+            practice_panel = PracticePanel(selected_text, insert_position, self.config, None)
             if not hasattr(self, '_practice_panels'):
                 self._practice_panels = []
             self._practice_panels.append(practice_panel)
-            practice_panel.show()
+            try:
+                practice_panel.setWindowModality(Qt.WindowModality.ApplicationModal)
+            except Exception:
+                pass
+            # 使用 exec() 进入模态事件循环，确保用户可直接在面板内输入
+            practice_panel.exec()
             try:
                 practice_panel.raise_()
                 practice_panel.activateWindow()
@@ -2193,12 +2209,26 @@ class TranscriptionAppQt(QMainWindow):
     def open_practice_panel_from_menu(self):
         """通过菜单打开技术练习面板：不依赖选中文本，也不自动生成题目"""
         try:
+            # 若当前存在活动的应用级模态窗口，先暂时解除其模态，避免全局输入被阻塞
+            try:
+                from PySide6.QtWidgets import QApplication
+                amw = QApplication.activeModalWidget()
+                if amw is not None and hasattr(amw, 'setWindowModality'):
+                    amw.setWindowModality(Qt.WindowModality.NonModal)
+                    amw.show()
+            except Exception:
+                pass
+
             # 传入空的 selected_text，PracticePanel 内部会避免自动生成
-            practice_panel = PracticePanel("", 0, self.config, self)
+            practice_panel = PracticePanel("", 0, self.config, None)
             if not hasattr(self, '_practice_panels'):
                 self._practice_panels = []
             self._practice_panels.append(practice_panel)
-            practice_panel.show()
+            try:
+                practice_panel.setWindowModality(Qt.WindowModality.ApplicationModal)
+            except Exception:
+                pass
+            practice_panel.exec()
             try:
                 practice_panel.raise_()
                 practice_panel.activateWindow()

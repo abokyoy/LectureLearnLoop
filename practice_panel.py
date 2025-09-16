@@ -814,7 +814,7 @@ class PracticeHistoryDialog(QDialog):
         return self.selected_practice
 
 
-class PracticePanel(QWidget):
+class PracticePanel(QDialog):
     """Practice panel for generating and solving practice questions"""
     
     def __init__(self, selected_text: str, insert_position: int, config: dict, parent=None):
@@ -823,8 +823,15 @@ class PracticePanel(QWidget):
         self.resize(1000, 800)
         
         # Set window flags to make it a proper window (like ChatbotPanel)
-        # 初始短暂置顶，确保从对话框打开时也能在最前显示；随后自动撤销置顶
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
+        # 初始短暂置顶，确保从对话框/其他面板打开时也能在最前显示；
+        # 启用标准标题栏按钮（包含关闭按钮）
+        self.setWindowFlags(
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowCloseButtonHint
+            | Qt.WindowType.WindowMinimizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
         
         # Set background color to avoid transparency
         self.setStyleSheet("QWidget { background-color: #f0f0f0; }")
@@ -835,6 +842,8 @@ class PracticePanel(QWidget):
         self.practice_id = self._generate_practice_id()
         self.practice_history = []
         self.evaluation_result = ""
+        # 标记当前是否处于“初始置顶期”，用于在首个交互后撤销置顶
+        self._initial_aot_active = True
         self.current_questions = ""
         self.current_answers = ""
         self.user_answers_before_evaluation = ""
@@ -849,10 +858,14 @@ class PracticePanel(QWidget):
         if not self._loading_from_history and self.selected_text.strip():
             self._generate_questions()
 
-        # 显示后将窗口前置，并在短时间后取消置顶属性，避免长期置顶打扰
+        # 显示后将窗口前置；在用户首次交互前保持置顶，防止被上一窗口立即遮挡
         try:
+            # 多次尝试前置，增强稳健性（应对不同平台/窗口管理器）
             QTimer.singleShot(0, self._bring_to_front)
-            QTimer.singleShot(800, self._drop_always_on_top)
+            QTimer.singleShot(300, self._bring_to_front)
+            QTimer.singleShot(1000, self._bring_to_front)
+            # 安全超时：最长 15 秒后自动撤销置顶，防止极端情况下一直置顶
+            QTimer.singleShot(15000, self._drop_always_on_top)
         except Exception:
             pass
 
@@ -865,10 +878,48 @@ class PracticePanel(QWidget):
 
     def _drop_always_on_top(self):
         try:
+            if not getattr(self, "_initial_aot_active", False):
+                return
             if self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
                 self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
                 # 变更窗口标志后需要调用 show() 使其生效
                 self.show()
+            # 标记初始置顶期结束
+            self._initial_aot_active = False
+        except Exception:
+            pass
+
+    # 用户第一次点击或键盘输入后，短延迟撤销置顶，保证先拿到焦点
+    def mousePressEvent(self, event):  # type: ignore[override]
+        try:
+            if getattr(self, "_initial_aot_active", False):
+                QTimer.singleShot(200, self._drop_always_on_top)
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):  # type: ignore[override]
+        try:
+            if getattr(self, "_initial_aot_active", False):
+                QTimer.singleShot(200, self._drop_always_on_top)
+        except Exception:
+            pass
+        super().keyPressEvent(event)
+
+    def showEvent(self, event):  # type: ignore[override]
+        """Ensure the panel gets focus and the answer editor is ready for input."""
+        try:
+            QTimer.singleShot(0, self._ensure_focus_ready)
+        except Exception:
+            pass
+        super().showEvent(event)
+
+    def _ensure_focus_ready(self):
+        try:
+            self.raise_()
+            self.activateWindow()
+            if hasattr(self, 'answer_editor') and self.answer_editor:
+                self.answer_editor.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
         except Exception:
             pass
     

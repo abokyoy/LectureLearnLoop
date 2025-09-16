@@ -521,6 +521,22 @@ class ErrorQuestionDetailDialog(QDialog):
                     self.accept()
                 except Exception:
                     pass
+                # 不最小化父窗口，避免影响用户在练习面板的输入焦点
+                # 为释放可能存在的应用级模态阻塞，尝试关闭上一层“错题复习与针对性练习”窗口
+                try:
+                    p = self.parent()
+                    from PySide6.QtWidgets import QDialog
+                    # 延链向上查找 ErrorQuestionReviewDialog 实例
+                    review_dialog = None
+                    while p is not None:
+                        if isinstance(p, QDialog) and p.__class__.__name__ == 'ErrorQuestionReviewDialog':
+                            review_dialog = p
+                            break
+                        p = p.parent()
+                    if review_dialog is not None and hasattr(review_dialog, 'accept'):
+                        review_dialog.accept()
+                except Exception:
+                    pass
             except Exception as e:
                 self.questions_browser.setPlainText(f"注入练习面板失败: {e}")
         except Exception as e:
