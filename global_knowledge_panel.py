@@ -205,6 +205,12 @@ class GlobalKnowledgeManagerDialog(QDialog):
             }
             dlg = ErrorQuestionDetailDialog(self.km, subject, kp_id, err, self)
             dlg.setWindowTitle("题目详情")
+            try:
+                dlg.dataChanged.connect(lambda _:
+                    self._do_search()
+                )
+            except Exception:
+                pass
             dlg.exec()
         else:
             # 收藏题：简单预览

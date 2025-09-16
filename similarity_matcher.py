@@ -44,6 +44,15 @@ def _normalize(text: str) -> str:
     text = re.sub(r"<think>[\s\S]*?</think>", " ", text, flags=re.IGNORECASE)
     return text
 
+def _normalize_name(text: str) -> str:
+    """More aggressive normalization for concept/point names.
+    Lowercase, remove whitespace and common punctuation to stabilize exact match checks.
+    """
+    t = _normalize(text)
+    t = re.sub(r"\s+", "", t)
+    t = re.sub(r"[，。,.!！?？:：;；()（）\[\]{}<>]", "", t)
+    return t
+
 def _tokenize(text: str) -> List[str]:
     text = _normalize(text)
     # Split into tokens: keep CJK as single-char tokens; split others by non-word
@@ -199,16 +208,28 @@ def rank_matches(question: str, knowledge_points: List[Dict], cfg: Optional[Dict
         # embed question
         q_vec = _embed_ollama([question], model=model, url=url)[0]
         scored = []
+        q_name_norm = _normalize_name(question)
         for kp in knowledge_points:
             pid = kp.get("id")
             vec = kp_embeds.get(pid)
             if not vec:
                 continue
-            s = _cosine(q_vec, vec)
+            # base embedding similarity
+            base = _cosine(q_vec, vec)
+            # name-first boost: emphasize name similarity
+            name = kp.get("point_name", "")
+            name_ratio = _seqratio(question, name)
+            # combine: prioritize name (0.7) then base (0.3)
+            s = 0.3 * base + 0.7 * name_ratio
+            # exact or near-exact name match bonus
+            if q_name_norm and _normalize_name(name) == q_name_norm:
+                s = max(s, 0.99)
+            elif name_ratio >= 0.95:
+                s = max(s, 0.95)
             if s >= min_score:
                 scored.append({
                     "id": pid,
-                    "score": float(s),
+                    "score": float(min(1.0, s)),
                     "point_name": kp.get("point_name", "")
                 })
         scored.sort(key=lambda x: x["score"], reverse=True)
@@ -218,10 +239,23 @@ def rank_matches(question: str, knowledge_points: List[Dict], cfg: Optional[Dict
     except Exception:
         # fallback
         scored = []
+        q_name_norm = _normalize_name(question)
         for kp in knowledge_points:
-            s = score_similarity(question, kp.get("point_name", ""), kp.get("core_description", ""))
+            name = kp.get("point_name", "")
+            desc = kp.get("core_description", "")
+            # compute name-only similarity and description-assisted ratio
+            name_ratio = _seqratio(question, name)
+            # use token+seq mix on full text as auxiliary
+            aux = score_similarity(question, name, desc)
+            # prioritize name 0.75 + auxiliary 0.25
+            s = 0.75 * name_ratio + 0.25 * aux
+            # strong boost for exact/near-exact name match
+            if q_name_norm and _normalize_name(name) == q_name_norm:
+                s = max(s, 0.99)
+            elif name_ratio >= 0.95:
+                s = max(s, 0.95)
             if s >= min_score:
-                scored.append({"id": kp.get("id"), "score": float(s), "point_name": kp.get("point_name", "")})
+                scored.append({"id": kp.get("id"), "score": float(min(1.0, s)), "point_name": kp.get("point_name", "")})
         scored.sort(key=lambda x: x["score"], reverse=True)
         if top_k is not None:
             scored = scored[:top_k]

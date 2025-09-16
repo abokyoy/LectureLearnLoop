@@ -172,6 +172,27 @@ class SubjectManager:
             conn.close()
             return False
 
+    def update_error_kp(self, error_question_id: int, new_kp_id: int) -> bool:
+        """更新错题的知识点归属。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE error_questions SET knowledge_point_id = ? WHERE id = ?",
+                (int(new_kp_id), int(error_question_id))
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            conn.close()
+            return False
+
 
 class KnowledgePointManager:
     """知识点管理器"""
@@ -860,6 +881,64 @@ class ErrorQuestionManager:
         conn.close()
         return result
 
+    def update_error_question_content(self, error_question_id: int, new_content: str) -> bool:
+        """根据错题ID更新其关联的题干（practice_records.question_content）。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            # 找到关联的练习记录ID
+            cursor.execute(
+                "SELECT practice_record_id FROM error_questions WHERE id = ?",
+                (error_question_id,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return False
+            rec_id = int(row[0])
+            # 更新题干
+            cursor.execute(
+                "UPDATE practice_records SET question_content = ? WHERE id = ?",
+                (new_content or "", rec_id)
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            conn.close()
+            return False
+
+    def delete_error_question(self, error_question_id: int) -> bool:
+        """删除一条错题及其熟练度历史记录（不删除原始练习记录）。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            # 先删除历史
+            cursor.execute(
+                "DELETE FROM error_proficiency_history WHERE error_question_id = ?",
+                (error_question_id,)
+            )
+            # 再删除错题
+            cursor.execute(
+                "DELETE FROM error_questions WHERE id = ?",
+                (error_question_id,)
+            )
+            success = cursor.rowcount > 0
+            conn.commit()
+            conn.close()
+            return success
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            conn.close()
+            return False
     def mark_as_reviewed(self, error_question_id: int) -> bool:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
@@ -1702,6 +1781,54 @@ class KnowledgeManagementSystem:
     def get_error_questions(self, subject_name: str, knowledge_point_id: int) -> List[Dict]:
         """获取错题"""
         return self.error_manager.get_error_questions_by_knowledge_point(subject_name, knowledge_point_id)
+
+    def update_error_question_content(self, error_question_id: int, new_content: str) -> bool:
+        """修改错题题干内容（更新其对应的练习记录题目文本）。"""
+        return self.error_manager.update_error_question_content(error_question_id, new_content)
+
+    def delete_error_question(self, error_question_id: int) -> bool:
+        """删除错题（同时清理熟练度历史）。"""
+        return self.error_manager.delete_error_question(error_question_id)
+
+    def update_error_knowledge_point(self, error_question_id: int, new_kp_id: int) -> bool:
+        """修改错题的知识点归属。"""
+        return self.error_manager.update_error_kp(error_question_id, new_kp_id)
+
+    def convert_error_to_favorite(self, error_question_id: int) -> Optional[int]:
+        """将一条错题转存为收藏题：复制题干/答案/解析到 favorite_questions 并删除错题。
+        返回新建收藏ID，失败返回 None。
+        """
+        # 读取错题详情
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT eq.subject_name, eq.knowledge_point_id, pr.question_content, eq.correct_answer, eq.explanation
+                FROM error_questions eq
+                JOIN practice_records pr ON pr.id = eq.practice_record_id
+                WHERE eq.id = ?
+                """,
+                (error_question_id,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+            if not row:
+                return None
+            subject_name, kp_id, q_text, correct, expl = row
+            # 保存到收藏
+            fav_id = self.favorite_manager.save_favorite_question(
+                subject_name, int(kp_id), q_text or "", correct, expl
+            )
+            # 删除错题
+            self.error_manager.delete_error_question(error_question_id)
+            return fav_id
+        except Exception:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None
     
     def mark_error_reviewed(self, error_question_id: int) -> bool:
         """标记错题为已复习"""

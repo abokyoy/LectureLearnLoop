@@ -8,10 +8,10 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTextEdit,
     QComboBox, QListWidget, QListWidgetItem, QMessageBox, QProgressBar,
-    QGroupBox, QSplitter, QCheckBox, QLineEdit, QTextBrowser
+    QGroupBox, QSplitter, QCheckBox, QLineEdit, QTextBrowser, QWidget
 )
 from PySide6.QtGui import QFont
-from PySide6.QtCore import Qt, QThread, Signal, QObject
+from PySide6.QtCore import Qt, QThread, Signal, QObject, QSize
 import json
 import requests
 from knowledge_management import KnowledgeManagementSystem
@@ -112,6 +112,11 @@ class NoteKnowledgePanel(QDialog):
         self.subject_combo.setEditable(True)
         self.subject_combo.setToolTip("选择已有学科或输入新学科名称")
         subject_row.addWidget(self.subject_combo)
+        # 动态刷新：切换学科时刷新右侧已有知识点
+        try:
+            self.subject_combo.currentTextChanged.connect(self._on_subject_changed)
+        except Exception:
+            pass
         
         self.btn_add_subject = QPushButton("添加学科")
         self.btn_add_subject.clicked.connect(self._add_subject)
@@ -145,7 +150,7 @@ class NoteKnowledgePanel(QDialog):
         confirm_group = QGroupBox("3. 核心概念确认与合并")
         confirm_layout = QVBoxLayout(confirm_group)
         
-        # 分割器：左侧提取的概念，右侧已有概念
+        # 分割器：左侧提取的概念，右侧“核心概念的操作”
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
         # 左侧：提取的核心概念
@@ -158,32 +163,52 @@ class NoteKnowledgePanel(QDialog):
         
         splitter.addWidget(left_widget)
         
-        # 右侧：已有知识点和操作
-        right_widget = QGroupBox("已有知识点")
-        right_layout = QVBoxLayout(right_widget)
-        
-        self.existing_list = QListWidget()
-        self.existing_list.itemSelectionChanged.connect(self._on_existing_selection_changed)
-        right_layout.addWidget(self.existing_list)
-        
+        # 右侧：核心概念的操作（推荐相似知识点 + 合并/新增）
+        right_ops = QGroupBox("核心概念的操作")
+        right_ops_layout = QVBoxLayout(right_ops)
+        tips = QLabel("选择左侧核心概念后，将在此显示与之最相似的3-4个已有知识点")
+        tips.setStyleSheet("color:#555;")
+        right_ops_layout.addWidget(tips)
+        # 推荐列表
+        self.recommend_list = QListWidget()
+        self.recommend_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        right_ops_layout.addWidget(self.recommend_list)
         # 操作按钮
-        action_layout = QHBoxLayout()
-        self.btn_add_new = QPushButton("添加为新知识点")
-        self.btn_add_new.clicked.connect(self._add_as_new_knowledge_point)
-        self.btn_add_new.setEnabled(False)
-        action_layout.addWidget(self.btn_add_new)
-        
-        self.btn_merge = QPushButton("合并到选中知识点")
-        self.btn_merge.clicked.connect(self._merge_knowledge_point)
+        op_row = QHBoxLayout()
+        self.btn_merge = QPushButton("合并到上方选中推荐")
         self.btn_merge.setEnabled(False)
-        action_layout.addWidget(self.btn_merge)
-        
-        right_layout.addLayout(action_layout)
-        
-        splitter.addWidget(right_widget)
+        self.btn_merge.clicked.connect(self._merge_to_recommended)
+        self.btn_add_new = QPushButton("新增知识点（用该核心概念）")
+        self.btn_add_new.setEnabled(False)
+        self.btn_add_new.clicked.connect(self._add_as_new_knowledge_point)
+        op_row.addWidget(self.btn_merge)
+        op_row.addStretch()
+        op_row.addWidget(self.btn_add_new)
+        right_ops_layout.addLayout(op_row)
+
+        # 推荐列表选择变化，控制合并按钮可用
+        self.recommend_list.itemSelectionChanged.connect(
+            lambda: self.btn_merge.setEnabled(len(self.recommend_list.selectedItems()) > 0)
+        )
+
+        splitter.addWidget(right_ops)
         confirm_layout.addWidget(splitter)
         
-        layout.addWidget(confirm_group)
+        # 使用垂直分割器，控制“已有知识点”高度为“确认与合并”的一半左右
+        v_split = QSplitter(Qt.Orientation.Vertical)
+        v_split.addWidget(confirm_group)
+        # 底部：已有知识点（原右侧区域整体下移）
+        bottom_existing_group = QGroupBox("已有知识点")
+        bottom_existing_layout = QVBoxLayout(bottom_existing_group)
+        self.existing_list = QListWidget()
+        bottom_existing_layout.addWidget(self.existing_list)
+        v_split.addWidget(bottom_existing_group)
+        # 设置默认比例：上部两份、下部一份（使下部约为上部一半高）
+        try:
+            v_split.setSizes([200, 100])
+        except Exception:
+            pass
+        layout.addWidget(v_split)
         
         # 底部按钮
         button_layout = QHBoxLayout()
@@ -276,25 +301,32 @@ class NoteKnowledgePanel(QDialog):
             processed_points = result.get("processed_points", [])
             print(f"[UI更新] 处理的知识点数量: {len(processed_points)}")
             
-            # 显示提取的知识点
+            # 显示提取的知识点（自定义小部件：左侧标题蓝色）
             self.extracted_list.clear()
             for i, point_data in enumerate(processed_points):
                 print(f"[UI更新] 处理第{i+1}个知识点: {point_data}")
                 extracted_point = point_data.get("extracted_point", {})
-                
-                # 支持两种数据格式：新格式(concept_name/core_definition) 和 旧格式(point_name/core_description)
+                # 支持两种数据格式
                 point_name = extracted_point.get("point_name") or extracted_point.get("concept_name", "")
                 core_description = extracted_point.get("core_description") or extracted_point.get("core_definition", "")
-                
-                if point_name and core_description:
-                    item_text = f"{point_name}\n{core_description}"
-                    item = QListWidgetItem(item_text)
+                if point_name or core_description:
+                    item = QListWidgetItem()
                     item.setData(Qt.ItemDataRole.UserRole, point_data)
+                    w = QWidget()
+                    vl = QVBoxLayout(w)
+                    vl.setContentsMargins(6, 4, 6, 4)
+                    title = QLabel(point_name)
+                    title.setStyleSheet("color: #1e88e5; font-weight: 600; font-size: 13px;")  # 蓝色
+                    desc = QLabel(core_description)
+                    desc.setStyleSheet("color: #666; font-size: 12px;")
+                    desc.setWordWrap(True)
+                    vl.addWidget(title)
+                    vl.addWidget(desc)
                     self.extracted_list.addItem(item)
-                    print(f"[UI更新] 已添加概念到列表: {point_name}")
+                    self.extracted_list.setItemWidget(item, w)
+                    item.setSizeHint(QSize(0, 48))
                 else:
                     print(f"[UI更新] 概念数据不完整，跳过: {extracted_point}")
-                    print(f"[UI更新] point_name: '{point_name}', core_description: '{core_description}'")
             
             actual_count = self.extracted_list.count()
             self.status_label.setText(f"成功提取 {actual_count} 个核心概念")
@@ -318,31 +350,48 @@ class NoteKnowledgePanel(QDialog):
             
             self.existing_list.clear()
             for point in knowledge_points:
-                item_text = f"{point['point_name']}\n{point['core_description']}"
-                item = QListWidgetItem(item_text)
+                # 使用自定义小部件实现双色展示
+                item = QListWidgetItem()
                 item.setData(Qt.ItemDataRole.UserRole, point)
+                # 小部件
+                w = QWidget()
+                vl = QVBoxLayout(w)
+                vl.setContentsMargins(6, 4, 6, 4)
+                title = QLabel(point.get('point_name', ''))
+                title.setStyleSheet("color: #d97706; font-weight: 600; font-size: 13px;")  # 橙黄色
+                desc = QLabel(point.get('core_description', ''))
+                desc.setStyleSheet("color: #666; font-size: 12px;")
+                desc.setWordWrap(True)
+                vl.addWidget(title)
+                vl.addWidget(desc)
                 self.existing_list.addItem(item)
+                self.existing_list.setItemWidget(item, w)
+                # 预估高度
+                item.setSizeHint(QSize(0, 48))
                 
         except Exception as e:
             self.status_label.setText(f"加载已有知识点失败: {e}")
+
+    def _on_subject_changed(self, _text: str):
+        """学科切换：刷新右侧已有知识点列表"""
+        self.current_subject = self.subject_combo.currentText().strip()
+        self._load_existing_knowledge_points()
     
     def _on_extracted_selection_changed(self):
         """提取的知识点选择改变"""
         selected_items = self.extracted_list.selectedItems()
-        self.btn_add_new.setEnabled(len(selected_items) > 0)
-        
-        # 更新合并按钮状态
-        self._update_merge_button_state()
+        enable = len(selected_items) > 0
+        self.btn_add_new.setEnabled(enable)
+        # 刷新推荐列表
+        self._refresh_recommendations()
     
     def _on_existing_selection_changed(self):
-        """已有知识点选择改变"""
-        self._update_merge_button_state()
+        """已有知识点选择改变（底部列表，仅展示，不参与操作）"""
+        return
     
     def _update_merge_button_state(self):
-        """更新合并按钮状态"""
-        extracted_selected = len(self.extracted_list.selectedItems()) > 0
-        existing_selected = len(self.existing_list.selectedItems()) > 0
-        self.btn_merge.setEnabled(extracted_selected and existing_selected)
+        # 保留占位，不再依赖底部列表
+        pass
     
     def _add_as_new_knowledge_point(self):
         """添加为新知识点"""
@@ -351,75 +400,101 @@ class NoteKnowledgePanel(QDialog):
             return
         
         try:
-            confirmations = []
-            for item in selected_items:
-                point_data = item.data(Qt.ItemDataRole.UserRole)
-                extracted_point = point_data.get("extracted_point", {})
-                
-                confirmations.append({
-                    "action": "new",
-                    "point_data": extracted_point,
-                    "subject_name": self.current_subject
-                })
-            
+            # 仅处理第一个选中项（单选逻辑）
+            item = selected_items[0]
+            point_data = item.data(Qt.ItemDataRole.UserRole)
+            extracted_point = point_data.get("extracted_point", {})
+            normalized = {
+                "point_name": extracted_point.get("point_name") or extracted_point.get("concept_name", ""),
+                "core_description": extracted_point.get("core_description") or extracted_point.get("core_definition", ""),
+            }
+            confirmations = [{
+                "action": "new",
+                "point_data": normalized,
+                "subject_name": self.current_subject
+            }]
             saved_ids = self.km_system.confirm_knowledge_points(confirmations)
             
             if saved_ids:
-                self.status_label.setText(f"成功添加 {len(saved_ids)} 个新知识点")
-                
-                # 移除已处理的项目
-                for item in selected_items:
-                    row = self.extracted_list.row(item)
-                    self.extracted_list.takeItem(row)
+                self.status_label.setText("成功添加 1 个新知识点")
+                # 移除已处理的核心概念
+                row = self.extracted_list.row(item)
+                self.extracted_list.takeItem(row)
                 
                 # 刷新已有知识点列表
                 self._load_existing_knowledge_points()
+                # 清空推荐
+                self.recommend_list.clear()
             else:
                 self.status_label.setText("添加知识点失败")
                 
         except Exception as e:
             QMessageBox.critical(self, "错误", f"添加知识点失败: {e}")
     
-    def _merge_knowledge_point(self):
-        """合并知识点"""
+    def _merge_to_recommended(self):
+        """合并到右侧选中的推荐知识点"""
         extracted_items = self.extracted_list.selectedItems()
-        existing_items = self.existing_list.selectedItems()
-        
-        if not extracted_items or not existing_items:
+        if not extracted_items:
             return
-        
+        # 按你的要求：不做后端合并，仅移除左侧被选中的概念，并清空推荐
+        item = extracted_items[0]
+        row = self.extracted_list.row(item)
+        self.extracted_list.takeItem(row)
+        self.recommend_list.clear()
+        self.btn_merge.setEnabled(False)
+        self.btn_add_new.setEnabled(False)
+        self.status_label.setText("已从左侧列表移除该核心概念")
+
+    def _refresh_recommendations(self):
+        """根据左侧选中概念，计算推荐的相似知识点（前3-4）"""
+        self.recommend_list.clear()
+        items = self.extracted_list.selectedItems()
+        if not items:
+            self.btn_merge.setEnabled(False)
+            self.btn_add_new.setEnabled(False)
+            return
+        self.btn_add_new.setEnabled(True)
         try:
-            existing_point = existing_items[0].data(Qt.ItemDataRole.UserRole)
-            
-            confirmations = []
-            for item in extracted_items:
-                point_data = item.data(Qt.ItemDataRole.UserRole)
-                extracted_point = point_data.get("extracted_point", {})
-                
-                confirmations.append({
-                    "action": "merge",
-                    "point_data": extracted_point,
-                    "target_id": existing_point["id"],
-                    "subject_name": self.current_subject
-                })
-            
-            saved_ids = self.km_system.confirm_knowledge_points(confirmations)
-            
-            if saved_ids:
-                self.status_label.setText(f"成功合并 {len(extracted_items)} 个知识点")
-                
-                # 移除已处理的项目
-                for item in extracted_items:
-                    row = self.extracted_list.row(item)
-                    self.extracted_list.takeItem(row)
-                
-                # 刷新已有知识点列表
-                self._load_existing_knowledge_points()
-            else:
-                self.status_label.setText("合并知识点失败")
-                
+            point_data = items[0].data(Qt.ItemDataRole.UserRole)
+            extracted_point = point_data.get("extracted_point", {})
+            query = extracted_point.get("point_name") or extracted_point.get("concept_name", "")
+            if not query:
+                query = extracted_point.get("core_description") or extracted_point.get("core_definition", "")
+            kps = self.km_system.get_knowledge_points_by_subject(self.subject_combo.currentText().strip())
+            # 计算相似度
+            from similarity_matcher import rank_matches
+            ranked = rank_matches(query, kps, cfg=getattr(self.km_system, 'config', {}), top_k=4, min_score=0.0)
+            # 渲染
+            for r in ranked:
+                kp = next((p for p in kps if p.get('id') == r.get('id')), None)
+                if not kp:
+                    continue
+                name = kp.get('point_name','')
+                desc = kp.get('core_description','')
+                score = float(r.get('score') or 0.0)
+                # 自定义小部件：右侧标题默认橙色，若score>0.4则为蓝色
+                li = QListWidgetItem()
+                li.setData(Qt.ItemDataRole.UserRole, {"id": kp.get('id'), "score": score})
+                w = QWidget()
+                vl = QVBoxLayout(w)
+                vl.setContentsMargins(6, 4, 6, 4)
+                title = QLabel(f"{name}  |  相似度: {score:.2f}")
+                if score > 0.4:
+                    title.setStyleSheet("color: #1e88e5; font-weight: 600; font-size: 13px;")  # 蓝色（高相似）
+                else:
+                    title.setStyleSheet("color: #d97706; font-weight: 600; font-size: 13px;")  # 橙黄色
+                desc_lbl = QLabel(desc)
+                desc_lbl.setStyleSheet("color: #666; font-size: 12px;")
+                desc_lbl.setWordWrap(True)
+                vl.addWidget(title)
+                vl.addWidget(desc_lbl)
+                self.recommend_list.addItem(li)
+                self.recommend_list.setItemWidget(li, w)
+                li.setSizeHint(QSize(0, 48))
+            # 控制合并按钮
+            self.btn_merge.setEnabled(self.recommend_list.count() > 0)
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"合并知识点失败: {e}")
+            self.status_label.setText(f"推荐计算失败: {e}")
     
     def _on_status_update(self, status: str):
         """状态更新"""

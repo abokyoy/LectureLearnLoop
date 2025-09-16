@@ -1303,6 +1303,8 @@ class TranscriptionAppQt(QMainWindow):
         settings_menu = menubar.addMenu("设置(&S)")
         act_app_settings = settings_menu.addAction("应用设置…")
         act_app_settings.triggered.connect(self.open_settings_dialog)
+        act_input_device = settings_menu.addAction("设置输入设备…")
+        act_input_device.triggered.connect(self.choose_input_device)
 
         # Logs menu
         log_menu = menubar.addMenu("日志(&L)")
@@ -1321,9 +1323,7 @@ class TranscriptionAppQt(QMainWindow):
         
         # Chatbot menu
         chatbot_menu = view_menu.addMenu("AI深入学习")
-        act_new_chatbot = chatbot_menu.addAction("新建对话")
-        act_new_chatbot.triggered.connect(self._create_new_chatbot)
-        act_chatbot_history = chatbot_menu.addAction("对话历史")
+        act_chatbot_history = chatbot_menu.addAction("深入学习历史")
         act_chatbot_history.triggered.connect(self._show_chatbot_history)
         
         # (知识管理菜单已创建)
@@ -1337,9 +1337,6 @@ class TranscriptionAppQt(QMainWindow):
         act_close_all_chatbots = chatbot_menu.addAction("关闭所有对话窗口")
         act_close_all_chatbots.triggered.connect(self._close_all_chatbot_panels)
         
-        # App settings
-        act_app_settings = settings_menu.addAction("应用设置…")
-        act_app_settings.triggered.connect(self.open_settings_dialog)
         self.setMenuBar(menubar)
 
         # Minimal central widget (docks hold all panels)

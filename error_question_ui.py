@@ -249,6 +249,12 @@ class ErrorQuestionReviewDialog(QDialog):
             return
         error = self.error_questions[row]
         dlg = ErrorQuestionDetailDialog(self.km_system, self.current_subject, self.current_knowledge_point, error, self)
+        try:
+            dlg.dataChanged.connect(lambda _:
+                self._load_error_questions()
+            )
+        except Exception:
+            pass
         dlg.exec()
     
     # 生成新题逻辑迁移到详情面板
@@ -289,6 +295,7 @@ class ErrorQuestionReviewDialog(QDialog):
 
 class ErrorQuestionDetailDialog(QDialog):
     """错题复习详情面板"""
+    dataChanged = Signal(dict)  # {'action': 'update'|'delete', 'id': int}
     def __init__(self, km_system, subject_name: str, knowledge_point_id: int, error: dict, parent=None):
         super().__init__(parent)
         self.km_system = km_system
@@ -297,6 +304,7 @@ class ErrorQuestionDetailDialog(QDialog):
         self.error = error
         self._slider_adjusted = False
         self._history = []
+        self._changed = False
         self.setWindowTitle("错题复习")
         self.resize(900, 700)
         self._setup_ui()
@@ -308,11 +316,79 @@ class ErrorQuestionDetailDialog(QDialog):
         # 顶部原始信息
         info_group = QGroupBox("题目信息")
         info_layout = QVBoxLayout(info_group)
-        info_layout.addWidget(QLabel(f"原题：{self.error.get('question_content', '')}"))
-        info_layout.addWidget(QLabel(f"用户答案：{self.error.get('user_answer', '-') or '-'}"))
-        info_layout.addWidget(QLabel(f"正确答案：{self.error.get('correct_answer', '-') or '-'}"))
-        info_layout.addWidget(QLabel(f"解析：{self.error.get('explanation', '-') or '-'}"))
+        # 可编辑题干
+        self._original_question_text = self.error.get('question_content', '') or ''
+        qrow = QHBoxLayout()
+        qrow.addWidget(QLabel("题干："))
+        info_layout.addLayout(qrow)
+        from PySide6.QtWidgets import QTextEdit
+        self.question_edit = QTextEdit()
+        self.question_edit.setPlainText(self._original_question_text)
+        self.question_edit.setReadOnly(True)
+        self.question_edit.setMinimumHeight(80)
+        info_layout.addWidget(self.question_edit)
+
+        
+
+        # 操作按钮（修改/删除）
+        op_row = QHBoxLayout()
+        self.btn_edit = QPushButton("修改")
+        self.btn_edit.clicked.connect(self._on_edit_or_save)
+        self.btn_delete = QPushButton("删除")
+        self.btn_delete.clicked.connect(self._on_delete)
+        op_row.addStretch()
+        op_row.addWidget(self.btn_edit)
+        op_row.addWidget(self.btn_delete)
+        info_layout.addLayout(op_row)
         layout.addWidget(info_group)
+
+        # 题目归属与类型
+        kp_group = QGroupBox("题目归属与类型")
+        kp_layout = QVBoxLayout(kp_group)
+        # 所属知识点
+        row_kp = QHBoxLayout()
+        row_kp.addWidget(QLabel("所属知识点："))
+        self.kp_combo2 = QComboBox()
+        try:
+            points = self.km_system.get_knowledge_points_by_subject(self.subject_name)
+        except Exception:
+            points = []
+        self._kp_id_to_index = {}
+        for p in points:
+            idx = self.kp_combo2.count()
+            self.kp_combo2.addItem(p.get('point_name',''), p.get('id'))
+            self._kp_id_to_index[p.get('id')] = idx
+        # 设置当前选中
+        try:
+            cur_idx = self._kp_id_to_index.get(int(self.knowledge_point_id))
+            if cur_idx is not None:
+                self.kp_combo2.setCurrentIndex(cur_idx)
+        except Exception:
+            pass
+        row_kp.addWidget(self.kp_combo2)
+        self.btn_save_kp = QPushButton("保存归属更改")
+        self.btn_save_kp.clicked.connect(self._on_save_kp)
+        row_kp.addWidget(self.btn_save_kp)
+        row_kp.addStretch()
+        kp_layout.addLayout(row_kp)
+
+        # 类型切换（当前为错题，支持转为收藏）
+        row_type = QHBoxLayout()
+        row_type.addWidget(QLabel("题目类型："))
+        self.type_combo = QComboBox()
+        self.type_combo.addItem("错题", "error")
+        self.type_combo.addItem("收藏", "favorite")
+        # 详情面板当前仅针对错题打开，默认选择错题
+        self.type_combo.setCurrentIndex(0)
+        row_type.addWidget(self.type_combo)
+        self.btn_apply_type = QPushButton("执行转换")
+        self.btn_apply_type.setToolTip("将错题转换为收藏；（从收藏切回错题暂不支持）")
+        self.btn_apply_type.clicked.connect(self._on_apply_type_change)
+        row_type.addWidget(self.btn_apply_type)
+        row_type.addStretch()
+        kp_layout.addLayout(row_type)
+
+        layout.addWidget(kp_group)
 
         # 熟练度滑杆
         prof_group = QGroupBox("熟练度调整（0-100，默认20；不调整则+1）")
@@ -328,6 +404,23 @@ class ErrorQuestionDetailDialog(QDialog):
         self.save_prof_button.clicked.connect(self._save_proficiency)
         prof_layout.addWidget(self.save_prof_button)
         layout.addWidget(prof_group)
+
+         # 针对性新题生成
+        gen_group = QGroupBox("针对性新题生成")
+        gen_layout = QVBoxLayout(gen_group)
+        control_layout = QHBoxLayout()
+        control_layout.addWidget(QLabel("生成题数:"))
+        self.count_spin = QSpinBox()
+        self.count_spin.setRange(1, 10)
+        self.count_spin.setValue(2)
+        control_layout.addWidget(self.count_spin)
+        self.gen_btn = QPushButton("生成类似题目")
+        self.gen_btn.clicked.connect(self._generate_similar_questions)
+        control_layout.addStretch()
+        control_layout.addWidget(self.gen_btn)
+        gen_layout.addLayout(control_layout)
+        
+        layout.addWidget(gen_group)
 
         # 曲线图
         chart_group = QGroupBox("熟练度随时间变化曲线")
@@ -350,29 +443,7 @@ class ErrorQuestionDetailDialog(QDialog):
         chart_v.addWidget(self.chart_view)
         layout.addWidget(chart_group)
 
-        # 针对性新题生成
-        gen_group = QGroupBox("针对性新题生成")
-        gen_layout = QVBoxLayout(gen_group)
-        control_layout = QHBoxLayout()
-        control_layout.addWidget(QLabel("生成题数:"))
-        self.count_spin = QSpinBox()
-        self.count_spin.setRange(1, 5)
-        self.count_spin.setValue(2)
-        control_layout.addWidget(self.count_spin)
-        self.gen_btn = QPushButton("生成类似题目")
-        self.gen_btn.clicked.connect(self._generate_similar_questions)
-        control_layout.addStretch()
-        control_layout.addWidget(self.gen_btn)
-        gen_layout.addLayout(control_layout)
-        self.questions_browser = QTextBrowser()
-        # 防止点击锚点跳转导致页面变白
-        self.questions_browser.setOpenLinks(False)
-        self.questions_browser.setOpenExternalLinks(False)
-        # 自定义右键菜单
-        self.questions_browser.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.questions_browser.customContextMenuRequested.connect(self._on_questions_context_menu)
-        gen_layout.addWidget(self.questions_browser)
-        layout.addWidget(gen_group)
+       
 
         # 关闭按钮
         bottom = QHBoxLayout()
@@ -384,6 +455,105 @@ class ErrorQuestionDetailDialog(QDialog):
 
     def _on_slider_changed(self, _):
         self._slider_adjusted = True
+
+    def _on_edit_or_save(self):
+        """切换编辑/保存题干"""
+        try:
+            if self.question_edit.isReadOnly():
+                # 进入编辑模式
+                self.question_edit.setReadOnly(False)
+                self.btn_edit.setText("保存")
+                return
+            # 保存模式
+            new_text = (self.question_edit.toPlainText() or '').strip()
+            if not new_text:
+                QMessageBox.warning(self, "提示", "题干不能为空。")
+                return
+            ok = self.km_system.update_error_question_content(int(self.error.get('id')), new_text)
+            if ok:
+                self._original_question_text = new_text
+                self.error['question_content'] = new_text
+                self.question_edit.setReadOnly(True)
+                self.btn_edit.setText("修改")
+                QMessageBox.information(self, "成功", "题干已更新。")
+                self._changed = True
+                try:
+                    self.dataChanged.emit({'action': 'update', 'id': int(self.error.get('id'))})
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(self, "错误", "更新失败，请稍后再试。")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"更新异常：{e}")
+
+    def _on_delete(self):
+        """删除当前错题（二次确认）"""
+        try:
+            ret = QMessageBox.question(self, "确认删除", "确定要删除这道错题吗？该操作不可恢复。",
+                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                      QMessageBox.StandardButton.No)
+            if ret != QMessageBox.StandardButton.Yes:
+                return
+            ok = self.km_system.delete_error_question(int(self.error.get('id')))
+            if ok:
+                QMessageBox.information(self, "成功", "已删除该错题。")
+                self._changed = True
+                try:
+                    self.dataChanged.emit({'action': 'delete', 'id': int(self.error.get('id'))})
+                except Exception:
+                    pass
+                try:
+                    self.accept()
+                except Exception:
+                    self.close()
+            else:
+                QMessageBox.warning(self, "错误", "删除失败，请稍后再试。")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"删除异常：{e}")
+
+    def _on_save_kp(self):
+        """保存知识点归属更改"""
+        try:
+            kp_id = int(self.kp_combo2.currentData())
+            if kp_id == int(self.knowledge_point_id):
+                QMessageBox.information(self, "提示", "知识点未变化。")
+                return
+            ok = self.km_system.update_error_knowledge_point(int(self.error.get('id')), kp_id)
+            if ok:
+                self.knowledge_point_id = kp_id
+                QMessageBox.information(self, "成功", "已更新题目所属知识点。")
+                try:
+                    self.dataChanged.emit({'action': 'update', 'id': int(self.error.get('id'))})
+                except Exception:
+                    pass
+            else:
+                QMessageBox.warning(self, "错误", "更新失败，请稍后再试。")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"更新异常：{e}")
+
+    def _on_apply_type_change(self):
+        """应用题目类型变更（错题 -> 收藏）"""
+        try:
+            typ = self.type_combo.currentData()
+            if typ == 'error':
+                QMessageBox.information(self, "提示", "当前已是错题，无需转换。")
+                return
+            # 转为收藏
+            fav_id = self.km_system.convert_error_to_favorite(int(self.error.get('id')))
+            if fav_id is not None:
+                QMessageBox.information(self, "成功", "已将此题转换为收藏，并从错题中移除。")
+                try:
+                    self.dataChanged.emit({'action': 'delete', 'id': int(self.error.get('id'))})
+                except Exception:
+                    pass
+                try:
+                    self.accept()
+                except Exception:
+                    self.close()
+            else:
+                QMessageBox.warning(self, "错误", "转换失败，请稍后再试。")
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"转换异常：{e}")
 
     def _load_history(self):
         try:
