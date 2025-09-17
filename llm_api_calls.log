@@ -442,3 +442,110 @@
           {
             "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
             "quo (耗时: 1.18s)
+2025-09-15 17:31:48 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 失败: DeepSeek API调用失败: 402 - {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}} (耗时: 0.62s)
+2025-09-15 17:31:50 - LLM_API - INFO - API调用 [gemini] generate_practice_questions - 失败: API调用失败: 429, 响应: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quo (耗时: 1.33s)
+2025-09-15 17:31:57 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 7.14s)
+2025-09-15 17:31:57 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 失败: DeepSeek API调用失败: 402 - {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}} (耗时: 0.58s)
+2025-09-15 17:31:59 - LLM_API - INFO - API调用 [gemini] generate_practice_questions - 失败: API调用失败: 429, 响应: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quo (耗时: 1.27s)
+2025-09-15 17:32:12 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 13.01s)
+2025-09-15 19:56:36 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 失败: DeepSeek API调用失败: 402 - {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}} (耗时: 0.59s)
+2025-09-15 19:59:34 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 9.75s)
+2025-09-15 19:59:34 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 失败: DeepSeek API调用失败: 402 - {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}} (耗时: 0.62s)
+2025-09-15 19:59:38 - LLM_API - INFO - API调用 [gemini] generate_practice_questions - 成功 (耗时: 3.74s)
+2025-09-15 20:09:54 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 失败: DeepSeek API调用失败: 402 - {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}} (耗时: 0.55s)
+2025-09-15 20:09:55 - LLM_API - INFO - API调用 [gemini] evaluate_practice_answers - 失败: API调用失败: 429, 响应: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quo (耗时: 1.34s)
+2025-09-15 20:10:03 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 7.51s)
+2025-09-15 20:10:03 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 失败: DeepSeek API调用失败: 402 - {"error":{"message":"Insufficient Balance","type":"unknown_error","param":null,"code":"invalid_request_error"}} (耗时: 0.53s)
+2025-09-15 20:10:05 - LLM_API - INFO - API调用 [gemini] evaluate_practice_answers - 失败: API调用失败: 429, 响应: {
+  "error": {
+    "code": 429,
+    "message": "You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.",
+    "status": "RESOURCE_EXHAUSTED",
+    "details": [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        "violations": [
+          {
+            "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+            "quo (耗时: 1.53s)
+2025-09-15 20:10:15 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 9.89s)
+2025-09-15 20:15:09 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 44.57s)
+2025-09-15 20:15:47 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 37.59s)
+2025-09-15 20:20:42 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 46.88s)
+2025-09-15 20:21:30 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 47.29s)
+2025-09-15 20:25:00 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 39.64s)
+2025-09-15 20:25:26 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 26.78s)
+2025-09-15 20:28:31 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 33.88s)
+2025-09-15 20:29:03 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 31.82s)
+2025-09-15 20:29:59 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 41.99s)
+2025-09-15 20:30:37 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 37.52s)
+2025-09-15 20:54:54 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 48.12s)
+2025-09-15 20:59:27 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 52.70s)
+2025-09-15 21:00:54 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 59.22s)
+2025-09-15 21:10:36 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 45.54s)
+2025-09-15 21:13:49 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 55.06s)
+2025-09-15 21:27:46 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 49.30s)
+2025-09-15 21:29:58 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 37.14s)
+2025-09-15 21:58:59 - LLM_API - INFO - API调用 [gemini] generate_practice_questions - 失败: API调用失败: 503, 响应: {
+  "error": {
+    "code": 503,
+    "message": "The model is overloaded. Please try again later.",
+    "status": "UNAVAILABLE"
+  }
+}
+ (耗时: 8.24s)
+2025-09-15 22:00:05 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 38.58s)
+2025-09-15 22:15:33 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 40.89s)
+2025-09-15 22:18:14 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 41.37s)
+2025-09-16 14:58:29 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 30.72s)
+2025-09-16 16:16:09 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 36.73s)
+2025-09-16 16:44:06 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 56.22s)
+2025-09-16 16:52:39 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 36.08s)
+2025-09-16 17:24:35 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 33.83s)
+2025-09-16 17:27:43 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 47.16s)
+2025-09-16 19:58:42 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 30.23s)
+2025-09-16 20:38:51 - LLM_API - INFO - API调用 [ollama] generate_practice_questions - 成功 (耗时: 52.78s)
+2025-09-16 20:41:52 - LLM_API - INFO - API调用 [ollama] evaluate_practice_answers - 成功 (耗时: 53.13s)
+2025-09-16 21:34:02 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 46.09s)
+2025-09-16 21:35:28 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 39.60s)
+2025-09-16 21:44:30 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 44.52s)
+2025-09-16 21:47:09 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 29.41s)
+2025-09-16 21:59:10 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 39.79s)
+2025-09-16 22:06:49 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 39.23s)
+2025-09-16 22:27:15 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 31.09s)
+2025-09-16 22:36:31 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 34.63s)
+2025-09-16 22:43:52 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 42.24s)
+2025-09-17 08:59:57 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 47.26s)
