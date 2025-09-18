@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>柯基学习小助手 - 工作台</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#32C77F",
+                        warning: "#FF9B27", 
+                        danger: "#ED4B4B",
+                        "text-dark-brown": "#715D46",
+                        "text-medium-brown": "#9B8D7D",
+                        "text-gray": "#828282",
+                        "bg-light-blue": "#D5F8FF",
+                        "bg-beige": "#FFFFD6",
+                        "bg-light-green": "#E2F2EB",
+                        "bg-light-gray": "#F2F0ED",
+                        "bg-light-blue-gray": "#F5F7F9",
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans SC"', 'sans-serif'],
+                    },
+                    borderRadius: {
+                        'xl': '1rem',
+                    },
+                }
+            }
+        };
+    </script>
+    <style>
+        #sidebar.collapsed .sidebar-text,
+        #sidebar.collapsed #user-profile,
+        #sidebar.collapsed .logo-text {
+            display: none;
+        }
+        #sidebar.collapsed .nav-item-icon {
+            margin-right: 0;
+        }
+        #sidebar.collapsed .nav-link {
+            justify-content: center;
+        }
+        * {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .hover-scale:hover { transform: scale(1.02); transition: transform 0.2s ease; }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .card-shadow:hover { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); transition: box-shadow 0.3s ease; }
+    </style>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+    <div class="flex h-screen bg-white">
+        <!-- 侧边栏 -->
+        <aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+            <div class="flex items-center mb-8 flex-shrink-0">
+                <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3 flex-shrink-0">
+                    <span class="material-icons-outlined text-white">pets</span>
+                </div>
+                <h1 class="text-lg font-bold text-text-dark-brown logo-text">柯基学习小助手</h1>
+            </div>
+            
+            <div class="flex flex-col items-center mb-8" id="user-profile">
+                <div class="w-20 h-20 rounded-full bg-primary flex items-center justify-center mb-2">
+                    <span class="material-icons-outlined text-white text-3xl">pets</span>
+                </div>
+                <p class="font-semibold text-text-dark-brown">柯基的主人</p>
+                <p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+            </div>
+            
+            <nav class="flex-1 space-y-2">
+                <a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">work</span>
+                    <span class="sidebar-text">工作台</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchToNotebook()">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">edit_note</span>
+                    <span class="sidebar-text">笔记本</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchPage('recording')">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">mic</span>
+                    <span class="sidebar-text">录音室</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchPage('ai')">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">smart_toy</span>
+                    <span class="sidebar-text">AI伙伴</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchPage('knowledge')">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">book</span>
+                    <span class="sidebar-text">知识库</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchPage('report')">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">bar_chart</span>
+                    <span class="sidebar-text">学习报告</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchPage('settings')">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">settings</span>
+                    <span class="sidebar-text">设置</span>
+                </a>
+            </nav>
+            
+            <div class="mt-auto">
+                <button class="flex items-center justify-center w-full py-2 text-text-gray hover:bg-bg-light-gray rounded-lg" onclick="toggleSidebar()">
+                    <span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+                </button>
+            </div>
+        </aside>
+        
+        <!-- 主内容区 -->
+        <main class="flex-1 p-8 bg-bg-light-blue-gray overflow-y-auto">
+            <header class="flex justify-between items-center mb-8 fade-in">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 mr-4 bg-bg-light-green rounded-full flex items-center justify-center">
+                        <span class="material-icons-outlined text-2xl text-primary">pets</span>
+                    </div>
+                    <h2 class="text-3xl font-bold text-text-dark-brown">柯基的学习乐园</h2>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-right">
+                        <p class="font-semibold text-text-dark-brown">☀️ 汪汪！欢迎回来！</p>
+                        <p class="text-sm text-text-gray" id="currentDate">今天: 2024年9月18日</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button class="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold transition-colors duration-200" onclick="callPythonFunction('minimizeWindow')" title="最小化">
+                            −
+                        </button>
+                        <button class="w-8 h-8 bg-warning hover:bg-yellow-500 rounded-full flex items-center justify-center text-white text-sm font-bold transition-colors duration-200" onclick="callPythonFunction('maximizeWindow')" title="最大化/还原">
+                            □
+                        </button>
+                        <button class="w-8 h-8 bg-danger hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold transition-colors duration-200" onclick="callPythonFunction('closeWindow')" title="关闭">
+                            ×
+                        </button>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- 统计卡片 -->
+            <div class="grid grid-cols-4 gap-6 mb-8">
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-bg-light-green mr-4">
+                            <span class="material-icons-outlined text-xl text-primary">description</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">今日笔记</p>
+                            <p class="text-3xl font-bold text-primary">3 <span class="text-base font-normal text-text-medium-brown">篇</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-orange-100 mr-4">
+                            <span class="material-icons-outlined text-xl text-warning">check_circle</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">练习完成</p>
+                            <p class="text-3xl font-bold text-warning">15 <span class="text-base font-normal text-text-medium-brown">题</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-pink-100 mr-4">
+                            <span class="material-icons-outlined text-xl text-pink-500">lightbulb</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">新增知识点</p>
+                            <p class="text-3xl font-bold text-pink-500">8 <span class="text-base font-normal text-text-medium-brown">个</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-red-100 mr-4">
+                            <span class="material-icons-outlined text-xl text-danger">schedule</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">学习时长</p>
+                            <p class="text-3xl font-bold text-danger">2h 35m</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 快速操作 -->
+            <div class="mb-8">
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-4">快速操作</h3>
+                <div class="grid grid-cols-4 gap-6">
+                    <button class="bg-primary hover:bg-green-600 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale" onclick="switchToNotebook()">
+                        <span class="material-icons-outlined text-2xl mb-2">add</span>
+                        <span>新建笔记</span>
+                    </button>
+                    <button class="bg-red-400 hover:bg-red-500 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale">
+                        <span class="material-icons-outlined text-2xl mb-2">mic</span>
+                        <span>开始录制</span>
+                    </button>
+                    <button class="bg-orange-400 hover:bg-orange-500 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale">
+                        <span class="material-icons-outlined text-2xl mb-2">smart_toy</span>
+                        <span>AI练习</span>
+                    </button>
+                    <button class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale">
+                        <span class="material-icons-outlined text-2xl mb-2">folder</span>
+                        <span>知识管理</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 最近活动 -->
+            <div>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-4">最近活动</h3>
+                <div class="bg-white p-6 rounded-xl card-shadow">
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 rounded-full bg-bg-light-green flex items-center justify-center mr-4">
+                                    <span class="material-icons-outlined text-sm text-primary">check</span>
+                                </div>
+                                <p class="text-text-medium-brown">完成了《柯基学习法》笔记</p>
+                            </div>
+                            <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">2分钟前</span>
+                        </div>
+                        <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-4">
+                                    <span class="material-icons-outlined text-sm text-blue-500">edit</span>
+                                </div>
+                                <p class="text-text-medium-brown">进行了官僚学习练习</p>
+                            </div>
+                            <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">15分钟前</span>
+                        </div>
+                        <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center mr-4">
+                                    <span class="material-icons-outlined text-sm text-yellow-500">add</span>
+                                </div>
+                                <p class="text-text-medium-brown">添加了新的知识点</p>
+                            </div>
+                            <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">1小时前</span>
+                        </div>
+                        <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center mr-4">
+                                    <span class="material-icons-outlined text-sm text-purple-500">mic</span>
+                                </div>
+                                <p class="text-text-medium-brown">录制了学习音频</p>
+                            </div>
+                            <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">2小时前</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let bridge = null;
+        
+        // 初始化WebChannel
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            bridge = channel.objects.bridge;
+            console.log('🐕 Python桥梁连接成功！');
+            
+            // 设置当前日期
+            const now = new Date();
+            const dateStr = now.getFullYear() + '年' + (now.getMonth() + 1) + '月' + now.getDate() + '日';
+            document.getElementById('currentDate').textContent = '今天: ' + dateStr;
+        });
+        
+        // 窗口控制函数
+        function callPythonFunction(functionName) {
+            if (bridge && bridge[functionName]) {
+                bridge[functionName]();
+                console.log(`调用Python方法: ${functionName}`);
+            }
+        }
+        
+        // 切换到笔记本页面
+        function switchToNotebook() {
+            if (bridge && bridge.switchToNotebook) {
+                bridge.switchToNotebook();
+            }
+        }
+        
+        // 侧边栏切换
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            
+            if (isCollapsed) {
+                sidebar.classList.remove('w-64');
+                sidebar.classList.add('w-20');
+            } else {
+                sidebar.classList.remove('w-20');
+                sidebar.classList.add('w-64');
+            }
+            
+            const chevron = document.getElementById('toggle-icon');
+            chevron.textContent = isCollapsed ? 'chevron_right' : 'chevron_left';
+        }
+        
+        // 页面切换
+        function switchPage(page) {
+            console.log('切换到页面:', page);
+            // TODO: 实现其他页面切换
+        }
+    </script>
+</body>
+</html>
