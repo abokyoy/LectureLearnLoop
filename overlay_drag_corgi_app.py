@@ -556,9 +556,11 @@ class OverlayDragCorgiApp(QMainWindow):
     <title>柯基学习小助手 - 笔记本</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <script>
         tailwind.config = {
+            darkMode: "class",
             theme: {
                 extend: {
                     colors: {
@@ -568,15 +570,34 @@ class OverlayDragCorgiApp(QMainWindow):
                         "text-dark-brown": "#715D46",
                         "text-medium-brown": "#9B8D7D",
                         "text-gray": "#828282",
+                        "bg-light-blue": "#D5F8FF",
+                        "bg-beige": "#FFFFD6",
                         "bg-light-green": "#E2F2EB",
                         "bg-light-gray": "#F2F0ED",
                         "bg-light-blue-gray": "#F5F7F9",
-                    }
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans SC"', 'sans-serif'],
+                    },
+                    borderRadius: {
+                        'xl': '1rem',
+                    },
                 }
             }
         };
     </script>
     <style>
+        #sidebar.collapsed .sidebar-text,
+        #sidebar.collapsed #user-profile,
+        #sidebar.collapsed .logo-text {
+            display: none;
+        }
+        #sidebar.collapsed .nav-item-icon {
+            margin-right: 0;
+        }
+        #sidebar.collapsed .nav-link {
+            justify-content: center;
+        }
         .prose { max-width: none; }
         .prose h1 { font-size: 2em; font-weight: bold; margin-bottom: 0.5em; color: #715D46; }
         .prose h2 { font-size: 1.5em; font-weight: bold; margin-top: 1em; margin-bottom: 0.5em; color: #715D46; }
@@ -590,38 +611,72 @@ class OverlayDragCorgiApp(QMainWindow):
 </head>
 <body class="bg-bg-light-blue-gray font-sans">
     <div class="flex h-screen bg-white">
-        <aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200">
-            <div class="flex items-center mb-8">
-                <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3">
+        <aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+            <div class="flex items-center mb-8 flex-shrink-0">
+                <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3 flex-shrink-0">
                     <span class="material-icons-outlined text-white">pets</span>
                 </div>
-                <h1 class="text-lg font-bold text-text-dark-brown">柯基学习小助手</h1>
+                <h1 class="text-lg font-bold text-text-dark-brown logo-text">柯基学习小助手</h1>
             </div>
             
-            <div class="flex flex-col items-center mb-8">
+            <div class="flex flex-col items-center mb-8" id="user-profile">
                 <div class="w-20 h-20 rounded-full bg-primary flex items-center justify-center mb-2">
                     <span class="material-icons-outlined text-white text-3xl">pets</span>
                 </div>
                 <p class="font-semibold text-text-dark-brown">柯基的主人</p>
-                <p class="text-sm text-text-medium-brown">学习等级: Lv.5 ⭐</p>
+                <p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
             </div>
             
             <nav class="flex-1 space-y-2">
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#" onclick="switchToDashboard()">
-                    <span class="material-icons-outlined mr-3">work</span>
-                    <span>工作台</span>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchToDashboard()">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">work</span>
+                    <span class="sidebar-text">工作台</span>
                 </a>
-                <a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg" href="#">
-                    <span class="material-icons-outlined mr-3">edit_note</span>
-                    <span>笔记本</span>
+                <a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">edit_note</span>
+                    <span class="sidebar-text">笔记本</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">mic</span>
+                    <span class="sidebar-text">录音室</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">smart_toy</span>
+                    <span class="sidebar-text">AI伙伴</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">book</span>
+                    <span class="sidebar-text">知识库</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">bar_chart</span>
+                    <span class="sidebar-text">学习报告</span>
+                </a>
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+                    <span class="material-icons-outlined mr-3 nav-item-icon">settings</span>
+                    <span class="sidebar-text">设置</span>
                 </a>
             </nav>
+            
+            <div class="mt-auto">
+                <button class="flex items-center justify-center w-full py-2 text-text-gray hover:bg-bg-light-gray rounded-lg" onclick="toggleSidebar()">
+                    <span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+                </button>
+            </div>
         </aside>
 
-        <div class="flex-1 flex bg-bg-light-blue-gray">
-            <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col">
+        <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
+            <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+                    <div class="space-x-2">
+                        <button class="text-text-gray hover:text-primary">
+                            <span class="material-icons-outlined">create_new_folder</span>
+                        </button>
+                        <button class="text-text-gray hover:text-primary">
+                            <span class="material-icons-outlined">note_add</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="flex-1 overflow-y-auto pr-2" id="file-tree">
                     <!-- 文件树将在这里动态生成 -->
@@ -631,10 +686,20 @@ class OverlayDragCorgiApp(QMainWindow):
             <main class="flex-1 p-6 flex flex-col">
                 <header class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold text-text-dark-brown" id="current-file-title">选择一个文件开始编辑</h2>
-                    <div class="flex space-x-2">
-                        <button class="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('minimizeWindow')">−</button>
-                        <button class="w-8 h-8 bg-warning hover:bg-yellow-500 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('maximizeWindow')">□</button>
-                        <button class="w-8 h-8 bg-danger hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('closeWindow')">×</button>
+                    <div class="flex items-center space-x-2">
+                        <button class="flex items-center bg-white border border-gray-300 px-3 py-1.5 rounded-lg text-text-gray hover:bg-gray-100" id="preview-btn">
+                            <span class="material-icons-outlined text-sm mr-1">visibility</span>
+                            <span>预览</span>
+                        </button>
+                        <button class="flex items-center bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-green-600" id="edit-btn">
+                            <span class="material-icons-outlined text-sm mr-1">edit</span>
+                            <span>编辑</span>
+                        </button>
+                        <div class="flex space-x-1 ml-4">
+                            <button class="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('minimizeWindow')">−</button>
+                            <button class="w-8 h-8 bg-warning hover:bg-yellow-500 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('maximizeWindow')">□</button>
+                            <button class="w-8 h-8 bg-danger hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('closeWindow')">×</button>
+                        </div>
                     </div>
                 </header>
                 
@@ -647,6 +712,24 @@ class OverlayDragCorgiApp(QMainWindow):
                     </div>
                 </div>
             </main>
+            
+            <aside class="w-1/5 bg-white border-l border-gray-200 p-4 flex flex-col" id="knowledge-panel">
+                <h2 class="text-lg font-semibold text-text-dark-brown mb-4">知识点列表</h2>
+                <div class="flex-1 overflow-y-auto space-y-3" id="knowledge-points">
+                    <div class="bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                        <h3 class="font-semibold text-primary">兴趣驱动</h3>
+                        <p class="text-sm text-text-medium-brown mt-1">学习的核心动力来源，提高主动性。</p>
+                    </div>
+                    <div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                        <h3 class="font-semibold text-text-dark-brown">积极反馈</h3>
+                        <p class="text-sm text-text-medium-brown mt-1">通过奖励机制巩固学习成果，提升动机。</p>
+                    </div>
+                    <div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                        <h3 class="font-semibold text-text-dark-brown">番茄工作法</h3>
+                        <p class="text-sm text-text-medium-brown mt-1">一种时间管理方法，用于保持专注。</p>
+                    </div>
+                </div>
+            </aside>
         </div>
     </div>
 
@@ -669,6 +752,31 @@ class OverlayDragCorgiApp(QMainWindow):
         function switchToDashboard() {
             if (bridge && bridge.switchToDashboard) {
                 bridge.switchToDashboard();
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const fileStructure = document.getElementById('file-structure');
+            const mainContent = document.getElementById('main-content');
+            sidebar.classList.toggle('collapsed');
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            
+            if (isCollapsed) {
+                fileStructure.classList.add('hidden');
+                sidebar.classList.remove('w-64');
+                sidebar.classList.add('w-20');
+            } else {
+                fileStructure.classList.remove('hidden');
+                sidebar.classList.remove('w-20');
+                sidebar.classList.add('w-64');
+            }
+            
+            const chevron = document.getElementById('toggle-icon');
+            if (isCollapsed) {
+                chevron.textContent = 'chevron_right';
+            } else {
+                chevron.textContent = 'chevron_left';
             }
         }
 
@@ -695,6 +803,7 @@ class OverlayDragCorgiApp(QMainWindow):
                         div.innerHTML = `
                             <span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
                             <span class="text-text-dark-brown font-medium">${item.name}</span>
+                            <span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
                         `;
                     } else if (item.type === 'file') {
                         div.innerHTML = `
@@ -722,6 +831,32 @@ class OverlayDragCorgiApp(QMainWindow):
             currentFilePath = filePath;
             document.getElementById('current-file-title').textContent = fileName;
             loadFileContent(filePath);
+            
+            // 高亮选中的文件
+            const allFiles = document.querySelectorAll('#file-tree > div, #file-tree div div');
+            allFiles.forEach(file => {
+                file.classList.remove('bg-bg-light-green');
+                const span = file.querySelector('span:last-child');
+                if (span) {
+                    span.classList.remove('text-primary', 'font-semibold');
+                    span.classList.add('text-text-medium-brown');
+                }
+            });
+            
+            // 高亮当前选中的文件
+            const currentFile = Array.from(allFiles).find(file => {
+                const nameSpan = file.querySelector('span:last-child');
+                return nameSpan && nameSpan.textContent === fileName;
+            });
+            
+            if (currentFile) {
+                currentFile.classList.add('bg-bg-light-green');
+                const nameSpan = currentFile.querySelector('span:last-child');
+                if (nameSpan) {
+                    nameSpan.classList.remove('text-text-medium-brown');
+                    nameSpan.classList.add('text-primary', 'font-semibold');
+                }
+            }
         }
 
         function loadFileContent(filePath) {
@@ -731,6 +866,32 @@ class OverlayDragCorgiApp(QMainWindow):
                 });
             }
         }
+
+        // 预览/编辑按钮功能
+        document.addEventListener('DOMContentLoaded', function() {
+            const previewBtn = document.getElementById('preview-btn');
+            const editBtn = document.getElementById('edit-btn');
+            
+            if (previewBtn) {
+                previewBtn.addEventListener('click', function() {
+                    // 切换到预览模式
+                    previewBtn.classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+                    previewBtn.classList.add('bg-primary', 'text-white');
+                    editBtn.classList.remove('bg-primary', 'text-white');
+                    editBtn.classList.add('bg-white', 'border', 'border-gray-300', 'text-text-gray');
+                });
+            }
+            
+            if (editBtn) {
+                editBtn.addEventListener('click', function() {
+                    // 切换到编辑模式
+                    editBtn.classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+                    editBtn.classList.add('bg-primary', 'text-white');
+                    previewBtn.classList.remove('bg-primary', 'text-white');
+                    previewBtn.classList.add('bg-white', 'border', 'border-gray-300', 'text-text-gray');
+                });
+            }
+        });
     </script>
 </body>
 </html>'''

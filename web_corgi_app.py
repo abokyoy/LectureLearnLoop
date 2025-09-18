@@ -1,0 +1,485 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+柯基学习小助手 - Web版本
+使用QWebEngineView内置浏览器渲染HTML界面
+基于Chromium内核，完美支持现代Web技术
+"""
+
+import sys
+import os
+from pathlib import Path
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebEngineCore import QWebEngineSettings
+from PySide6.QtCore import QUrl, Qt
+from PySide6.QtGui import QFont
+
+class WebCorgiApp(QMainWindow):
+    """基于QWebEngineView的柯基学习小助手"""
+    
+    def __init__(self):
+        super().__init__()
+        self.setup_window()
+        self.setup_web_view()
+        self.load_html_content()
+        
+    def setup_window(self):
+        """设置窗口属性"""
+        self.setWindowTitle("柯基学习小助手 - Web版")
+        self.setMinimumSize(1200, 800)
+        self.resize(1400, 900)
+        
+        # 居中显示
+        screen = QApplication.primaryScreen().geometry()
+        x = (screen.width() - self.width()) // 2
+        y = (screen.height() - self.height()) // 2
+        self.move(x, y)
+        
+    def setup_web_view(self):
+        """设置Web视图"""
+        # 创建中央部件
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        
+        # 创建布局
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 创建WebEngineView
+        self.web_view = QWebEngineView()
+        
+        # 配置WebEngine设置
+        settings = self.web_view.settings()
+        settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        
+        # 添加到布局
+        layout.addWidget(self.web_view)
+        
+    def load_html_content(self):
+        """加载HTML内容"""
+        # 创建HTML文件
+        html_content = self.create_html_content()
+        
+        # 保存HTML文件
+        html_file = Path("corgi_dashboard.html")
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        
+        # 加载HTML文件
+        file_url = QUrl.fromLocalFile(str(html_file.absolute()))
+        self.web_view.load(file_url)
+        
+    def create_html_content(self):
+        """创建HTML内容"""
+        return '''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>柯基学习小助手</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#32C77F",
+                        warning: "#FF9B27",
+                        danger: "#ED4B4B",
+                        "text-dark-brown": "#715D46",
+                        "text-medium-brown": "#9B8D7D",
+                        "text-gray": "#828282",
+                        "bg-light-blue": "#D5F8FF",
+                        "bg-beige": "#FFFFD6",
+                        "bg-light-green": "#E2F2EB",
+                        "bg-light-gray": "#F2F0ED",
+                        "bg-light-blue-gray": "#F5F7F9",
+                    },
+                    fontFamily: {
+                        sans: ['"Microsoft YaHei UI"', '"Noto Sans SC"', 'sans-serif'],
+                    },
+                    borderRadius: {
+                        'xl': '1rem',
+                    },
+                },
+            },
+        };
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <style>
+        body {
+            font-family: "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .hover-scale:hover {
+            transform: scale(1.02);
+            transition: transform 0.2s ease;
+        }
+        .card-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .card-shadow:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: box-shadow 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+    <div class="flex h-screen bg-white">
+        <!-- 侧边栏 -->
+        <aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 fade-in">
+            <!-- 应用标题 -->
+            <div class="flex items-center mb-8">
+                <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3 hover-scale">
+                    <span class="text-white text-xl">🐕</span>
+                </div>
+                <h1 class="text-lg font-bold text-text-dark-brown">柯基学习小助手</h1>
+            </div>
+            
+            <!-- 用户信息 -->
+            <div class="flex flex-col items-center mb-8 fade-in" style="animation-delay: 0.1s;">
+                <div class="w-20 h-20 rounded-full mb-2 bg-bg-light-green flex items-center justify-center hover-scale cursor-pointer">
+                    <span class="text-3xl text-primary">👤</span>
+                </div>
+                <p class="font-semibold text-text-dark-brown">柯基的主人</p>
+                <p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+            </div>
+            
+            <!-- 导航菜单 -->
+            <nav class="flex-1 space-y-2">
+                <a class="nav-item active flex items-center px-4 py-2.5 text-white bg-primary rounded-lg card-shadow hover-scale cursor-pointer" onclick="switchPage('dashboard')">
+                    <span class="material-icons-outlined mr-3">work</span>
+                    <span>工作台</span>
+                </a>
+                <a class="nav-item flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg hover-scale cursor-pointer" onclick="switchPage('notebook')">
+                    <span class="material-icons-outlined mr-3">edit_note</span>
+                    <span>笔记本</span>
+                </a>
+                <a class="nav-item flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg hover-scale cursor-pointer" onclick="switchPage('recording')">
+                    <span class="material-icons-outlined mr-3">mic</span>
+                    <span>录音室</span>
+                </a>
+                <a class="nav-item flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg hover-scale cursor-pointer" onclick="switchPage('ai')">
+                    <span class="material-icons-outlined mr-3">smart_toy</span>
+                    <span>AI伙伴</span>
+                </a>
+                <a class="nav-item flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg hover-scale cursor-pointer" onclick="switchPage('knowledge')">
+                    <span class="material-icons-outlined mr-3">book</span>
+                    <span>知识库</span>
+                </a>
+                <a class="nav-item flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg hover-scale cursor-pointer" onclick="switchPage('report')">
+                    <span class="material-icons-outlined mr-3">bar_chart</span>
+                    <span>学习报告</span>
+                </a>
+                <a class="nav-item flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg hover-scale cursor-pointer" onclick="switchPage('settings')">
+                    <span class="material-icons-outlined mr-3">settings</span>
+                    <span>设置</span>
+                </a>
+            </nav>
+            
+            <!-- 底部控制 -->
+            <div class="mt-auto">
+                <div class="flex justify-around items-center text-text-gray">
+                    <button class="hover:bg-bg-light-gray p-2 rounded hover-scale" onclick="previousPage()">
+                        <span class="material-icons-outlined">chevron_left</span>
+                    </button>
+                    <button class="hover:bg-bg-light-gray p-2 rounded hover-scale" onclick="showMenu()">
+                        <span class="material-icons-outlined">more_horiz</span>
+                    </button>
+                    <button class="hover:bg-bg-light-gray p-2 rounded hover-scale" onclick="nextPage()">
+                        <span class="material-icons-outlined">chevron_right</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- 主内容区 -->
+        <main class="flex-1 p-8 bg-bg-light-blue-gray overflow-y-auto">
+            <!-- 页面标题 -->
+            <header class="flex justify-between items-center mb-8 fade-in">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 mr-4 bg-bg-light-green rounded-full flex items-center justify-center hover-scale">
+                        <span class="text-2xl text-primary">🐕</span>
+                    </div>
+                    <h2 class="text-3xl font-bold text-text-dark-brown">柯基的学习乐园</h2>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-right">
+                        <p class="font-semibold text-text-dark-brown">☀️ 汪汪！欢迎回来！</p>
+                        <p class="text-sm text-text-gray" id="currentDate">今天: 2024年9月18日</p>
+                    </div>
+                    <button class="p-2 rounded-full hover:bg-gray-200 hover-scale" onclick="showNotifications()">
+                        <span class="material-icons-outlined text-text-gray">notifications</span>
+                    </button>
+                    <div class="flex space-x-1">
+                        <button class="w-3 h-3 bg-gray-300 rounded-full hover-scale" onclick="minimizeWindow()"></button>
+                        <button class="w-3 h-3 bg-warning rounded-full hover-scale" onclick="maximizeWindow()"></button>
+                        <button class="w-3 h-3 bg-danger rounded-full hover-scale" onclick="closeWindow()"></button>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- 统计卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale fade-in cursor-pointer" onclick="viewNotes()">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-bg-light-green mr-4">
+                            <span class="material-icons-outlined text-primary">menu_book</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">今日笔记</p>
+                            <p class="text-3xl font-bold text-primary">3 <span class="text-base font-normal text-text-medium-brown">篇</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale fade-in cursor-pointer" onclick="viewExercises()" style="animation-delay: 0.1s;">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-orange-100 mr-4">
+                            <span class="material-icons-outlined text-warning">checklist</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">练习完成</p>
+                            <p class="text-3xl font-bold text-warning">15 <span class="text-base font-normal text-text-medium-brown">题</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale fade-in cursor-pointer" onclick="viewKnowledge()" style="animation-delay: 0.2s;">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-pink-100 mr-4">
+                            <span class="material-icons-outlined text-pink-500">lightbulb</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">新增知识点</p>
+                            <p class="text-3xl font-bold text-pink-500">8 <span class="text-base font-normal text-text-medium-brown">个</span></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl card-shadow hover-scale fade-in cursor-pointer" onclick="viewTime()" style="animation-delay: 0.3s;">
+                    <div class="flex items-start">
+                        <div class="p-3 rounded-lg bg-red-100 mr-4">
+                            <span class="material-icons-outlined text-danger">timer</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-text-gray mb-1">学习时长</p>
+                            <p class="text-3xl font-bold text-danger">2h 35m</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 快速操作 -->
+            <div class="mb-8 fade-in" style="animation-delay: 0.4s;">
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-4">快速操作</h3>
+                <div class="grid grid-cols-4 gap-6">
+                    <button class="bg-primary hover:bg-green-600 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale" onclick="createNote()">
+                        <span class="material-icons-outlined mb-2">add_circle_outline</span>
+                        <span>新建笔记</span>
+                    </button>
+                    <button class="bg-red-400 hover:bg-red-500 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale" onclick="startRecording()">
+                        <span class="material-icons-outlined mb-2">graphic_eq</span>
+                        <span>开始录制</span>
+                    </button>
+                    <button class="bg-orange-400 hover:bg-orange-500 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale" onclick="startAIPractice()">
+                        <span class="material-icons-outlined mb-2">model_training</span>
+                        <span>AI练习</span>
+                    </button>
+                    <button class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-4 rounded-xl flex flex-col items-center justify-center transition duration-300 card-shadow hover-scale" onclick="manageKnowledge()">
+                        <span class="material-icons-outlined mb-2">folder_managed</span>
+                        <span>知识管理</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 最近活动 -->
+            <div class="fade-in" style="animation-delay: 0.5s;">
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-4">最近活动</h3>
+                <div class="bg-white p-6 rounded-xl card-shadow space-y-4">
+                    <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg cursor-pointer hover-scale" onclick="viewActivity('note1')">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-bg-light-green flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-sm text-primary">done</span>
+                            </div>
+                            <p class="text-text-medium-brown">完成了<span class="font-semibold text-text-dark-brown">《柯基学习法》</span>笔记</p>
+                        </div>
+                        <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">2分钟前</span>
+                    </div>
+                    <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg cursor-pointer hover-scale" onclick="viewActivity('practice1')">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-sm text-blue-500">edit</span>
+                            </div>
+                            <p class="text-text-medium-brown">进行了<span class="font-semibold text-text-dark-brown">官僚学习</span>练习</p>
+                        </div>
+                        <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">15分钟前</span>
+                    </div>
+                    <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg cursor-pointer hover-scale" onclick="viewActivity('knowledge1')">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-yellow-100 flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-sm text-warning">add</span>
+                            </div>
+                            <p class="text-text-medium-brown">添加了新的知识点</p>
+                        </div>
+                        <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">1小时前</span>
+                    </div>
+                    <div class="flex justify-between items-center hover:bg-gray-50 p-2 rounded-lg cursor-pointer hover-scale" onclick="viewActivity('recording1')">
+                        <div class="flex items-center">
+                            <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-sm text-purple-500">mic</span>
+                            </div>
+                            <p class="text-text-medium-brown">录制了学习音频</p>
+                        </div>
+                        <span class="text-sm text-text-gray bg-bg-light-gray px-2 py-1 rounded-md">2小时前</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // 更新当前日期
+        function updateCurrentDate() {
+            const now = new Date();
+            const dateStr = `今天: ${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+            document.getElementById('currentDate').textContent = dateStr;
+        }
+
+        // 页面切换功能
+        function switchPage(page) {
+            // 移除所有导航项的激活状态
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active', 'bg-primary', 'text-white', 'card-shadow');
+                item.classList.add('text-text-gray');
+            });
+            
+            // 激活当前导航项
+            event.currentTarget.classList.add('active', 'bg-primary', 'text-white', 'card-shadow');
+            event.currentTarget.classList.remove('text-text-gray');
+            
+            console.log(`切换到页面: ${page}`);
+            // 这里可以添加页面切换逻辑
+        }
+
+        // 快速操作功能
+        function createNote() {
+            console.log('创建新笔记');
+            alert('🐕 汪汪！准备创建新笔记！');
+        }
+
+        function startRecording() {
+            console.log('开始录制');
+            alert('🎙️ 开始录制学习音频！');
+        }
+
+        function startAIPractice() {
+            console.log('开始AI练习');
+            alert('🤖 启动AI练习模式！');
+        }
+
+        function manageKnowledge() {
+            console.log('管理知识');
+            alert('📚 打开知识管理系统！');
+        }
+
+        // 统计卡片点击功能
+        function viewNotes() {
+            console.log('查看笔记');
+            alert('📝 查看今日笔记详情！');
+        }
+
+        function viewExercises() {
+            console.log('查看练习');
+            alert('✅ 查看练习完成情况！');
+        }
+
+        function viewKnowledge() {
+            console.log('查看知识点');
+            alert('💡 查看新增知识点！');
+        }
+
+        function viewTime() {
+            console.log('查看学习时长');
+            alert('⏰ 查看学习时长统计！');
+        }
+
+        // 活动点击功能
+        function viewActivity(activityId) {
+            console.log(`查看活动: ${activityId}`);
+            alert(`🔍 查看活动详情: ${activityId}`);
+        }
+
+        // 窗口控制功能
+        function minimizeWindow() {
+            console.log('最小化窗口');
+        }
+
+        function maximizeWindow() {
+            console.log('最大化窗口');
+        }
+
+        function closeWindow() {
+            console.log('关闭窗口');
+        }
+
+        // 其他功能
+        function showNotifications() {
+            console.log('显示通知');
+            alert('🔔 暂无新通知！');
+        }
+
+        function previousPage() {
+            console.log('上一页');
+        }
+
+        function nextPage() {
+            console.log('下一页');
+        }
+
+        function showMenu() {
+            console.log('显示菜单');
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            updateCurrentDate();
+            console.log('🐕 柯基学习小助手Web版加载完成！');
+            
+            // 每分钟更新一次时间
+            setInterval(updateCurrentDate, 60000);
+        });
+    </script>
+</body>
+</html>'''
+
+def main():
+    """主函数"""
+    app = QApplication(sys.argv)
+    
+    # 设置应用程序属性
+    app.setApplicationName("柯基学习小助手")
+    app.setApplicationVersion("2.0")
+    
+    # 创建主窗口
+    window = WebCorgiApp()
+    window.show()
+    
+    print("🐕 柯基学习小助手Web版启动成功！")
+    print("🌐 基于QWebEngineView + Chromium内核")
+    print("🎨 完美渲染HTML界面")
+    print("⚡ 支持JavaScript交互")
+    
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
