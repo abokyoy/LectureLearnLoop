@@ -11,6 +11,7 @@ import json
 import os
 import markdown
 from pathlib import Path
+from template_manager import TemplateManager
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QLabel
 )
@@ -30,6 +31,15 @@ class CorgiWebBridge(QObject):
         super().__init__(parent)
         self.current_page = "dashboard"
         self.main_window = parent
+        # 菜单状态管理
+        self.menu_state = {
+            "dashboard": {"expanded": False, "children": []},
+            "learn": {"expanded": False, "children": ["learn_from_materials", "learn_from_audio"]},
+            "practice": {"expanded": False, "children": ["practice_materials", "practice_knowledge", "practice_errors"]},
+            "memory": {"expanded": False, "children": ["memory_knowledge", "memory_errors"]},
+            "knowledge_base": {"expanded": False, "children": []},
+            "settings": {"expanded": False, "children": []}
+        }
 
     @Slot()
     def minimizeWindow(self):
@@ -80,54 +90,57 @@ class CorgiWebBridge(QObject):
             self.main_window.close()
             print("❌ 窗口已关闭")
             
-    @Slot()
-    def switchToNotebook(self):
-        """切换到笔记本页面"""
-        if self.main_window:
-            self.main_window.load_notebook_content()
-            print("📝 切换到笔记本页面")
-            
-    @Slot()
-    def switchToDashboard(self):
-        """切换到工作台页面"""
-        if self.main_window:
-            self.main_window.load_dashboard_content()
-            print("🏠 切换到工作台页面")
-            
-    @Slot()
-    def switchToRecording(self):
-        """切换到录音室页面"""
-        if self.main_window:
-            self.main_window.load_recording_content()
-            print("🎤 切换到录音室页面")
-            
-    @Slot()
-    def switchToAIPartner(self):
-        """切换到AI伙伴页面"""
-        if self.main_window:
-            self.main_window.load_ai_partner_content()
-            print("🤖 切换到AI伙伴页面")
-            
-    @Slot()
-    def switchToKnowledgeBase(self):
-        """切换到知识库管理页面"""
-        if self.main_window:
-            self.main_window.load_knowledge_base_content()
-            print("📚 切换到知识库管理页面")
-            
+    
+    @Slot(str, result=str)
+    def toggleMenu(self, menu_id):
+        """切换菜单展开/收缩状态"""
+        if menu_id in self.menu_state:
+            # 如果有子菜单，切换展开状态
+            if self.menu_state[menu_id]["children"]:
+                self.menu_state[menu_id]["expanded"] = not self.menu_state[menu_id]["expanded"]
+                print(f"📋 菜单 {menu_id} 展开状态: {self.menu_state[menu_id]['expanded']}")
+            else:
+                # 叶子节点，直接加载内容
+                self.loadContent(menu_id)
+        return json.dumps(self.menu_state, ensure_ascii=False)
+    
     @Slot(str)
-    def switchToSubjectDetail(self, subject_name):
-        """切换到科目详情页面"""
+    def loadContent(self, content_id):
+        """加载指定内容"""
+        self.current_page = content_id
         if self.main_window:
-            self.main_window.load_subject_detail_content(subject_name)
-            print(f"📖 切换到科目详情页面: {subject_name}")
+            content_html = self.main_window.generate_content_html(content_id)
+            # 转义HTML内容中的反引号和反斜杠
+            escaped_html = content_html.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
+            # 通过JavaScript更新右侧内容区域
+            self.main_window.web_view.page().runJavaScript(f"""
+                updateContentArea(`{escaped_html}`);
+            """)
+            print(f"📄 已加载内容: {content_id}")
             
-    @Slot(str, str)
-    def switchToKnowledgePointDetail(self, subject_name, knowledge_point_name):
-        """切换到知识点详情页面"""
-        if self.main_window:
-            self.main_window.load_knowledge_point_detail_content(subject_name, knowledge_point_name)
-            print(f"🔍 切换到知识点详情页面: {subject_name} - {knowledge_point_name}")
+            # 更新页面标题和活动菜单项
+            title_map = {
+                "dashboard": "柯基的学习乐园",
+                "learn_from_materials": "从资料学习",
+                "learn_from_audio": "从音视频学习",
+                "practice_materials": "基于学习资料练习",
+                "practice_knowledge": "基于知识点练习", 
+                "practice_errors": "基于错题练习",
+                "memory_knowledge": "基于知识点记忆",
+                "memory_errors": "基于错题记忆",
+                "knowledge_base": "知识库管理",
+                "settings": "设置"
+            }
+            page_title = title_map.get(content_id, "柯基学习小助手")
+            self.main_window.web_view.page().runJavaScript(f"""
+                updatePageTitle('{page_title}');
+                setActiveMenuItem('{content_id}');
+            """)
+    
+    @Slot(result=str)
+    def getMenuState(self):
+        """获取当前菜单状态"""
+        return json.dumps(self.menu_state, ensure_ascii=False)
     
     @Slot(str)
     def openQuestionReview(self, question_id):
@@ -212,6 +225,123 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             print(f"保存文件失败: {e}")
             return False
+    
+    @Slot(str, result=bool)
+    def createNewNote(self, folder_path="vault"):
+        """创建新的Markdown笔记"""
+        try:
+            vault_path = Path(folder_path)
+            vault_path.mkdir(exist_ok=True)
+            
+            # 生成新文件名
+            counter = 1
+            while True:
+                new_file_name = f"新笔记{counter}.md"
+                new_file_path = vault_path / new_file_name
+                if not new_file_path.exists():
+                    break
+                counter += 1
+            
+            # 创建模板内容
+            template_content = f"""# {new_file_name.replace('.md', '')}
+
+## 概述
+在这里写下你的学习笔记...
+
+## 要点
+- 要点1
+- 要点2
+- 要点3
+
+## 总结
+总结你学到的内容...
+"""
+            
+            with open(new_file_path, 'w', encoding='utf-8') as f:
+                f.write(template_content)
+            
+            print(f"创建新笔记: {new_file_path}")
+            return True
+        except Exception as e:
+            print(f"创建新笔记失败: {e}")
+            return False
+    
+    @Slot(str, result=bool)
+    def createNewFolder(self, parent_path="vault"):
+        """创建新文件夹"""
+        try:
+            parent = Path(parent_path)
+            parent.mkdir(exist_ok=True)
+            
+            # 生成新文件夹名
+            counter = 1
+            while True:
+                new_folder_name = f"新文件夹{counter}"
+                new_folder_path = parent / new_folder_name
+                if not new_folder_path.exists():
+                    break
+                counter += 1
+            
+            new_folder_path.mkdir()
+            print(f"创建新文件夹: {new_folder_path}")
+            return True
+        except Exception as e:
+            print(f"创建新文件夹失败: {e}")
+            return False
+    
+    @Slot(str, str, result=bool)
+    def renameFileOrFolder(self, old_path, new_name):
+        """重命名文件或文件夹"""
+        try:
+            old_path_obj = Path(old_path)
+            new_path_obj = old_path_obj.parent / new_name
+            
+            if new_path_obj.exists():
+                print(f"重命名失败: {new_name} 已存在")
+                return False
+            
+            old_path_obj.rename(new_path_obj)
+            print(f"重命名成功: {old_path} -> {new_path_obj}")
+            return True
+        except Exception as e:
+            print(f"重命名失败: {e}")
+            return False
+    
+    @Slot(str, str, result=bool)
+    def moveFileOrFolder(self, source_path, target_folder):
+        """移动文件或文件夹"""
+        try:
+            source = Path(source_path)
+            target_dir = Path(target_folder)
+            target_path = target_dir / source.name
+            
+            if target_path.exists():
+                print(f"移动失败: {target_path} 已存在")
+                return False
+            
+            target_dir.mkdir(parents=True, exist_ok=True)
+            source.rename(target_path)
+            print(f"移动成功: {source_path} -> {target_path}")
+            return True
+        except Exception as e:
+            print(f"移动失败: {e}")
+            return False
+    
+    @Slot(str, result=str)
+    def extractKnowledgePoints(self, file_path):
+        """提取文档中的知识点"""
+        try:
+            # 这里可以调用之前实现的知识点提取功能
+            # 暂时返回模拟数据
+            knowledge_points = [
+                {"id": "1", "title": "线性回归基础", "content": "线性回归是机器学习中的基础算法"},
+                {"id": "2", "title": "损失函数", "content": "均方误差是线性回归常用的损失函数"},
+                {"id": "3", "title": "梯度下降", "content": "用于优化线性回归模型参数的算法"}
+            ]
+            return json.dumps(knowledge_points, ensure_ascii=False)
+        except Exception as e:
+            print(f"提取知识点失败: {e}")
+            return json.dumps([], ensure_ascii=False)
 
 class DragOverlay(QWidget):
     """透明拖拽覆盖层"""
@@ -375,6 +505,8 @@ class OverlayDragCorgiApp(QMainWindow):
         self.bridge = CorgiWebBridge(self)
         # 记住窗口的正常大小和位置
         self.normal_geometry = None
+        # 初始化模板管理器
+        self.template_manager = TemplateManager()
         self.setup_window()
         self.setup_ui()
         self.setup_web_channel()
@@ -464,40 +596,17 @@ class OverlayDragCorgiApp(QMainWindow):
         self.resize_overlay.lower()  # 调整大小层在底部
         self.drag_overlay.raise_()   # 拖拽层在顶部
         
-    def load_notebook_content(self):
-        """加载笔记本页面内容"""
-        html_content = self.create_notebook_html()
-        self.web_view.setHtml(html_content)
-        
-    def load_dashboard_content(self):
-        """加载工作台页面内容"""
-        html_content = self.create_dashboard_html()
-        self.web_view.setHtml(html_content)
-        
-    def load_recording_content(self):
-        """加载录音室页面内容"""
-        html_content = self.create_recording_html()
-        self.web_view.setHtml(html_content)
-        
-    def load_ai_partner_content(self):
-        """加载AI伙伴页面内容"""
-        html_content = self.create_ai_partner_html()
-        self.web_view.setHtml(html_content)
-        
-    def load_knowledge_base_content(self):
-        """加载知识库管理页面内容"""
-        html_content = self.create_knowledge_base_html()
-        self.web_view.setHtml(html_content)
-        
-    def load_subject_detail_content(self, subject_name="机器学习基础"):
-        """加载科目详情页面内容"""
-        html_content = self.create_subject_detail_html(subject_name)
-        self.web_view.setHtml(html_content)
-        
-    def load_knowledge_point_detail_content(self, subject_name="机器学习基础", knowledge_point_name="线性回归"):
-        """加载知识点详情页面内容"""
-        html_content = self.create_knowledge_point_detail_html(subject_name, knowledge_point_name)
-        self.web_view.setHtml(html_content)
+    def load_html_content(self):
+        """加载HTML内容"""
+        try:
+            html_content = self.template_manager.render_spa_layout()
+            self.web_view.setHtml(html_content)
+            print("✅ 使用模板系统加载SPA布局成功")
+        except Exception as e:
+            print(f"❌ 模板系统加载失败，使用备用方案: {e}")
+            # 备用方案：使用原来的方法
+            html_content = self.create_spa_html()
+            self.web_view.setHtml(html_content)
     
     def open_question_review_panel(self, question_id):
         """打开题目复习面板 - 直接加载HTML文件"""
@@ -577,6 +686,759 @@ class OverlayDragCorgiApp(QMainWindow):
         }
         
         return question_data_map.get(question_id, question_data_map["1"])
+    
+    def generate_content_html(self, content_id):
+        """根据内容ID生成对应的HTML内容"""
+        try:
+            # 准备模板数据
+            context = self.get_template_context(content_id)
+            # 首先尝试使用模板系统
+            html_content = self.template_manager.render_page_content(content_id, **context)
+            print(f"✅ 使用模板渲染页面内容: {content_id}")
+            return html_content
+        except Exception as e:
+            print(f"⚠️ 模板渲染失败，使用备用生成器: {content_id} - {e}")
+            # 备用方案：使用原来的生成器
+            content_generators = {
+                "dashboard": self.generate_dashboard_content,
+                "learn_from_materials": self.generate_learn_materials_content,
+                "learn_from_audio": self.generate_learn_audio_content,
+                "practice_materials": self.generate_practice_materials_content,
+                "practice_knowledge": self.generate_practice_knowledge_content,
+                "practice_errors": self.generate_practice_errors_content,
+                "memory_knowledge": self.generate_memory_knowledge_content,
+                "memory_errors": self.generate_memory_errors_content,
+                "knowledge_base": self.generate_knowledge_base_content,
+                "settings": self.generate_settings_content
+            }
+            
+            generator = content_generators.get(content_id, self.generate_dashboard_content)
+            return generator()
+    
+    def get_template_context(self, content_id):
+        """获取模板渲染所需的上下文数据"""
+        context = {}
+        
+        if content_id == "dashboard":
+            context = {
+                "stats": {
+                    "learning_materials": 12,
+                    "practice_accuracy": "85%",
+                    "knowledge_points": 156
+                },
+                "recent_activities": [
+                    {"icon": "article", "color": "blue", "title": "学习了《机器学习基础》", "time": "2小时前"},
+                    {"icon": "quiz", "color": "green", "title": "完成了线性回归练习", "time": "4小时前"},
+                    {"icon": "psychology", "color": "purple", "title": "复习了神经网络知识点", "time": "6小时前"}
+                ]
+            }
+        elif content_id == "learn_from_materials":
+            context = {
+                "current_file": None,
+                "file_tree": []
+            }
+        elif content_id == "settings":
+            context = {
+                "current_llm_model": "Gemini Pro",
+                "api_key_configured": True,
+                "daily_reminder_enabled": True,
+                "template_system_enabled": True
+            }
+        
+        return context
+    
+    def generate_dashboard_content(self):
+        """生成工作台内容"""
+        return '''
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="material-icons-outlined text-blue-600">school</span>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-text-dark-brown">学习模块</h3>
+                        <p class="text-sm text-text-gray">从资料和音视频中学习</p>
+                    </div>
+                </div>
+                <div class="text-2xl font-bold text-blue-600 mb-2">12</div>
+                <p class="text-sm text-text-gray">本周学习资料数</p>
+                <div class="mt-4">
+                    <button class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700" onclick="handleMenuClick('learn_from_materials')">
+                        开始学习
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="material-icons-outlined text-green-600">fitness_center</span>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-text-dark-brown">练习模块</h3>
+                        <p class="text-sm text-text-gray">知识点和错题练习</p>
+                    </div>
+                </div>
+                <div class="text-2xl font-bold text-green-600 mb-2">85%</div>
+                <p class="text-sm text-text-gray">本周练习正确率</p>
+                <div class="mt-4">
+                    <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700" onclick="handleMenuClick('practice_knowledge')">
+                        开始练习
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-white p-6 rounded-xl shadow-sm">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+                        <span class="material-icons-outlined text-purple-600">psychology</span>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-text-dark-brown">记忆模块</h3>
+                        <p class="text-sm text-text-gray">知识点记忆和复习</p>
+                    </div>
+                </div>
+                <div class="text-2xl font-bold text-purple-600 mb-2">156</div>
+                <p class="text-sm text-text-gray">已掌握知识点数</p>
+                <div class="mt-4">
+                    <button class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700" onclick="handleMenuClick('memory_knowledge')">
+                        开始记忆
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-white p-6 rounded-xl shadow-sm col-span-full">
+                <h3 class="text-lg font-semibold text-text-dark-brown mb-4">最近学习活动</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
+                            <span class="material-icons-outlined text-blue-600 text-sm">article</span>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium text-text-dark-brown">学习了《机器学习基础》</p>
+                            <p class="text-sm text-text-gray">2小时前</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center p-3 bg-gray-50 rounded-lg">
+                        <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
+                            <span class="material-icons-outlined text-green-600 text-sm">quiz</span>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-medium text-text-dark-brown">完成了线性回归练习</p>
+                            <p class="text-sm text-text-gray">4小时前</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        '''
+    
+    def generate_learn_materials_content(self):
+        """生成从资料学习内容"""
+        return '''
+        <div class="flex h-full">
+            <!-- 左侧文件树 -->
+            <div class="w-80 bg-white rounded-xl shadow-sm mr-6 flex flex-col">
+                <div class="p-4 border-b border-gray-200">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-text-dark-brown">学习资料</h3>
+                        <div class="flex space-x-2">
+                            <button class="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="新建笔记" onclick="createNewNote()">
+                                <span class="material-icons-outlined text-sm">note_add</span>
+                            </button>
+                            <button class="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" title="新建文件夹" onclick="createNewFolder()">
+                                <span class="material-icons-outlined text-sm">create_new_folder</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-1 p-4 overflow-auto">
+                    <div id="file-tree">
+                        <div class="text-center text-gray-500 py-8">
+                            <span class="material-icons-outlined text-4xl mb-2">folder_open</span>
+                            <p>加载文件结构中...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 右侧内容区 -->
+            <div class="flex-1 flex flex-col">
+                <!-- 工具栏 -->
+                <div class="bg-white rounded-xl shadow-sm mb-4 p-4">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-4">
+                            <button id="preview-btn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm" onclick="switchToPreview()">
+                                预览
+                            </button>
+                            <button id="edit-btn" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm" onclick="switchToEdit()">
+                                编辑
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700" onclick="extractKnowledgePoints()">
+                                <span class="material-icons-outlined text-sm mr-1">psychology</span>
+                                提取知识点
+                            </button>
+                            <button class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700" onclick="saveCurrentFile()">
+                                <span class="material-icons-outlined text-sm mr-1">save</span>
+                                保存
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 内容显示区 -->
+                <div class="flex-1 bg-white rounded-xl shadow-sm p-6 overflow-auto">
+                    <div id="content-display" class="h-full">
+                        <div class="text-center text-gray-500 py-16">
+                            <span class="material-icons-outlined text-6xl mb-4">description</span>
+                            <h3 class="text-xl font-semibold mb-2">选择一个文件开始学习</h3>
+                            <p>从左侧文件树中选择Markdown文件进行预览或编辑</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            // 初始化文件树
+            if (bridge && bridge.getFileStructure) {
+                bridge.getFileStructure().then(function(structureJson) {
+                    const structure = JSON.parse(structureJson);
+                    renderFileTree(structure);
+                });
+            }
+            
+            function renderFileTree(structure) {
+                const fileTree = document.getElementById('file-tree');
+                fileTree.innerHTML = buildTreeHTML(structure);
+            }
+            
+            function buildTreeHTML(items, level = 0) {
+                let html = '';
+                items.forEach(item => {
+                    const indent = 'pl-' + (level * 4);
+                    if (item.type === 'folder') {
+                        html += `
+                            <div class="folder-item">
+                                <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer ${indent}" onclick="toggleFolder(this)">
+                                    <span class="material-icons-outlined text-sm mr-2 folder-icon">folder</span>
+                                    <span class="text-sm">${item.name}</span>
+                                </div>
+                                <div class="folder-content hidden">
+                                    ${buildTreeHTML(item.children, level + 1)}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer ${indent}" onclick="loadFile('${item.path}')">
+                                <span class="material-icons-outlined text-sm mr-2 text-blue-600">description</span>
+                                <span class="text-sm">${item.name}</span>
+                            </div>
+                        `;
+                    }
+                });
+                return html;
+            }
+            
+            function toggleFolder(element) {
+                const content = element.nextElementSibling;
+                const icon = element.querySelector('.folder-icon');
+                if (content.classList.contains('hidden')) {
+                    content.classList.remove('hidden');
+                    icon.textContent = 'folder_open';
+                } else {
+                    content.classList.add('hidden');
+                    icon.textContent = 'folder';
+                }
+            }
+            
+            function loadFile(filePath) {
+                if (bridge && bridge.loadMarkdownFile) {
+                    bridge.loadMarkdownFile(filePath).then(function(htmlContent) {
+                        const contentDisplay = document.getElementById('content-display');
+                        contentDisplay.innerHTML = htmlContent;
+                    });
+                }
+            }
+            
+            function switchToPreview() {
+                document.getElementById('preview-btn').className = 'px-4 py-2 bg-primary text-white rounded-lg text-sm';
+                document.getElementById('edit-btn').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm';
+            }
+            
+            function switchToEdit() {
+                document.getElementById('preview-btn').className = 'px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm';
+                document.getElementById('edit-btn').className = 'px-4 py-2 bg-primary text-white rounded-lg text-sm';
+            }
+        </script>
+        '''
+    
+    def generate_learn_audio_content(self):
+        """生成从音视频学习内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">headphones</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">从音视频学习</h3>
+                <p class="text-text-gray mb-6">上传音频或视频文件，AI将自动转写并生成学习笔记</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    <span class="material-icons-outlined mr-2">upload</span>
+                    上传音视频文件
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_practice_materials_content(self):
+        """生成基于学习资料练习内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">quiz</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于学习资料练习</h3>
+                <p class="text-text-gray mb-6">根据你的学习资料自动生成练习题目</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    开始练习
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_practice_knowledge_content(self):
+        """生成基于知识点练习内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">psychology</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于知识点练习</h3>
+                <p class="text-text-gray mb-6">针对特定知识点进行专项练习</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    选择知识点
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_practice_errors_content(self):
+        """生成基于错题练习内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">error_outline</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于错题练习</h3>
+                <p class="text-text-gray mb-6">复习和练习之前做错的题目</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    查看错题本
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_memory_knowledge_content(self):
+        """生成基于知识点记忆内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">lightbulb</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于知识点记忆</h3>
+                <p class="text-text-gray mb-6">通过脑图和间隔重复算法加强记忆</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    开始记忆训练
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_memory_errors_content(self):
+        """生成基于错题记忆内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">history</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于错题记忆</h3>
+                <p class="text-text-gray mb-6">重点记忆容易出错的知识点</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    查看错题记忆
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_knowledge_base_content(self):
+        """生成知识库管理内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="text-center py-16">
+                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">library_books</span>
+                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">知识库管理</h3>
+                <p class="text-text-gray mb-6">管理和组织你的知识点数据库</p>
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
+                    管理知识库
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def generate_settings_content(self):
+        """生成设置内容"""
+        return '''
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <h3 class="text-xl font-semibold text-text-dark-brown mb-6">设置</h3>
+            <div class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-text-dark-brown mb-2">LLM模型选择</label>
+                    <select class="w-full p-3 border border-gray-300 rounded-lg">
+                        <option>Gemini Pro</option>
+                        <option>Ollama</option>
+                        <option>规则匹配</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-text-dark-brown mb-2">API Key</label>
+                    <input type="password" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="输入你的API Key">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-text-dark-brown mb-2">学习提醒</label>
+                    <div class="flex items-center">
+                        <input type="checkbox" class="mr-2">
+                        <span class="text-sm text-text-gray">启用每日学习提醒</span>
+                    </div>
+                </div>
+                <button class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-600">
+                    保存设置
+                </button>
+            </div>
+        </div>
+        '''
+    
+    def create_spa_html(self):
+        """创建单页面应用的HTML模板"""
+        return '''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>柯基学习小助手</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#32C77F",
+                        warning: "#FF9B27", 
+                        danger: "#ED4B4B",
+                        "text-dark-brown": "#715D46",
+                        "text-medium-brown": "#9B8D7D",
+                        "text-gray": "#828282",
+                        "bg-light-green": "#E2F2EB",
+                        "bg-light-gray": "#F2F0ED",
+                        "bg-light-blue-gray": "#F5F7F9",
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+    <div class="flex h-screen bg-white">
+        <!-- 左侧菜单栏 -->
+        <aside id="sidebar" class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300">
+            <!-- 头部 -->
+            <div class="flex items-center mb-8">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center mr-3">
+                    <span class="material-icons-outlined text-white">school</span>
+                </div>
+                <h1 id="app-title" class="text-lg font-bold text-text-dark-brown transition-opacity duration-300">柯基学习小助手</h1>
+                <button id="sidebar-toggle" class="ml-auto p-1 rounded hover:bg-gray-100" onclick="toggleSidebar()">
+                    <span class="material-icons-outlined text-gray-500">menu</span>
+                </button>
+            </div>
+            
+            <!-- 用户信息 -->
+            <div id="user-info" class="flex flex-col items-center mb-8 transition-opacity duration-300">
+                <div class="w-20 h-20 rounded-full bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center mb-2">
+                    <span class="material-icons-outlined text-white text-3xl">account_circle</span>
+                </div>
+                <p class="font-semibold text-text-dark-brown">柯基的主人</p>
+                <p class="text-sm text-text-medium-brown">学习等级: Lv.5 ⭐</p>
+            </div>
+            
+            <!-- 导航菜单 -->
+            <nav id="navigation" class="flex-1 space-y-2">
+                <!-- 工作台 -->
+                <div class="menu-item">
+                    <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('dashboard')">
+                        <span class="material-icons-outlined mr-3">dashboard</span>
+                        <span class="menu-text">工作台</span>
+                    </a>
+                </div>
+                
+                <!-- 学 -->
+                <div class="menu-item">
+                    <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn')">
+                        <span class="material-icons-outlined mr-3">school</span>
+                        <span class="menu-text">学</span>
+                        <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
+                    </a>
+                    <div class="submenu ml-8 mt-2 space-y-1 hidden">
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn_from_materials')">
+                            <span class="material-icons-outlined mr-2 text-sm">article</span>
+                            <span class="menu-text">从资料学习</span>
+                        </a>
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn_from_audio')">
+                            <span class="material-icons-outlined mr-2 text-sm">headphones</span>
+                            <span class="menu-text">从音视频学习</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- 练 -->
+                <div class="menu-item">
+                    <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice')">
+                        <span class="material-icons-outlined mr-3">fitness_center</span>
+                        <span class="menu-text">练</span>
+                        <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
+                    </a>
+                    <div class="submenu ml-8 mt-2 space-y-1 hidden">
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_materials')">
+                            <span class="material-icons-outlined mr-2 text-sm">quiz</span>
+                            <span class="menu-text">基于学习资料练习</span>
+                        </a>
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_knowledge')">
+                            <span class="material-icons-outlined mr-2 text-sm">psychology</span>
+                            <span class="menu-text">基于知识点练习</span>
+                        </a>
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_errors')">
+                            <span class="material-icons-outlined mr-2 text-sm">error_outline</span>
+                            <span class="menu-text">基于错题练习</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- 记 -->
+                <div class="menu-item">
+                    <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory')">
+                        <span class="material-icons-outlined mr-3">psychology</span>
+                        <span class="menu-text">记</span>
+                        <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
+                    </a>
+                    <div class="submenu ml-8 mt-2 space-y-1 hidden">
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory_knowledge')">
+                            <span class="material-icons-outlined mr-2 text-sm">lightbulb</span>
+                            <span class="menu-text">基于知识点记忆</span>
+                        </a>
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory_errors')">
+                            <span class="material-icons-outlined mr-2 text-sm">history</span>
+                            <span class="menu-text">基于错题记忆</span>
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- 知识库管理 -->
+                <div class="menu-item">
+                    <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('knowledge_base')">
+                        <span class="material-icons-outlined mr-3">library_books</span>
+                        <span class="menu-text">知识库管理</span>
+                    </a>
+                </div>
+            </nav>
+            
+            <!-- 设置 -->
+            <div class="mt-auto">
+                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('settings')">
+                    <span class="material-icons-outlined mr-3">settings</span>
+                    <span class="menu-text">设置</span>
+                </a>
+            </div>
+        </aside>
+        
+        <!-- 右侧内容区域 -->
+        <main class="flex-1 flex flex-col">
+            <!-- 顶部标题栏 -->
+            <header class="flex justify-between items-center p-6 bg-white border-b border-gray-200">
+                <h2 id="page-title" class="text-2xl font-bold text-text-dark-brown">柯基的学习乐园</h2>
+                <div class="flex space-x-2">
+                    <button class="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('minimizeWindow')">−</button>
+                    <button class="w-8 h-8 bg-warning hover:bg-yellow-500 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('maximizeWindow')">□</button>
+                    <button class="w-8 h-8 bg-danger hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('closeWindow')">×</button>
+                </div>
+            </header>
+            
+            <!-- 动态内容区域 -->
+            <div id="content-area" class="flex-1 p-6 bg-bg-light-blue-gray overflow-auto">
+                <!-- 默认加载工作台内容 -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-blue-600">school</span>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-text-dark-brown">学习模块</h3>
+                                <p class="text-sm text-text-gray">从资料和音视频中学习</p>
+                            </div>
+                        </div>
+                        <div class="text-2xl font-bold text-blue-600 mb-2">12</div>
+                        <p class="text-sm text-text-gray">本周学习资料数</p>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-green-600">fitness_center</span>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-text-dark-brown">练习模块</h3>
+                                <p class="text-sm text-text-gray">知识点和错题练习</p>
+                            </div>
+                        </div>
+                        <div class="text-2xl font-bold text-green-600 mb-2">85%</div>
+                        <p class="text-sm text-text-gray">本周练习正确率</p>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <div class="flex items-center mb-4">
+                            <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+                                <span class="material-icons-outlined text-purple-600">psychology</span>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-text-dark-brown">记忆模块</h3>
+                                <p class="text-sm text-text-gray">知识点记忆和复习</p>
+                            </div>
+                        </div>
+                        <div class="text-2xl font-bold text-purple-600 mb-2">156</div>
+                        <p class="text-sm text-text-gray">已掌握知识点数</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let bridge = null;
+        let sidebarCollapsed = false;
+        
+        // 初始化WebChannel
+        new QWebChannel(qt.webChannelTransport, function (channel) {
+            bridge = channel.objects.bridge;
+            console.log("WebChannel连接成功");
+        });
+        
+        // 调用Python函数
+        function callPythonFunction(functionName, ...args) {
+            if (bridge && bridge[functionName]) {
+                bridge[functionName](...args);
+            }
+        }
+        
+        // 侧边栏收缩/展开
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const appTitle = document.getElementById('app-title');
+            const userInfo = document.getElementById('user-info');
+            const menuTexts = document.querySelectorAll('.menu-text');
+            const expandIcons = document.querySelectorAll('.expand-icon');
+            
+            sidebarCollapsed = !sidebarCollapsed;
+            
+            if (sidebarCollapsed) {
+                sidebar.classList.remove('w-64');
+                sidebar.classList.add('w-16');
+                appTitle.classList.add('opacity-0');
+                userInfo.classList.add('opacity-0');
+                menuTexts.forEach(text => text.classList.add('opacity-0'));
+                expandIcons.forEach(icon => icon.classList.add('opacity-0'));
+                // 隐藏所有子菜单
+                document.querySelectorAll('.submenu').forEach(submenu => {
+                    submenu.classList.add('hidden');
+                });
+            } else {
+                sidebar.classList.remove('w-16');
+                sidebar.classList.add('w-64');
+                appTitle.classList.remove('opacity-0');
+                userInfo.classList.remove('opacity-0');
+                menuTexts.forEach(text => text.classList.remove('opacity-0'));
+                expandIcons.forEach(icon => icon.classList.remove('opacity-0'));
+            }
+        }
+        
+        // 处理菜单点击
+        function handleMenuClick(menuId) {
+            if (sidebarCollapsed) {
+                // 如果侧边栏收缩，先展开
+                toggleSidebar();
+                return;
+            }
+            
+            if (bridge && bridge.toggleMenu) {
+                bridge.toggleMenu(menuId).then(function(menuStateJson) {
+                    const menuState = JSON.parse(menuStateJson);
+                    updateMenuDisplay(menuState);
+                });
+            }
+        }
+        
+        // 更新菜单显示状态
+        function updateMenuDisplay(menuState) {
+            Object.keys(menuState).forEach(menuId => {
+                const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+                if (menuItem) {
+                    const submenu = menuItem.parentElement.querySelector('.submenu');
+                    const expandIcon = menuItem.querySelector('.expand-icon');
+                    
+                    if (submenu && expandIcon) {
+                        if (menuState[menuId].expanded) {
+                            submenu.classList.remove('hidden');
+                            expandIcon.textContent = 'expand_less';
+                        } else {
+                            submenu.classList.add('hidden');
+                            expandIcon.textContent = 'expand_more';
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 更新内容区域
+        function updateContentArea(htmlContent) {
+            const contentArea = document.getElementById('content-area');
+            if (contentArea) {
+                contentArea.innerHTML = htmlContent;
+            }
+        }
+        
+        // 更新页面标题
+        function updatePageTitle(title) {
+            const pageTitle = document.getElementById('page-title');
+            if (pageTitle) {
+                pageTitle.textContent = title;
+            }
+        }
+        
+        // 设置活动菜单项
+        function setActiveMenuItem(menuId) {
+            // 移除所有活动状态
+            document.querySelectorAll('.menu-item a').forEach(item => {
+                item.classList.remove('text-white', 'bg-primary');
+                item.classList.add('text-text-gray');
+            });
+            
+            // 设置当前活动项
+            const activeItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+            if (activeItem) {
+                activeItem.classList.remove('text-text-gray');
+                activeItem.classList.add('text-white', 'bg-primary');
+            }
+        }
+    </script>
+</body>
+</html>'''
         
     def create_dashboard_html(self):
         """创建工作台页面的HTML内容"""
@@ -1109,12 +1971,6 @@ class OverlayDragCorgiApp(QMainWindow):
         self.channel = QWebChannel()
         self.channel.registerObject("bridge", self.bridge)
         self.web_view.page().setWebChannel(self.channel)
-        
-    def load_html_content(self):
-        """加载HTML内容"""
-        # 默认加载工作台页面
-        html_content = self.create_dashboard_html()
-        self.web_view.setHtml(html_content)
         
     def create_recording_html(self):
         """创建录音室页面的HTML内容"""
