@@ -1,0 +1,78 @@
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                <span class="material-icons-outlined text-blue-600">school</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-text-dark-brown">学习模块</h3>
+                <p class="text-sm text-text-gray">从资料和音视频中学习</p>
+            </div>
+        </div>
+        <div class="text-2xl font-bold text-blue-600 mb-2">{{ stats.learning_materials | default(12) }}</div>
+        <p class="text-sm text-text-gray">本周学习资料数</p>
+        <div class="mt-4">
+            <button class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700" onclick="handleMenuClick('learn_from_materials')">
+                开始学习
+            </button>
+        </div>
+    </div>
+    
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                <span class="material-icons-outlined text-green-600">fitness_center</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-text-dark-brown">练习模块</h3>
+                <p class="text-sm text-text-gray">知识点和错题练习</p>
+            </div>
+        </div>
+        <div class="text-2xl font-bold text-green-600 mb-2">{{ stats.practice_accuracy | default('85%') }}</div>
+        <p class="text-sm text-text-gray">本周练习正确率</p>
+        <div class="mt-4">
+            <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700" onclick="handleMenuClick('practice_knowledge')">
+                开始练习
+            </button>
+        </div>
+    </div>
+    
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+                <span class="material-icons-outlined text-purple-600">psychology</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-text-dark-brown">记忆模块</h3>
+                <p class="text-sm text-text-gray">知识点记忆和复习</p>
+            </div>
+        </div>
+        <div class="text-2xl font-bold text-purple-600 mb-2">{{ stats.knowledge_points | default(156) }}</div>
+        <p class="text-sm text-text-gray">已掌握知识点数</p>
+        <div class="mt-4">
+            <button class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700" onclick="handleMenuClick('memory_knowledge')">
+                开始记忆
+            </button>
+        </div>
+    </div>
+    
+    <div class="bg-white p-6 rounded-xl shadow-sm col-span-full">
+        <h3 class="text-lg font-semibold text-text-dark-brown mb-4">最近学习活动</h3>
+        <div class="space-y-3">
+            {% for activity in recent_activities | default([
+                {"icon": "article", "color": "blue", "title": "学习了《机器学习基础》", "time": "2小时前"},
+                {"icon": "quiz", "color": "green", "title": "完成了线性回归练习", "time": "4小时前"}
+            ]) %}
+            <div class="flex items-center p-3 bg-gray-50 rounded-lg">
+                <div class="w-8 h-8 bg-{{ activity.color }}-100 rounded-full flex items-center justify-center mr-3">
+                    <span class="material-icons-outlined text-{{ activity.color }}-600 text-sm">{{ activity.icon }}</span>
+                </div>
+                <div class="flex-1">
+                    <p class="font-medium text-text-dark-brown">{{ activity.title }}</p>
+                    <p class="text-sm text-text-gray">{{ activity.time }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

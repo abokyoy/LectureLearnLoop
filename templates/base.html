@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>{% block title %}柯基学习小助手{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#32C77F",
+                        warning: "#FF9B27", 
+                        danger: "#ED4B4B",
+                        "text-dark-brown": "#715D46",
+                        "text-medium-brown": "#9B8D7D",
+                        "text-gray": "#828282",
+                        "bg-light-green": "#E2F2EB",
+                        "bg-light-gray": "#F2F0ED",
+                        "bg-light-blue-gray": "#F5F7F9",
+                    }
+                }
+            }
+        };
+    </script>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+    {% block content %}{% endblock %}
+    
+    {% block scripts %}
+    <script>
+        let bridge = null;
+        
+        // 初始化WebChannel
+        new QWebChannel(qt.webChannelTransport, function (channel) {
+            bridge = channel.objects.bridge;
+            console.log("WebChannel连接成功");
+            
+            // 触发bridge准备就绪事件
+            const bridgeReadyEvent = new CustomEvent('bridgeReady');
+            document.dispatchEvent(bridgeReadyEvent);
+            
+            // 调用子模板的初始化代码
+            if (typeof onBridgeReady === 'function') {
+                onBridgeReady();
+            }
+        });
+        
+        // 调用Python函数
+        function callPythonFunction(functionName, ...args) {
+            if (bridge && bridge[functionName]) {
+                bridge[functionName](...args);
+            }
+        }
+    </script>
+    {% endblock %}
+    
+    <!-- 子模板的bridge初始化代码 -->
+    {% block on_bridge_ready %}{% endblock %}
+</body>
+</html>

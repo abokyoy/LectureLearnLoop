@@ -1,0 +1,128 @@
+<!-- 像素级完全还原UI/笔记.html，从第76行开始的完整布局 -->
+
+
+
+</aside>
+<div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
+<div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+<div class="flex justify-between items-center mb-4">
+<h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+<div class="space-x-2">
+<button class="text-text-gray hover:text-primary">
+<span class="material-icons-outlined">create_new_folder</span>
+</button>
+<button class="text-text-gray hover:text-primary">
+<span class="material-icons-outlined">note_add</span>
+</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto pr-2">
+<ul class="space-y-1">
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+<span class="text-text-dark-brown font-medium">项目笔记</span>
+<span class="material-icons-outlined text-text-gray ml-auto">expand_more</span>
+</div>
+<ul class="pl-6 mt-1 space-y-1">
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer bg-bg-light-green">
+<span class="material-icons-outlined text-primary mr-2">description</span>
+<span class="text-primary font-semibold">柯基学习法.md</span>
+</div>
+</li>
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-gray-500 mr-2">description</span>
+<span class="text-text-medium-brown">产品设计文档.md</span>
+</div>
+</li>
+</ul>
+</li>
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+<span class="text-text-dark-brown font-medium">日常随笔</span>
+<span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
+</div>
+</li>
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+<span class="text-text-dark-brown font-medium">会议纪要</span>
+<span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<main class="flex-1 p-6 flex flex-col">
+<header class="flex justify-between items-center mb-4">
+<h2 class="text-2xl font-bold text-text-dark-brown">柯基学习法.md</h2>
+<div class="flex items-center space-x-2">
+<button class="flex items-center bg-white border border-gray-300 px-3 py-1.5 rounded-lg text-text-gray hover:bg-gray-100">
+<span class="material-icons-outlined text-sm mr-1">visibility</span>
+<span>预览</span>
+</button>
+<button class="flex items-center bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-green-600">
+<span class="material-icons-outlined text-sm mr-1">edit</span>
+<span>编辑</span>
+</button>
+</div>
+</header>
+<div class="flex-1 bg-white rounded-xl shadow-sm p-6 overflow-y-auto">
+<div class="prose max-w-none">
+<h1>柯基学习法核心原则</h1>
+<p>柯基学习法是一种以<strong>兴趣驱动</strong>和<strong>积极反馈</strong>为核心的学习方法论。它模仿了柯基犬活泼、好奇、聪明的特点，旨在让学习过程变得更加有趣和高效。</p>
+<h2>原则一：保持好奇心（像柯基一样探索）</h2>
+<ul>
+<li>主动发现问题，而不是被动接受知识。</li>
+<li>将大的学习目标分解成一个个"小玩具"，逐个攻破。</li>
+<li>勇于尝试新领域，不怕犯错。</li>
+</ul>
+<h2>原则二：短时高效（柯基的精力集中时间）</h2>
+<p>研究表明，柯基的注意力集中时间不长，这启发我们应该采用番茄工作法之类的技巧，进行短时间、高强度的学习。</p>
+<pre><code>// 伪代码示例
+function corgiStudy(sessionTime = 25, breakTime = 5) {
+  while(learning) {
+    focus(sessionTime);
+    play(breakTime);
+  }
+}
+</code></pre>
+<h2>原则三：及时奖励（得到小零食的快乐）</h2>
+<p>每完成一个小的学习任务，就给自己一个积极的反馈。可以是一杯咖啡、一集喜欢的剧，或者只是简单的自我肯定。</p>
+<blockquote>"汪！我真棒！"</blockquote>
+</div>
+</div>
+</main>
+<aside class="w-1/5 bg-white border-l border-gray-200 p-4 flex flex-col">
+<h2 class="text-lg font-semibold text-text-dark-brown mb-4">知识点列表</h2>
+<div class="flex-1 overflow-y-auto space-y-3">
+<div class="bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+<h3 class="font-semibold text-primary">兴趣驱动</h3>
+<p class="text-sm text-text-medium-brown mt-1">学习的核心动力来源，提高主动性。</p>
+</div>
+<div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+<h3 class="font-semibold text-text-dark-brown">积极反馈</h3>
+<p class="text-sm text-text-medium-brown mt-1">通过奖励机制巩固学习成果，提升动机。</p>
+</div>
+<div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+<h3 class="font-semibold text-text-dark-brown">番茄工作法</h3>
+<p class="text-sm text-text-medium-brown mt-1">一种时间管理方法，用于保持专注。</p>
+</div>
+</div>
+</aside>
+</div>
+</div>
+
+<script>
+    console.log('从资料学习页面脚本加载');
+    
+    // 隐藏全局header，因为我们有自己的header
+    const globalHeader = document.querySelector('header');
+    if (globalHeader && globalHeader.querySelector('#page-title')) {
+        globalHeader.style.display = 'none';
+        console.log('已隐藏全局header');
+    }
+</script>

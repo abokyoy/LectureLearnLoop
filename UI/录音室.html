@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>录音室 - 柯基学习小助手</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#32C77F",
+            warning: "#FF9B27",
+            danger: "#ED4B4B",
+            "text-dark-brown": "#715D46",
+            "text-medium-brown": "#9B8D7D",
+            "text-gray": "#828282",
+            "bg-light-blue": "#D5F8FF",
+            "bg-beige": "#FFFFD6", 
+            "bg-light-green": "#E2F2EB",
+            "bg-light-gray": "#F2F0ED",
+            "bg-light-blue-gray": "#F5F7F9",
+          },
+          fontFamily: {
+            sans: ['"Noto Sans SC"', 'sans-serif'],
+          },
+          borderRadius: {
+            'xl': '1rem',
+          },
+        },
+      },
+    };
+  </script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+<style>
+    .sidebar-collapsed {
+        width: 5.5rem;}
+    .sidebar-collapsed .logo-text, .sidebar-collapsed .user-info, .sidebar-collapsed .nav-text, .sidebar-collapsed .sidebar-footer {
+        display: none;
+    }
+    .sidebar-collapsed .logo {
+        justify-content: center;
+    }
+    .sidebar-collapsed .nav-link {
+        justify-content: center;
+    }
+    .sidebar-collapsed .avatar {
+      width: 40px;
+      height: 40px;
+    }
+</style>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+<div class="flex h-screen bg-white">
+<aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+<div class="flex items-center mb-8 logo">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3 flex-shrink-0">
+<span class="material-icons-outlined text-white">pets</span>
+</div>
+<h1 class="text-lg font-bold text-text-dark-brown logo-text">柯基学习小助手</h1>
+</div>
+<div class="flex flex-col items-center mb-8 user-info">
+<img alt="User Avatar" class="w-20 h-20 rounded-full mb-2 avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXs0Mg4a15hzy1OIlUz-x1NZ2Sr6t75rKa8WMPlFSucuN1mgje2BiwHSB6red_l91Fdg1rduYwvlR2uNdrFIWLzNRhgz4LLuSsPiDs4D1i5ri5gPzDV-irooIfv4XuLChxg1VrwtdqEYXxxlXyYcI6YRydb5iUhiEpx0hymOo_dEsFhHO_zNl0fs2iXm-4eiT4JwkaIanx0jpD5PQtgSv4Ef9eucxao7dDZSrWN4h3S2wusUo4WDqCKBXi9G9pnwgdgcIOnede4LyT"/>
+<p class="font-semibold text-text-dark-brown">柯基的主人</p>
+<p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3">work</span>
+<span class="nav-text">工作台</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3">edit_note</span>
+<span class="nav-text">笔记本</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md nav-link" href="#">
+<span class="material-icons-outlined mr-3">mic</span>
+<span class="nav-text">录音室</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3">smart_toy</span>
+<span class="nav-text">AI伙伴</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3">book</span>
+<span class="nav-text">知识库</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3">bar_chart</span>
+<span class="nav-text">学习报告</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3">settings</span>
+<span class="nav-text">设置</span>
+</a>
+</nav>
+<div class="mt-auto">
+<div class="flex justify-center items-center text-text-gray">
+<button class="p-2 hover:bg-bg-light-gray rounded-lg" id="sidebar-toggle">
+<span class="material-icons-outlined">chevron_left</span>
+</button>
+</div>
+</div>
+</aside>
+<main class="flex-1 flex flex-col p-8 bg-bg-light-blue-gray overflow-y-auto">
+<header class="flex-shrink-0 flex justify-between items-center mb-6">
+<h2 class="text-2xl font-bold text-text-dark-brown">录音室</h2>
+<div class="flex items-center space-x-4">
+<button class="bg-primary text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-green-600 transition duration-300">
+<span class="material-icons-outlined mr-2">play_arrow</span>
+<span>开始录音</span>
+</button>
+<button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300">
+<span class="material-icons-outlined mr-2">pause</span>
+<span>暂停录音</span>
+</button>
+<button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300">
+<span class="material-icons-outlined mr-2">save</span>
+<span>保存笔记</span>
+</button>
+<button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300">
+<span class="material-icons-outlined mr-2">auto_awesome</span>
+<span>手动总结</span>
+</button>
+<button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300">
+<span class="material-icons-outlined mr-2">photo_camera</span>
+<span>截图笔记</span>
+</button>
+</div>
+</header>
+<div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
+<div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+<h3 class="text-xl font-semibold text-text-dark-brown mb-4">笔记总结 (Markdown)</h3>
+<div class="flex-1 border border-gray-200 rounded-lg p-4 prose max-w-none">
+<h4># 标题一</h4>
+<p>这是<strong>加粗</strong>的文本，这是<em>斜体</em>的文本。</p>
+<ul>
+<li>列表项一</li>
+<li>列表项二</li>
+</ul>
+<pre><code>// 代码块
+function helloWorld() {
+  console.log("Hello, world!");
+}
+</code></pre>
+<blockquote>
+<p>这是一段引用的文字。</p>
+</blockquote>
+<p>在这里编辑和查看您的Markdown笔记总结。</p>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-xl font-semibold text-text-dark-brown">实时语音转写</h3>
+<div class="flex items-center space-x-2">
+<span class="text-sm text-text-gray">音量</span>
+<div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 60%;"></div>
+</div>
+</div>
+</div>
+<div class="flex-1 border border-gray-200 rounded-lg p-4 space-y-4 overflow-y-auto" style="min-height: 300px;">
+<div class="flex">
+<span class="text-sm font-semibold text-primary mr-3">[00:00:03]</span>
+<p class="text-text-medium-brown">今天我们来学习一下柯基的日常行为习惯。柯基犬，全名彭布罗克威尔士柯基犬，是一种非常聪明活泼的犬种。</p>
+</div>
+<div class="flex">
+<span class="text-sm font-semibold text-primary mr-3">[00:00:15]</span>
+<p class="text-text-medium-brown">它们的精力非常旺盛，需要每天有足够的运动量来消耗体力，否则可能会出现一些破坏性行为。</p>
+</div>
+<div class="flex bg-bg-light-green p-2 rounded-lg">
+<span class="text-sm font-semibold text-primary mr-3">[00:00:28]</span>
+<p class="text-text-dark-brown">请注意，这里的重点是运动量，这是保证柯基身心健康的关键。</p>
+</div>
+<div class="flex">
+<span class="text-sm font-semibold text-primary mr-3">[00:00:40]</span>
+<p class="text-text-medium-brown">在饮食方面，需要注意控制体重，因为它们天生容易发胖，过胖会对脊椎造成很大压力。</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<script>
+    const sidebar = document.getElementById('sidebar');
+    const toggleButton = document.getElementById('sidebar-toggle');
+    toggleButton.addEventListener('click', () => {
+        sidebar.classList.toggle('sidebar-collapsed');
+        const icon = toggleButton.querySelector('.material-icons-outlined');
+        if (sidebar.classList.contains('sidebar-collapsed')) {
+            icon.textContent = 'chevron_right';
+        } else {
+            icon.textContent = 'chevron_left';
+        }
+    });
+</script>
+
+</body></html>

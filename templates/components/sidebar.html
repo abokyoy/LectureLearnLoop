@@ -1,0 +1,111 @@
+<!-- 左侧菜单栏 -->
+<aside id="sidebar" class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300">
+    <!-- 头部 -->
+    <div class="flex items-center mb-8">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center mr-3">
+            <span class="material-icons-outlined text-white">school</span>
+        </div>
+        <h1 id="app-title" class="text-lg font-bold text-text-dark-brown transition-opacity duration-300">柯基学习小助手</h1>
+    </div>
+    
+    <!-- 用户信息 -->
+    <div id="user-info" class="flex flex-col items-center mb-8 transition-opacity duration-300">
+        <div class="w-20 h-20 rounded-full bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center mb-2">
+            <span class="material-icons-outlined text-white text-3xl">account_circle</span>
+        </div>
+        <p class="font-semibold text-text-dark-brown">柯基的主人</p>
+        <p class="text-sm text-text-medium-brown">学习等级: Lv.5 ⭐</p>
+    </div>
+    
+    <!-- 导航菜单 -->
+    <nav id="navigation" class="flex-1 space-y-2">
+        <!-- 工作台 -->
+        <div class="menu-item">
+            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('dashboard')">
+                <span class="material-icons-outlined mr-3">dashboard</span>
+                <span class="menu-text">工作台</span>
+            </a>
+        </div>
+        
+        <!-- 学 -->
+        <div class="menu-item">
+            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn')">
+                <span class="material-icons-outlined mr-3">school</span>
+                <span class="menu-text">学</span>
+                <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
+            </a>
+            <div class="submenu ml-8 mt-2 space-y-1 hidden">
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn_from_materials')">
+                    <span class="material-icons-outlined mr-2 text-sm">article</span>
+                    <span class="menu-text">从资料学习</span>
+                </a>
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn_from_audio')">
+                    <span class="material-icons-outlined mr-2 text-sm">headphones</span>
+                    <span class="menu-text">从音视频学习</span>
+                </a>
+            </div>
+        </div>
+        
+        <!-- 练 -->
+        <div class="menu-item">
+            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice')">
+                <span class="material-icons-outlined mr-3">fitness_center</span>
+                <span class="menu-text">练</span>
+                <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
+            </a>
+            <div class="submenu ml-8 mt-2 space-y-1 hidden">
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_materials')">
+                    <span class="material-icons-outlined mr-2 text-sm">quiz</span>
+                    <span class="menu-text">基于学习资料练习</span>
+                </a>
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_knowledge')">
+                    <span class="material-icons-outlined mr-2 text-sm">psychology</span>
+                    <span class="menu-text">基于知识点练习</span>
+                </a>
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_errors')">
+                    <span class="material-icons-outlined mr-2 text-sm">error_outline</span>
+                    <span class="menu-text">基于错题练习</span>
+                </a>
+            </div>
+        </div>
+        
+        <!-- 记 -->
+        <div class="menu-item">
+            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory')">
+                <span class="material-icons-outlined mr-3">psychology</span>
+                <span class="menu-text">记</span>
+                <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
+            </a>
+            <div class="submenu ml-8 mt-2 space-y-1 hidden">
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory_knowledge')">
+                    <span class="material-icons-outlined mr-2 text-sm">lightbulb</span>
+                    <span class="menu-text">基于知识点记忆</span>
+                </a>
+                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory_errors')">
+                    <span class="material-icons-outlined mr-2 text-sm">history</span>
+                    <span class="menu-text">基于错题记忆</span>
+                </a>
+            </div>
+        </div>
+        
+        <!-- 知识库管理 -->
+        <div class="menu-item">
+            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('knowledge_base')">
+                <span class="material-icons-outlined mr-3">library_books</span>
+                <span class="menu-text">知识库管理</span>
+            </a>
+        </div>
+    </nav>
+    
+    <!-- 设置 -->
+    <div class="mt-auto">
+        <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('settings')">
+            <span class="material-icons-outlined mr-3">settings</span>
+            <span class="menu-text">设置</span>
+        </a>
+        <!-- 收缩按钮 -->
+        <button class="flex items-center justify-center w-full py-2 text-text-gray hover:bg-bg-light-gray rounded-lg mt-2" onclick="toggleSidebar()">
+            <span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+        </button>
+    </div>
+</aside>
