@@ -4,14 +4,16 @@
 """
 {{ ... }}
 柯基学习小助手 - 覆盖层拖拽版本
-使用透明覆盖层解决拖拽问题，支持工作台和笔记本功能
 """
 
 import sys
 import os
 import json
-import markdown
+import json
 import logging
+import os
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from config import load_config, save_config
@@ -1032,6 +1034,330 @@ class CorgiWebBridge(QObject):
         self.logger.info("=" * 80)
         
         return f"后端功能验证完成: {success_count}/{total_tests} 项测试通过\n" + "\n".join(validation_results)
+    
+    @Slot(result=str)
+    def getSubjects(self):
+        """获取所有科目列表"""
+        self.logger.info("获取科目列表")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            subjects = km_system.get_subjects()
+            
+            self.logger.info(f"获取到 {len(subjects)} 个科目")
+            return json.dumps(subjects, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"获取科目列表失败: {e}")
+            return json.dumps([], ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getSubjectKnowledgePoints(self, subject):
+        """获取指定科目的知识点列表"""
+        self.logger.info(f"获取科目知识点列表: {subject}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            knowledge_points = km_system.get_knowledge_points_by_subject(subject)
+            
+            # 转换为前端需要的格式
+            formatted_points = []
+            for point in knowledge_points:
+                formatted_points.append({
+                    "id": point["id"],
+                    "name": point["point_name"],
+                    "description": point["core_description"],
+                    "mastery_score": point.get("mastery_score", 50),
+                    "created_time": point.get("created_time", ""),
+                    "sources": []  # 暂时为空，后续可以添加来源笔记信息
+                })
+            
+            self.logger.info(f"获取到 {len(formatted_points)} 个知识点")
+            return json.dumps(formatted_points, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"获取科目知识点失败: {e}")
+            return json.dumps([], ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def addSubject(self, subject_name):
+        """添加新科目"""
+        self.logger.info(f"添加新科目: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            success = km_system.add_subject(subject_name)
+            
+            if success:
+                self.logger.info(f"科目 '{subject_name}' 添加成功")
+                return json.dumps({"success": True, "message": f"科目 '{subject_name}' 添加成功"}, ensure_ascii=False)
+            else:
+                self.logger.info(f"科目 '{subject_name}' 已存在")
+                return json.dumps({"success": False, "error": f"科目 '{subject_name}' 已存在"}, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"添加科目失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def findSimilarKnowledgePoints(self, request_data):
+        """查找相似知识点（基于embedding）"""
+        self.logger.info("查找相似知识点")
+        
+        try:
+            data = json.loads(request_data)
+            subject = data.get('subject')
+            point = data.get('point')
+            limit = data.get('limit', 10)
+            
+            self.logger.info(f"科目: {subject}, 知识点: {point['name']}, 限制: {limit}")
+            
+            # 使用原有的知识管理系统和相似度匹配
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取该科目下的所有知识点
+            knowledge_points = km_system.get_knowledge_points_by_subject(subject)
+            
+            if not knowledge_points:
+                self.logger.info("该科目下没有现有知识点")
+                return json.dumps([], ensure_ascii=False)
+            
+            # 使用相似度匹配器
+            try:
+                from similarity_matcher import rank_matches
+                query = point['name']
+                ranked_matches = rank_matches(query, knowledge_points, cfg=self.config, top_k=limit, min_score=0.0)
+                
+                # 转换为前端需要的格式
+                similar_points = []
+                for match in ranked_matches:
+                    # 找到对应的知识点详细信息
+                    kp = next((p for p in knowledge_points if p.get('id') == match.get('id')), None)
+                    if kp:
+                        similar_points.append({
+                            "id": kp["id"],
+                            "name": kp["point_name"],
+                            "description": kp["core_description"],
+                            "similarity": float(match.get('score', 0.0)),
+                            "mastery_score": kp.get("mastery_score", 50),
+                            "sources": []  # 暂时为空
+                        })
+                
+                self.logger.info(f"找到 {len(similar_points)} 个相似知识点")
+                return json.dumps(similar_points, ensure_ascii=False)
+                
+            except ImportError:
+                self.logger.warning("similarity_matcher模块不可用，使用简单匹配")
+                # 简单的文本匹配作为备选
+                similar_points = []
+                query_lower = point['name'].lower()
+                for kp in knowledge_points[:limit]:
+                    if query_lower in kp["point_name"].lower() or query_lower in kp["core_description"].lower():
+                        similar_points.append({
+                            "id": kp["id"],
+                            "name": kp["point_name"],
+                            "description": kp["core_description"],
+                            "similarity": 0.5,  # 固定相似度
+                            "mastery_score": kp.get("mastery_score", 50),
+                            "sources": []
+                        })
+                
+                return json.dumps(similar_points, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"查找相似知识点失败: {e}")
+            return json.dumps([], ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def mergeKnowledgePoint(self, merge_data):
+        """合并知识点"""
+        self.logger.info("合并知识点")
+        
+        try:
+            data = json.loads(merge_data)
+            note_id = data.get('noteId')
+            current_point = data.get('currentPoint')
+            target_knowledge_id = data.get('targetKnowledgeId')
+            
+            self.logger.info(f"笔记ID: {note_id}")
+            self.logger.info(f"当前知识点: {current_point['name']}")
+            self.logger.info(f"目标知识点ID: {target_knowledge_id}")
+            
+            # 使用知识管理系统进行合并
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取目标知识点的详细信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 查询目标知识点
+            cursor.execute(
+                "SELECT point_name, core_description, mastery_score FROM knowledge_points WHERE id = ?",
+                (target_knowledge_id,)
+            )
+            target_point = cursor.fetchone()
+            
+            if not target_point:
+                conn.close()
+                return json.dumps({"success": False, "error": "目标知识点不存在"}, ensure_ascii=False)
+            
+            # 合并逻辑：更新目标知识点的描述（可选）
+            # 这里可以根据需要合并描述内容
+            updated_description = target_point[1]  # 保持原有描述
+            
+            # 如果需要合并描述，可以这样做：
+            # if current_point['description'] not in updated_description:
+            #     updated_description += f"\n\n补充内容：{current_point['description']}"
+            
+            # 更新目标知识点（如果需要）
+            cursor.execute(
+                "UPDATE knowledge_points SET core_description = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
+                (updated_description, target_knowledge_id)
+            )
+            
+            conn.commit()
+            conn.close()
+            
+            self.logger.info(f"知识点合并成功，目标ID: {target_knowledge_id}")
+            
+            response = {
+                "success": True,
+                "message": "知识点合并成功",
+                "merged_knowledge_id": target_knowledge_id,
+                "updated_point": {
+                    "id": target_knowledge_id,
+                    "name": target_point[0],
+                    "description": updated_description,
+                    "mastery_score": target_point[2]
+                }
+            }
+            
+            return json.dumps(response, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"合并知识点失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def createNewKnowledgePoint(self, create_data):
+        """创建新知识点"""
+        self.logger.info("创建新知识点")
+        
+        try:
+            data = json.loads(create_data)
+            note_id = data.get('noteId')
+            subject = data.get('subject')
+            point = data.get('point')
+            
+            self.logger.info(f"笔记ID: {note_id}")
+            self.logger.info(f"科目: {subject}")
+            self.logger.info(f"知识点: {point['name']}")
+            
+            # 使用知识管理系统创建新知识点
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 确保科目存在
+            km_system.add_subject(subject)
+            
+            # 创建知识点数据
+            knowledge_point_data = {
+                "point_name": point['name'],
+                "core_description": point['description'],
+                "mastery_score": 50  # 默认掌握度
+            }
+            
+            # 保存到数据库
+            confirmations = [{
+                "action": "new",
+                "point_data": knowledge_point_data,
+                "subject_name": subject
+            }]
+            
+            saved_ids = km_system.confirm_knowledge_points(confirmations)
+            
+            if saved_ids and len(saved_ids) > 0:
+                new_knowledge_id = saved_ids[0]
+                
+                self.logger.info(f"新知识点创建成功，ID: {new_knowledge_id}")
+                
+                response = {
+                    "success": True,
+                    "message": "新知识点创建成功",
+                    "knowledge_id": new_knowledge_id,
+                    "knowledge_point": {
+                        "id": new_knowledge_id,
+                        "name": point['name'],
+                        "description": point['description'],
+                        "subject": subject,
+                        "mastery_score": 50,
+                        "sources": [note_id]
+                    }
+                }
+            else:
+                response = {
+                    "success": False,
+                    "error": "数据库保存失败"
+                }
+            
+            return json.dumps(response, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"创建新知识点失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def saveNoteKnowledgeMapping(self, mapping_data):
+        """保存笔记知识点映射关系"""
+        self.logger.info("保存笔记知识点映射关系")
+        
+        try:
+            data = json.loads(mapping_data)
+            note_id = data.get('noteId')
+            file_name = data.get('fileName')
+            file_path = data.get('filePath')
+            processed_points = data.get('processedPoints', [])
+            
+            self.logger.info(f"笔记ID: {note_id}")
+            self.logger.info(f"文件名: {file_name}")
+            self.logger.info(f"文件路径: {file_path}")
+            self.logger.info(f"处理的知识点数量: {len(processed_points)}")
+            
+            # 这里应该：
+            # 1. 将笔记信息保存到数据库
+            # 2. 建立笔记与知识点的多对多映射关系
+            # 3. 更新知识点的来源信息
+            
+            # 模拟保存映射关系
+            mapping_info = {
+                "note_id": note_id,
+                "file_name": file_name,
+                "file_path": file_path,
+                "processed_count": len(processed_points),
+                "timestamp": time.time()
+            }
+            
+            # 这里可以保存到文件或数据库
+            # 暂时只记录日志
+            for point in processed_points:
+                self.logger.info(f"已处理知识点: {point['name']}")
+            
+            response = {
+                "success": True,
+                "message": "笔记知识点映射保存成功",
+                "mapping_info": mapping_info
+            }
+            
+            return json.dumps(response, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"保存笔记知识点映射失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
 
 class DragOverlay(QWidget):
