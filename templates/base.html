@@ -792,7 +792,7 @@
             
             
             // 添加消息到聊天窗口
-            function addMessage(content, type) {
+            function addMessage(content, type, isSummary = false) {
                 if (!messagesContainer) return;
                 
                 const messageDiv = document.createElement('div');
@@ -812,6 +812,20 @@
                 const messageContent = document.createElement('div');
                 messageContent.className = 'message-content';
                 messageContent.innerHTML = content.replace(/\n/g, '<br>');
+                
+                // 如果是总结消息，添加"插入到笔记"按钮
+                if (isSummary && type === 'ai') {
+                    const buttonContainer = document.createElement('div');
+                    buttonContainer.className = 'mt-3 flex gap-2';
+                    
+                    const insertBtn = document.createElement('button');
+                    insertBtn.className = 'px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors flex items-center gap-1';
+                    insertBtn.innerHTML = '<span class="material-icons-outlined text-xs">note_add</span>插入到笔记';
+                    insertBtn.onclick = () => insertSummaryToNote(content);
+                    
+                    buttonContainer.appendChild(insertBtn);
+                    messageContent.appendChild(buttonContainer);
+                }
                 
                 messageDiv.appendChild(avatar);
                 messageDiv.appendChild(messageContent);
@@ -1107,7 +1121,7 @@
                                 // 将总结作为AI消息添加到对话中
                                 const summaryMessage = '📋 **对话总结**\n\n' + result.summary;
                                 conversationHistory.push({role: 'assistant', content: summaryMessage});
-                                addMessage(summaryMessage, 'ai');
+                                addMessage(summaryMessage, 'ai', true); // 第三个参数标记为总结消息
                             } else {
                                 alert('总结生成失败: ' + (result.error || '未知错误'));
                             }
@@ -1118,6 +1132,80 @@
                 } else {
                     alert('总结功能暂不可用');
                 }
+            }
+            
+            // 插入总结到笔记
+            function insertSummaryToNote(summaryContent) {
+                try {
+                    // 清理总结内容，移除HTML标签和格式化
+                    const cleanContent = summaryContent
+                        .replace(/<br>/g, '\n')
+                        .replace(/<[^>]*>/g, '')
+                        .replace(/📋 \*\*对话总结\*\*\n\n/, '')
+                        .trim();
+                    
+                    // 添加分隔符和时间戳
+                    const timestamp = new Date().toLocaleString('zh-CN');
+                    const formattedContent = `\n\n---\n**AI总结** (${timestamp})\n\n${cleanContent}\n\n`;
+                    
+                    // 检查是否在"从资料学习"页面
+                    if (window.insertTextToCurrentNote) {
+                        // 调用全局函数插入文本
+                        window.insertTextToCurrentNote(formattedContent);
+                        
+                        // 显示成功提示
+                        showToast('总结已成功插入到笔记中', 'success');
+                        
+                        // 可选：关闭聊天窗口
+                        // aiChatWindow.classList.remove('show');
+                    } else {
+                        // 如果不在笔记页面，提示用户
+                        showToast('请先打开"从资料学习"页面并选择一个笔记文件', 'warning');
+                    }
+                } catch (error) {
+                    console.error('插入笔记失败:', error);
+                    showToast('插入笔记失败，请稍后再试', 'error');
+                }
+            }
+            
+            // 显示提示消息
+            function showToast(message, type = 'info') {
+                // 创建提示元素
+                const toast = document.createElement('div');
+                toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
+                
+                // 根据类型设置颜色
+                switch (type) {
+                    case 'success':
+                        toast.className += ' bg-green-500';
+                        break;
+                    case 'warning':
+                        toast.className += ' bg-yellow-500';
+                        break;
+                    case 'error':
+                        toast.className += ' bg-red-500';
+                        break;
+                    default:
+                        toast.className += ' bg-blue-500';
+                }
+                
+                toast.textContent = message;
+                document.body.appendChild(toast);
+                
+                // 显示动画
+                setTimeout(() => {
+                    toast.classList.remove('translate-x-full');
+                }, 100);
+                
+                // 自动隐藏
+                setTimeout(() => {
+                    toast.classList.add('translate-x-full');
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.parentNode.removeChild(toast);
+                        }
+                    }, 300);
+                }, 3000);
             }
             
             globalDebugLog('AI助手浮窗初始化完成');
