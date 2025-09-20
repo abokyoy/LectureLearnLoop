@@ -32,6 +32,7 @@ class CorgiWebBridge(QObject):
     
     pageChanged = Signal(str)
     dataUpdated = Signal(str)
+    chatResponseReady = Signal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1415,18 +1416,31 @@ class CorgiWebBridge(QObject):
 
     @Slot(str, str, result=str)
     def chatWithAI(self, message, conversation_history_json="[]"):
-        """与AI助手聊天 - 支持持续对话"""
+        """与AI助手聊天 - 立即返回，异步处理"""
         import json
-        import requests
-        import random
+        import threading
         
         self.logger.info(f"AI聊天请求: {message}")
-        try:
-            # 解析对话历史
-            conversation_history = json.loads(conversation_history_json) if conversation_history_json else []
+        
+        # 立即返回处理中状态
+        return json.dumps({"success": True, "message": "processing", "status": "processing"}, ensure_ascii=False)
+    
+    @Slot(str, str)
+    def chatWithAIAsync(self, message, conversation_history_json="[]"):
+        """异步处理AI聊天请求"""
+        import threading
+        
+        def process_chat():
+            import json
+            import requests
+            import random
             
-            # 构建包含历史的完整提示词
-            system_prompt = """你是柯基学习小助手的AI伙伴，一个友善、聪明、有耐心的学习助手。
+            try:
+                # 解析对话历史
+                conversation_history = json.loads(conversation_history_json) if conversation_history_json else []
+                
+                # 构建包含历史的完整提示词
+                system_prompt = """你是柯基学习小助手的AI伙伴，一个友善、聪明、有耐心的学习助手。
 你的特点：
 1. 像柯基犬一样活泼友好，偶尔会用"汪！"表达兴奋
 2. 专注于帮助用户学习和解决问题
@@ -1435,37 +1449,46 @@ class CorgiWebBridge(QObject):
 5. 鼓励用户积极学习，给予正面反馈
 
 请用友好、鼓励的语气回答用户的问题。记住之前的对话内容，保持对话的连贯性。"""
-            
-            # 构建完整的对话提示词
-            full_prompt = system_prompt + "\n\n"
-            if conversation_history:
-                full_prompt += "对话历史：\n"
-                for msg in conversation_history[-10:]:  # 只保留最近10条消息
-                    role = "用户" if msg["role"] == "user" else "AI助手"
-                    full_prompt += f"{role}: {msg['content']}\n"
-                full_prompt += "\n"
-            full_prompt += f"用户: {message}\nAI助手: "
-            
-            # 调用LLM API
-            ai_response = self._call_llm_api(full_prompt)
-            
-            if ai_response:
-                self.logger.info(f"AI回复生成成功: {ai_response[:50]}...")
-                return json.dumps({"success": True, "message": ai_response}, ensure_ascii=False)
-            else:
-                # 友好的回退回复
-                fallback_responses = [
-                    "汪！我现在有点累了，稍后再聊好吗？",
-                    "抱歉，我的小脑瓜现在有点转不过来，请稍后再试试。",
-                    "哎呀，我好像走神了，能再说一遍吗？",
-                    "我需要先去充充电，等会儿再来帮你！"
-                ]
-                fallback_message = random.choice(fallback_responses)
-                return json.dumps({"success": True, "message": fallback_message}, ensure_ascii=False)
                 
-        except Exception as e:
-            self.logger.error(f"AI聊天功能异常: {e}")
-            return json.dumps({"success": True, "message": "汪！我现在有点忙，稍后再来找我聊天吧！"}, ensure_ascii=False)
+                # 构建完整的对话提示词
+                full_prompt = system_prompt + "\n\n"
+                if conversation_history:
+                    full_prompt += "对话历史：\n"
+                    for msg in conversation_history[-10:]:  # 只保留最近10条消息
+                        role = "用户" if msg["role"] == "user" else "AI助手"
+                        full_prompt += f"{role}: {msg['content']}\n"
+                    full_prompt += "\n"
+                full_prompt += f"用户: {message}\nAI助手: "
+                
+                # 调用LLM API
+                ai_response = self._call_llm_api(full_prompt)
+                
+                if ai_response:
+                    self.logger.info(f"AI回复生成成功: {ai_response[:50]}...")
+                    result = json.dumps({"success": True, "message": ai_response}, ensure_ascii=False)
+                else:
+                    # 友好的回退回复
+                    fallback_responses = [
+                        "汪！我现在有点累了，稍后再聊好吗？",
+                        "抱歉，我的小脑瓜现在有点转不过来，请稍后再试试。",
+                        "哎呀，我好像走神了，能再说一遍吗？",
+                        "我需要先去充充电，等会儿再来帮你！"
+                    ]
+                    fallback_message = random.choice(fallback_responses)
+                    result = json.dumps({"success": True, "message": fallback_message}, ensure_ascii=False)
+                
+                # 通过信号发送结果到前端
+                self.chatResponseReady.emit(result)
+                    
+            except Exception as e:
+                self.logger.error(f"AI聊天功能异常: {e}")
+                result = json.dumps({"success": True, "message": "汪！我现在有点忙，稍后再来找我聊天吧！"}, ensure_ascii=False)
+                self.chatResponseReady.emit(result)
+        
+        # 在新线程中处理
+        thread = threading.Thread(target=process_chat)
+        thread.daemon = True
+        thread.start()
     
     def _call_llm_api(self, prompt):
         """调用LLM API - 支持多种模型"""

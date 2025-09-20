@@ -268,6 +268,57 @@
             display: flex;
             justify-content: flex-end;
         }
+
+        /* 思考动画样式 */
+        .thinking-dots {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .thinking-dots span {
+            width: 6px;
+            height: 6px;
+            background-color: #6b7280;
+            border-radius: 50%;
+            animation: thinking 1.4s infinite ease-in-out;
+        }
+
+        .thinking-dots span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .thinking-dots span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes thinking {
+            0%, 80%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* 发送按钮禁用状态 */
+        #sendChatBtn:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        /* 打字机效果光标 */
+        .message-content.typing::after {
+            content: '|';
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
     </style>
 </head>
 <body class="bg-bg-light-blue-gray font-sans">
@@ -624,38 +675,71 @@
                 const message = chatInput.value.trim();
                 if (!message) return;
                 
+                // 立即更新UI状态
+                sendBtn.disabled = true;
+                sendBtn.textContent = '发送中...';
+                
                 // 添加用户消息到历史记录
                 conversationHistory.push({role: 'user', content: message});
                 addMessage(message, 'user');
                 chatInput.value = '';
                 
-                // 调用后端AI接口，传递对话历史
-                if (window.bridge && window.bridge.chatWithAI) {
-                    const historyJson = JSON.stringify(conversationHistory.slice(0, -1)); // 不包含当前消息
-                    window.bridge.chatWithAI(message, historyJson, function(response) {
-                        try {
-                            const result = JSON.parse(response);
-                            if (result.success) {
-                                // 添加AI回复到历史记录
-                                conversationHistory.push({role: 'assistant', content: result.message});
-                                addMessage(result.message, 'ai');
-                            } else {
-                                const errorMsg = '抱歉，我现在无法回答这个问题。';
-                                conversationHistory.push({role: 'assistant', content: errorMsg});
-                                addMessage(errorMsg, 'ai');
-                            }
-                        } catch (e) {
+                // 立即显示AI正在思考的消息
+                const thinkingMessageId = addThinkingMessage();
+                
+                // 处理AI回复的函数
+                function handleAIResponse(response) {
+                    // 移除思考消息
+                    removeThinkingMessage(thinkingMessageId);
+                    
+                    // 重新启用发送按钮
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = '发送';
+                    
+                    try {
+                        const result = JSON.parse(response);
+                        if (result.success) {
+                            // 添加AI回复到历史记录
+                            conversationHistory.push({role: 'assistant', content: result.message});
+                            // 逐字显示AI回复
+                            addMessageWithTypewriter(result.message, 'ai');
+                        } else {
                             const errorMsg = '抱歉，我现在无法回答这个问题。';
                             conversationHistory.push({role: 'assistant', content: errorMsg});
-                            addMessage(errorMsg, 'ai');
+                            addMessageWithTypewriter(errorMsg, 'ai');
                         }
-                    });
+                    } catch (e) {
+                        const errorMsg = '抱歉，我现在无法回答这个问题。';
+                        conversationHistory.push({role: 'assistant', content: errorMsg});
+                        addMessageWithTypewriter(errorMsg, 'ai');
+                    }
+                }
+                
+                // 使用新的异步方法
+                if (window.bridge && window.bridge.chatWithAIAsync) {
+                    const historyJson = JSON.stringify(conversationHistory.slice(0, -1));
+                    
+                    // 设置信号监听器（只设置一次）
+                    if (!window.chatResponseHandler) {
+                        window.chatResponseHandler = function(response) {
+                            handleAIResponse(response);
+                        };
+                        window.bridge.chatResponseReady.connect(window.chatResponseHandler);
+                    }
+                    
+                    // 调用异步方法，立即返回
+                    try {
+                        window.bridge.chatWithAIAsync(message, historyJson);
+                    } catch (error) {
+                        console.error('调用AI接口失败:', error);
+                        handleAIResponse('{"success": false, "error": "调用失败"}');
+                    }
                 } else {
                     // 模拟AI回复
                     setTimeout(() => {
                         const aiResponse = generateAIResponse(message);
-                        conversationHistory.push({role: 'assistant', content: aiResponse});
-                        addMessage(aiResponse, 'ai');
+                        const mockResponse = JSON.stringify({success: true, message: aiResponse});
+                        handleAIResponse(mockResponse);
                     }, 1000);
                 }
             }
@@ -706,6 +790,7 @@
                 return 'chat_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             }
             
+            
             // 添加消息到聊天窗口
             function addMessage(content, type) {
                 if (!messagesContainer) return;
@@ -733,6 +818,88 @@
                 
                 messagesContainer.appendChild(messageDiv);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
+                return messageDiv;
+            }
+            
+            // 添加思考中的消息
+            function addThinkingMessage() {
+                if (!messagesContainer) return null;
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message ai thinking-message';
+                
+                const avatar = document.createElement('div');
+                avatar.className = 'message-avatar bg-primary';
+                avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                messageContent.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>';
+                
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(messageContent);
+                
+                messagesContainer.appendChild(messageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                
+                return messageDiv;
+            }
+            
+            // 移除思考消息
+            function removeThinkingMessage(thinkingMessageElement) {
+                if (thinkingMessageElement && thinkingMessageElement.parentNode) {
+                    thinkingMessageElement.parentNode.removeChild(thinkingMessageElement);
+                }
+            }
+            
+            // 逐字显示消息
+            function addMessageWithTypewriter(content, type, speed = 30) {
+                if (!messagesContainer) return;
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                
+                const avatar = document.createElement('div');
+                avatar.className = 'message-avatar';
+                
+                if (type === 'ai') {
+                    avatar.className += ' bg-primary';
+                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
+                } else {
+                    avatar.className += ' bg-blue-500';
+                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">person</span>';
+                }
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content';
+                
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(messageContent);
+                
+                messagesContainer.appendChild(messageDiv);
+                
+                // 逐字显示效果
+                let index = 0;
+                const text = content;
+                messageContent.innerHTML = '';
+                
+                function typeWriter() {
+                    if (index < text.length) {
+                        const char = text.charAt(index);
+                        if (char === '\n') {
+                            messageContent.innerHTML += '<br>';
+                        } else {
+                            messageContent.innerHTML += char;
+                        }
+                        index++;
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        setTimeout(typeWriter, speed);
+                    }
+                }
+                
+                typeWriter();
+                return messageDiv;
             }
             
             // 生成AI回复（简单示例）
