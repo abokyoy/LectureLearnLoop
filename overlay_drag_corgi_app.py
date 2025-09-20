@@ -10,6 +10,8 @@ import sys
 import json
 import os
 import markdown
+import logging
+from datetime import datetime
 from pathlib import Path
 from template_manager import TemplateManager
 from PySide6.QtWidgets import (
@@ -31,6 +33,10 @@ class CorgiWebBridge(QObject):
         super().__init__(parent)
         self.current_page = "dashboard"
         self.main_window = parent
+        
+        # 设置日志记录
+        self.setup_logging()
+        
         # 菜单状态管理
         self.menu_state = {
             "dashboard": {"expanded": False, "children": []},
@@ -40,6 +46,45 @@ class CorgiWebBridge(QObject):
             "knowledge_base": {"expanded": False, "children": []},
             "settings": {"expanded": False, "children": []}
         }
+        
+    def setup_logging(self):
+        """设置日志记录"""
+        # 创建日志记录器
+        self.logger = logging.getLogger('FileStructureDebug')
+        self.logger.setLevel(logging.DEBUG)
+        
+        # 清除现有的处理器
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # 创建文件处理器
+        log_file = f"file_structure_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+        
+        # 创建控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        
+        # 创建格式器
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        
+        # 添加处理器
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
+        self.logger.info("=" * 80)
+        self.logger.info("文件结构调试日志开始")
+        self.logger.info("=" * 80)
+        
+    @Slot(str)
+    def logFrontendMessage(self, message):
+        """记录前端发送的日志消息"""
+        # 直接写入日志，因为前端已经包含了时间戳和级别
+        self.logger.handlers[0].stream.write(message + '\n')
+        self.logger.handlers[0].stream.flush()
 
     @Slot()
     def minimizeWindow(self):
@@ -120,16 +165,26 @@ class CorgiWebBridge(QObject):
     @Slot(str)
     def loadContent(self, content_id):
         """加载指定内容"""
+        print(f"🔍 loadContent被调用，content_id: {content_id}")
         self.current_page = content_id
         if self.main_window:
+            print(f"🔍 main_window存在，开始生成内容HTML")
             content_html = self.main_window.generate_content_html(content_id)
+            print(f"🔍 生成的HTML长度: {len(content_html)}")
+            print(f"🔍 HTML内容预览: {content_html[:200]}...")
+            
             # 转义HTML内容中的反引号和反斜杠
             escaped_html = content_html.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
+            print(f"🔍 HTML转义完成，长度: {len(escaped_html)}")
+            
             # 通过JavaScript更新右侧内容区域
-            self.main_window.web_view.page().runJavaScript(f"""
-                updateContentArea(`{escaped_html}`);
-            """)
+            js_code = f"updateContentArea(`{escaped_html}`);"
+            print(f"🔍 执行JavaScript代码长度: {len(js_code)}")
+            
+            self.main_window.web_view.page().runJavaScript(js_code)
             print(f"📄 已加载内容: {content_id}")
+        else:
+            print(f"❌ main_window不存在")
             
             # 更新页面标题和活动菜单项
             title_map = {
@@ -165,38 +220,103 @@ class CorgiWebBridge(QObject):
     @Slot(result=str)
     def getFileStructure(self):
         """获取vault文件夹的文件结构"""
+        self.logger.info("=" * 80)
+        self.logger.info("【步骤2开始】getFileStructure方法被前端调用")
+        self.logger.info("=" * 80)
+        
         vault_path = Path("vault")
+        self.logger.info(f"vault路径: {vault_path.absolute()}")
+        self.logger.info(f"vault存在: {vault_path.exists()}")
+        
         if not vault_path.exists():
             vault_path.mkdir(exist_ok=True)
+            self.logger.info("创建了vault目录")
+        
+        # 先列出vault目录下的所有内容
+        self.logger.info("【详细扫描】vault目录内容:")
+        try:
+            all_items = list(vault_path.iterdir())
+            self.logger.info(f"总共发现 {len(all_items)} 个项目")
+            for i, item in enumerate(all_items, 1):
+                item_type = "文件夹" if item.is_dir() else "文件"
+                self.logger.info(f"  {i:2d}. {item.name} ({item_type}) - 路径: {item}")
+        except Exception as e:
+            self.logger.error(f"扫描vault目录失败: {e}")
         
         def build_tree(path, level=0):
             items = []
+            indent = "  " * level
             try:
-                for item in sorted(path.iterdir()):
+                self.logger.debug(f"{indent}扫描目录: {path} (级别: {level})")
+                sorted_items = sorted(path.iterdir())
+                self.logger.debug(f"{indent}该目录下有 {len(sorted_items)} 个项目")
+                
+                for item in sorted_items:
                     if item.name.startswith('.'):
+                        self.logger.debug(f"{indent}  跳过隐藏文件: {item.name}")
                         continue
                     
+                    self.logger.debug(f"{indent}  处理项目: {item.name} ({'文件夹' if item.is_dir() else '文件'})")
+                    
                     if item.is_dir():
-                        items.append({
+                        folder_data = {
                             "name": item.name,
                             "type": "folder",
                             "path": str(item),
                             "level": level,
                             "children": build_tree(item, level + 1)
-                        })
+                        }
+                        items.append(folder_data)
+                        self.logger.debug(f"{indent}  文件夹已添加: {item.name} (子项目数: {len(folder_data['children'])})")
                     elif item.suffix == '.md':
-                        items.append({
+                        file_data = {
                             "name": item.name,
                             "type": "file",
                             "path": str(item),
                             "level": level
-                        })
-            except PermissionError:
-                pass
+                        }
+                        items.append(file_data)
+                        self.logger.debug(f"{indent}  Markdown文件已添加: {item.name}")
+                    else:
+                        self.logger.debug(f"{indent}  跳过非Markdown文件: {item.name} (扩展名: {item.suffix})")
+                        
+            except PermissionError as e:
+                self.logger.error(f"{indent}权限错误: {e}")
+            except Exception as e:
+                self.logger.error(f"{indent}其他错误: {e}")
+            
+            self.logger.debug(f"{indent}该级别返回 {len(items)} 个有效项目")
             return items
         
+        self.logger.info("【步骤2】开始构建文件树结构")
+        
         structure = build_tree(vault_path)
-        return json.dumps(structure, ensure_ascii=False)
+        
+        self.logger.info("【步骤2完成】最终文件结构统计:")
+        self.logger.info(f"根级别项目数: {len(structure)}")
+        
+        def count_items(items, level=0):
+            total = len(items)
+            indent = "  " * level
+            for item in items:
+                self.logger.debug(f"{indent}- {item['name']} ({item['type']})")
+                if item['type'] == 'folder' and 'children' in item:
+                    child_count = count_items(item['children'], level + 1)
+                    total += child_count
+            return total
+        
+        total_items = count_items(structure)
+        self.logger.info(f"总计项目数: {total_items}")
+        
+        result = json.dumps(structure, ensure_ascii=False, indent=2)
+        self.logger.info(f"JSON结构长度: {len(result)} 字符")
+        self.logger.debug("完整JSON结构:")
+        self.logger.debug(result)
+        
+        self.logger.info("【步骤2-Python端完成】准备返回数据给前端")
+        self.logger.info("=" * 80)
+        
+        return result
     
     @Slot(str, result=str)
     def loadMarkdownFile(self, file_path):
@@ -338,6 +458,30 @@ class CorgiWebBridge(QObject):
             return True
         except Exception as e:
             print(f"移动失败: {e}")
+            return False
+    
+    @Slot(str, result=bool)
+    def deleteFileOrFolder(self, path):
+        """删除文件或文件夹"""
+        try:
+            target = Path(path)
+            if not target.exists():
+                print(f"删除失败: {path} 不存在")
+                return False
+            
+            if target.is_dir():
+                # 删除文件夹及其所有内容
+                import shutil
+                shutil.rmtree(target)
+                print(f"删除文件夹成功: {path}")
+            else:
+                # 删除文件
+                target.unlink()
+                print(f"删除文件成功: {path}")
+            
+            return True
+        except Exception as e:
+            print(f"删除失败: {e}")
             return False
     
     @Slot(str, result=str)
@@ -1981,9 +2125,39 @@ class OverlayDragCorgiApp(QMainWindow):
         
     def setup_web_channel(self):
         """设置Web通道"""
+        print("🔗 开始设置WebChannel")
         self.channel = QWebChannel()
+        print("🔗 WebChannel对象创建成功")
+        
         self.channel.registerObject("bridge", self.bridge)
+        print(f"🔗 bridge对象注册成功: {self.bridge}")
+        print(f"🔗 bridge对象方法: {[method for method in dir(self.bridge) if not method.startswith('_')]}")
+        
         self.web_view.page().setWebChannel(self.channel)
+        print("🔗 WebChannel设置到页面完成")
+        
+        # 添加页面加载完成的回调
+        def on_load_finished(ok):
+            print(f"📄 页面加载完成，状态: {ok}")
+            if ok:
+                print("🔗 重新设置WebChannel到页面")
+                self.web_view.page().setWebChannel(self.channel)
+                
+                # 测试WebChannel连接
+                test_js = """
+                console.log('🧪 测试WebChannel连接');
+                console.log('window.qt:', window.qt);
+                console.log('window.bridge:', window.bridge);
+                if (window.bridge) {
+                    console.log('✅ bridge对象可用');
+                    console.log('bridge方法:', Object.getOwnPropertyNames(window.bridge));
+                } else {
+                    console.log('❌ bridge对象不可用');
+                }
+                """
+                self.web_view.page().runJavaScript(test_js)
+            
+        self.web_view.loadFinished.connect(on_load_finished)
         
     def create_recording_html(self):
         """创建录音室页面的HTML内容"""
