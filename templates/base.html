@@ -414,7 +414,7 @@
             <!-- 调试内容区域 -->
             <div class="flex-1 overflow-hidden flex flex-col">
                 <div class="p-3 border-b border-gray-100 bg-blue-50">
-                    <div class="text-xs text-blue-700 font-medium">实时日志 (按F12开启/关闭)</div>
+                    <div class="text-xs text-blue-700 font-medium">实时日志 (按Ctrl+F12开启/关闭)</div>
                 </div>
                 <div class="flex-1 overflow-y-auto p-4">
                     <pre id="global-debug-content" class="text-xs font-mono text-gray-700 whitespace-pre-wrap leading-relaxed"></pre>
@@ -513,8 +513,8 @@
         
         // 键盘快捷键监听
         document.addEventListener('keydown', function(e) {
-            // F12键切换调试面板
-            if (e.key === 'F12') {
+            // F12键切换调试面板 - 只在按住Ctrl时拦截，否则让浏览器处理
+            if (e.key === 'F12' && e.ctrlKey) {
                 e.preventDefault();
                 window.toggleDebugPanel();
             }

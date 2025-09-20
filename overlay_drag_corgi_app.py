@@ -1418,7 +1418,6 @@ class CorgiWebBridge(QObject):
     def chatWithAI(self, message, conversation_history_json="[]"):
         """与AI助手聊天 - 立即返回，异步处理"""
         import json
-        import threading
         
         self.logger.info(f"AI聊天请求: {message}")
         

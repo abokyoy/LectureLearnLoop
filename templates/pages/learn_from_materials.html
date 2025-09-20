@@ -36,6 +36,45 @@
         100% { transform: scale(1); }
     }
     
+    /* 右键菜单样式 */
+    .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        padding: 4px 0;
+        z-index: 10000;
+        min-width: 180px;
+        display: none;
+    }
+    
+    .context-menu-item {
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #374151;
+        display: flex;
+        align-items: center;
+        transition: background-color 0.2s ease;
+    }
+    
+    .context-menu-item:hover {
+        background-color: #f3f4f6;
+    }
+    
+    .context-menu-item .material-icons-outlined {
+        margin-right: 8px;
+        font-size: 18px;
+        color: #32C77F;
+    }
+    
+    .context-menu-separator {
+        height: 1px;
+        background-color: #e5e7eb;
+        margin: 4px 0;
+    }
+    
     /* 文件树样式 */
     .file-item-content {
         transition: all 0.2s ease;
@@ -3084,12 +3123,221 @@
     window.extractKnowledgePoints = extractKnowledgePoints;
     window.loadContent = loadContent;
 
+    // 右键菜单功能
+    let selectedText = '';
+    let contextMenu = null;
+    
+    function initContextMenu() {
+        console.log('=== 开始初始化右键菜单 ===');
+        
+        // 等待DOM完全加载
+        const checkElements = () => {
+            contextMenu = document.getElementById('contextMenu');
+            const deepLearningMenuItem = document.getElementById('deepLearningMenuItem');
+            const previewContent = document.getElementById('preview-content');
+            const editContent = document.getElementById('edit-content');
+            
+            console.log('检查元素:');
+            console.log('- contextMenu:', contextMenu);
+            console.log('- deepLearningMenuItem:', deepLearningMenuItem);
+            console.log('- previewContent:', previewContent);
+            console.log('- editContent:', editContent);
+            
+            if (!contextMenu) {
+                console.error('❌ contextMenu元素未找到，尝试创建...');
+                createContextMenu();
+                return;
+            }
+            
+            if (!deepLearningMenuItem) {
+                console.error('❌ deepLearningMenuItem元素未找到');
+                return;
+            }
+            
+            // 为整个文档添加右键菜单监听器（简化测试）
+            console.log('✅ 为整个文档添加右键菜单监听器');
+            document.addEventListener('contextmenu', handleContextMenu);
+            
+            // 点击菜单项
+            deepLearningMenuItem.addEventListener('click', handleDeepLearning);
+            
+            // 点击其他地方隐藏菜单
+            document.addEventListener('click', hideContextMenu);
+            
+            console.log('✅ 右键菜单初始化完成');
+        };
+        
+        checkElements();
+    }
+    
+    // 创建右键菜单元素（如果不存在）
+    function createContextMenu() {
+        console.log('创建右键菜单元素...');
+        
+        const menu = document.createElement('div');
+        menu.id = 'contextMenu';
+        menu.className = 'context-menu';
+        menu.innerHTML = `
+            <div class="context-menu-item" id="deepLearningMenuItem">
+                <span class="material-icons-outlined">psychology</span>
+                继续深入学习
+            </div>
+        `;
+        
+        document.body.appendChild(menu);
+        contextMenu = menu;
+        
+        console.log('✅ 右键菜单元素已创建');
+    }
+    
+    function handleContextMenu(e) {
+        console.log('🎯 右键菜单事件触发，目标:', e.target);
+        
+        // 检查是否有选中的文本
+        const selection = window.getSelection();
+        const selectedTextContent = selection.toString().trim();
+        
+        console.log('选中的文本:', selectedTextContent);
+        console.log('选中文本长度:', selectedTextContent.length);
+        
+        // 暂时移除文本选择限制，用于测试
+        // if (selectedTextContent.length === 0) {
+        //     console.log('没有选中文本，不显示菜单');
+        //     return;
+        // }
+        
+        e.preventDefault();
+        selectedText = selectedTextContent || '测试文本';
+        
+        console.log('🎯 准备显示右键菜单，位置:', e.pageX, e.pageY);
+        console.log('🎯 contextMenu元素:', contextMenu);
+        
+        if (!contextMenu) {
+            console.error('❌ contextMenu为null，尝试重新获取');
+            contextMenu = document.getElementById('contextMenu');
+            if (!contextMenu) {
+                console.error('❌ 仍然无法找到contextMenu元素');
+                return;
+            }
+        }
+        
+        // 显示右键菜单
+        contextMenu.style.display = 'block';
+        contextMenu.style.left = e.pageX + 'px';
+        contextMenu.style.top = e.pageY + 'px';
+        
+        console.log('✅ 右键菜单应该已显示');
+        
+        // 确保菜单不会超出屏幕
+        const rect = contextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            contextMenu.style.left = (e.pageX - rect.width) + 'px';
+        }
+        if (rect.bottom > window.innerHeight) {
+            contextMenu.style.top = (e.pageY - rect.height) + 'px';
+        }
+    }
+    
+    function handleTextSelection(e) {
+        // 延迟检查选中文本，确保选择完成
+        setTimeout(() => {
+            const selection = window.getSelection();
+            selectedText = selection.toString().trim();
+        }, 10);
+    }
+    
+    function hideContextMenu() {
+        if (contextMenu) {
+            contextMenu.style.display = 'none';
+        }
+    }
+    
+    function handleDeepLearning() {
+        if (!selectedText) {
+            showToast('请先选择要深入学习的文本内容', 'warning');
+            return;
+        }
+        
+        hideContextMenu();
+        
+        // 构建深入学习的提示词
+        const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
+
+"${selectedText}"
+
+要求：
+1. 深入浅出地讲解这段内容的核心概念和要点
+2. 提供相关的背景知识和上下文信息  
+3. 举例说明，帮助理解抽象概念
+4. 分析其重要性和实际应用价值
+5. 如果涉及技术概念，请解释其工作原理
+6. 提供进一步学习的建议和相关资源
+
+请用通俗易懂的语言进行详细解释，就像一位耐心的老师在为学生答疑解惑。`;
+        
+        // 打开AI聊天窗口并发送消息
+        openChatWithMessage(deepLearningPrompt);
+        
+        showToast('已将选中内容发送给AI助手进行深入解释', 'success');
+    }
+    
+    function openChatWithMessage(message) {
+        // 打开AI聊天窗口
+        const aiChatWindow = document.getElementById('aiChatWindow');
+        const aiChatInput = document.getElementById('aiChatInput');
+        
+        if (aiChatWindow && aiChatInput) {
+            // 显示聊天窗口
+            aiChatWindow.classList.add('show');
+            
+            // 设置消息内容
+            aiChatInput.value = message;
+            
+            // 模拟发送消息
+            setTimeout(() => {
+                const sendBtn = document.getElementById('sendChatBtn');
+                if (sendBtn) {
+                    sendBtn.click();
+                }
+            }, 500);
+        } else {
+            // 如果聊天窗口不可用，显示提示
+            showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+        }
+    }
+
     // 页面初始化
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initializePage);
-    } else {
+    function initAll() {
+        console.log('开始初始化页面...');
         initializePage();
+        
+        // 延迟初始化右键菜单，确保DOM完全加载
+        setTimeout(() => {
+            console.log('延迟初始化右键菜单...');
+            initContextMenu();
+            
+            // 添加全局右键测试
+            document.addEventListener('contextmenu', function(e) {
+                console.log('全局右键事件触发，目标元素:', e.target);
+                console.log('目标元素ID:', e.target.id);
+                console.log('目标元素类名:', e.target.className);
+            });
+        }, 1000);
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAll);
+    } else {
+        initAll();
     }
 
 })();
 </script>
+
+<!-- 右键菜单 -->
+<div id="contextMenu" class="context-menu">
+    <div class="context-menu-item" id="deepLearningMenuItem">
+        <span class="material-icons-outlined">psychology</span>
+        继续深入学习
+    </div>
+</div>
