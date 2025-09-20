@@ -3,6 +3,7 @@ env/
 __pycache__/
 attachments/
 conversations/
+vault/
 # 忽略录音片段目录
 recorded_audio_segments/
 transcription_results.txt

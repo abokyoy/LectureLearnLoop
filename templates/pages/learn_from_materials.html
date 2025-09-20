@@ -95,8 +95,15 @@
         <div class="flex-1 bg-white border-r border-gray-200 flex flex-col">
             <!-- 顶部工具栏 -->
             <div class="border-b border-gray-200 p-4 flex justify-between items-center">
-                <h2 class="text-lg font-semibold text-text-dark-brown" id="preview-title">文档预览区</h2>
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-lg font-semibold text-text-dark-brown" id="preview-title">文档预览区</h2>
+                    <span id="unsaved-indicator" class="text-orange-500 text-sm hidden">● 未保存</span>
+                </div>
                 <div class="flex space-x-2">
+                    <button id="save-btn" class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm hidden" onclick="saveCurrentFile()" title="保存文件">
+                        <span class="material-icons-outlined text-sm mr-1">save</span>
+                        保存
+                    </button>
                     <button id="preview-btn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm" onclick="switchToPreview()">预览</button>
                     <button id="edit-btn" class="px-4 py-2 bg-white border border-gray-300 text-text-gray rounded-lg text-sm" onclick="switchToEdit()">编辑</button>
                 </div>
@@ -163,6 +170,8 @@
     let currentFileName = '';
     let isEditMode = false;
     let contextMenuTarget = null;
+    let originalContent = '';  // 原始文件内容
+    let hasUnsavedChanges = false;  // 是否有未保存的更改
 
     // 调试函数
     function debugLog(message) {
@@ -206,6 +215,26 @@
             if (!e.target.closest('.file-item-content')) {
                 e.preventDefault();
                 hideContextMenu();
+            }
+        });
+        
+        // 添加键盘快捷键支持
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+S 保存文件
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                if (isEditMode && currentFilePath) {
+                    saveCurrentFile();
+                }
+            }
+        });
+        
+        // 页面离开前检查未保存的更改
+        window.addEventListener('beforeunload', function(e) {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '您有未保存的更改，确定要离开吗？';
+                return e.returnValue;
             }
         });
     }
@@ -399,8 +428,19 @@
                     }
                 }
                 
-                // 切换到预览模式
-                switchToPreview();
+                // 确保处于预览模式（不重复调用switchToPreview）
+                if (!isEditMode) {
+                    // 只更新UI状态，不重新加载内容
+                    document.getElementById('preview-content').classList.remove('hidden');
+                    document.getElementById('edit-content').classList.add('hidden');
+                    document.getElementById('save-btn').classList.add('hidden');
+                    
+                    // 更新按钮状态
+                    document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
+                    document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+                    document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+                    document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+                }
             });
         } catch (error) {
             debugError(`加载文件内容时发生错误: ${error.message}`);
@@ -410,19 +450,80 @@
         }
     }
 
+    // 重新加载预览内容（不触发模式切换）
+    function reloadPreviewContent(filePath, fileName) {
+        debugLog(`重新加载预览内容: ${fileName}`);
+        
+        if (!window.bridge || !window.bridge.loadMarkdownFile) {
+            debugError('Bridge对象或loadMarkdownFile方法不可用');
+            return;
+        }
+        
+        // 显示加载状态
+        const previewContent = document.getElementById('preview-content');
+        if (previewContent) {
+            previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin mr-2"><span class="material-icons-outlined">refresh</span></div><span>重新加载中...</span></div>';
+        }
+        
+        // 调用后端加载文件
+        try {
+            window.bridge.loadMarkdownFile(filePath, function(htmlContent) {
+                debugLog(`预览内容重新加载完成，长度: ${htmlContent.length}`);
+                
+                if (previewContent) {
+                    if (htmlContent) {
+                        previewContent.innerHTML = htmlContent;
+                    } else {
+                        previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
+                    }
+                }
+            });
+        } catch (error) {
+            debugError(`重新加载预览内容时发生错误: ${error.message}`);
+            if (previewContent) {
+                previewContent.innerHTML = '<div class="text-center py-8 text-red-500">重新加载失败</div>';
+            }
+        }
+    }
+
     // 切换到预览模式
     function switchToPreview() {
         debugLog('切换到预览模式');
+        
+        // 如果当前是编辑模式且有未保存的更改，先保存
+        if (isEditMode && hasUnsavedChanges) {
+            debugLog('检测到未保存的更改，自动保存...');
+            saveCurrentFile(function() {
+                // 保存成功后切换到预览模式
+                performPreviewSwitch();
+            });
+        } else {
+            performPreviewSwitch();
+        }
+    }
+    
+    // 执行预览模式切换
+    function performPreviewSwitch() {
+        debugLog('执行预览模式切换');
         isEditMode = false;
+        
+        // 如果有当前文件，重新加载预览内容（但不调用switchToPreview避免循环）
+        if (currentFilePath) {
+            reloadPreviewContent(currentFilePath, currentFileName);
+        }
         
         document.getElementById('preview-content').classList.remove('hidden');
         document.getElementById('edit-content').classList.add('hidden');
+        document.getElementById('save-btn').classList.add('hidden');
         
         // 更新按钮状态
         document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
         document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
         document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
         document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+        
+        // 隐藏未保存指示器
+        hideUnsavedIndicator();
     }
 
     // 切换到编辑模式
@@ -444,18 +545,147 @@
                 const editContent = document.getElementById('edit-content');
                 if (editContent) {
                     editContent.value = rawContent;
+                    originalContent = rawContent;  // 保存原始内容
+                    hasUnsavedChanges = false;     // 重置未保存状态
+                    
+                    // 添加内容变更监听
+                    editContent.addEventListener('input', handleContentChange);
                 }
                 
                 document.getElementById('preview-content').classList.add('hidden');
                 document.getElementById('edit-content').classList.remove('hidden');
+                document.getElementById('save-btn').classList.remove('hidden');
                 
                 // 更新按钮状态
                 document.getElementById('edit-btn').classList.add('bg-primary', 'text-white');
                 document.getElementById('edit-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
                 document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
                 document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
+                
+                // 聚焦到编辑器
+                editContent.focus();
             });
         }
+    }
+
+    // 处理内容变更
+    function handleContentChange() {
+        const editContent = document.getElementById('edit-content');
+        if (editContent) {
+            const currentContent = editContent.value;
+            hasUnsavedChanges = (currentContent !== originalContent);
+            
+            if (hasUnsavedChanges) {
+                showUnsavedIndicator();
+                debugLog('检测到内容变更，显示未保存指示器');
+            } else {
+                hideUnsavedIndicator();
+                debugLog('内容与原始内容相同，隐藏未保存指示器');
+            }
+        }
+    }
+
+    // 显示未保存指示器
+    function showUnsavedIndicator() {
+        const indicator = document.getElementById('unsaved-indicator');
+        if (indicator) {
+            indicator.classList.remove('hidden');
+        }
+    }
+
+    // 隐藏未保存指示器
+    function hideUnsavedIndicator() {
+        const indicator = document.getElementById('unsaved-indicator');
+        if (indicator) {
+            indicator.classList.add('hidden');
+        }
+    }
+
+    // 保存当前文件
+    function saveCurrentFile(callback) {
+        debugLog('开始保存当前文件');
+        
+        if (!currentFilePath) {
+            debugError('没有当前文件路径');
+            return;
+        }
+        
+        const editContent = document.getElementById('edit-content');
+        if (!editContent) {
+            debugError('编辑器元素未找到');
+            return;
+        }
+        
+        const content = editContent.value;
+        debugLog(`保存文件: ${currentFileName}, 内容长度: ${content.length}`);
+        
+        if (!window.bridge || !window.bridge.saveMarkdownFile) {
+            debugError('Bridge对象或saveMarkdownFile方法不可用');
+            return;
+        }
+        
+        // 显示保存状态
+        const saveBtn = document.getElementById('save-btn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="material-icons-outlined text-sm mr-1 animate-spin">refresh</span>保存中...';
+        saveBtn.disabled = true;
+        
+        try {
+            window.bridge.saveMarkdownFile(currentFilePath, content, function(success) {
+                debugLog(`文件保存结果: ${success}`);
+                
+                // 恢复按钮状态
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+                
+                if (success) {
+                    originalContent = content;  // 更新原始内容
+                    hasUnsavedChanges = false;  // 重置未保存状态
+                    hideUnsavedIndicator();
+                    
+                    // 显示保存成功提示
+                    showSaveSuccessMessage();
+                    
+                    debugLog('✅ 文件保存成功');
+                    
+                    // 如果有回调函数，执行它
+                    if (callback && typeof callback === 'function') {
+                        callback();
+                    }
+                } else {
+                    debugError('❌ 文件保存失败');
+                    alert('保存失败，请重试');
+                }
+            });
+        } catch (error) {
+            debugError(`保存文件时发生错误: ${error.message}`);
+            
+            // 恢复按钮状态
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+            
+            alert('保存过程中发生错误: ' + error.message);
+        }
+    }
+
+    // 显示保存成功消息
+    function showSaveSuccessMessage() {
+        const message = document.createElement('div');
+        message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        message.innerHTML = `
+            <div class="flex items-center">
+                <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                <span>文件已保存</span>
+            </div>
+        `;
+        document.body.appendChild(message);
+        
+        // 3秒后自动移除
+        setTimeout(() => {
+            if (message.parentElement) {
+                message.remove();
+            }
+        }, 3000);
     }
 
     // 切换文件夹展开/折叠
@@ -735,6 +965,7 @@
     window.handleFileClick = handleFileClick;
     window.switchToPreview = switchToPreview;
     window.switchToEdit = switchToEdit;
+    window.saveCurrentFile = saveCurrentFile;
     window.createNewNote = createNewNote;
     window.createNewFolder = createNewFolder;
     window.validateBackendFunctions = validateBackendFunctions;
