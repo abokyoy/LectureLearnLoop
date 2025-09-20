@@ -5128,7 +5128,7 @@ def main():
         print("="*80)
         
         # 获取bridge对象并验证功能
-        bridge = window.web_bridge
+        bridge = window.bridge
         if bridge:
             result = bridge.validateAllFileOperations()
             print("\n📋 验证结果:")

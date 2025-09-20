@@ -13,6 +13,29 @@
         justify-content: center;
     }
     
+    /* 知识点高亮样式 */
+    .knowledge-highlight {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 3px;
+        padding: 1px 2px;
+        transition: all 0.3s ease;
+    }
+    
+    .knowledge-highlight.active-highlight {
+        background-color: #32C77F;
+        color: white;
+        border-color: #28a745;
+        box-shadow: 0 0 8px rgba(50, 199, 127, 0.4);
+        animation: pulse-highlight 1s ease-in-out;
+    }
+    
+    @keyframes pulse-highlight {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+    
     /* 文件树样式 */
     .file-item-content {
         transition: all 0.2s ease;
@@ -621,6 +644,9 @@
         document.getElementById('knowledge-loading').classList.add('hidden');
         document.getElementById('knowledge-placeholder').classList.add('hidden');
         document.getElementById('knowledge-content').classList.remove('hidden');
+        
+        // 绑定知识点交互事件
+        bindKnowledgePointEvents();
     }
 
     // 重新加载预览内容（不触发模式切换）
@@ -1467,11 +1493,16 @@
         }
     }
 
+    // 全局变量用于跟踪当前高亮状态
+    let currentHighlightIndex = -1;
+    let currentHighlightElements = [];
+    let currentSearchKeyword = '';
+
     // 绑定知识点交互事件
     function bindKnowledgePointEvents() {
         addToDebugPanel('INFO', '绑定知识点交互事件');
         
-        // 1. 点击知识点高亮文档内容
+        // 为所有知识点添加点击事件
         const knowledgeItems = document.querySelectorAll('.knowledge-point-item');
         knowledgeItems.forEach(item => {
             item.addEventListener('click', function(e) {
@@ -1480,9 +1511,11 @@
                     return;
                 }
                 
-                const pointName = this.dataset.pointName;
-                addToDebugPanel('INFO', `点击知识点: ${pointName}`);
-                highlightTextInDocument(pointName);
+                const pointName = this.getAttribute('data-point-name');
+                const pointDescription = this.getAttribute('data-point-description');
+                
+                // 高亮并定位到笔记中的关键字
+                highlightAndLocateInNote(pointName, pointDescription);
             });
         });
         
@@ -1523,6 +1556,146 @@
                 showKnowledgeManagementPanel();
             });
         }
+    }
+    
+    // 高亮并定位到笔记中的关键字
+    function highlightAndLocateInNote(pointName, pointDescription) {
+        addToDebugPanel('INFO', `点击知识点: ${pointName}`);
+        
+        // 获取预览内容区域
+        const previewContent = document.getElementById('preview-content');
+        if (!previewContent) {
+            addToDebugPanel('ERROR', '未找到预览内容区域');
+            return;
+        }
+        
+        // 如果是同一个关键字，切换到下一个高亮位置
+        if (currentSearchKeyword === pointName && currentHighlightElements.length > 0) {
+            currentHighlightIndex = (currentHighlightIndex + 1) % currentHighlightElements.length;
+            scrollToHighlight(currentHighlightIndex);
+            addToDebugPanel('INFO', `切换到第 ${currentHighlightIndex + 1} 个匹配项`);
+            return;
+        }
+        
+        // 清除之前的高亮
+        clearHighlights();
+        
+        // 设置新的搜索关键字
+        currentSearchKeyword = pointName;
+        currentHighlightIndex = -1;
+        
+        // 搜索并高亮关键字
+        const matches = highlightTextInElement(previewContent, pointName);
+        
+        if (matches > 0) {
+            addToDebugPanel('SUCCESS', `找到 ${matches} 个匹配项`);
+            currentHighlightIndex = 0;
+            scrollToHighlight(0);
+        } else {
+            addToDebugPanel('WARNING', `未找到关键字: ${pointName}`);
+            // 尝试搜索描述中的关键词
+            const descriptionWords = pointDescription.split(/[，。！？；：\s]+/).filter(word => word.length > 1);
+            for (const word of descriptionWords) {
+                const wordMatches = highlightTextInElement(previewContent, word);
+                if (wordMatches > 0) {
+                    addToDebugPanel('SUCCESS', `通过描述关键词找到 ${wordMatches} 个匹配项: ${word}`);
+                    currentSearchKeyword = word;
+                    currentHighlightIndex = 0;
+                    scrollToHighlight(0);
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 在元素中高亮文本
+    function highlightTextInElement(element, searchText) {
+        if (!searchText || searchText.length < 1) return 0;
+        
+        let matchCount = 0;
+        currentHighlightElements = [];
+        
+        // 创建文本节点遍历器
+        const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            textNodes.push(node);
+        }
+        
+        // 在每个文本节点中搜索并替换
+        textNodes.forEach(textNode => {
+            const text = textNode.textContent;
+            const regex = new RegExp(escapeRegExp(searchText), 'gi');
+            const matches = text.match(regex);
+            
+            if (matches) {
+                const highlightedHTML = text.replace(regex, (match) => {
+                    matchCount++;
+                    return `<mark class="knowledge-highlight" data-highlight-index="${matchCount - 1}">${match}</mark>`;
+                });
+                
+                // 创建临时容器来解析HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = highlightedHTML;
+                
+                // 替换原文本节点
+                const parent = textNode.parentNode;
+                while (tempDiv.firstChild) {
+                    parent.insertBefore(tempDiv.firstChild, textNode);
+                }
+                parent.removeChild(textNode);
+            }
+        });
+        
+        // 收集所有高亮元素
+        currentHighlightElements = Array.from(element.querySelectorAll('.knowledge-highlight'));
+        
+        return matchCount;
+    }
+    
+    // 清除所有高亮
+    function clearHighlights() {
+        const highlights = document.querySelectorAll('.knowledge-highlight');
+        highlights.forEach(highlight => {
+            const parent = highlight.parentNode;
+            parent.replaceChild(document.createTextNode(highlight.textContent), highlight);
+            parent.normalize(); // 合并相邻的文本节点
+        });
+        currentHighlightElements = [];
+        currentHighlightIndex = -1;
+    }
+    
+    // 滚动到指定的高亮位置
+    function scrollToHighlight(index) {
+        if (index < 0 || index >= currentHighlightElements.length) return;
+        
+        // 移除之前的活动高亮
+        currentHighlightElements.forEach(el => el.classList.remove('active-highlight'));
+        
+        // 设置当前高亮为活动状态
+        const currentElement = currentHighlightElements[index];
+        currentElement.classList.add('active-highlight');
+        
+        // 滚动到可视区域
+        currentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+        });
+        
+        addToDebugPanel('INFO', `定位到第 ${index + 1}/${currentHighlightElements.length} 个匹配项`);
+    }
+    
+    // 转义正则表达式特殊字符
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
     
     // 高亮文档中的文本
