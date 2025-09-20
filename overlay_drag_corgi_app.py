@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtCore import QUrl, Qt, QObject, Slot, Signal, QPoint, QRect
-from PySide6.QtGui import QFont, QMouseEvent, QCursor
+from PySide6.QtCore import QUrl, Qt, QObject, Slot, Signal, QPoint, QRect, QTimer
+from PySide6.QtGui import QFont, QMouseEvent, QCursor, QIcon
 
 class CorgiWebBridge(QObject):
     """Python与JavaScript通信桥梁"""
@@ -320,91 +320,184 @@ class CorgiWebBridge(QObject):
     
     @Slot(str, result=str)
     def loadMarkdownFile(self, file_path):
-        """加载Markdown文件内容"""
+        """加载Markdown文件内容并转换为HTML"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件加载】loadMarkdownFile 开始")
+        self.logger.info(f"文件路径: {file_path}")
+        
         try:
             path = Path(file_path)
-            if path.exists() and path.suffix == '.md':
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                # 转换为HTML
+            self.logger.info(f"解析路径: {path.absolute()}")
+            self.logger.info(f"文件存在: {path.exists()}")
+            
+            if not path.exists():
+                self.logger.error("❌ 文件不存在")
+                return ""
+            
+            # 读取文件内容
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            content_length = len(content)
+            self.logger.info(f"文件内容长度: {content_length} 字符")
+            
+            # 使用markdown库转换为HTML
+            try:
+                import markdown
                 html_content = markdown.markdown(content, extensions=['codehilite', 'fenced_code'])
+                html_length = len(html_content)
+                self.logger.info(f"✅ Markdown转换成功，HTML长度: {html_length} 字符")
                 return html_content
+            except ImportError:
+                self.logger.warning("⚠️ markdown库未安装，返回原始内容")
+                # 如果没有markdown库，返回原始内容
+                return f"<pre>{content}</pre>"
+                
         except Exception as e:
-            print(f"加载文件失败: {e}")
+            self.logger.error(f"❌ 加载Markdown文件异常: {e}")
+            print(f"❌ 加载Markdown文件失败: {e}")
         return ""
     
     @Slot(str, result=str)
     def loadMarkdownRaw(self, file_path):
-        """加载Markdown原始内容用于编辑"""
+        """加载Markdown文件的原始内容"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件加载】loadMarkdownRaw 开始")
+        self.logger.info(f"文件路径: {file_path}")
+        
         try:
             path = Path(file_path)
-            if path.exists() and path.suffix == '.md':
-                with open(path, 'r', encoding='utf-8') as f:
-                    return f.read()
+            self.logger.info(f"解析路径: {path.absolute()}")
+            self.logger.info(f"文件存在: {path.exists()}")
+            
+            if not path.exists():
+                self.logger.error("❌ 文件不存在")
+                return ""
+            
+            # 读取原始文件内容
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            content_length = len(content)
+            self.logger.info(f"✅ 原始内容加载成功，长度: {content_length} 字符")
+            return content
+                
         except Exception as e:
-            print(f"加载原始文件失败: {e}")
+            self.logger.error(f"❌ 加载原始文件异常: {e}")
+            print(f"❌ 加载原始文件失败: {e}")
         return ""
     
     @Slot(str, str, result=bool)
     def saveMarkdownFile(self, file_path, content):
         """保存Markdown文件"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件保存】saveMarkdownFile 开始")
+        self.logger.info(f"文件路径: {file_path}")
+        self.logger.info(f"内容长度: {len(content)} 字符")
+        
         try:
             path = Path(file_path)
+            self.logger.info(f"解析路径: {path.absolute()}")
+            
+            # 确保父目录存在
+            path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # 保存文件
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"文件已保存: {file_path}")
-            return True
+            
+            # 验证保存是否成功
+            if path.exists():
+                file_size = path.stat().st_size
+                self.logger.info(f"✅ 文件保存成功")
+                self.logger.info(f"文件大小: {file_size} 字节")
+                print(f"✅ 文件已保存: {file_path}")
+                return True
+            else:
+                self.logger.error("❌ 文件保存失败 - 文件不存在")
+                return False
+                
         except Exception as e:
-            print(f"保存文件失败: {e}")
+            self.logger.error(f"❌ 保存文件异常: {e}")
+            print(f"❌ 保存文件失败: {e}")
             return False
     
     @Slot(str, result=bool)
     def createNewNote(self, folder_path="vault"):
         """创建新的Markdown笔记"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件操作验证】createNewNote 开始")
+        self.logger.info(f"目标文件夹: {folder_path}")
+        
         try:
             vault_path = Path(folder_path)
-            vault_path.mkdir(exist_ok=True)
+            self.logger.info(f"解析路径: {vault_path.absolute()}")
+            self.logger.info(f"路径存在: {vault_path.exists()}")
             
-            # 生成新文件名
+            if not vault_path.exists():
+                vault_path.mkdir(parents=True, exist_ok=True)
+                self.logger.info("✅ 创建了目标文件夹")
+            
+            # 生成唯一的文件名
             counter = 1
             while True:
-                new_file_name = f"新笔记{counter}.md"
-                new_file_path = vault_path / new_file_name
-                if not new_file_path.exists():
+                filename = f"新建笔记{counter}.md"
+                file_path = vault_path / filename
+                if not file_path.exists():
                     break
                 counter += 1
             
-            # 创建模板内容
-            template_content = f"""# {new_file_name.replace('.md', '')}
+            self.logger.info(f"生成文件名: {filename}")
+            self.logger.info(f"完整路径: {file_path.absolute()}")
+            
+            # 创建文件并写入模板内容
+            template_content = f"""# {filename[:-3]}
 
 ## 概述
-在这里写下你的学习笔记...
+这是一个新建的笔记文件。
 
-## 要点
-- 要点1
-- 要点2
-- 要点3
+## 内容
+请在这里添加您的笔记内容...
 
-## 总结
-总结你学到的内容...
+---
+创建时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 """
             
-            with open(new_file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(template_content)
             
-            print(f"创建新笔记: {new_file_path}")
-            return True
+            # 验证文件是否创建成功
+            if file_path.exists():
+                file_size = file_path.stat().st_size
+                self.logger.info(f"✅ 文件创建成功")
+                self.logger.info(f"文件大小: {file_size} 字节")
+                self.logger.info(f"文件路径: {file_path}")
+                print(f"✅ 成功创建笔记: {file_path}")
+                return True
+            else:
+                self.logger.error("❌ 文件创建失败 - 文件不存在")
+                return False
+            
         except Exception as e:
-            print(f"创建新笔记失败: {e}")
+            self.logger.error(f"❌ 创建笔记异常: {e}")
+            print(f"❌ 创建笔记失败: {e}")
             return False
     
     @Slot(str, result=bool)
     def createNewFolder(self, parent_path="vault"):
         """创建新文件夹"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件操作验证】createNewFolder 开始")
+        self.logger.info(f"父级路径: {parent_path}")
+        
         try:
             parent = Path(parent_path)
-            parent.mkdir(exist_ok=True)
+            self.logger.info(f"解析父级路径: {parent.absolute()}")
+            self.logger.info(f"父级路径存在: {parent.exists()}")
+            
+            if not parent.exists():
+                parent.mkdir(parents=True, exist_ok=True)
+                self.logger.info("✅ 创建了父级文件夹")
             
             # 生成新文件夹名
             counter = 1
@@ -415,74 +508,311 @@ class CorgiWebBridge(QObject):
                     break
                 counter += 1
             
+            self.logger.info(f"生成文件夹名: {new_folder_name}")
+            self.logger.info(f"完整路径: {new_folder_path.absolute()}")
+            
             new_folder_path.mkdir()
-            print(f"创建新文件夹: {new_folder_path}")
-            return True
+            
+            # 验证文件夹是否创建成功
+            if new_folder_path.exists() and new_folder_path.is_dir():
+                self.logger.info(f"✅ 文件夹创建成功")
+                self.logger.info(f"文件夹路径: {new_folder_path}")
+                print(f"✅ 创建新文件夹: {new_folder_path}")
+                return True
+            else:
+                self.logger.error("❌ 文件夹创建失败 - 文件夹不存在")
+                return False
+                
         except Exception as e:
-            print(f"创建新文件夹失败: {e}")
+            self.logger.error(f"❌ 创建文件夹异常: {e}")
+            print(f"❌ 创建新文件夹失败: {e}")
             return False
     
     @Slot(str, str, result=bool)
     def renameFileOrFolder(self, old_path, new_name):
         """重命名文件或文件夹"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件操作验证】renameFileOrFolder 开始")
+        self.logger.info(f"原路径: {old_path}")
+        self.logger.info(f"新名称: {new_name}")
+        
         try:
             old_path_obj = Path(old_path)
             new_path_obj = old_path_obj.parent / new_name
             
+            self.logger.info(f"原路径对象: {old_path_obj.absolute()}")
+            self.logger.info(f"新路径对象: {new_path_obj.absolute()}")
+            self.logger.info(f"原路径存在: {old_path_obj.exists()}")
+            self.logger.info(f"原路径类型: {'文件夹' if old_path_obj.is_dir() else '文件'}")
+            
+            if not old_path_obj.exists():
+                self.logger.error("❌ 原路径不存在")
+                return False
+            
             if new_path_obj.exists():
-                print(f"重命名失败: {new_name} 已存在")
+                self.logger.error(f"❌ 目标名称已存在: {new_name}")
+                print(f"❌ 重命名失败: {new_name} 已存在")
                 return False
             
             old_path_obj.rename(new_path_obj)
-            print(f"重命名成功: {old_path} -> {new_path_obj}")
-            return True
+            
+            # 验证重命名是否成功
+            if new_path_obj.exists() and not old_path_obj.exists():
+                self.logger.info("✅ 重命名成功")
+                self.logger.info(f"新路径: {new_path_obj}")
+                print(f"✅ 重命名成功: {old_path} -> {new_path_obj}")
+                return True
+            else:
+                self.logger.error("❌ 重命名失败 - 验证失败")
+                return False
+                
         except Exception as e:
-            print(f"重命名失败: {e}")
+            self.logger.error(f"❌ 重命名异常: {e}")
+            print(f"❌ 重命名失败: {e}")
             return False
     
     @Slot(str, str, result=bool)
     def moveFileOrFolder(self, source_path, target_folder):
         """移动文件或文件夹"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件操作验证】moveFileOrFolder 开始")
+        self.logger.info(f"源路径: {source_path}")
+        self.logger.info(f"目标文件夹: {target_folder}")
+        
         try:
             source = Path(source_path)
             target_dir = Path(target_folder)
             target_path = target_dir / source.name
             
-            if target_path.exists():
-                print(f"移动失败: {target_path} 已存在")
+            self.logger.info(f"源路径对象: {source.absolute()}")
+            self.logger.info(f"目标文件夹对象: {target_dir.absolute()}")
+            self.logger.info(f"目标路径对象: {target_path.absolute()}")
+            self.logger.info(f"源路径存在: {source.exists()}")
+            self.logger.info(f"源路径类型: {'文件夹' if source.is_dir() else '文件'}")
+            self.logger.info(f"目标文件夹存在: {target_dir.exists()}")
+            
+            if not source.exists():
+                self.logger.error("❌ 源路径不存在")
                 return False
             
+            if target_path.exists():
+                self.logger.error(f"❌ 目标路径已存在: {target_path}")
+                print(f"❌ 移动失败: {target_path} 已存在")
+                return False
+            
+            # 确保目标文件夹存在
             target_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info("✅ 目标文件夹已准备好")
+            
+            # 执行移动操作
             source.rename(target_path)
-            print(f"移动成功: {source_path} -> {target_path}")
-            return True
+            
+            # 验证移动是否成功
+            if target_path.exists() and not source.exists():
+                self.logger.info("✅ 移动成功")
+                self.logger.info(f"新路径: {target_path}")
+                print(f"✅ 移动成功: {source_path} -> {target_path}")
+                return True
+            else:
+                self.logger.error("❌ 移动失败 - 验证失败")
+                return False
+                
         except Exception as e:
-            print(f"移动失败: {e}")
+            self.logger.error(f"❌ 移动异常: {e}")
+            print(f"❌ 移动失败: {e}")
             return False
     
     @Slot(str, result=bool)
     def deleteFileOrFolder(self, path):
         """删除文件或文件夹"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件操作验证】deleteFileOrFolder 开始")
+        self.logger.info(f"目标路径: {path}")
+        
         try:
             target = Path(path)
+            self.logger.info(f"路径对象: {target.absolute()}")
+            self.logger.info(f"路径存在: {target.exists()}")
+            
             if not target.exists():
-                print(f"删除失败: {path} 不存在")
+                self.logger.error("❌ 目标路径不存在")
+                print(f"❌ 删除失败: {path} 不存在")
                 return False
             
-            if target.is_dir():
+            is_dir = target.is_dir()
+            self.logger.info(f"路径类型: {'文件夹' if is_dir else '文件'}")
+            
+            if is_dir:
                 # 删除文件夹及其所有内容
                 import shutil
+                # 先统计文件夹内容
+                try:
+                    items = list(target.iterdir())
+                    self.logger.info(f"文件夹包含 {len(items)} 个项目")
+                except:
+                    self.logger.info("无法统计文件夹内容")
+                
                 shutil.rmtree(target)
-                print(f"删除文件夹成功: {path}")
+                self.logger.info("✅ 文件夹删除成功")
+                print(f"✅ 删除文件夹成功: {path}")
             else:
                 # 删除文件
+                file_size = target.stat().st_size
+                self.logger.info(f"文件大小: {file_size} 字节")
                 target.unlink()
-                print(f"删除文件成功: {path}")
+                self.logger.info("✅ 文件删除成功")
+                print(f"✅ 删除文件成功: {path}")
             
-            return True
+            # 验证删除是否成功
+            if not target.exists():
+                self.logger.info("✅ 删除验证成功")
+                return True
+            else:
+                self.logger.error("❌ 删除验证失败 - 文件仍然存在")
+                return False
+            
         except Exception as e:
-            print(f"删除失败: {e}")
+            self.logger.error(f"❌ 删除异常: {e}")
+            print(f"❌ 删除失败: {e}")
             return False
+    
+    @Slot(result=str)
+    def validateAllFileOperations(self):
+        """验证所有文件操作功能"""
+        self.logger.info("=" * 80)
+        self.logger.info("【后端功能全面验证】开始验证所有文件操作功能")
+        self.logger.info("=" * 80)
+        
+        validation_results = []
+        test_folder = "vault/test_validation"
+        test_file = "test_validation/测试文件.md"
+        
+        try:
+            # 1. 测试获取文件结构
+            self.logger.info("🔍 测试1: 获取文件结构")
+            structure_result = self.getFileStructure()
+            if structure_result:
+                validation_results.append("✅ getFileStructure: 成功")
+                self.logger.info("✅ 文件结构获取测试通过")
+            else:
+                validation_results.append("❌ getFileStructure: 失败")
+                self.logger.error("❌ 文件结构获取测试失败")
+            
+            # 2. 测试创建文件夹
+            self.logger.info("🔍 测试2: 创建文件夹")
+            folder_result = self.createNewFolder("vault")
+            if folder_result:
+                validation_results.append("✅ createNewFolder: 成功")
+                self.logger.info("✅ 文件夹创建测试通过")
+            else:
+                validation_results.append("❌ createNewFolder: 失败")
+                self.logger.error("❌ 文件夹创建测试失败")
+            
+            # 3. 测试创建笔记
+            self.logger.info("🔍 测试3: 创建笔记")
+            note_result = self.createNewNote("vault")
+            if note_result:
+                validation_results.append("✅ createNewNote: 成功")
+                self.logger.info("✅ 笔记创建测试通过")
+            else:
+                validation_results.append("❌ createNewNote: 失败")
+                self.logger.error("❌ 笔记创建测试失败")
+            
+            # 4. 测试文件加载功能
+            self.logger.info("🔍 测试4: 加载Markdown文件")
+            # 查找刚创建的文件进行测试
+            vault_path = Path("vault")
+            test_files = [f for f in vault_path.glob("*.md") if f.name.startswith("新建笔记")]
+            if test_files:
+                test_file_path = str(test_files[0])
+                load_result = self.loadMarkdownFile(test_file_path)
+                if load_result:
+                    validation_results.append("✅ loadMarkdownFile: 成功")
+                    self.logger.info("✅ 文件加载测试通过")
+                else:
+                    validation_results.append("❌ loadMarkdownFile: 失败")
+                    self.logger.error("❌ 文件加载测试失败")
+            else:
+                validation_results.append("⚠️ loadMarkdownFile: 跳过(无测试文件)")
+                self.logger.warning("⚠️ 文件加载测试跳过 - 无可用测试文件")
+            
+            # 5. 测试重命名功能
+            self.logger.info("🔍 测试5: 重命名文件")
+            if test_files:
+                old_path = str(test_files[0])
+                new_name = "重命名测试文件.md"
+                rename_result = self.renameFileOrFolder(old_path, new_name)
+                if rename_result:
+                    validation_results.append("✅ renameFileOrFolder: 成功")
+                    self.logger.info("✅ 重命名测试通过")
+                    # 更新测试文件路径
+                    test_files[0] = test_files[0].parent / new_name
+                else:
+                    validation_results.append("❌ renameFileOrFolder: 失败")
+                    self.logger.error("❌ 重命名测试失败")
+            else:
+                validation_results.append("⚠️ renameFileOrFolder: 跳过(无测试文件)")
+                self.logger.warning("⚠️ 重命名测试跳过 - 无可用测试文件")
+            
+            # 6. 测试移动功能
+            self.logger.info("🔍 测试6: 移动文件")
+            # 先创建一个目标文件夹
+            target_folder_result = self.createNewFolder("vault")
+            if target_folder_result and test_files:
+                # 查找刚创建的文件夹
+                folders = [f for f in vault_path.iterdir() if f.is_dir() and f.name.startswith("新文件夹")]
+                if folders:
+                    source_path = str(test_files[0])
+                    target_folder = str(folders[0])
+                    move_result = self.moveFileOrFolder(source_path, target_folder)
+                    if move_result:
+                        validation_results.append("✅ moveFileOrFolder: 成功")
+                        self.logger.info("✅ 移动测试通过")
+                    else:
+                        validation_results.append("❌ moveFileOrFolder: 失败")
+                        self.logger.error("❌ 移动测试失败")
+                else:
+                    validation_results.append("⚠️ moveFileOrFolder: 跳过(无目标文件夹)")
+                    self.logger.warning("⚠️ 移动测试跳过 - 无可用目标文件夹")
+            else:
+                validation_results.append("⚠️ moveFileOrFolder: 跳过(条件不满足)")
+                self.logger.warning("⚠️ 移动测试跳过 - 测试条件不满足")
+            
+            # 7. 清理测试文件
+            self.logger.info("🔍 测试7: 清理测试文件")
+            cleanup_count = 0
+            for item in vault_path.iterdir():
+                if (item.name.startswith("新建笔记") or 
+                    item.name.startswith("新文件夹") or 
+                    item.name.startswith("重命名测试")):
+                    delete_result = self.deleteFileOrFolder(str(item))
+                    if delete_result:
+                        cleanup_count += 1
+            
+            if cleanup_count > 0:
+                validation_results.append(f"✅ deleteFileOrFolder: 成功清理{cleanup_count}个测试文件")
+                self.logger.info(f"✅ 清理测试通过 - 清理了{cleanup_count}个文件")
+            else:
+                validation_results.append("⚠️ deleteFileOrFolder: 无需清理")
+                self.logger.info("⚠️ 清理测试 - 无需清理文件")
+            
+        except Exception as e:
+            validation_results.append(f"❌ 验证过程异常: {e}")
+            self.logger.error(f"❌ 验证过程异常: {e}")
+        
+        # 生成验证报告
+        self.logger.info("=" * 80)
+        self.logger.info("【验证报告】")
+        for result in validation_results:
+            self.logger.info(result)
+        
+        success_count = len([r for r in validation_results if r.startswith("✅")])
+        total_tests = len([r for r in validation_results if not r.startswith("❌ 验证过程异常")])
+        
+        self.logger.info(f"验证完成: {success_count}/{total_tests} 项测试通过")
+        self.logger.info("=" * 80)
+        
+        return f"后端功能验证完成: {success_count}/{total_tests} 项测试通过\n" + "\n".join(validation_results)
     
     @Slot(str, result=str)
     def extractKnowledgePoints(self, file_path):
@@ -4151,10 +4481,35 @@ def main():
     """主函数"""
     app = QApplication(sys.argv)
     
+    # 设置应用程序图标
+    app.setWindowIcon(QIcon("icon.png"))
+    
     app.setApplicationName("柯基学习小助手")
     app.setApplicationVersion("2.2")
     
     window = OverlayDragCorgiApp()
+    
+    # 在应用启动后立即验证后端功能
+    def validate_on_startup():
+        print("\n" + "="*80)
+        print("🚀 应用启动完成，开始验证后端功能")
+        print("="*80)
+        
+        # 获取bridge对象并验证功能
+        bridge = window.web_bridge
+        if bridge:
+            result = bridge.validateAllFileOperations()
+            print("\n📋 验证结果:")
+            print(result)
+            print("\n" + "="*80)
+            print("✅ 后端功能验证完成，请查看上方日志")
+            print("="*80)
+        else:
+            print("❌ 无法获取bridge对象")
+    
+    # 延迟3秒后执行验证，确保应用完全启动
+    QTimer.singleShot(3000, validate_on_startup)
+    
     window.show()
     
     print("🐕 覆盖层拖拽版柯基学习小助手启动成功！")

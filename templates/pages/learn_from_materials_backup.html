@@ -1,0 +1,506 @@
+<!-- 从资料学习页面 - 像素级还原UI\笔记.html -->
+<style>
+    /* 侧边栏收缩样式 */
+    #sidebar.collapsed .sidebar-text,
+    #sidebar.collapsed #user-profile,
+    #sidebar.collapsed .logo-text {
+        display: none;
+    }
+    #sidebar.collapsed .nav-item-icon {
+        margin-right: 0;
+    }
+    #sidebar.collapsed .nav-link {
+        justify-content: center;
+    }
+</style>
+
+<div class="flex h-screen bg-white">
+    
+
+    <!-- 主内容区域 -->
+    <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
+        <!-- 文件结构面板 -->
+        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+                <div class="space-x-2">
+                    <button class="text-text-gray hover:text-primary" onclick="createNewFolder()" title="新建文件夹">
+                        <span class="material-icons-outlined">create_new_folder</span>
+                    </button>
+                    <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
+                        <span class="material-icons-outlined">note_add</span>
+                    </button>
+                    <button class="text-red-600 hover:text-red-800" onclick="validateBackendFunctions()" title="验证后端功能">
+                        <span class="material-icons-outlined">bug_report</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 文件树容器 -->
+            <div class="flex-1 overflow-y-auto pr-2">
+                <div id="loading-indicator" class="flex items-center justify-center py-8">
+                    <div class="animate-spin">
+                        <span class="material-icons-outlined text-primary">refresh</span>
+                    </div>
+                    <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
+                </div>
+                <ul class="space-y-1" id="file-tree">
+                    <!-- 示例文件结构 - 将被动态替换 -->
+                    <li>
+                        <div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+                            <span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+                            <span class="text-text-dark-brown font-medium">项目笔记</span>
+                            <span class="material-icons-outlined text-text-gray ml-auto">expand_more</span>
+                        </div>
+                        <ul class="pl-6 mt-1 space-y-1">
+                            <li>
+                                <div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer bg-bg-light-green">
+                                    <span class="material-icons-outlined text-primary mr-2">description</span>
+                                    <span class="text-primary font-semibold">柯基学习法.md</span>
+                                </div>
+                            </li>
+                            <li>
+                                <div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+                                    <span class="material-icons-outlined text-gray-500 mr-2">description</span>
+                                    <span class="text-text-medium-brown">产品设计文档.md</span>
+                                </div>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+                            <span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+                            <span class="text-text-dark-brown font-medium">日常随笔</span>
+                            <span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+                            <span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+                            <span class="text-text-dark-brown font-medium">会议纪要</span>
+                            <span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 主编辑区域 -->
+        <main class="flex-1 p-6 flex flex-col">
+            <header class="flex justify-between items-center mb-4">
+                <h2 id="document-title" class="text-2xl font-bold text-text-dark-brown">柯基学习法.md</h2>
+                <div class="flex items-center space-x-2">
+                    <button id="preview-btn" class="flex items-center bg-white border border-gray-300 px-3 py-1.5 rounded-lg text-text-gray hover:bg-gray-100" onclick="switchToPreview()">
+                        <span class="material-icons-outlined text-sm mr-1">visibility</span>
+                        <span>预览</span>
+                    </button>
+                    <button id="edit-btn" class="flex items-center bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-green-600" onclick="switchToEdit()">
+                        <span class="material-icons-outlined text-sm mr-1">edit</span>
+                        <span>编辑</span>
+                    </button>
+                </div>
+            </header>
+            
+            <!-- 文档内容区域 -->
+            <div class="flex-1 bg-white rounded-xl shadow-sm p-6 overflow-y-auto" id="document-content">
+                <div class="prose max-w-none">
+                    <h1>柯基学习法核心原则</h1>
+                    <p>柯基学习法是一种以<strong>兴趣驱动</strong>和<strong>积极反馈</strong>为核心的学习方法论。它模仿了柯基犬活泼、好奇、聪明的特点，旨在让学习过程变得更加有趣和高效。</p>
+                    <h2>原则一：保持好奇心（像柯基一样探索）</h2>
+                    <ul>
+                        <li>主动发现问题，而不是被动接受知识。</li>
+                        <li>将大的学习目标分解成一个个"小玩具"，逐个攻破。</li>
+                        <li>勇于尝试新领域，不怕犯错。</li>
+                    </ul>
+                    <h2>原则二：短时高效（柯基的精力集中时间）</h2>
+                    <p>研究表明，柯基的注意力集中时间不长，这启发我们应该采用番茄工作法之类的技巧，进行短时间、高强度的学习。</p>
+                    <pre><code>// 伪代码示例
+function corgiStudy(sessionTime = 25, breakTime = 5) {
+  while(learning) {
+    focus(sessionTime);
+    play(breakTime);
+  }
+}</code></pre>
+                    <h2>原则三：及时奖励（得到小零食的快乐）</h2>
+                    <p>每完成一个小的学习任务，就给自己一个积极的反馈。可以是一杯咖啡、一集喜欢的剧，或者只是简单的自我肯定。</p>
+                    <blockquote>"汪！我真棒！"</blockquote>
+                </div>
+            </div>
+        </main>
+
+        <!-- 右侧知识点面板 -->
+        <aside class="w-1/5 bg-white border-l border-gray-200 p-4 flex flex-col">
+            <h2 class="text-lg font-semibold text-text-dark-brown mb-4">知识点列表</h2>
+            <div class="flex-1 overflow-y-auto space-y-3" id="knowledge-points">
+                <div class="bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                    <h3 class="font-semibold text-primary">兴趣驱动</h3>
+                    <p class="text-sm text-text-medium-brown mt-1">学习的核心动力来源，提高主动性。</p>
+                </div>
+                <div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                    <h3 class="font-semibold text-text-dark-brown">积极反馈</h3>
+                    <p class="text-sm text-text-medium-brown mt-1">通过奖励机制巩固学习成果，提升动机。</p>
+                </div>
+                <div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+                    <h3 class="font-semibold text-text-dark-brown">番茄工作法</h3>
+                    <p class="text-sm text-text-medium-brown mt-1">一种时间管理方法，用于保持专注。</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+</div>
+
+<script>
+(function() {
+    // 使用全局调试函数
+    function debugLog(message) {
+        if (window.globalDebugLog) {
+            window.globalDebugLog(message);
+        } else {
+            console.log(message);
+        }
+    }
+
+    function debugError(message) {
+        if (window.globalDebugError) {
+            window.globalDebugError(message);
+        } else {
+            console.error(message);
+        }
+    }
+
+    // 页面初始化
+    debugLog('从资料学习页面脚本加载');
+    debugLog('当前时间: ' + new Date().toLocaleTimeString());
+    debugLog('document.readyState: ' + document.readyState);
+
+    // 全局变量
+    let currentFilePath = null;
+    let currentMode = 'preview';
+    let selectedTreeItem = null;
+
+    // 侧边栏收缩功能
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const fileStructure = document.getElementById('file-structure');
+        sidebar.classList.toggle('collapsed');
+        const isCollapsed = sidebar.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+            fileStructure.classList.add('hidden');
+            sidebar.classList.remove('w-64');
+            sidebar.classList.add('w-20');
+        } else {
+            fileStructure.classList.remove('hidden');
+            sidebar.classList.remove('w-20');
+            sidebar.classList.add('w-64');
+        }
+        
+        const chevron = document.getElementById('toggle-icon');
+        if (isCollapsed) {
+            chevron.textContent = 'chevron_right';
+        } else {
+            chevron.textContent = 'chevron_left';
+        }
+    }
+
+    // 页面初始化函数
+    function initializePage() {
+        debugLog('页面初始化开始');
+        
+        if (window.bridge && typeof window.bridge.getFileStructure === 'function') {
+            debugLog('Bridge已可用，直接加载文件结构');
+            loadFileStructure();
+            return;
+        }
+        
+        if (typeof QWebChannel !== 'undefined' && window.qt && window.qt.webChannelTransport) {
+            debugLog('开始WebChannel初始化');
+            initializeWebChannel();
+        } else {
+            debugLog('延迟500ms后重试初始化');
+            setTimeout(initializeWebChannel, 500);
+        }
+    }
+
+    // 初始化WebChannel连接
+    function initializeWebChannel() {
+        debugLog('开始初始化WebChannel连接');
+        
+        if (typeof QWebChannel !== 'undefined' && window.qt && window.qt.webChannelTransport) {
+            debugLog('QWebChannel和transport都可用');
+            
+            new QWebChannel(window.qt.webChannelTransport, function(channel) {
+                debugLog('WebChannel连接成功！');
+                window.bridge = channel.objects.bridge;
+                debugLog('Bridge对象设置完成: ' + (window.bridge ? 'success' : 'failed'));
+                
+                if (window.bridge) {
+                    debugLog('Bridge对象可用，开始加载文件结构');
+                    loadFileStructure();
+                } else {
+                    debugError('Bridge对象未能正确设置');
+                }
+            });
+        } else {
+            debugError('QWebChannel或transport不可用，无法初始化');
+            setTimeout(initializeWebChannel, 1000);
+        }
+    }
+
+    // 加载文件结构
+    function loadFileStructure() {
+        debugLog('开始加载文件结构');
+        
+        if (!window.bridge || typeof window.bridge.getFileStructure !== 'function') {
+            debugError('Bridge对象或getFileStructure方法不可用');
+            return;
+        }
+        
+        try {
+            const startTime = Date.now();
+            window.bridge.getFileStructure(function(structureJson) {
+                debugLog('从Python接收到数据，耗时: ' + (Date.now() - startTime) + 'ms');
+                debugLog('数据长度: ' + (structureJson ? structureJson.length : 'null'));
+                parseAndRenderFileStructure(structureJson);
+            });
+        } catch (error) {
+            debugError('调用getFileStructure时发生错误: ' + error.message);
+        }
+    }
+
+    // 解析并渲染文件结构
+    function parseAndRenderFileStructure(structureJson) {
+        try {
+            const structure = JSON.parse(structureJson);
+            debugLog('JSON解析成功，数组长度: ' + (structure ? structure.length : 'null'));
+            renderFileTree(structure);
+        } catch (e) {
+            debugError('JSON解析失败: ' + e.message);
+        }
+    }
+
+    // 渲染文件树
+    function renderFileTree(structure) {
+        debugLog('开始渲染文件树');
+        
+        const fileTree = document.getElementById('file-tree');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        
+        if (loadingIndicator) {
+            loadingIndicator.remove();
+            debugLog('已移除加载指示器');
+        }
+        
+        if (structure && structure.length > 0) {
+        }
+        
+        let html = '<ul class="space-y-1">';
+        data.forEach(item => {
+            html += renderFileItem(item, 0);
+                            <span class="${isSelected ? 'text-primary font-semibold' : 'text-text-medium-brown'}">${item.name}</span>
+                        </div>
+                    </li>
+                `;
+            }
+        });
+        return html;
+    }
+
+    // 切换文件夹展开/折叠
+    function toggleFolder(element, folderPath) {
+        const chevron = element.querySelector('.material-icons-outlined:last-child');
+        const folderList = element.nextElementSibling;
+        
+        if (folderList.classList.contains('hidden')) {
+            folderList.classList.remove('hidden');
+            chevron.textContent = 'expand_more';
+        } else {
+            folderList.classList.add('hidden');
+            chevron.textContent = 'chevron_right';
+        }
+    }
+
+    // 选择文件
+    function selectFile(filePath, fileName) {
+        debugLog('选择文件: ' + fileName);
+        
+        // 更新文档标题
+        document.getElementById('document-title').textContent = fileName;
+        
+        // 移除之前的选中状态
+        document.querySelectorAll('.bg-bg-light-green').forEach(el => {
+            el.classList.remove('bg-bg-light-green');
+            const icon = el.querySelector('.material-icons-outlined');
+            const text = el.querySelector('span:last-child');
+            if (icon) {
+                icon.classList.remove('text-primary');
+                icon.classList.add('text-gray-500');
+            }
+            if (text) {
+                text.classList.remove('text-primary', 'font-semibold');
+                text.classList.add('text-text-medium-brown');
+            }
+        });
+        
+        // 添加新的选中状态
+        event.currentTarget.classList.add('bg-bg-light-green');
+        const icon = event.currentTarget.querySelector('.material-icons-outlined');
+        const text = event.currentTarget.querySelector('span:last-child');
+        if (icon) {
+            icon.classList.remove('text-gray-500');
+            icon.classList.add('text-primary');
+        }
+        if (text) {
+            text.classList.remove('text-text-medium-brown');
+            text.classList.add('text-primary', 'font-semibold');
+        }
+        
+        currentFilePath = filePath;
+        
+        // 加载文件内容
+        if (window.bridge && window.bridge.loadMarkdownFile) {
+            window.bridge.loadMarkdownFile(filePath, function(content) {
+                document.getElementById('document-content').innerHTML = content;
+            });
+        }
+    }
+
+    // 预览/编辑模式切换
+    function switchToPreview() {
+        document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+        document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
+        document.getElementById('edit-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+        document.getElementById('edit-btn').classList.add('bg-primary', 'text-white');
+    }
+
+    function switchToEdit() {
+        document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+        document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+        document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+        document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
+    }
+
+    // 文件操作函数
+    function createNewNote() {
+        debugLog('创建新笔记');
+        if (window.bridge && window.bridge.createNewNote) {
+            window.bridge.createNewNote('vault', function(result) {
+                debugLog('新笔记创建结果: ' + result);
+                loadFileStructure();
+            });
+        }
+    }
+
+    function createNewFolder() {
+        debugLog('创建新文件夹');
+        if (window.bridge && window.bridge.createNewFolder) {
+            window.bridge.createNewFolder('vault', function(result) {
+                debugLog('新文件夹创建结果: ' + result);
+                loadFileStructure();
+            });
+        }
+    }
+
+    // 验证后端功能
+    function validateBackendFunctions() {
+        debugLog('🔍 开始验证后端功能');
+        
+        if (!window.bridge || typeof window.bridge.validateAllFileOperations !== 'function') {
+            debugError('❌ Bridge对象或validateAllFileOperations方法不可用');
+            alert('❌ 无法连接到后端验证服务');
+            return;
+        }
+        
+        // 显示验证开始提示
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'validation-loading';
+        loadingDiv.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        loadingDiv.innerHTML = `
+            <div class="flex items-center">
+                <div class="animate-spin mr-2">
+                    <span class="material-icons-outlined">refresh</span>
+                </div>
+                <span>正在验证后端功能...</span>
+            </div>
+        `;
+        document.body.appendChild(loadingDiv);
+        
+        debugLog('调用后端验证功能...');
+        
+        try {
+            window.bridge.validateAllFileOperations(function(result) {
+                debugLog('🎯 后端验证完成');
+                debugLog('验证结果: ' + result);
+                
+                // 移除加载提示
+                const loadingElement = document.getElementById('validation-loading');
+                if (loadingElement) {
+                    loadingElement.remove();
+                }
+                
+                // 显示验证结果
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'fixed top-4 right-4 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-w-md p-4';
+                resultDiv.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="font-semibold text-gray-800">后端功能验证结果</h3>
+                        <button onclick="this.parentElement.parentElement.remove()" class="text-gray-500 hover:text-gray-700">
+                            <span class="material-icons-outlined text-sm">close</span>
+                        </button>
+                    </div>
+                    <div class="text-sm text-gray-600 whitespace-pre-line max-h-64 overflow-y-auto">
+                        ${result}
+                    </div>
+                `;
+                document.body.appendChild(resultDiv);
+                
+                // 5秒后自动关闭
+                setTimeout(() => {
+                    if (resultDiv.parentElement) {
+                        resultDiv.remove();
+                    }
+                }, 10000);
+                
+                // 重新加载文件结构以反映任何更改
+                loadFileStructure();
+            });
+        } catch (error) {
+            debugError('调用后端验证时发生错误: ' + error.message);
+            
+            // 移除加载提示
+            const loadingElement = document.getElementById('validation-loading');
+            if (loadingElement) {
+                loadingElement.remove();
+            }
+            
+            alert('❌ 验证过程中发生错误: ' + error.message);
+        }
+    }
+
+    // 导航函数（兼容SPA）
+    function loadContent(contentId) {
+        if (window.bridge && window.bridge.loadContent) {
+            window.bridge.loadContent(contentId);
+        }
+    }
+
+    // 将函数暴露到全局作用域
+    window.toggleSidebar = toggleSidebar;
+    window.toggleFolder = toggleFolder;
+    window.selectFile = selectFile;
+    window.switchToPreview = switchToPreview;
+    window.switchToEdit = switchToEdit;
+    window.createNewNote = createNewNote;
+    window.createNewFolder = createNewFolder;
+    window.validateBackendFunctions = validateBackendFunctions;
+    window.loadContent = loadContent;
+
+    // 页面初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializePage);
+    } else {
+        initializePage();
+    }
+
+})();
+</script>
