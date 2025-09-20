@@ -1065,13 +1065,16 @@ class CorgiWebBridge(QObject):
             # 转换为前端需要的格式
             formatted_points = []
             for point in knowledge_points:
+                # 获取知识点的来源笔记
+                sources = km_system.get_knowledge_point_sources(point["id"])
+                
                 formatted_points.append({
                     "id": point["id"],
                     "name": point["point_name"],
                     "description": point["core_description"],
                     "mastery_score": point.get("mastery_score", 50),
                     "created_time": point.get("created_time", ""),
-                    "sources": []  # 暂时为空，后续可以添加来源笔记信息
+                    "sources": sources
                 })
             
             self.logger.info(f"获取到 {len(formatted_points)} 个知识点")
@@ -1138,13 +1141,16 @@ class CorgiWebBridge(QObject):
                     # 找到对应的知识点详细信息
                     kp = next((p for p in knowledge_points if p.get('id') == match.get('id')), None)
                     if kp:
+                        # 获取知识点的来源笔记
+                        sources = km_system.get_knowledge_point_sources(kp["id"])
+                        
                         similar_points.append({
                             "id": kp["id"],
                             "name": kp["point_name"],
                             "description": kp["core_description"],
                             "similarity": float(match.get('score', 0.0)),
                             "mastery_score": kp.get("mastery_score", 50),
-                            "sources": []  # 暂时为空
+                            "sources": sources
                         })
                 
                 self.logger.info(f"找到 {len(similar_points)} 个相似知识点")
@@ -1157,13 +1163,16 @@ class CorgiWebBridge(QObject):
                 query_lower = point['name'].lower()
                 for kp in knowledge_points[:limit]:
                     if query_lower in kp["point_name"].lower() or query_lower in kp["core_description"].lower():
+                        # 获取知识点的来源笔记
+                        sources = km_system.get_knowledge_point_sources(kp["id"])
+                        
                         similar_points.append({
                             "id": kp["id"],
                             "name": kp["point_name"],
                             "description": kp["core_description"],
                             "similarity": 0.5,  # 固定相似度
                             "mastery_score": kp.get("mastery_score", 50),
-                            "sources": []
+                            "sources": sources
                         })
                 
                 return json.dumps(similar_points, ensure_ascii=False)
@@ -1179,17 +1188,27 @@ class CorgiWebBridge(QObject):
         
         try:
             data = json.loads(merge_data)
-            note_id = data.get('noteId')
+            note_info = data.get('noteInfo', {})
             current_point = data.get('currentPoint')
             target_knowledge_id = data.get('targetKnowledgeId')
             
-            self.logger.info(f"笔记ID: {note_id}")
+            self.logger.info(f"笔记信息: {note_info}")
             self.logger.info(f"当前知识点: {current_point['name']}")
             self.logger.info(f"目标知识点ID: {target_knowledge_id}")
             
             # 使用知识管理系统进行合并
             from knowledge_management import KnowledgeManagementSystem
             km_system = KnowledgeManagementSystem(self.config)
+            
+            # 注册笔记到数据库
+            note_id = None
+            if note_info.get('fileName') and note_info.get('filePath'):
+                note_id = km_system.register_note(
+                    file_name=note_info['fileName'],
+                    file_path=note_info['filePath'],
+                    title=note_info.get('title')
+                )
+                self.logger.info(f"笔记注册成功，ID: {note_id}")
             
             # 获取目标知识点的详细信息
             conn = km_system.db_manager.get_connection()
@@ -1223,7 +1242,15 @@ class CorgiWebBridge(QObject):
             conn.commit()
             conn.close()
             
+            # 建立知识点与笔记的关联
+            if note_id:
+                link_success = km_system.link_knowledge_point_to_note(target_knowledge_id, note_id)
+                self.logger.info(f"知识点来源关联: {'成功' if link_success else '失败'}")
+            
             self.logger.info(f"知识点合并成功，目标ID: {target_knowledge_id}")
+            
+            # 获取更新后的来源信息
+            sources = km_system.get_knowledge_point_sources(target_knowledge_id)
             
             response = {
                 "success": True,
@@ -1233,7 +1260,8 @@ class CorgiWebBridge(QObject):
                     "id": target_knowledge_id,
                     "name": target_point[0],
                     "description": updated_description,
-                    "mastery_score": target_point[2]
+                    "mastery_score": target_point[2],
+                    "sources": sources
                 }
             }
             
@@ -1250,11 +1278,11 @@ class CorgiWebBridge(QObject):
         
         try:
             data = json.loads(create_data)
-            note_id = data.get('noteId')
+            note_info = data.get('noteInfo', {})
             subject = data.get('subject')
             point = data.get('point')
             
-            self.logger.info(f"笔记ID: {note_id}")
+            self.logger.info(f"笔记信息: {note_info}")
             self.logger.info(f"科目: {subject}")
             self.logger.info(f"知识点: {point['name']}")
             
@@ -1264,6 +1292,16 @@ class CorgiWebBridge(QObject):
             
             # 确保科目存在
             km_system.add_subject(subject)
+            
+            # 注册笔记到数据库
+            note_id = None
+            if note_info.get('fileName') and note_info.get('filePath'):
+                note_id = km_system.register_note(
+                    file_name=note_info['fileName'],
+                    file_path=note_info['filePath'],
+                    title=note_info.get('title')
+                )
+                self.logger.info(f"笔记注册成功，ID: {note_id}")
             
             # 创建知识点数据
             knowledge_point_data = {
@@ -1284,7 +1322,17 @@ class CorgiWebBridge(QObject):
             if saved_ids and len(saved_ids) > 0:
                 new_knowledge_id = saved_ids[0]
                 
+                # 建立知识点与笔记的关联
+                if note_id:
+                    link_success = km_system.link_knowledge_point_to_note(new_knowledge_id, note_id)
+                    self.logger.info(f"知识点来源关联: {'成功' if link_success else '失败'}")
+                
                 self.logger.info(f"新知识点创建成功，ID: {new_knowledge_id}")
+                
+                # 获取来源信息
+                sources = []
+                if note_id:
+                    sources = km_system.get_knowledge_point_sources(new_knowledge_id)
                 
                 response = {
                     "success": True,
@@ -1296,7 +1344,7 @@ class CorgiWebBridge(QObject):
                         "description": point['description'],
                         "subject": subject,
                         "mastery_score": 50,
-                        "sources": [note_id]
+                        "sources": sources
                     }
                 }
             else:

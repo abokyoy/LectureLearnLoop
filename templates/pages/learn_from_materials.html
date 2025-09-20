@@ -2202,7 +2202,7 @@
                             <p class="text-xs text-text-medium-brown mt-1">${point.description}</p>
                         </div>
                         <div class="text-xs text-text-gray">
-                            掌握度: ${point.mastery_score || 50}%
+                            来源: ${point.sources ? point.sources.length : 0} 篇笔记
                         </div>
                     </div>
                 </div>
@@ -2455,7 +2455,11 @@
         }
         
         const createData = {
-            noteId: noteId,
+            noteInfo: {
+                fileName: currentFileName || 'unknown.md',
+                filePath: currentFilePath || 'unknown',
+                title: currentFileName ? currentFileName.replace('.md', '') : 'unknown'
+            },
             subject: subject,
             point: currentPoint
         };
@@ -2541,7 +2545,11 @@
             
     // 调用后端合并知识点
     const mergeData = {
-        noteId: noteId,
+        noteInfo: {
+            fileName: currentFileName || 'unknown.md',
+            filePath: currentFilePath || 'unknown',
+            title: currentFileName ? currentFileName.replace('.md', '') : 'unknown'
+        },
         currentPoint: currentPoint,
         targetKnowledgeId: similarKnowledgeId
     };

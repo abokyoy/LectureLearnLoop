@@ -84,6 +84,34 @@ class DatabaseManager:
             )
         ''')
 
+        # 笔记表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                note_uuid TEXT NOT NULL UNIQUE,
+                file_name TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                title TEXT,
+                content_hash TEXT,
+                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # 知识点来源关联表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_point_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                knowledge_point_id INTEGER NOT NULL,
+                note_id INTEGER NOT NULL,
+                extraction_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id),
+                FOREIGN KEY (note_id) REFERENCES notes (id),
+                UNIQUE(knowledge_point_id, note_id)
+            )
+        ''')
+
         # 轻量级迁移：为已存在的表增加新列（如果缺失）
         try:
             cursor.execute("ALTER TABLE error_questions ADD COLUMN current_proficiency INTEGER DEFAULT 20")
@@ -1791,6 +1819,110 @@ class KnowledgeManagementSystem:
                 # skip
                 continue
         return saved_point_ids
+    
+    def register_note(self, file_name: str, file_path: str, title: str = None, content_hash: str = None) -> int:
+        """注册笔记到数据库，返回笔记ID"""
+        import uuid
+        import hashlib
+        
+        # 生成唯一的笔记UUID
+        note_uuid = str(uuid.uuid4())
+        
+        # 如果没有提供content_hash，使用文件路径生成
+        if not content_hash:
+            content_hash = hashlib.md5(file_path.encode('utf-8')).hexdigest()
+        
+        # 如果没有提供title，使用文件名
+        if not title:
+            title = file_name.replace('.md', '').replace('.txt', '')
+        
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 检查是否已存在相同路径的笔记
+            cursor.execute("SELECT id FROM notes WHERE file_path = ?", (file_path,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # 更新现有笔记
+                cursor.execute("""
+                    UPDATE notes SET 
+                        file_name = ?, title = ?, content_hash = ?, updated_time = CURRENT_TIMESTAMP
+                    WHERE file_path = ?
+                """, (file_name, title, content_hash, file_path))
+                note_id = existing[0]
+            else:
+                # 插入新笔记
+                cursor.execute("""
+                    INSERT INTO notes (note_uuid, file_name, file_path, title, content_hash)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (note_uuid, file_name, file_path, title, content_hash))
+                note_id = cursor.lastrowid
+            
+            conn.commit()
+            return note_id
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"注册笔记失败: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    def link_knowledge_point_to_note(self, knowledge_point_id: int, note_id: int) -> bool:
+        """建立知识点与笔记的关联"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                INSERT OR IGNORE INTO knowledge_point_sources (knowledge_point_id, note_id)
+                VALUES (?, ?)
+            """, (knowledge_point_id, note_id))
+            
+            conn.commit()
+            return True
+            
+        except Exception as e:
+            conn.rollback()
+            print(f"建立知识点来源关联失败: {e}")
+            return False
+        finally:
+            conn.close()
+    
+    def get_knowledge_point_sources(self, knowledge_point_id: int) -> List[Dict]:
+        """获取知识点的来源笔记"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT n.id, n.note_uuid, n.file_name, n.file_path, n.title, kps.extraction_time
+                FROM knowledge_point_sources kps
+                JOIN notes n ON n.id = kps.note_id
+                WHERE kps.knowledge_point_id = ?
+                ORDER BY kps.extraction_time DESC
+            """, (knowledge_point_id,))
+            
+            sources = []
+            for row in cursor.fetchall():
+                sources.append({
+                    "note_id": row[0],
+                    "note_uuid": row[1],
+                    "file_name": row[2],
+                    "file_path": row[3],
+                    "title": row[4],
+                    "extraction_time": row[5]
+                })
+            
+            return sources
+            
+        except Exception as e:
+            print(f"获取知识点来源失败: {e}")
+            return []
+        finally:
+            conn.close()
     
     def get_error_questions(self, subject_name: str, knowledge_point_id: int) -> List[Dict]:
         """获取错题"""
