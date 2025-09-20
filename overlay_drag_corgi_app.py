@@ -1412,6 +1412,74 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             self.logger.error(f"获取笔记知识点失败: {e}")
             return json.dumps([], ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def chatWithAI(self, message):
+        """与AI助手聊天"""
+        self.logger.info(f"AI聊天请求: {message}")
+        
+        try:
+            # 导入LLM相关模块
+            from llm_manager import LLMManager
+            
+            # 初始化LLM管理器
+            llm_manager = LLMManager(self.config)
+            
+            # 构建聊天提示词
+            system_prompt = """你是柯基学习小助手的AI伙伴，一个友善、聪明、有耐心的学习助手。
+你的特点：
+1. 像柯基犬一样活泼友好，偶尔会用"汪！"表达兴奋
+2. 专注于帮助用户学习和解决问题
+3. 回答简洁明了，但不失温暖
+4. 善于将复杂概念用简单易懂的方式解释
+5. 鼓励用户积极学习，给予正面反馈
+
+请用友好、鼓励的语气回答用户的问题。"""
+            
+            # 调用LLM生成回复
+            response = llm_manager.generate_response(
+                prompt=message,
+                system_prompt=system_prompt,
+                max_tokens=500,
+                temperature=0.7
+            )
+            
+            if response and response.get('success'):
+                ai_message = response.get('content', '抱歉，我现在无法回答这个问题。')
+                self.logger.info(f"AI回复生成成功: {ai_message[:50]}...")
+                
+                return json.dumps({
+                    "success": True,
+                    "message": ai_message
+                }, ensure_ascii=False)
+            else:
+                error_msg = response.get('error', '未知错误') if response else 'LLM调用失败'
+                self.logger.error(f"AI回复生成失败: {error_msg}")
+                
+                # 返回友好的错误回复
+                fallback_responses = [
+                    "汪！我现在有点累了，稍后再聊好吗？",
+                    "抱歉，我的小脑瓜现在有点转不过来，请稍后再试试。",
+                    "哎呀，我好像走神了，能再说一遍吗？",
+                    "我需要先去充充电，等会儿再来帮你！"
+                ]
+                
+                import random
+                fallback_message = random.choice(fallback_responses)
+                
+                return json.dumps({
+                    "success": True,
+                    "message": fallback_message
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"AI聊天功能异常: {e}")
+            
+            # 返回友好的异常回复
+            return json.dumps({
+                "success": True,
+                "message": "汪！我现在有点忙，稍后再来找我聊天吧！"
+            }, ensure_ascii=False)
     
     @Slot(str, result=str)
     def saveNoteKnowledgeMapping(self, mapping_data):
