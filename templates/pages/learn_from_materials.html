@@ -544,6 +544,9 @@
                     document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
                     document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
                 }
+                
+                // 自动加载该笔记相关的知识点
+                loadNoteKnowledgePoints(filePath);
             });
         } catch (error) {
             debugError(`加载文件内容时发生错误: ${error.message}`);
@@ -551,6 +554,73 @@
                 previewContent.innerHTML = '<div class="text-center py-8 text-red-500">加载文件失败</div>';
             }
         }
+    }
+    
+    // 加载笔记相关的知识点
+    function loadNoteKnowledgePoints(filePath) {
+        debugLog(`加载笔记相关知识点: ${filePath}`);
+        
+        if (!window.bridge || !window.bridge.getNoteKnowledgePoints) {
+            debugLog('getNoteKnowledgePoints方法不可用');
+            return;
+        }
+        
+        window.bridge.getNoteKnowledgePoints(filePath, function(result) {
+            try {
+                const existingPoints = JSON.parse(result);
+                debugLog(`找到 ${existingPoints.length} 个相关知识点`);
+                
+                // 显示已存在的知识点
+                displayExistingKnowledgePoints(existingPoints);
+                
+            } catch (e) {
+                debugError(`解析笔记知识点失败: ${e.message}`);
+            }
+        });
+    }
+    
+    // 显示已存在的知识点
+    function displayExistingKnowledgePoints(existingPoints) {
+        const knowledgeContent = document.getElementById('knowledge-content');
+        if (!knowledgeContent) return;
+        
+        // 清空现有内容
+        knowledgeContent.innerHTML = '';
+        
+        if (existingPoints.length === 0) {
+            knowledgeContent.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <span class="material-icons-outlined text-4xl mb-2">lightbulb_outline</span>
+                    <p>该笔记暂无相关知识点</p>
+                    <p class="text-sm mt-1">点击上方按钮提取知识点</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<div class="space-y-3">';
+        
+        // 显示已存在的知识点（都使用绿色主题，像第一个一样）
+        existingPoints.forEach((point, index) => {
+            html += `
+                <div class="knowledge-point-item existing-point bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
+                     data-point-name="${point.name}" 
+                     data-point-description="${point.description}"
+                     data-point-type="existing"
+                     data-point-id="${point.id}">
+                    <h3 class="font-semibold text-primary">${point.name}</h3>
+                    <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        knowledgeContent.innerHTML = html;
+        
+        // 显示知识点面板
+        document.getElementById('knowledge-loading').classList.add('hidden');
+        document.getElementById('knowledge-placeholder').classList.add('hidden');
+        document.getElementById('knowledge-content').classList.remove('hidden');
     }
 
     // 重新加载预览内容（不触发模式切换）
@@ -1284,31 +1354,57 @@
         debugLog(`result.knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
         
         if (result.success && result.knowledge_points && result.knowledge_points.length > 0) {
-            addToDebugPanel('SUCCESS', `准备显示 ${result.knowledge_points.length} 个知识点`);
+            addToDebugPanel('SUCCESS', `准备显示 ${result.knowledge_points.length} 个新提取的知识点`);
             const knowledgePoints = result.knowledge_points;
             debugLog(`成功提取 ${knowledgePoints.length} 个知识点`);
             
-            // 生成知识点HTML - 像素级还原设计稿
-            let html = `
-                <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <div class="flex items-center text-green-800">
-                        <span class="material-icons-outlined text-sm mr-2">check_circle</span>
-                        <span class="font-medium">成功提取 ${knowledgePoints.length} 个知识点</span>
-                    </div>
-                </div>
-                <div class="flex-1 overflow-y-auto space-y-3">
-            `;
+            // 检查是否已有内容（已存在的知识点）
+            const existingContent = contentDiv.innerHTML.trim();
+            addToDebugPanel('INFO', `已存在内容长度: ${existingContent.length}`);
+            addToDebugPanel('INFO', `已存在内容前100字符: ${existingContent.substring(0, 100)}`);
+            let html = '';
             
+            if (existingContent) {
+                // 如果已有内容，保留原有内容并追加新提取的知识点
+                addToDebugPanel('INFO', '检测到已存在内容，保留并追加新知识点');
+                html = existingContent;
+                
+                // 添加分隔线和标题
+                html += `
+                    <div class="my-4 border-t border-gray-200"></div>
+                    <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div class="flex items-center text-green-800">
+                            <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                            <span class="font-medium">新提取 ${knowledgePoints.length} 个知识点</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // 如果没有已存在的内容，显示提取成功信息
+                html = `
+                    <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div class="flex items-center text-green-800">
+                            <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                            <span class="font-medium">成功提取 ${knowledgePoints.length} 个知识点</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // 添加新提取的知识点容器
+            html += '<div class="space-y-3">';
+            
+            // 添加新提取的知识点（所有新提取的都使用灰色主题）
             knowledgePoints.forEach((point, index) => {
-                // 第一个知识点使用绿色主题，其他使用灰色主题（完全按照设计稿）
-                const isFirst = index === 0;
-                const bgClass = isFirst ? 'bg-bg-light-green' : 'bg-bg-light-gray';
-                const titleClass = isFirst ? 'text-primary' : 'text-text-dark-brown';
+                // 所有新提取的知识点都使用灰色主题
+                const bgClass = 'bg-bg-light-gray';
+                const titleClass = 'text-text-dark-brown';
                 
                 html += `
                     <div class="knowledge-point-item ${bgClass} p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group" 
                          data-point-name="${point.name.replace(/"/g, '&quot;')}" 
                          data-point-description="${point.description.replace(/"/g, '&quot;')}"
+                         data-point-type="extracted"
                          data-point-index="${index}">
                         <h3 class="font-semibold ${titleClass}">${point.name}</h3>
                         <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
@@ -1330,6 +1426,8 @@
                     </div>
                 `;
             });
+            
+            html += '</div>';
             
             html += `
                 </div>

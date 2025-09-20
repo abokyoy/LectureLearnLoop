@@ -1360,6 +1360,60 @@ class CorgiWebBridge(QObject):
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
     @Slot(str, result=str)
+    def getNoteKnowledgePoints(self, file_path):
+        """获取指定笔记相关的知识点"""
+        self.logger.info(f"获取笔记相关知识点: {file_path}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 查找该笔记在数据库中的记录
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 查询笔记ID
+            cursor.execute("SELECT id FROM notes WHERE file_path = ?", (file_path,))
+            note_record = cursor.fetchone()
+            
+            if not note_record:
+                conn.close()
+                self.logger.info(f"笔记 {file_path} 在数据库中不存在")
+                return json.dumps([], ensure_ascii=False)
+            
+            note_id = note_record[0]
+            
+            # 查询该笔记相关的知识点
+            cursor.execute("""
+                SELECT kp.id, kp.point_name, kp.core_description, kp.subject_name, kp.mastery_score, kp.created_time
+                FROM knowledge_points kp
+                JOIN knowledge_point_sources kps ON kp.id = kps.knowledge_point_id
+                WHERE kps.note_id = ?
+                ORDER BY kps.extraction_time DESC
+            """, (note_id,))
+            
+            knowledge_points = []
+            for row in cursor.fetchall():
+                knowledge_points.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "description": row[2],
+                    "subject": row[3],
+                    "mastery_score": row[4] or 50,
+                    "created_time": row[5],
+                    "type": "existing"  # 标记为已存在的知识点
+                })
+            
+            conn.close()
+            
+            self.logger.info(f"找到 {len(knowledge_points)} 个相关知识点")
+            return json.dumps(knowledge_points, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"获取笔记知识点失败: {e}")
+            return json.dumps([], ensure_ascii=False)
+    
+    @Slot(str, result=str)
     def saveNoteKnowledgeMapping(self, mapping_data):
         """保存笔记知识点映射关系"""
         self.logger.info("保存笔记知识点映射关系")
