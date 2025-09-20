@@ -198,11 +198,56 @@
         });
     }
     
-    // 更新内容区域
+    // 更新内容区域（确保动态插入的<script>被执行）
     function updateContentArea(htmlContent) {
         const contentArea = document.getElementById('content-area');
-        if (contentArea) {
-            contentArea.innerHTML = htmlContent;
+        if (!contentArea) {
+            console.error('[SPA] 未找到content-area容器');
+            return;
+        }
+
+        // 注入HTML
+        contentArea.innerHTML = htmlContent;
+        console.log('[SPA] 已注入HTML，开始处理脚本');
+
+        // 选出当前容器内的所有<script>，逐个重新创建执行
+        const scripts = Array.from(contentArea.querySelectorAll('script'));
+        console.log(`[SPA] 发现脚本数量: ${scripts.length}`);
+
+        scripts.forEach((oldScript, idx) => {
+            const newScript = document.createElement('script');
+            // 复制属性（如type、src、async等）
+            Array.from(oldScript.attributes).forEach(attr => {
+                newScript.setAttribute(attr.name, attr.value);
+            });
+
+            if (oldScript.src) {
+                // 外部脚本：重新加载
+                newScript.onload = () => console.log(`[SPA] 外部脚本加载完成(${idx+1}/${scripts.length}):`, oldScript.src);
+                newScript.onerror = (e) => console.error(`[SPA] 外部脚本加载失败:`, oldScript.src, e);
+                newScript.src = oldScript.src;
+            } else {
+                // 内联脚本：直接复制文本以触发执行
+                newScript.text = oldScript.textContent || '';
+            }
+
+            // 用新脚本替换旧脚本节点
+            oldScript.parentNode.replaceChild(newScript, oldScript);
+        });
+
+        console.log('[SPA] 脚本处理完成');
+
+        // 调用注入页面的挂载钩子（如有）
+        try {
+            if (typeof window.onPageMounted === 'function') {
+                console.log('[SPA] 发现 onPageMounted 钩子，开始调用');
+                window.onPageMounted();
+                console.log('[SPA] onPageMounted 调用结束');
+            } else {
+                console.log('[SPA] 未发现 onPageMounted 钩子');
+            }
+        } catch (hookErr) {
+            console.error('[SPA] 调用 onPageMounted 出错:', hookErr);
         }
     }
     

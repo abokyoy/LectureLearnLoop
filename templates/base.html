@@ -34,11 +34,12 @@
     
     {% block scripts %}
     <script>
-        let bridge = null;
+        // 让bridge挂到window，确保动态注入的页面也能访问到window.bridge
+        window.bridge = null;
         
         // 初始化WebChannel
         new QWebChannel(qt.webChannelTransport, function (channel) {
-            bridge = channel.objects.bridge;
+            window.bridge = channel.objects.bridge;
             console.log("WebChannel连接成功");
             
             // 触发bridge准备就绪事件

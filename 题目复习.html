@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>错题复习 - 柯基学习小助手</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#32C77F",
+                        warning: "#FF9B27",
+                        danger: "#ED4B4B",
+                        "text-dark-brown": "#715D46",
+                        "text-medium-brown": "#9B8D7D",
+                        "text-gray": "#828282",
+                        "bg-light-blue": "#D5F8FF",
+                        "bg-beige": "#FFFFD6", // Corrected hex code
+                        "bg-light-green": "#E2F2EB",
+                        "bg-light-gray": "#F2F0ED",
+                        "bg-light-blue-gray": "#F5F7F9",
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans SC"', 'sans-serif'],
+                    },
+                    borderRadius: {
+                        'xl': '1rem',
+                    },
+                },
+            },
+        };
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+<div class="flex h-screen bg-white">
+<aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+<div class="flex items-center mb-8">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3">
+<span class="material-icons-outlined text-white">pets</span>
+</div>
+<h1 class="text-lg font-bold text-text-dark-brown">柯基学习小助手</h1>
+</div>
+<div class="flex flex-col items-center mb-8">
+<img alt="User Avatar" class="w-20 h-20 rounded-full mb-2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXs0Mg4a15hzy1OIlUz-x1NZ2Sr6t75rKa8WMPlFSucuN1mgje2BiwHSB6red_l91Fdg1rduYwvlR2uNdrFIWLzNRhgz4LLuSsPiDs4D1i5ri5gPzDV-irooIfv4XuLChxg1VrwtdqEYXxxlXyYcI6YRydb5iUhiEpx0hymOo_dEsFhHO_zNl0fs2iXm-4eiT4JwkaIanx0jpD5PQtgSv4Ef9eucxao7dDZSrWN4h3S2wusUo4WDqCKBXi9G9pnwgdgcIOnede4LyT"/>
+<p class="font-semibold text-text-dark-brown">柯基的主人</p>
+<p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="switchToDashboard()">
+<span class="material-icons-outlined mr-3">work</span>
+<span>工作台</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="switchToNotebook()">
+<span class="material-icons-outlined mr-3">edit_note</span>
+<span>笔记本</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="switchToRecording()">
+<span class="material-icons-outlined mr-3">mic</span>
+<span>录音室</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="switchToAIPartner()">
+<span class="material-icons-outlined mr-3">smart_toy</span>
+<span>AI伙伴</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md cursor-pointer" onclick="switchToKnowledgeBase()">
+<span class="material-icons-outlined mr-3">book</span>
+<span>知识库</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" href="#">
+<span class="material-icons-outlined mr-3">bar_chart</span>
+<span>学习报告</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" href="#">
+<span class="material-icons-outlined mr-3">settings</span>
+<span>设置</span>
+</a>
+</nav>
+<div class="mt-auto">
+<button class="flex items-center justify-center w-full text-text-gray" onclick="toggleSidebar()">
+<span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+</button>
+</div>
+</aside>
+<main class="flex-1 p-8 bg-bg-light-blue-gray overflow-y-auto">
+<header class="flex justify-between items-center mb-8">
+<h2 class="text-3xl font-bold text-text-dark-brown">错题复习</h2>
+<div class="flex items-center space-x-4">
+<button class="p-2 rounded-full hover:bg-gray-200">
+<span class="material-icons-outlined text-text-gray">notifications</span>
+</button>
+<div class="flex space-x-1">
+<button class="w-3 h-3 bg-gray-300 rounded-full"></button>
+<button class="w-3 h-3 bg-warning rounded-full"></button>
+<button class="w-3 h-3 bg-danger rounded-full"></button>
+</div>
+</div>
+</header>
+<div class="space-y-6">
+<div class="bg-white p-6 rounded-xl shadow-sm">
+<h3 class="text-xl font-semibold text-text-dark-brown mb-4">题目信息</h3>
+<div class="space-y-4">
+<div>
+<p class="font-semibold text-text-dark-brown mb-2">题干</p>
+<p class="text-text-medium-brown">在社会主义改造基本完成后，中国共产党提出的主要任务是（）。</p>
+</div>
+<div>
+<p class="font-semibold text-text-dark-brown mb-2">你的答案</p>
+<p class="text-danger">A. 实行“一化三改”</p>
+</div>
+<div>
+<p class="font-semibold text-text-dark-brown mb-2">判定</p>
+<div class="flex items-center">
+<span class="material-icons-outlined text-danger mr-2">close</span>
+<p class="text-danger">错误</p>
+<p class="text-text-medium-brown ml-4">正确答案：<span class="font-semibold text-primary">B</span></p>
+</div>
+</div>
+<div>
+<p class="font-semibold text-text-dark-brown mb-2">分析与要点</p>
+<p class="text-text-medium-brown">1956年社会主义改造基本完成后，国内主要矛盾已经转变为人民对于经济文化迅速发展的需要同当前经济文化不能满足人民需要的状况之间的矛盾，党和国家的主要任务是集中力量来解决这个矛盾，把我国尽快地从落后的农业国变为先进的工业国。</p>
+</div>
+<div class="flex space-x-4 pt-4">
+<button class="bg-primary hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center transition duration-300 shadow">
+<span class="material-icons-outlined mr-2">thumb_up</span>
+<span>我已掌握</span>
+</button>
+<button class="bg-orange-400 hover:bg-orange-500 text-white font-semibold py-2 px-4 rounded-lg flex items-center transition duration-300 shadow">
+<span class="material-icons-outlined mr-2">collections_bookmark</span>
+<span>加入错题本</span>
+</button>
+<button class="bg-gray-200 hover:bg-gray-300 text-text-dark-brown font-semibold py-2 px-4 rounded-lg flex items-center transition duration-300">
+<span class="material-icons-outlined mr-2">help_outline</span>
+<span>请求AI讲解</span>
+</button>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-white p-6 rounded-xl shadow-sm">
+<h3 class="text-xl font-semibold text-text-dark-brown mb-4">题目归属与类型</h3>
+<div class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-text-gray" for="knowledge-point">所属知识点</label>
+<select class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md" id="knowledge-point" name="knowledge-point">
+<option>毛泽东思想和中国特色社会主义理论体系概论</option>
+<option>马克思主义基本原理</option>
+</select>
+</div>
+<div>
+<label class="block text-sm font-medium text-text-gray" for="question-type">题目类型</label>
+<select class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md" id="question-type" name="question-type">
+<option>单选题</option>
+<option>多选题</option>
+<option>判断题</option>
+</select>
+</div>
+<div class="flex space-x-4 pt-2">
+<button class="bg-primary hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center flex-1 transition duration-300 shadow">
+<span class="material-icons-outlined mr-2">save</span>
+<span>保存</span>
+</button>
+<button class="bg-gray-200 hover:bg-gray-300 text-text-dark-brown font-semibold py-2 px-4 rounded-lg flex items-center justify-center flex-1 transition duration-300">
+<span class="material-icons-outlined mr-2">swap_horiz</span>
+<span>转换</span>
+</button>
+</div>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-sm">
+<h3 class="text-xl font-semibold text-text-dark-brown mb-4">熟练度调整</h3>
+<div class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-text-gray" for="proficiency">当前熟练度</label>
+<div class="relative mt-1 rounded-md shadow-sm">
+<input class="focus:ring-primary focus:border-primary block w-full sm:text-sm border-gray-300 rounded-md" id="proficiency" name="proficiency" placeholder="例如: 60%" type="text"/>
+</div>
+</div>
+<div class="flex items-end space-x-4 pt-8">
+<button class="bg-primary hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center w-full transition duration-300 shadow">
+<span class="material-icons-outlined mr-2">task_alt</span>
+<span>记录熟练度</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-sm">
+<h3 class="text-xl font-semibold text-text-dark-brown mb-4">针对性新题生成</h3>
+<div class="flex items-center space-x-4">
+<div class="flex-1">
+<label class="block text-sm font-medium text-text-gray" for="num-questions">生成题数</label>
+<input class="mt-1 focus:ring-primary focus:border-primary block w-full sm:text-sm border-gray-300 rounded-md" id="num-questions" name="num-questions" type="number" value="5"/>
+</div>
+<button class="bg-primary hover:bg-green-600 text-white font-semibold py-4 px-6 rounded-lg flex items-center self-end transition duration-300 shadow">
+<span class="material-icons-outlined mr-2">psychology</span>
+<span>生成新题</span>
+</button>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-sm">
+<h3 class="text-xl font-semibold text-text-dark-brown mb-4">熟练度随时间变化</h3>
+<canvas id="proficiencyChart"></canvas>
+</div>
+</div>
+<div class="mt-8 flex justify-end">
+<button class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-6 rounded-lg transition duration-300 shadow cursor-pointer" onclick="switchToKnowledgeBase()">
+                    关闭
+                </button>
+</div>
+</main>
+</div>
+<script>
+        let bridge = null;
+
+        // 初始化WebChannel连接
+        new QWebChannel(qt.webChannelTransport, function (channel) {
+            bridge = channel.objects.bridge;
+            console.log('WebChannel连接成功');
+        });
+
+        // 调用Python函数的通用方法
+        function callPythonFunction(functionName) {
+            if (bridge && bridge[functionName]) {
+                bridge[functionName]();
+            }
+        }
+
+        // 导航函数
+        function switchToDashboard() {
+            if (bridge && bridge.switchToDashboard) {
+                bridge.switchToDashboard();
+            }
+        }
+
+        function switchToNotebook() {
+            if (bridge && bridge.switchToNotebook) {
+                bridge.switchToNotebook();
+            }
+        }
+
+        function switchToRecording() {
+            if (bridge && bridge.switchToRecording) {
+                bridge.switchToRecording();
+            }
+        }
+
+        function switchToAIPartner() {
+            if (bridge && bridge.switchToAIPartner) {
+                bridge.switchToAIPartner();
+            }
+        }
+
+        function switchToKnowledgeBase() {
+            if (bridge && bridge.switchToKnowledgeBase) {
+                bridge.switchToKnowledgeBase();
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleIcon = document.getElementById('toggle-icon');
+            sidebar.classList.toggle('w-64');
+            sidebar.classList.toggle('w-16');
+            // Hide text and only show icons
+            const navLinks = sidebar.querySelectorAll('nav a span:last-child');
+            const userText = sidebar.querySelectorAll('.flex-col > p');
+            const logoText = sidebar.querySelector('h1');
+            sidebar.querySelectorAll('nav a').forEach(a => a.classList.toggle('justify-center'));
+            [...navLinks, ...userText, logoText].forEach(el => {
+                el.classList.toggle('hidden');
+            });
+            if (sidebar.classList.contains('w-16')) {
+                 toggleIcon.textContent = 'chevron_right';
+            } else {
+                 toggleIcon.textContent = 'chevron_left';
+            }
+        }
+        // 简化的图表显示（不使用Chart.js）
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvas = document.getElementById('proficiencyChart');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                canvas.width = 400;
+                canvas.height = 200;
+                
+                // 绘制简单的折线图
+                ctx.strokeStyle = '#32C77F';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(50, 160);
+                ctx.lineTo(100, 110);
+                ctx.lineTo(150, 120);
+                ctx.lineTo(200, 70);
+                ctx.lineTo(250, 40);
+                ctx.stroke();
+                
+                // 绘制点
+                ctx.fillStyle = '#32C77F';
+                [50, 100, 150, 200, 250].forEach((x, i) => {
+                    const y = [160, 110, 120, 70, 40][i];
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            }
+        });
+    </script>
+
+</body></html>
