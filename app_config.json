@@ -15,5 +15,6 @@
   "deepseek_api_key": "sk-1b53cb42e4f6455bbd475dc41cc3cc61",
   "deepseek_model": "deepseek-chat",
   "deepseek_api_url": "https://api.deepseek.com/v1/chat/completions",
-  "last_selected_subject": "机器学习"
+  "last_selected_subject": "机器学习",
+  "test_key": "test_value"
 }

@@ -2,17 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """
+{{ ... }}
 柯基学习小助手 - 覆盖层拖拽版本
 使用透明覆盖层解决拖拽问题，支持工作台和笔记本功能
 """
 
 import sys
-import json
 import os
+import json
 import markdown
 import logging
 from datetime import datetime
 from pathlib import Path
+from config import load_config, save_config
 from template_manager import TemplateManager
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QLabel
@@ -49,9 +51,14 @@ class CorgiWebBridge(QObject):
         
     def setup_logging(self):
         """设置日志记录"""
-        # 创建日志记录器
-        self.logger = logging.getLogger('FileStructureDebug')
-        self.logger.setLevel(logging.DEBUG)
+        # 初始化日志记录器
+        self.logger = logging.getLogger(__name__)
+        
+        # 加载配置
+        self.config = load_config()
+        self.logger.info(f"配置加载完成: {self.config.get('llm_provider', 'DeepSeek')}")
+        
+        self.logger.info("CorgiWebBridge 初始化完成")
         
         # 清除现有的处理器
         for handler in self.logger.handlers[:]:
@@ -421,6 +428,214 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"❌ 保存文件异常: {e}")
             print(f"❌ 保存文件失败: {e}")
             return False
+
+    # ==================== 配置管理功能 ====================
+    
+    @Slot(result=str)
+    def getConfig(self):
+        """获取当前配置"""
+        self.logger.info("=" * 60)
+        self.logger.info("【配置管理】getConfig 开始")
+        
+        try:
+            config_json = json.dumps(self.config, ensure_ascii=False, indent=2)
+            self.logger.info(f"✅ 配置获取成功，长度: {len(config_json)} 字符")
+            return config_json
+        except Exception as e:
+            self.logger.error(f"❌ 获取配置异常: {e}")
+            return "{}"
+    
+    @Slot(str, result=bool)
+    def saveConfig(self, config_json):
+        """保存配置"""
+        self.logger.info("=" * 60)
+        self.logger.info("【配置管理】saveConfig 开始")
+        self.logger.info(f"配置数据长度: {len(config_json)} 字符")
+        
+        try:
+            # 解析配置JSON
+            new_config = json.loads(config_json)
+            self.logger.info(f"配置解析成功，包含 {len(new_config)} 个配置项")
+            
+            # 更新内存中的配置
+            old_provider = self.config.get("llm_provider", "DeepSeek")
+            self.config.update(new_config)
+            new_provider = self.config.get("llm_provider", "DeepSeek")
+            
+            # 保存到文件
+            success = save_config(self.config)
+            
+            if success:
+                self.logger.info(f"✅ 配置保存成功")
+                if old_provider != new_provider:
+                    self.logger.info(f"LLM提供商从 {old_provider} 切换到 {new_provider}")
+                print(f"✅ 配置已保存")
+                return True
+            else:
+                self.logger.error("❌ 配置保存失败")
+                return False
+                
+        except json.JSONDecodeError as e:
+            self.logger.error(f"❌ 配置JSON解析失败: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"❌ 保存配置异常: {e}")
+            return False
+
+    # ==================== 知识点提取功能 ====================
+    
+    @Slot(str, result=str)
+    def extractKnowledgePoints(self, file_path):
+        """提取文档的知识点"""
+        self.logger.info("=" * 60)
+        self.logger.info("【知识点提取】extractKnowledgePoints 开始")
+        self.logger.info(f"文件路径: {file_path}")
+        
+        try:
+            # 加载文件内容
+            path = Path(file_path)
+            if not path.exists():
+                self.logger.error("❌ 文件不存在")
+                return json.dumps({"success": False, "error": "文件不存在"}, ensure_ascii=False)
+            
+            with open(path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            content_length = len(content)
+            self.logger.info(f"文件内容长度: {content_length} 字符")
+            
+            if not content.strip():
+                self.logger.warning("⚠️ 文件内容为空")
+                return json.dumps({"success": False, "error": "文件内容为空"}, ensure_ascii=False)
+            
+            # 调用知识点提取
+            result = self._extract_knowledge_with_llm(content)
+            
+            self.logger.info(f"✅ 知识点提取完成")
+            return json.dumps(result, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 知识点提取异常: {e}")
+            error_result = {"success": False, "error": str(e)}
+            return json.dumps(error_result, ensure_ascii=False)
+    
+    def _extract_knowledge_with_llm(self, content):
+        """使用LLM提取知识点"""
+        self.logger.info("【LLM调用】开始知识点提取")
+        
+        try:
+            # 导入知识管理系统
+            from knowledge_management import KnowledgeManagementSystem
+            
+            # 创建知识管理系统实例
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 提取知识点（使用默认学科名称）
+            subject_name = "通用学科"
+            result = km_system.extract_knowledge_points(subject_name, content)
+            
+            self.logger.info(f"知识管理系统返回结果类型: {type(result)}")
+            self.logger.info(f"知识管理系统返回结果: {result}")
+            
+            # 优先处理列表格式（KnowledgeManager直接返回的格式）
+            if isinstance(result, list):
+                self.logger.info(f"✅ 直接获得知识点列表，包含 {len(result)} 个知识点")
+                
+                # 格式化知识点数据供前端使用
+                formatted_points = []
+                for point in result:
+                    self.logger.info(f"处理知识点: {point} (类型: {type(point)})")
+                    
+                    # 安全地处理不同格式的知识点数据
+                    if isinstance(point, dict):
+                        formatted_point = {
+                            "name": point.get("point_name") or point.get("concept_name", ""),
+                            "description": point.get("core_description") or point.get("core_definition", ""),
+                            "category": point.get("category", ""),
+                            "importance": point.get("importance", "中等")
+                        }
+                    elif isinstance(point, (list, tuple)) and len(point) >= 2:
+                        # 如果是列表格式，尝试按顺序解析
+                        formatted_point = {
+                            "name": str(point[0]) if len(point) > 0 else "",
+                            "description": str(point[1]) if len(point) > 1 else "",
+                            "category": str(point[2]) if len(point) > 2 else "",
+                            "importance": "中等"
+                        }
+                        self.logger.info(f"从列表格式解析知识点: {formatted_point}")
+                    else:
+                        # 如果是其他格式，尝试转换为字符串
+                        formatted_point = {
+                            "name": str(point),
+                            "description": "自动提取的知识点",
+                            "category": "",
+                            "importance": "中等"
+                        }
+                        self.logger.warning(f"未知格式的知识点，使用默认处理: {formatted_point}")
+                    
+                    if formatted_point["name"]:
+                        formatted_points.append(formatted_point)
+                        self.logger.info(f"格式化后的知识点: {formatted_point}")
+                    else:
+                        self.logger.warning(f"跳过空名称的知识点: {point}")
+                
+                self.logger.info(f"最终格式化了 {len(formatted_points)} 个知识点")
+                return {
+                    "success": True,
+                    "knowledge_points": formatted_points,
+                    "total_count": len(formatted_points)
+                }
+            
+            # 处理字典格式（KnowledgeManagementSystem返回的格式）
+            elif isinstance(result, dict) and result.get("success", False):
+                processed_points = result.get("processed_points", [])
+                self.logger.info(f"✅ 成功提取 {len(processed_points)} 个知识点")
+                
+                if not processed_points:
+                    self.logger.warning("⚠️ processed_points为空，尝试直接从result获取知识点")
+                    # 如果processed_points为空，尝试从其他字段获取
+                    if "knowledge_points" in result:
+                        processed_points = [{"extracted_point": point} for point in result["knowledge_points"]]
+                        self.logger.info(f"从knowledge_points字段获取到 {len(processed_points)} 个知识点")
+                
+                # 格式化知识点数据供前端使用
+                formatted_points = []
+                for point_data in processed_points:
+                    extracted_point = point_data.get("extracted_point", {})
+                    formatted_point = {
+                        "name": extracted_point.get("point_name") or extracted_point.get("concept_name", ""),
+                        "description": extracted_point.get("core_description") or extracted_point.get("core_definition", ""),
+                        "category": extracted_point.get("category", ""),
+                        "importance": extracted_point.get("importance", "中等")
+                    }
+                    if formatted_point["name"]:
+                        formatted_points.append(formatted_point)
+                
+                return {
+                    "success": True,
+                    "knowledge_points": formatted_points,
+                    "total_count": len(formatted_points)
+                }
+            
+            # 处理错误字典格式
+            elif isinstance(result, dict) and not result.get("success", True):
+                error_msg = result.get("error", "提取失败")
+                self.logger.error(f"❌ 知识点提取失败: {error_msg}")
+                return {"success": False, "error": error_msg}
+            
+            # 未知格式
+            else:
+                self.logger.error(f"❌ 知识管理系统返回格式异常: {type(result)}")
+                return {"success": False, "error": "知识管理系统返回格式异常"}
+                
+        except ImportError as e:
+            self.logger.error(f"❌ 导入知识管理模块失败: {e}")
+            return {"success": False, "error": "知识管理模块不可用"}
+        except Exception as e:
+            self.logger.error(f"❌ LLM知识点提取异常: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return {"success": False, "error": str(e)}
     
     @Slot(str, result=bool)
     def createNewNote(self, folder_path="vault"):

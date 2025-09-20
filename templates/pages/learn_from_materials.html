@@ -125,16 +125,44 @@
         <div class="w-1/4 bg-white p-4 flex flex-col">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-semibold text-text-dark-brown">知识点</h2>
-                <button class="text-text-gray hover:text-primary" onclick="extractKnowledgePoints()" title="提取知识点">
-                    <span class="material-icons-outlined">lightbulb</span>
-                </button>
+                <div class="flex gap-2">
+                    <button class="text-text-gray hover:text-primary" onclick="toggleDebugPanel()" title="切换调试面板" id="debug-toggle-btn">
+                        <span class="material-icons-outlined">terminal</span>
+                    </button>
+                    <button class="text-text-gray hover:text-primary" onclick="testBridgeConnection()" title="测试Bridge连接" id="test-btn">
+                        <span class="material-icons-outlined">bug_report</span>
+                    </button>
+                    <button class="text-text-gray hover:text-primary" onclick="extractKnowledgePoints()" title="提取全文知识点" id="extract-btn">
+                        <span class="material-icons-outlined">lightbulb</span>
+                    </button>
+                </div>
             </div>
             
             <div class="flex-1 overflow-y-auto">
                 <div id="knowledge-points-container">
-                    <div class="text-center py-16 text-text-medium-brown">
+                    <div class="text-center py-16 text-text-medium-brown" id="knowledge-placeholder">
                         <span class="material-icons-outlined text-6xl mb-4">psychology</span>
                         <p>选择文档后可提取知识点</p>
+                    </div>
+                    <div id="knowledge-loading" class="text-center py-16 text-primary hidden">
+                        <div class="animate-spin mb-4">
+                            <span class="material-icons-outlined text-6xl">refresh</span>
+                        </div>
+                        <p>正在提取知识点...</p>
+                    </div>
+                    <div id="knowledge-content" class="hidden">
+                        <!-- 知识点内容将在这里显示 -->
+                    </div>
+                    
+                    <!-- 调试面板 -->
+                    <div id="debug-panel" class="mt-4 p-3 bg-gray-100 border border-gray-300 rounded-lg hidden">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="text-sm font-semibold text-gray-700">调试日志</h4>
+                            <button onclick="clearDebugLog()" class="text-xs text-red-600 hover:text-red-800">清空</button>
+                        </div>
+                        <div id="debug-log" class="bg-white p-2 rounded border text-xs font-mono max-h-40 overflow-y-auto">
+                            <!-- 调试日志将在这里显示 -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -173,18 +201,93 @@
     let originalContent = '';  // 原始文件内容
     let hasUnsavedChanges = false;  // 是否有未保存的更改
 
+    // 调试变量
+    let debugEnabled = false;
+    let debugLogCount = 0;
+
     // 调试函数
     function debugLog(message) {
         console.log('[Learn Materials Debug]', message);
-        if (window.sendDebugLog) {
-            window.sendDebugLog('Learn Materials: ' + message);
+        if (debugEnabled) {
+            addToDebugPanel('INFO', message);
         }
     }
 
     function debugError(message) {
         console.error('[Learn Materials Error]', message);
-        if (window.sendDebugLog) {
-            window.sendDebugLog('Learn Materials Error: ' + message);
+        if (debugEnabled) {
+            addToDebugPanel('ERROR', message);
+        }
+    }
+
+    function debugWarn(message) {
+        console.warn('[Learn Materials Warn]', message);
+        if (debugEnabled) {
+            addToDebugPanel('WARN', message);
+        }
+    }
+
+    // 添加到调试面板
+    function addToDebugPanel(level, message) {
+        const debugLog = document.getElementById('debug-log');
+        if (!debugLog) return;
+        
+        debugLogCount++;
+        const timestamp = new Date().toLocaleTimeString();
+        const levelColor = {
+            'INFO': 'text-blue-600',
+            'ERROR': 'text-red-600',
+            'WARN': 'text-yellow-600',
+            'SUCCESS': 'text-green-600'
+        }[level] || 'text-gray-600';
+        
+        const logEntry = document.createElement('div');
+        logEntry.className = 'mb-1';
+        logEntry.innerHTML = `
+            <span class="text-gray-500">[${timestamp}]</span>
+            <span class="${levelColor} font-semibold">[${level}]</span>
+            <span>${message}</span>
+        `;
+        
+        debugLog.appendChild(logEntry);
+        debugLog.scrollTop = debugLog.scrollHeight;
+        
+        // 限制日志条数，避免占用太多内存
+        if (debugLogCount > 100) {
+            const firstChild = debugLog.firstChild;
+            if (firstChild) {
+                debugLog.removeChild(firstChild);
+                debugLogCount--;
+            }
+        }
+    }
+
+    // 切换调试面板
+    function toggleDebugPanel() {
+        const debugPanel = document.getElementById('debug-panel');
+        const debugToggleBtn = document.getElementById('debug-toggle-btn');
+        
+        if (debugPanel.classList.contains('hidden')) {
+            debugPanel.classList.remove('hidden');
+            debugEnabled = true;
+            debugToggleBtn.classList.add('text-primary');
+            debugToggleBtn.classList.remove('text-text-gray');
+            addToDebugPanel('SUCCESS', '调试面板已开启');
+        } else {
+            debugPanel.classList.add('hidden');
+            debugEnabled = false;
+            debugToggleBtn.classList.remove('text-primary');
+            debugToggleBtn.classList.add('text-text-gray');
+        }
+    }
+
+    // 清空调试日志
+    function clearDebugLog() {
+        const debugLog = document.getElementById('debug-log');
+        if (debugLog) {
+            debugLog.innerHTML = '';
+            debugLogCount = 0;
+            addToDebugPanel('INFO', '调试日志已清空');
         }
     }
 
@@ -953,6 +1056,311 @@
         }
     }
 
+    // 测试Bridge连接
+    function testBridgeConnection() {
+        debugLog('=== 开始测试Bridge连接 ===');
+        
+        // 1. 检查window.bridge
+        if (typeof window.bridge === 'undefined') {
+            debugError('❌ window.bridge 未定义');
+            alert('❌ window.bridge 未定义');
+            return;
+        }
+        debugLog('✅ window.bridge 存在');
+        
+        // 2. 检查extractKnowledgePoints方法
+        if (typeof window.bridge.extractKnowledgePoints !== 'function') {
+            debugError('❌ extractKnowledgePoints 方法不存在');
+            alert('❌ extractKnowledgePoints 方法不存在');
+            return;
+        }
+        debugLog('✅ extractKnowledgePoints 方法存在');
+        
+        // 3. 测试简单调用
+        try {
+            debugLog('测试调用extractKnowledgePoints...');
+            window.bridge.extractKnowledgePoints('test_path', function(result) {
+                debugLog(`测试调用成功，收到结果: ${result}`);
+                alert(`✅ Bridge连接正常！收到结果长度: ${result ? result.length : 'null'}`);
+            });
+        } catch (error) {
+            debugError(`❌ 测试调用失败: ${error.message}`);
+            alert(`❌ 测试调用失败: ${error.message}`);
+        }
+        
+        debugLog('=== Bridge连接测试完成 ===');
+    }
+
+    // 提取知识点功能
+    function extractKnowledgePoints() {
+        addToDebugPanel('INFO', '=== 开始知识点提取流程 ===');
+        debugLog('开始提取知识点');
+        
+        // 详细的调试信息
+        addToDebugPanel('INFO', `当前文件路径: ${currentFilePath}`);
+        addToDebugPanel('INFO', `当前文件名: ${currentFileName}`);
+        addToDebugPanel('INFO', `Bridge对象存在: ${!!window.bridge}`);
+        addToDebugPanel('INFO', `extractKnowledgePoints方法存在: ${!!(window.bridge && window.bridge.extractKnowledgePoints)}`);
+        
+        debugLog(`当前文件路径: ${currentFilePath}`);
+        debugLog(`当前文件名: ${currentFileName}`);
+        debugLog(`Bridge对象存在: ${!!window.bridge}`);
+        debugLog(`extractKnowledgePoints方法存在: ${!!(window.bridge && window.bridge.extractKnowledgePoints)}`);
+        
+        if (!currentFilePath) {
+            addToDebugPanel('ERROR', '没有选中的文件，无法提取知识点');
+            debugError('没有选中的文件');
+            alert('请先选择一个文档文件');
+            return;
+        }
+        
+        if (!window.bridge || !window.bridge.extractKnowledgePoints) {
+            addToDebugPanel('ERROR', 'Bridge对象或extractKnowledgePoints方法不可用');
+            addToDebugPanel('ERROR', `window.bridge: ${window.bridge}`);
+            addToDebugPanel('ERROR', `window.bridge.extractKnowledgePoints: ${window.bridge ? window.bridge.extractKnowledgePoints : 'bridge不存在'}`);
+            debugError('Bridge对象或extractKnowledgePoints方法不可用');
+            debugError(`window.bridge: ${window.bridge}`);
+            debugError(`window.bridge.extractKnowledgePoints: ${window.bridge ? window.bridge.extractKnowledgePoints : 'bridge不存在'}`);
+            alert('知识点提取功能不可用');
+            return;
+        }
+        
+        // 显示加载状态
+        showKnowledgeLoading();
+        
+        // 禁用提取按钮
+        const extractBtn = document.getElementById('extract-btn');
+        if (extractBtn) {
+            extractBtn.style.opacity = '0.5';
+            extractBtn.style.pointerEvents = 'none';
+        }
+        
+        debugLog(`开始提取文件知识点: ${currentFileName}`);
+        
+        try {
+            addToDebugPanel('INFO', `准备调用bridge.extractKnowledgePoints，文件路径: ${currentFilePath}`);
+            debugLog(`调用bridge.extractKnowledgePoints，文件路径: ${currentFilePath}`);
+            
+            window.bridge.extractKnowledgePoints(currentFilePath, function(resultJson) {
+                addToDebugPanel('SUCCESS', '知识点提取回调函数被触发');
+                addToDebugPanel('INFO', `回调结果长度: ${resultJson ? resultJson.length : 'null'}`);
+                addToDebugPanel('INFO', `原始结果前200字符: ${resultJson ? resultJson.substring(0, 200) : 'null'}`);
+                
+                debugLog(`知识点提取回调触发，结果长度: ${resultJson ? resultJson.length : 'null'}`);
+                debugLog(`原始结果前200字符: ${resultJson ? resultJson.substring(0, 200) : 'null'}`);
+                
+                if (!resultJson) {
+                    addToDebugPanel('ERROR', '收到空的API结果');
+                    debugError('收到空的结果');
+                    showKnowledgeError('收到空的提取结果');
+                    return;
+                }
+                
+                try {
+                    addToDebugPanel('INFO', '开始解析JSON结果');
+                    const result = JSON.parse(resultJson);
+                    
+                    addToDebugPanel('SUCCESS', `JSON解析成功，结果类型: ${typeof result}`);
+                    addToDebugPanel('INFO', `结果是否为数组: ${Array.isArray(result)}`);
+                    addToDebugPanel('INFO', `结果包含的键: ${Object.keys(result)}`);
+                    addToDebugPanel('INFO', `success字段: ${result.success}`);
+                    addToDebugPanel('INFO', `knowledge_points字段存在: ${!!result.knowledge_points}`);
+                    addToDebugPanel('INFO', `knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+                    
+                    debugLog(`JSON解析成功，结果类型: ${typeof result}`);
+                    debugLog(`结果包含的键: ${Object.keys(result)}`);
+                    debugLog(`success字段: ${result.success}`);
+                    debugLog(`knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+                    
+                    // 检查是否是直接返回的知识点数组格式
+                    if (Array.isArray(result)) {
+                        addToDebugPanel('INFO', `检测到数组格式，包含 ${result.length} 个元素`);
+                        addToDebugPanel('INFO', '转换为标准格式');
+                        
+                        // 转换数组格式为标准格式
+                        const convertedResult = {
+                            success: true,
+                            knowledge_points: result.map(item => ({
+                                name: item.title || item.name || item.concept_name || '未命名知识点',
+                                description: item.content || item.description || item.core_definition || '无描述',
+                                category: item.category || '',
+                                importance: item.importance || '中等'
+                            })),
+                            total_count: result.length
+                        };
+                        
+                        addToDebugPanel('SUCCESS', `转换完成，包含 ${convertedResult.knowledge_points.length} 个知识点`);
+                        addToDebugPanel('INFO', '转换后的知识点详情:');
+                        convertedResult.knowledge_points.forEach((point, index) => {
+                            addToDebugPanel('INFO', `  知识点${index + 1}: ${point.name} - ${point.description}`);
+                        });
+                        
+                        displayKnowledgePoints(convertedResult);
+                    } else {
+                        // 标准对象格式
+                        if (result.knowledge_points && result.knowledge_points.length > 0) {
+                            addToDebugPanel('INFO', '标准对象格式，知识点详情:');
+                            result.knowledge_points.forEach((point, index) => {
+                                addToDebugPanel('INFO', `  知识点${index + 1}: ${JSON.stringify(point)}`);
+                            });
+                        }
+                        
+                        displayKnowledgePoints(result);
+                    }
+                } catch (parseError) {
+                    addToDebugPanel('ERROR', `JSON解析失败: ${parseError.message}`);
+                    addToDebugPanel('ERROR', `原始结果: ${resultJson}`);
+                    debugError(`解析知识点结果失败: ${parseError.message}`);
+                    debugError(`原始结果: ${resultJson}`);
+                    showKnowledgeError('解析知识点结果失败: ' + parseError.message);
+                }
+                
+                // 恢复提取按钮
+                if (extractBtn) {
+                    extractBtn.style.opacity = '1';
+                    extractBtn.style.pointerEvents = 'auto';
+                }
+            });
+        } catch (error) {
+            debugError(`提取知识点时发生错误: ${error.message}`);
+            showKnowledgeError('提取知识点时发生错误: ' + error.message);
+            
+            // 恢复提取按钮
+            if (extractBtn) {
+                extractBtn.style.opacity = '1';
+                extractBtn.style.pointerEvents = 'auto';
+            }
+        }
+    }
+
+    // 显示知识点加载状态
+    function showKnowledgeLoading() {
+        const placeholderDiv = document.getElementById('knowledge-placeholder');
+        const contentDiv = document.getElementById('knowledge-content');
+        const loadingDiv = document.getElementById('knowledge-loading');
+        
+        if (placeholderDiv) placeholderDiv.classList.add('hidden');
+        if (contentDiv) contentDiv.classList.add('hidden');
+        if (loadingDiv) loadingDiv.classList.remove('hidden');
+    }
+
+    // 显示知识点内容
+    function displayKnowledgePoints(result) {
+        addToDebugPanel('INFO', '=== 开始显示知识点内容 ===');
+        debugLog('显示知识点内容');
+        debugLog(`传入的result: ${JSON.stringify(result)}`);
+        
+        const loadingDiv = document.getElementById('knowledge-loading');
+        const contentDiv = document.getElementById('knowledge-content');
+        const placeholderDiv = document.getElementById('knowledge-placeholder');
+        
+        addToDebugPanel('INFO', `DOM元素检查 - loading: ${!!loadingDiv}, content: ${!!contentDiv}, placeholder: ${!!placeholderDiv}`);
+        debugLog(`DOM元素检查 - loading: ${!!loadingDiv}, content: ${!!contentDiv}, placeholder: ${!!placeholderDiv}`);
+        
+        // 隐藏加载状态
+        if (loadingDiv) {
+            loadingDiv.classList.add('hidden');
+            addToDebugPanel('INFO', '隐藏加载状态');
+        }
+        if (placeholderDiv) {
+            placeholderDiv.classList.add('hidden');
+            addToDebugPanel('INFO', '隐藏占位符');
+        }
+        
+        addToDebugPanel('INFO', `result.success: ${result.success}`);
+        addToDebugPanel('INFO', `result.knowledge_points存在: ${!!result.knowledge_points}`);
+        addToDebugPanel('INFO', `result.knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+        
+        debugLog(`result.success: ${result.success}`);
+        debugLog(`result.knowledge_points存在: ${!!result.knowledge_points}`);
+        debugLog(`result.knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+        
+        if (result.success && result.knowledge_points && result.knowledge_points.length > 0) {
+            addToDebugPanel('SUCCESS', `准备显示 ${result.knowledge_points.length} 个知识点`);
+            const knowledgePoints = result.knowledge_points;
+            debugLog(`成功提取 ${knowledgePoints.length} 个知识点`);
+            
+            // 生成知识点HTML
+            let html = `
+                <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                    <div class="flex items-center text-green-800">
+                        <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                        <span class="font-medium">成功提取 ${knowledgePoints.length} 个知识点</span>
+                    </div>
+                </div>
+            `;
+            
+            knowledgePoints.forEach((point, index) => {
+                const importanceColor = getImportanceColor(point.importance);
+                html += `
+                    <div class="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
+                        <div class="flex items-start justify-between mb-2">
+                            <h4 class="font-medium text-gray-800 text-sm">${point.name || '未命名知识点'}</h4>
+                            <span class="px-2 py-1 text-xs rounded-full ${importanceColor}">${point.importance || '中等'}</span>
+                        </div>
+                        <p class="text-gray-600 text-sm leading-relaxed">${point.description || '暂无描述'}</p>
+                        ${point.category ? `<div class="mt-2"><span class="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">${point.category}</span></div>` : ''}
+                    </div>
+                `;
+            });
+            
+            if (contentDiv) {
+                contentDiv.innerHTML = html;
+                contentDiv.classList.remove('hidden');
+            }
+            
+        } else {
+            const errorMsg = result.error || '未能提取到知识点';
+            debugError(`知识点提取失败: ${errorMsg}`);
+            showKnowledgeError(errorMsg);
+        }
+    }
+
+    // 显示知识点错误
+    function showKnowledgeError(errorMessage) {
+        const loadingDiv = document.getElementById('knowledge-loading');
+        const contentDiv = document.getElementById('knowledge-content');
+        const placeholderDiv = document.getElementById('knowledge-placeholder');
+        
+        // 隐藏加载状态
+        if (loadingDiv) loadingDiv.classList.add('hidden');
+        if (placeholderDiv) placeholderDiv.classList.add('hidden');
+        
+        // 显示错误信息
+        if (contentDiv) {
+            contentDiv.innerHTML = `
+                <div class="text-center py-8">
+                    <div class="mb-4">
+                        <span class="material-icons-outlined text-6xl text-red-400">error</span>
+                    </div>
+                    <p class="text-red-600 font-medium mb-2">知识点提取失败</p>
+                    <p class="text-gray-500 text-sm">${errorMessage}</p>
+                    <button class="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-dark" onclick="extractKnowledgePoints()">
+                        重试
+                    </button>
+                </div>
+            `;
+            contentDiv.classList.remove('hidden');
+        }
+    }
+
+    // 获取重要性颜色
+    function getImportanceColor(importance) {
+        switch (importance) {
+            case '高':
+            case '重要':
+                return 'bg-red-100 text-red-800';
+            case '中':
+            case '中等':
+                return 'bg-yellow-100 text-yellow-800';
+            case '低':
+            case '一般':
+                return 'bg-green-100 text-green-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    }
+
     // 导航函数（兼容SPA）
     function loadContent(contentId) {
         if (window.bridge && window.bridge.loadContent) {
@@ -970,6 +1378,10 @@
     window.createNewFolder = createNewFolder;
     window.validateBackendFunctions = validateBackendFunctions;
     window.contextMenuAction = contextMenuAction;
+    window.testBridgeConnection = testBridgeConnection;
+    window.toggleDebugPanel = toggleDebugPanel;
+    window.clearDebugLog = clearDebugLog;
+    window.extractKnowledgePoints = extractKnowledgePoints;
     window.loadContent = loadContent;
 
     // 页面初始化

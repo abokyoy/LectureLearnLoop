@@ -1721,10 +1721,24 @@ class KnowledgeManagementSystem:
         # 为每个知识点查找相似项
         processed_points = []
         for i, point in enumerate(extracted_points):
-            print(f"[知识处理] 处理第{i+1}个知识点: {point.get('point_name', '')}")
+            # 安全地获取知识点名称，处理不同的数据格式
+            if isinstance(point, dict):
+                point_name = point.get('point_name', '') or point.get('concept_name', '')
+            else:
+                point_name = str(point)
+                print(f"[知识处理] 警告：第{i+1}个知识点不是字典格式: {type(point)}")
+            
+            print(f"[知识处理] 处理第{i+1}个知识点: {point_name}")
+            print(f"[知识处理] 知识点数据: {point}")
+            
             try:
-                similar_points = self.knowledge_manager.find_similar_knowledge_points(subject_name, point)
-                print(f"[知识处理] 找到 {len(similar_points)} 个相似知识点")
+                # 只有当point是字典时才查找相似点
+                if isinstance(point, dict):
+                    similar_points = self.knowledge_manager.find_similar_knowledge_points(subject_name, point)
+                    print(f"[知识处理] 找到 {len(similar_points)} 个相似知识点")
+                else:
+                    similar_points = []
+                    print(f"[知识处理] 跳过相似度匹配，因为知识点格式不正确")
                 
                 processed_points.append({
                     "extracted_point": point,
