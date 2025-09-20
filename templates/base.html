@@ -73,17 +73,29 @@
         
         .ai-chat-window {
             position: fixed;
-            bottom: 90px;
+            bottom: 80px;
             right: 20px;
-            width: 400px;
-            height: 600px;
+            width: 350px;
+            height: 500px;
             background: white;
-            border-radius: 16px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-            z-index: 9998;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             display: none;
             flex-direction: column;
+            z-index: 9998;
             overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .ai-chat-window.maximized {
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            bottom: 20px;
+            width: auto;
+            height: auto;
+            max-width: none;
+            max-height: none;
         }
         
         .ai-chat-window.show {
@@ -158,9 +170,103 @@
             color: #2d5a3d;
         }
         
-        .message.user .message-content {
-            background: #32C77F;
+        .user-message .message-content {
+            background: #007bff;
             color: white;
+            margin-left: auto;
+            margin-right: 0;
+        }
+
+        /* 历史对话弹窗样式 */
+        .ai-history-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .ai-history-modal.show {
+            display: flex;
+        }
+
+        .ai-history-content {
+            background: white;
+            border-radius: 12px;
+            width: 600px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .ai-history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .ai-history-search {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .ai-history-list {
+            flex: 1;
+            overflow-y: auto;
+            max-height: 400px;
+            padding: 10px;
+        }
+
+        .history-item {
+            padding: 12px 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .history-item:hover {
+            background: #f3f4f6;
+            border-color: #3b82f6;
+        }
+
+        .history-item.selected {
+            background: #eff6ff;
+            border-color: #3b82f6;
+        }
+
+        .history-item-title {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 4px;
+        }
+
+        .history-item-time {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+
+        .history-item-preview {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.4;
+        }
+
+        .ai-history-actions {
+            padding: 15px 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
         }
     </style>
 </head>
@@ -175,41 +281,62 @@
     <!-- AI聊天窗口 -->
     <div class="ai-chat-window" id="aiChatWindow">
         <div class="ai-chat-header">
-            <div class="flex items-center gap-3">
-                <div class="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-                    <span class="material-icons-outlined text-sm">pets</span>
-                </div>
-                <div>
-                    <h3 class="font-semibold">柯基AI助手</h3>
-                    <p class="text-xs opacity-80">随时为您答疑解惑</p>
+            <div class="flex items-center">
+                <span class="material-icons-outlined text-white mr-2">smart_toy</span>
+                <span class="text-white font-medium">柯基AI助手</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button id="historyChatBtn" class="text-white hover:text-gray-300 transition-colors" title="历史记录">
+                    <span class="material-icons-outlined">history</span>
+                </button>
+                <button id="maximizeChatBtn" class="text-white hover:text-gray-300 transition-colors" title="最大化">
+                    <span class="material-icons-outlined">fullscreen</span>
+                </button>
+                <button id="closeChatBtn" class="text-white hover:text-gray-300 transition-colors" title="关闭">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+        </div>
+        <div class="ai-chat-messages" id="aiChatMessages">
+            <div class="ai-message">
+                <div class="message-avatar">🐕</div>
+                <div class="message-content">
+                    汪！我是你的学习小助手，有什么问题可以问我哦！
                 </div>
             </div>
-            <button class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-1 transition-colors" id="closeChatBtn">
-                <span class="material-icons-outlined text-sm">close</span>
+        </div>
+        <div class="ai-chat-input">
+            <input type="text" id="aiChatInput" placeholder="输入您的问题..." class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button id="summaryChatBtn" class="ml-2 px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors" title="总结对话">
+                <span class="material-icons-outlined text-sm">summarize</span>
+            </button>
+            <button id="sendChatBtn" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                发送
             </button>
         </div>
-        
-        <div class="ai-chat-messages" id="aiChatMessages">
-            <div class="message ai">
-                <div class="message-avatar bg-primary">
-                    <span class="material-icons-outlined text-white text-sm">pets</span>
-                </div>
-                <div class="message-content">
-                    你好！我是柯基AI助手 🐕<br>
-                    有什么学习问题可以随时问我哦！
-                </div>
+    </div>
+
+    <!-- 历史对话弹窗 -->
+    <div class="ai-history-modal" id="aiHistoryModal">
+        <div class="ai-history-content">
+            <div class="ai-history-header">
+                <h3 class="text-lg font-semibold">对话历史</h3>
+                <button id="closeHistoryBtn" class="text-gray-500 hover:text-gray-700">
+                    <span class="material-icons-outlined">close</span>
+                </button>
             </div>
-        </div>
-        
-        <div class="ai-chat-input">
-            <div class="flex gap-2">
-                <input type="text" 
-                       class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm" 
-                       placeholder="输入你的问题..."
-                       id="aiChatInput">
-                <button class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center" 
-                        id="sendChatBtn">
-                    <span class="material-icons-outlined text-sm">send</span>
+            <div class="ai-history-search">
+                <input type="text" id="historySearchInput" placeholder="搜索对话..." class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="ai-history-list" id="aiHistoryList">
+                <!-- 历史对话列表将在这里动态生成 -->
+            </div>
+            <div class="ai-history-actions">
+                <button id="loadHistoryBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    加载选中对话
+                </button>
+                <button id="cancelHistoryBtn" class="ml-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                    取消
                 </button>
             </div>
         </div>
@@ -367,11 +494,28 @@
             const aiAvatar = document.getElementById('aiAssistantAvatar');
             const chatWindow = document.getElementById('aiChatWindow');
             const closeChatBtn = document.getElementById('closeChatBtn');
+            const maximizeBtn = document.getElementById('maximizeChatBtn');
+            const historyBtn = document.getElementById('historyChatBtn');
+            const summaryBtn = document.getElementById('summaryChatBtn');
             const chatInput = document.getElementById('aiChatInput');
             const sendBtn = document.getElementById('sendChatBtn');
             const messagesContainer = document.getElementById('aiChatMessages');
             
+            // 历史对话相关元素
+            const historyModal = document.getElementById('aiHistoryModal');
+            const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+            const historySearchInput = document.getElementById('historySearchInput');
+            const historyList = document.getElementById('aiHistoryList');
+            const loadHistoryBtn = document.getElementById('loadHistoryBtn');
+            const cancelHistoryBtn = document.getElementById('cancelHistoryBtn');
+            
             if (!aiFloat || !aiAvatar || !chatWindow) return;
+            
+            // 对话状态管理
+            let conversationHistory = [];
+            let conversationId = generateConversationId();
+            let isMaximized = false;
+            let selectedHistoryId = null;
             
             let isDragging = false;
             let dragOffset = { x: 0, y: 0 };
@@ -443,33 +587,74 @@
                 });
             }
             
+            // 最大化按钮事件
+            if (maximizeBtn) {
+                maximizeBtn.addEventListener('click', toggleMaximize);
+            }
+            
+            // 历史记录按钮事件
+            if (historyBtn) {
+                historyBtn.addEventListener('click', showHistoryModal);
+            }
+            
+            // 总结按钮事件
+            if (summaryBtn) {
+                summaryBtn.addEventListener('click', summarizeConversation);
+            }
+            
+            // 历史对话弹窗事件
+            if (closeHistoryBtn) {
+                closeHistoryBtn.addEventListener('click', hideHistoryModal);
+            }
+            
+            if (cancelHistoryBtn) {
+                cancelHistoryBtn.addEventListener('click', hideHistoryModal);
+            }
+            
+            if (loadHistoryBtn) {
+                loadHistoryBtn.addEventListener('click', loadSelectedHistory);
+            }
+            
+            if (historySearchInput) {
+                historySearchInput.addEventListener('input', filterHistoryList);
+            }
+            
             // 发送消息
             function sendMessage() {
                 const message = chatInput.value.trim();
                 if (!message) return;
                 
-                // 添加用户消息
+                // 添加用户消息到历史记录
+                conversationHistory.push({role: 'user', content: message});
                 addMessage(message, 'user');
                 chatInput.value = '';
                 
-                // 调用后端AI接口
+                // 调用后端AI接口，传递对话历史
                 if (window.bridge && window.bridge.chatWithAI) {
-                    window.bridge.chatWithAI(message, function(response) {
+                    const historyJson = JSON.stringify(conversationHistory.slice(0, -1)); // 不包含当前消息
+                    window.bridge.chatWithAI(message, historyJson, function(response) {
                         try {
                             const result = JSON.parse(response);
                             if (result.success) {
+                                // 添加AI回复到历史记录
+                                conversationHistory.push({role: 'assistant', content: result.message});
                                 addMessage(result.message, 'ai');
                             } else {
-                                addMessage('抱歉，我现在无法回答这个问题。', 'ai');
+                                const errorMsg = '抱歉，我现在无法回答这个问题。';
+                                conversationHistory.push({role: 'assistant', content: errorMsg});
+                                addMessage(errorMsg, 'ai');
                             }
                         } catch (e) {
-                            addMessage('抱歉，我现在无法回答这个问题。', 'ai');
+                            const errorMsg = '抱歉，我现在无法回答这个问题。';
+                            conversationHistory.push({role: 'assistant', content: errorMsg});
+                            addMessage(errorMsg, 'ai');
                         }
                     });
                 } else {
                     // 模拟AI回复
                     setTimeout(() => {
                         const aiResponse = generateAIResponse(message);
+                        conversationHistory.push({role: 'assistant', content: aiResponse});
                         addMessage(aiResponse, 'ai');
                     }, 1000);
                 }
@@ -487,17 +672,38 @@
                 });
             }
             
-            // 切换聊天窗口显示
+            // 切换聊天窗口显示/隐藏
             function toggleChatWindow() {
                 isWindowOpen = !isWindowOpen;
                 if (isWindowOpen) {
                     chatWindow.classList.add('show');
-                    if (chatInput) chatInput.focus();
-                    globalDebugLog('AI助手聊天窗口已打开');
+                    chatInput.focus();
                 } else {
                     chatWindow.classList.remove('show');
-                    globalDebugLog('AI助手聊天窗口已关闭');
+                    // 保存对话
+                    if (conversationHistory.length > 0) {
+                        saveCurrentConversation();
+                    }
                 }
+            }
+            
+            // 最大化/还原聊天窗口
+            function toggleMaximize() {
+                isMaximized = !isMaximized;
+                if (isMaximized) {
+                    chatWindow.classList.add('maximized');
+                    maximizeBtn.querySelector('span').textContent = 'fullscreen_exit';
+                    maximizeBtn.title = '还原';
+                } else {
+                    chatWindow.classList.remove('maximized');
+                    maximizeBtn.querySelector('span').textContent = 'fullscreen';
+                    maximizeBtn.title = '最大化';
+                }
+            }
+            
+            // 生成对话ID
+            function generateConversationId() {
+                return 'chat_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             }
             
             // 添加消息到聊天窗口
@@ -541,6 +747,210 @@
                     "这个问题很有趣！我们一起来探讨一下吧。"
                 ];
                 return responses[Math.floor(Math.random() * responses.length)];
+            }
+            
+            // 保存当前对话
+            function saveCurrentConversation() {
+                if (conversationHistory.length === 0) return;
+                
+                const conversationData = {
+                    id: conversationId,
+                    title: generateConversationTitle(),
+                    conversation_history: conversationHistory
+                };
+                
+                if (window.bridge && window.bridge.saveConversation) {
+                    window.bridge.saveConversation(JSON.stringify(conversationData), function(response) {
+                        try {
+                            const result = JSON.parse(response);
+                            if (result.success) {
+                                console.log('对话已保存');
+                            }
+                        } catch (e) {
+                            console.error('保存对话失败:', e);
+                        }
+                    });
+                }
+            }
+            
+            // 生成对话标题
+            function generateConversationTitle() {
+                if (conversationHistory.length > 0) {
+                    const firstUserMessage = conversationHistory.find(msg => msg.role === 'user');
+                    if (firstUserMessage) {
+                        return firstUserMessage.content.substring(0, 20) + (firstUserMessage.content.length > 20 ? '...' : '');
+                    }
+                }
+                return '新对话';
+            }
+            
+            // 显示历史对话弹窗
+            function showHistoryModal() {
+                if (historyModal) {
+                    historyModal.classList.add('show');
+                    loadHistoryList();
+                }
+            }
+            
+            // 隐藏历史对话弹窗
+            function hideHistoryModal() {
+                if (historyModal) {
+                    historyModal.classList.remove('show');
+                    selectedHistoryId = null;
+                }
+            }
+            
+            // 加载历史对话列表
+            function loadHistoryList() {
+                if (!window.bridge || !window.bridge.loadConversationHistory) return;
+                
+                window.bridge.loadConversationHistory(function(response) {
+                    try {
+                        const result = JSON.parse(response);
+                        if (result.success) {
+                            displayHistoryList(result.conversations);
+                        }
+                    } catch (e) {
+                        console.error('加载历史对话失败:', e);
+                    }
+                });
+            }
+            
+            // 显示历史对话列表
+            function displayHistoryList(conversations) {
+                if (!historyList) return;
+                
+                historyList.innerHTML = '';
+                
+                if (conversations.length === 0) {
+                    historyList.innerHTML = '<div class="text-center text-gray-500 py-4">暂无对话历史</div>';
+                    return;
+                }
+                
+                conversations.forEach(conv => {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    item.dataset.id = conv.id;
+                    
+                    const title = document.createElement('div');
+                    title.className = 'history-item-title';
+                    title.textContent = conv.title || '新对话';
+                    
+                    const time = document.createElement('div');
+                    time.className = 'history-item-time';
+                    time.textContent = formatTimestamp(conv.timestamp);
+                    
+                    const preview = document.createElement('div');
+                    preview.className = 'history-item-preview';
+                    preview.textContent = `${conv.message_count} 条消息`;
+                    
+                    item.appendChild(title);
+                    item.appendChild(time);
+                    item.appendChild(preview);
+                    
+                    item.addEventListener('click', function() {
+                        // 清除其他选中状态
+                        historyList.querySelectorAll('.history-item').forEach(el => {
+                            el.classList.remove('selected');
+                        });
+                        // 设置当前选中
+                        item.classList.add('selected');
+                        selectedHistoryId = conv.id;
+                    });
+                    
+                    historyList.appendChild(item);
+                });
+            }
+            
+            // 格式化时间戳
+            function formatTimestamp(timestamp) {
+                if (!timestamp) return '未知时间';
+                try {
+                    const date = new Date(timestamp);
+                    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                } catch (e) {
+                    return '未知时间';
+                }
+            }
+            
+            // 过滤历史对话列表
+            function filterHistoryList() {
+                const searchTerm = historySearchInput.value.toLowerCase();
+                const items = historyList.querySelectorAll('.history-item');
+                
+                items.forEach(item => {
+                    const title = item.querySelector('.history-item-title').textContent.toLowerCase();
+                    const visible = title.includes(searchTerm);
+                    item.style.display = visible ? 'block' : 'none';
+                });
+            }
+            
+            // 加载选中的历史对话
+            function loadSelectedHistory() {
+                if (!selectedHistoryId) return;
+                
+                if (window.bridge && window.bridge.loadConversationById) {
+                    window.bridge.loadConversationById(selectedHistoryId, function(response) {
+                        try {
+                            const result = JSON.parse(response);
+                            if (result.success) {
+                                loadConversation(result.conversation);
+                                hideHistoryModal();
+                            }
+                        } catch (e) {
+                            console.error('加载对话内容失败:', e);
+                        }
+                    });
+                }
+            }
+            
+            // 加载对话内容
+            function loadConversation(conversationData) {
+                // 清空当前对话
+                messagesContainer.innerHTML = '';
+                conversationHistory = [];
+                
+                // 设置对话ID
+                conversationId = conversationData.id;
+                
+                // 重新显示欢迎消息
+                addMessage('汪！我是你的学习小助手，有什么问题可以问我哦！', 'ai');
+                
+                // 加载历史消息
+                const history = conversationData.conversation_history || [];
+                history.forEach(msg => {
+                    conversationHistory.push(msg);
+                    addMessage(msg.content, msg.role === 'user' ? 'user' : 'ai');
+                });
+            }
+            
+            // 总结对话
+            function summarizeConversation() {
+                if (conversationHistory.length === 0) {
+                    alert('没有对话内容可以总结');
+                    return;
+                }
+                
+                if (window.bridge && window.bridge.summarizeConversation) {
+                    const historyJson = JSON.stringify(conversationHistory);
+                    window.bridge.summarizeConversation(historyJson, function(response) {
+                        try {
+                            const result = JSON.parse(response);
+                            if (result.success) {
+                                // 将总结作为AI消息添加到对话中
+                                const summaryMessage = '📋 **对话总结**\n\n' + result.summary;
+                                conversationHistory.push({role: 'assistant', content: summaryMessage});
+                                addMessage(summaryMessage, 'ai');
+                            } else {
+                                alert('总结生成失败: ' + (result.error || '未知错误'));
+                            }
+                        } catch (e) {
+                            alert('总结功能异常');
+                        }
+                    });
+                } else {
+                    alert('总结功能暂不可用');
+                }
             }
             
             globalDebugLog('AI助手浮窗初始化完成');

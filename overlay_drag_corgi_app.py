@@ -1413,19 +1413,19 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"获取笔记知识点失败: {e}")
             return json.dumps([], ensure_ascii=False)
 
-    @Slot(str, result=str)
-    def chatWithAI(self, message):
-        """与AI助手聊天"""
-        self.logger.info(f"AI聊天请求: {message}")
+    @Slot(str, str, result=str)
+    def chatWithAI(self, message, conversation_history_json="[]"):
+        """与AI助手聊天 - 支持持续对话"""
+        import json
+        import requests
+        import random
         
+        self.logger.info(f"AI聊天请求: {message}")
         try:
-            # 导入LLM相关模块
-            from llm_manager import LLMManager
+            # 解析对话历史
+            conversation_history = json.loads(conversation_history_json) if conversation_history_json else []
             
-            # 初始化LLM管理器
-            llm_manager = LLMManager(self.config)
-            
-            # 构建聊天提示词
+            # 构建包含历史的完整提示词
             system_prompt = """你是柯基学习小助手的AI伙伴，一个友善、聪明、有耐心的学习助手。
 你的特点：
 1. 像柯基犬一样活泼友好，偶尔会用"汪！"表达兴奋
@@ -1434,53 +1434,257 @@ class CorgiWebBridge(QObject):
 4. 善于将复杂概念用简单易懂的方式解释
 5. 鼓励用户积极学习，给予正面反馈
 
-请用友好、鼓励的语气回答用户的问题。"""
+请用友好、鼓励的语气回答用户的问题。记住之前的对话内容，保持对话的连贯性。"""
             
-            # 调用LLM生成回复
-            response = llm_manager.generate_response(
-                prompt=message,
-                system_prompt=system_prompt,
-                max_tokens=500,
-                temperature=0.7
-            )
+            # 构建完整的对话提示词
+            full_prompt = system_prompt + "\n\n"
+            if conversation_history:
+                full_prompt += "对话历史：\n"
+                for msg in conversation_history[-10:]:  # 只保留最近10条消息
+                    role = "用户" if msg["role"] == "user" else "AI助手"
+                    full_prompt += f"{role}: {msg['content']}\n"
+                full_prompt += "\n"
+            full_prompt += f"用户: {message}\nAI助手: "
             
-            if response and response.get('success'):
-                ai_message = response.get('content', '抱歉，我现在无法回答这个问题。')
-                self.logger.info(f"AI回复生成成功: {ai_message[:50]}...")
-                
-                return json.dumps({
-                    "success": True,
-                    "message": ai_message
-                }, ensure_ascii=False)
+            # 调用LLM API
+            ai_response = self._call_llm_api(full_prompt)
+            
+            if ai_response:
+                self.logger.info(f"AI回复生成成功: {ai_response[:50]}...")
+                return json.dumps({"success": True, "message": ai_response}, ensure_ascii=False)
             else:
-                error_msg = response.get('error', '未知错误') if response else 'LLM调用失败'
-                self.logger.error(f"AI回复生成失败: {error_msg}")
-                
-                # 返回友好的错误回复
+                # 友好的回退回复
                 fallback_responses = [
                     "汪！我现在有点累了，稍后再聊好吗？",
                     "抱歉，我的小脑瓜现在有点转不过来，请稍后再试试。",
                     "哎呀，我好像走神了，能再说一遍吗？",
                     "我需要先去充充电，等会儿再来帮你！"
                 ]
-                
-                import random
                 fallback_message = random.choice(fallback_responses)
-                
-                return json.dumps({
-                    "success": True,
-                    "message": fallback_message
-                }, ensure_ascii=False)
+                return json.dumps({"success": True, "message": fallback_message}, ensure_ascii=False)
                 
         except Exception as e:
             self.logger.error(f"AI聊天功能异常: {e}")
-            
-            # 返回友好的异常回复
-            return json.dumps({
-                "success": True,
-                "message": "汪！我现在有点忙，稍后再来找我聊天吧！"
-            }, ensure_ascii=False)
+            return json.dumps({"success": True, "message": "汪！我现在有点忙，稍后再来找我聊天吧！"}, ensure_ascii=False)
     
+    def _call_llm_api(self, prompt):
+        """调用LLM API - 支持多种模型"""
+        try:
+            provider = self.config.get("llm_provider", "Ollama")
+            
+            if provider == "Ollama":
+                return self._call_ollama_api(prompt)
+            elif provider == "Gemini":
+                return self._call_gemini_api(prompt)
+            else:
+                self.logger.warning(f"未知的LLM提供商: {provider}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"LLM API调用异常: {e}")
+            return None
+    
+    def _call_ollama_api(self, prompt):
+        """调用Ollama API"""
+        import requests
+        
+        url = self.config.get("ollama_api_url", "http://localhost:11434/api/generate")
+        model = self.config.get("ollama_model", "deepseek-r1:1.5b")
+        
+        try:
+            response = requests.post(url, json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False
+            }, timeout=120)
+            response.raise_for_status()
+            data = response.json()
+            return data.get("response", "").strip()
+        except Exception as e:
+            self.logger.error(f"Ollama调用失败: {e}")
+            return None
+    
+    def _call_gemini_api(self, prompt):
+        """调用Gemini API"""
+        import requests
+        
+        api_key = self.config.get("gemini_api_key", "").strip()
+        model = self.config.get("gemini_model", "gemini-1.5-flash-002").strip()
+        
+        if not api_key:
+            self.logger.error("Gemini未配置API Key")
+            return None
+        
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [
+                {"parts": [{"text": prompt}]}
+            ]
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            if not response.ok:
+                self.logger.error(f"Gemini调用失败: HTTP {response.status_code}")
+                return None
+            
+            data = response.json()
+            candidates = data.get("candidates", [])
+            if candidates and "content" in candidates[0]:
+                parts = candidates[0]["content"].get("parts", [])
+                if parts and "text" in parts[0]:
+                    return parts[0]["text"].strip()
+            
+            self.logger.error("无法解析Gemini响应")
+            return None
+        except Exception as e:
+            self.logger.error(f"Gemini请求异常: {e}")
+            return None
+
+    @Slot(str, result=str)
+    def summarizeConversation(self, conversation_history_json):
+        """总结对话内容"""
+        import json
+        
+        self.logger.info("对话总结请求")
+        try:
+            conversation_history = json.loads(conversation_history_json)
+            if not conversation_history:
+                return json.dumps({"success": False, "error": "没有对话内容可以总结"}, ensure_ascii=False)
+            
+            # 构建对话文本
+            conversation_text = "\n\n".join([
+                f"{'用户' if msg['role'] == 'user' else 'AI助手'}: {msg['content']}" 
+                for msg in conversation_history
+            ])
+            
+            summary_prompt = f"""请用中文对以下对话进行知识点总结，要求：
+1. 使用中文回答
+2. 提取关键知识点和要点
+3. 结构化展示，使用标题和列表
+4. 突出重要概念和原理
+5. 保持简洁明了
+
+对话内容：
+{conversation_text}
+
+请生成总结："""
+            
+            # 调用LLM API
+            summary = self._call_llm_api(summary_prompt)
+            
+            if summary:
+                self.logger.info(f"对话总结生成成功: {summary[:50]}...")
+                return json.dumps({"success": True, "summary": summary}, ensure_ascii=False)
+            else:
+                self.logger.error("对话总结生成失败")
+                return json.dumps({"success": False, "error": "总结生成失败"}, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"对话总结功能异常: {e}")
+            return json.dumps({"success": False, "error": f"总结功能异常: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def saveConversation(self, conversation_data_json):
+        """保存对话到历史记录"""
+        self.logger.info("保存对话请求")
+        try:
+            import json
+            import os
+            from datetime import datetime
+            
+            conversation_data = json.loads(conversation_data_json)
+            
+            # 创建对话目录
+            conversations_dir = os.path.join(os.path.dirname(__file__), "conversations")
+            os.makedirs(conversations_dir, exist_ok=True)
+            
+            # 生成文件名
+            conv_id = conversation_data.get('id', datetime.now().strftime('%Y%m%d_%H%M%S'))
+            filename = f"conversation_{conv_id}.json"
+            filepath = os.path.join(conversations_dir, filename)
+            
+            # 添加时间戳
+            conversation_data['timestamp'] = datetime.now().isoformat()
+            
+            # 保存文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(conversation_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"对话已保存: {filepath}")
+            return json.dumps({"success": True, "message": "对话已保存"}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"保存对话失败: {e}")
+            return json.dumps({"success": False, "error": f"保存失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def loadConversationHistory(self):
+        """加载对话历史列表"""
+        self.logger.info("加载对话历史请求")
+        try:
+            import json
+            import os
+            from datetime import datetime
+            
+            conversations_dir = os.path.join(os.path.dirname(__file__), "conversations")
+            if not os.path.exists(conversations_dir):
+                return json.dumps({"success": True, "conversations": []}, ensure_ascii=False)
+            
+            conversations = []
+            for filename in os.listdir(conversations_dir):
+                if filename.endswith('.json'):
+                    filepath = os.path.join(conversations_dir, filename)
+                    try:
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            # 只返回必要的信息用于列表显示
+                            conv_info = {
+                                'id': data.get('id', ''),
+                                'timestamp': data.get('timestamp', ''),
+                                'title': data.get('title', ''),
+                                'message_count': len(data.get('conversation_history', []))
+                            }
+                            conversations.append(conv_info)
+                    except Exception as e:
+                        self.logger.error(f"加载对话文件失败 {filename}: {e}")
+            
+            # 按时间排序（最新的在前）
+            conversations.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+            
+            self.logger.info(f"加载了 {len(conversations)} 个对话记录")
+            return json.dumps({"success": True, "conversations": conversations}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"加载对话历史失败: {e}")
+            return json.dumps({"success": False, "error": f"加载失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def loadConversationById(self, conversation_id):
+        """根据ID加载具体对话内容"""
+        self.logger.info(f"加载对话内容请求: {conversation_id}")
+        try:
+            import json
+            import os
+            
+            conversations_dir = os.path.join(os.path.dirname(__file__), "conversations")
+            filename = f"conversation_{conversation_id}.json"
+            filepath = os.path.join(conversations_dir, filename)
+            
+            if not os.path.exists(filepath):
+                return json.dumps({"success": False, "error": "对话文件不存在"}, ensure_ascii=False)
+            
+            with open(filepath, 'r', encoding='utf-8') as f:
+                conversation_data = json.load(f)
+            
+            self.logger.info(f"对话内容加载成功: {conversation_id}")
+            return json.dumps({"success": True, "conversation": conversation_data}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"加载对话内容失败: {e}")
+            return json.dumps({"success": False, "error": f"加载失败: {str(e)}"}, ensure_ascii=False)
+
     @Slot(str, result=str)
     def saveNoteKnowledgeMapping(self, mapping_data):
         """保存笔记知识点映射关系"""
