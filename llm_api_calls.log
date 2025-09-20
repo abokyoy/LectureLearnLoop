@@ -557,3 +557,6 @@
 2025-09-20 15:06:08 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 30.38s)
 2025-09-20 15:08:26 - LLM_API - INFO - API调用 [gemini] extract_knowledge_points - 成功 (耗时: 1.75s)
 2025-09-20 15:09:22 - LLM_API - INFO - API调用 [gemini] extract_knowledge_points - 成功 (耗时: 1.79s)
+2025-09-20 15:41:53 - LLM_API - INFO - API调用 [gemini] extract_knowledge_points - 成功 (耗时: 2.70s)
+2025-09-20 15:41:54 - LLM_API - INFO - API调用 [gemini] extract_knowledge_points - 成功 (耗时: 1.87s)
+2025-09-20 15:43:26 - LLM_API - INFO - API调用 [gemini] extract_knowledge_points - 成功 (耗时: 3.36s)

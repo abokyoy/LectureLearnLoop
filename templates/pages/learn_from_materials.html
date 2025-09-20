@@ -1125,6 +1125,14 @@
             return;
         }
         
+        // 清空之前的知识点结果
+        addToDebugPanel('INFO', '清空之前的知识点结果');
+        const contentDiv = document.getElementById('knowledge-content');
+        if (contentDiv) {
+            contentDiv.innerHTML = '';
+            contentDiv.classList.add('hidden');
+        }
+        
         // 显示加载状态
         showKnowledgeLoading();
         

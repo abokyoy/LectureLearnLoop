@@ -503,6 +503,8 @@ class CorgiWebBridge(QObject):
             
             content_length = len(content)
             self.logger.info(f"文件内容长度: {content_length} 字符")
+            self.logger.info(f"文件内容前200字符: {content[:200]}")
+            self.logger.info(f"文件内容后200字符: {content[-200:] if len(content) > 200 else content}")
             
             if not content.strip():
                 self.logger.warning("⚠️ 文件内容为空")
@@ -527,8 +529,10 @@ class CorgiWebBridge(QObject):
             # 导入知识管理系统
             from knowledge_management import KnowledgeManagementSystem
             
-            # 创建知识管理系统实例
+            # 每次都重新创建知识管理系统实例，避免缓存问题
+            self.logger.info("创建新的KnowledgeManagementSystem实例")
             km_system = KnowledgeManagementSystem(self.config)
+            self.logger.info("KnowledgeManagementSystem实例创建完成")
             
             # 提取知识点（使用默认学科名称）
             subject_name = "通用学科"
@@ -1029,21 +1033,6 @@ class CorgiWebBridge(QObject):
         
         return f"后端功能验证完成: {success_count}/{total_tests} 项测试通过\n" + "\n".join(validation_results)
     
-    @Slot(str, result=str)
-    def extractKnowledgePoints(self, file_path):
-        """提取文档中的知识点"""
-        try:
-            # 这里可以调用之前实现的知识点提取功能
-            # 暂时返回模拟数据
-            knowledge_points = [
-                {"id": "1", "title": "线性回归基础", "content": "线性回归是机器学习中的基础算法"},
-                {"id": "2", "title": "损失函数", "content": "均方误差是线性回归常用的损失函数"},
-                {"id": "3", "title": "梯度下降", "content": "用于优化线性回归模型参数的算法"}
-            ]
-            return json.dumps(knowledge_points, ensure_ascii=False)
-        except Exception as e:
-            print(f"提取知识点失败: {e}")
-            return json.dumps([], ensure_ascii=False)
 
 class DragOverlay(QWidget):
     """透明拖拽覆盖层"""
