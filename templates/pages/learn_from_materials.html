@@ -1288,7 +1288,7 @@
             const knowledgePoints = result.knowledge_points;
             debugLog(`成功提取 ${knowledgePoints.length} 个知识点`);
             
-            // 生成知识点HTML
+            // 生成知识点HTML - 像素级还原设计稿
             let html = `
                 <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <div class="flex items-center text-green-800">
@@ -1296,25 +1296,62 @@
                         <span class="font-medium">成功提取 ${knowledgePoints.length} 个知识点</span>
                     </div>
                 </div>
+                <div class="flex-1 overflow-y-auto space-y-3">
             `;
             
             knowledgePoints.forEach((point, index) => {
-                const importanceColor = getImportanceColor(point.importance);
+                // 第一个知识点使用绿色主题，其他使用灰色主题（完全按照设计稿）
+                const isFirst = index === 0;
+                const bgClass = isFirst ? 'bg-bg-light-green' : 'bg-bg-light-gray';
+                const titleClass = isFirst ? 'text-primary' : 'text-text-dark-brown';
+                
                 html += `
-                    <div class="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors">
-                        <div class="flex items-start justify-between mb-2">
-                            <h4 class="font-medium text-gray-800 text-sm">${point.name || '未命名知识点'}</h4>
-                            <span class="px-2 py-1 text-xs rounded-full ${importanceColor}">${point.importance || '中等'}</span>
+                    <div class="knowledge-point-item ${bgClass} p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group" 
+                         data-point-name="${point.name.replace(/"/g, '&quot;')}" 
+                         data-point-description="${point.description.replace(/"/g, '&quot;')}"
+                         data-point-index="${index}">
+                        <h3 class="font-semibold ${titleClass}">${point.name}</h3>
+                        <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                        
+                        <!-- 悬停时显示的操作按钮 -->
+                        <div class="knowledge-point-actions absolute -bottom-10 left-1/2 transform -translate-x-1/2 
+                                    bg-white border border-gray-200 rounded-lg shadow-lg px-2 py-1 
+                                    opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 
+                                    flex items-center space-x-2">
+                            <button class="edit-knowledge-btn p-1 text-text-gray hover:text-primary transition-colors" 
+                                    title="编辑知识点" data-index="${index}">
+                                <span class="material-icons-outlined text-sm">edit</span>
+                            </button>
+                            <button class="delete-knowledge-btn p-1 text-text-gray hover:text-danger transition-colors" 
+                                    title="删除知识点" data-index="${index}">
+                                <span class="material-icons-outlined text-sm">delete</span>
+                            </button>
                         </div>
-                        <p class="text-gray-600 text-sm leading-relaxed">${point.description || '暂无描述'}</p>
-                        ${point.category ? `<div class="mt-2"><span class="inline-block px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">${point.category}</span></div>` : ''}
                     </div>
                 `;
             });
             
+            html += `
+                </div>
+                
+                <!-- 手动添加知识点按钮 -->
+                <div class="mt-4 pt-4 border-t border-gray-200">
+                    <button id="add-knowledge-btn" class="w-full flex items-center justify-center py-2 px-3 
+                                                           border-2 border-dashed border-gray-300 rounded-lg 
+                                                           text-text-gray hover:border-primary hover:text-primary 
+                                                           transition-colors duration-200">
+                        <span class="material-icons-outlined mr-2">add</span>
+                        <span>手动添加知识点</span>
+                    </button>
+                </div>
+            `;
+            
             if (contentDiv) {
                 contentDiv.innerHTML = html;
                 contentDiv.classList.remove('hidden');
+                
+                // 绑定知识点交互事件
+                bindKnowledgePointEvents();
             }
             
         } else {
@@ -1324,28 +1361,417 @@
         }
     }
 
+    // 绑定知识点交互事件
+    function bindKnowledgePointEvents() {
+        addToDebugPanel('INFO', '绑定知识点交互事件');
+        
+        // 1. 点击知识点高亮文档内容
+        const knowledgeItems = document.querySelectorAll('.knowledge-point-item');
+        knowledgeItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                // 如果点击的是操作按钮，不触发高亮功能
+                if (e.target.closest('.knowledge-point-actions')) {
+                    return;
+                }
+                
+                const pointName = this.dataset.pointName;
+                addToDebugPanel('INFO', `点击知识点: ${pointName}`);
+                highlightTextInDocument(pointName);
+            });
+        });
+        
+        // 2. 编辑知识点按钮
+        const editBtns = document.querySelectorAll('.edit-knowledge-btn');
+        editBtns.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const index = parseInt(this.dataset.index);
+                editKnowledgePoint(index);
+            });
+        });
+        
+        // 3. 删除知识点按钮
+        const deleteBtns = document.querySelectorAll('.delete-knowledge-btn');
+        deleteBtns.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const index = parseInt(this.dataset.index);
+                deleteKnowledgePoint(index);
+            });
+        });
+        
+        // 4. 手动添加知识点按钮
+        const addBtn = document.getElementById('add-knowledge-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                showAddKnowledgePointModal();
+            });
+        }
+    }
+    
+    // 高亮文档中的文本
+    function highlightTextInDocument(searchText) {
+        addToDebugPanel('INFO', `在文档中搜索并高亮: ${searchText}`);
+        
+        const previewContent = document.getElementById('preview-content');
+        if (!previewContent) {
+            addToDebugPanel('WARN', '预览内容区域不存在');
+            return;
+        }
+        
+        // 清除之前的高亮
+        clearHighlights();
+        
+        // 搜索并高亮文本
+        const walker = document.createTreeWalker(
+            previewContent,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.textContent.includes(searchText)) {
+                textNodes.push(node);
+            }
+        }
+        
+        if (textNodes.length === 0) {
+            addToDebugPanel('WARN', `未在文档中找到文本: ${searchText}`);
+            return;
+        }
+        
+        addToDebugPanel('SUCCESS', `找到 ${textNodes.length} 个匹配项`);
+        
+        // 高亮所有匹配的文本
+        textNodes.forEach((textNode, index) => {
+            const parent = textNode.parentNode;
+            const text = textNode.textContent;
+            const highlightedText = text.replace(
+                new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+                `<mark class="bg-yellow-200 px-1 rounded" data-highlight-index="${index}">$&</mark>`
+            );
+            
+            const wrapper = document.createElement('span');
+            wrapper.innerHTML = highlightedText;
+            parent.replaceChild(wrapper, textNode);
+        });
+        
+        // 滚动到第一个高亮位置
+        const firstHighlight = previewContent.querySelector('mark[data-highlight-index="0"]');
+        if (firstHighlight) {
+            firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            addToDebugPanel('SUCCESS', '已定位到第一个匹配项');
+        }
+    }
+    
+    // 清除文档中的高亮
+    function clearHighlights() {
+        const previewContent = document.getElementById('preview-content');
+        if (!previewContent) return;
+        
+        const highlights = previewContent.querySelectorAll('mark[data-highlight-index]');
+        highlights.forEach(mark => {
+            const parent = mark.parentNode;
+            parent.replaceChild(document.createTextNode(mark.textContent), mark);
+            parent.normalize(); // 合并相邻的文本节点
+        });
+    }
+    
+    // 编辑知识点
+    function editKnowledgePoint(index) {
+        addToDebugPanel('INFO', `编辑知识点 ${index}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (!knowledgeItem) return;
+        
+        const currentName = knowledgeItem.dataset.pointName;
+        const currentDescription = knowledgeItem.dataset.pointDescription;
+        
+        // 创建编辑模态框
+        showEditKnowledgePointModal(index, currentName, currentDescription);
+    }
+    
+    // 删除知识点
+    function deleteKnowledgePoint(index) {
+        addToDebugPanel('INFO', `删除知识点 ${index}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (!knowledgeItem) return;
+        
+        const pointName = knowledgeItem.dataset.pointName;
+        
+        // 显示确认对话框
+        showDeleteConfirmModal(index, pointName);
+    }
+    
+    // 显示添加知识点模态框
+    function showAddKnowledgePointModal() {
+        addToDebugPanel('INFO', '显示添加知识点模态框');
+        
+        const modal = createKnowledgePointModal({
+            title: '添加知识点',
+            nameValue: '',
+            descriptionValue: '',
+            confirmText: '添加',
+            onConfirm: (name, description) => {
+                addNewKnowledgePoint(name, description);
+            }
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    // 显示编辑知识点模态框
+    function showEditKnowledgePointModal(index, currentName, currentDescription) {
+        addToDebugPanel('INFO', `显示编辑知识点模态框: ${currentName}`);
+        
+        const modal = createKnowledgePointModal({
+            title: '编辑知识点',
+            nameValue: currentName,
+            descriptionValue: currentDescription,
+            confirmText: '保存',
+            onConfirm: (name, description) => {
+                updateKnowledgePoint(index, name, description);
+            }
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    // 显示删除确认模态框
+    function showDeleteConfirmModal(index, pointName) {
+        addToDebugPanel('INFO', `显示删除确认对话框: ${pointName}`);
+        
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <div class="flex items-center mb-4">
+                    <span class="material-icons-outlined text-danger mr-3">warning</span>
+                    <h3 class="text-lg font-semibold text-text-dark-brown">确认删除</h3>
+                </div>
+                <p class="text-text-medium-brown mb-6">
+                    确定要删除知识点 "<strong>${pointName}</strong>" 吗？此操作无法撤销。
+                </p>
+                <div class="flex justify-end space-x-3">
+                    <button class="cancel-btn px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button class="confirm-btn px-4 py-2 bg-danger text-white rounded-lg hover:bg-red-600">
+                        删除
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 绑定事件
+        const cancelBtn = modal.querySelector('.cancel-btn');
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        confirmBtn.addEventListener('click', () => {
+            removeKnowledgePoint(index);
+            document.body.removeChild(modal);
+        });
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    // 创建知识点编辑模态框
+    function createKnowledgePointModal({ title, nameValue, descriptionValue, confirmText, onConfirm }) {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-semibold text-text-dark-brown mb-4">${title}</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-text-dark-brown mb-2">知识点名称</label>
+                        <input type="text" class="knowledge-name-input w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" 
+                               placeholder="请输入知识点名称" value="${nameValue}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-text-dark-brown mb-2">知识点描述</label>
+                        <textarea class="knowledge-desc-input w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" 
+                                  rows="3" placeholder="请输入知识点描述">${descriptionValue}</textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button class="cancel-btn px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button class="confirm-btn px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600">
+                        ${confirmText}
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 绑定事件
+        const nameInput = modal.querySelector('.knowledge-name-input');
+        const descInput = modal.querySelector('.knowledge-desc-input');
+        const cancelBtn = modal.querySelector('.cancel-btn');
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        confirmBtn.addEventListener('click', () => {
+            const name = nameInput.value.trim();
+            const description = descInput.value.trim();
+            
+            if (!name) {
+                alert('请输入知识点名称');
+                nameInput.focus();
+                return;
+            }
+            
+            if (!description) {
+                alert('请输入知识点描述');
+                descInput.focus();
+                return;
+            }
+            
+            onConfirm(name, description);
+            document.body.removeChild(modal);
+        });
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        // 自动聚焦到名称输入框
+        setTimeout(() => {
+            nameInput.focus();
+            nameInput.select();
+        }, 100);
+        
+        return modal;
+    }
+    
+    // 添加新知识点
+    function addNewKnowledgePoint(name, description) {
+        addToDebugPanel('SUCCESS', `添加新知识点: ${name}`);
+        
+        // 获取当前知识点列表
+        const knowledgeItems = document.querySelectorAll('.knowledge-point-item');
+        const newIndex = knowledgeItems.length;
+        
+        // 创建新知识点HTML
+        const newPointHtml = `
+            <div class="knowledge-point-item bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group" 
+                 data-point-name="${name.replace(/"/g, '&quot;')}" 
+                 data-point-description="${description.replace(/"/g, '&quot;')}"
+                 data-point-index="${newIndex}">
+                <h3 class="font-semibold text-text-dark-brown">${name}</h3>
+                <p class="text-sm text-text-medium-brown mt-1">${description}</p>
+                
+                <!-- 悬停时显示的操作按钮 -->
+                <div class="knowledge-point-actions absolute -bottom-10 left-1/2 transform -translate-x-1/2 
+                            bg-white border border-gray-200 rounded-lg shadow-lg px-2 py-1 
+                            opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 
+                            flex items-center space-x-2">
+                    <button class="edit-knowledge-btn p-1 text-text-gray hover:text-primary transition-colors" 
+                            title="编辑知识点" data-index="${newIndex}">
+                        <span class="material-icons-outlined text-sm">edit</span>
+                    </button>
+                    <button class="delete-knowledge-btn p-1 text-text-gray hover:text-danger transition-colors" 
+                            title="删除知识点" data-index="${newIndex}">
+                        <span class="material-icons-outlined text-sm">delete</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 插入到知识点列表中
+        const knowledgeContainer = document.querySelector('.flex-1.overflow-y-auto.space-y-3');
+        if (knowledgeContainer) {
+            knowledgeContainer.insertAdjacentHTML('beforeend', newPointHtml);
+            
+            // 重新绑定事件
+            bindKnowledgePointEvents();
+            
+            addToDebugPanel('SUCCESS', '新知识点已添加到列表');
+        }
+    }
+    
+    // 更新知识点
+    function updateKnowledgePoint(index, name, description) {
+        addToDebugPanel('SUCCESS', `更新知识点 ${index}: ${name}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (!knowledgeItem) return;
+        
+        // 更新数据属性
+        knowledgeItem.dataset.pointName = name;
+        knowledgeItem.dataset.pointDescription = description;
+        
+        // 更新显示内容
+        const titleElement = knowledgeItem.querySelector('h3');
+        const descElement = knowledgeItem.querySelector('p');
+        
+        if (titleElement) titleElement.textContent = name;
+        if (descElement) descElement.textContent = description;
+        
+        addToDebugPanel('SUCCESS', '知识点已更新');
+    }
+    
+    // 删除知识点
+    function removeKnowledgePoint(index) {
+        addToDebugPanel('SUCCESS', `删除知识点 ${index}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (knowledgeItem) {
+            knowledgeItem.remove();
+            
+            // 重新编号剩余的知识点
+            const remainingItems = document.querySelectorAll('.knowledge-point-item');
+            remainingItems.forEach((item, newIndex) => {
+                item.dataset.pointIndex = newIndex;
+                
+                // 更新按钮的data-index
+                const editBtn = item.querySelector('.edit-knowledge-btn');
+                const deleteBtn = item.querySelector('.delete-knowledge-btn');
+                if (editBtn) editBtn.dataset.index = newIndex;
+                if (deleteBtn) deleteBtn.dataset.index = newIndex;
+            });
+            
+            addToDebugPanel('SUCCESS', '知识点已删除');
+        }
+    }
+
     // 显示知识点错误
-    function showKnowledgeError(errorMessage) {
+    function showKnowledgeError(message) {
         const loadingDiv = document.getElementById('knowledge-loading');
         const contentDiv = document.getElementById('knowledge-content');
         const placeholderDiv = document.getElementById('knowledge-placeholder');
         
-        // 隐藏加载状态
         if (loadingDiv) loadingDiv.classList.add('hidden');
         if (placeholderDiv) placeholderDiv.classList.add('hidden');
         
-        // 显示错误信息
         if (contentDiv) {
             contentDiv.innerHTML = `
-                <div class="text-center py-8">
-                    <div class="mb-4">
-                        <span class="material-icons-outlined text-6xl text-red-400">error</span>
-                    </div>
-                    <p class="text-red-600 font-medium mb-2">知识点提取失败</p>
-                    <p class="text-gray-500 text-sm">${errorMessage}</p>
-                    <button class="mt-4 px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary-dark" onclick="extractKnowledgePoints()">
-                        重试
-                    </button>
+                <div class="text-center py-16 text-red-600">
+                    <span class="material-icons-outlined text-6xl mb-4">error_outline</span>
+                    <p class="text-lg font-medium mb-2">知识点提取失败</p>
+                    <p class="text-sm">${message}</p>
                 </div>
             `;
             contentDiv.classList.remove('hidden');
