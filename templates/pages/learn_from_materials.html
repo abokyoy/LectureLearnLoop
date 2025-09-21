@@ -3714,28 +3714,30 @@
     }
     
     function openChatWithMessage(message) {
-        // 打开AI聊天窗口
-        const aiChatWindow = document.getElementById('aiChatWindow');
-        const aiChatInput = document.getElementById('aiChatInput');
-        
-        if (aiChatWindow && aiChatInput) {
-            // 显示聊天窗口
-            aiChatWindow.classList.add('show');
-            
-            // 设置消息内容
-            aiChatInput.value = message;
-            
-            // 模拟发送消息
-            setTimeout(() => {
-                const sendBtn = document.getElementById('sendChatBtn');
-                if (sendBtn) {
-                    sendBtn.click();
-                }
-            }, 500);
-        } else {
-            // 如果聊天窗口不可用，显示提示
-            showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+        // 使用全局函数打开AI聊天窗口
+        if (window.openAIChatWindow) {
+            window.openAIChatWindow();
         }
+        
+        // 等待窗口打开后设置消息内容并发送
+        setTimeout(() => {
+            if (window.sendAIMessage) {
+                window.sendAIMessage(message);
+            } else {
+                // 备用方案：直接操作DOM
+                const aiChatInput = document.getElementById('aiChatInput');
+                const sendBtn = document.getElementById('sendChatBtn');
+                
+                if (aiChatInput && sendBtn) {
+                    aiChatInput.value = message;
+                    setTimeout(() => {
+                        sendBtn.click();
+                    }, 100);
+                } else {
+                    showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+                }
+            }
+        }, 300);
     }
     
     function handlePractice() {
@@ -3746,10 +3748,151 @@
         
         hideContextMenu();
         
-        // 显示练习面板
-        showPracticePanel(selectedText);
+        // 首先确保AI聊天窗口打开
+        if (window.openAIChatWindow) {
+            window.openAIChatWindow();
+        }
         
-        showToast('正在为您生成练习题目...', 'info');
+        // 发送消息到AI练习助手
+        if (window.addAIPracticeMessage) {
+            window.addAIPracticeMessage('正在生成练习题目，请稍候...', 'ai');
+        }
+        
+        // 生成练习ID
+        const practiceId = 'practice_' + Date.now();
+        
+        // 创建练习数据
+        const practiceData = {
+            id: practiceId,
+            selectedText: selectedText,
+            questions: null,
+            status: 'generating'
+        };
+        
+        // 显示AI练习面板
+        if (window.showAIPracticePanel) {
+            window.showAIPracticePanel(practiceData);
+        }
+        
+        // 异步生成题目
+        setTimeout(() => {
+            generatePracticeQuestionsForAI(selectedText, practiceId);
+        }, 500);
+        
+        showToast('已切换到AI练习助手', 'success');
+    }
+    
+    // 为AI助手生成练习题目
+    function generatePracticeQuestionsForAI(selectedText, practiceId) {
+        if (window.bridge && window.bridge.generatePracticeQuestions) {
+            try {
+                // 使用setTimeout真正异步执行，避免界面冻结
+                setTimeout(() => {
+                    try {
+                        console.log('🔄 开始为AI助手生成题目...');
+                        const result = window.bridge.generatePracticeQuestions(selectedText);
+                        
+                        // 处理可能的Promise返回值
+                        const handleResult = (questions) => {
+                            console.log('📝 收到AI助手题目数据:', typeof questions, questions);
+                            
+                            // 检查是否是JSON字符串
+                            let actualQuestions = questions;
+                            if (typeof questions === 'string') {
+                                try {
+                                    const parsed = JSON.parse(questions);
+                                    if (parsed && parsed.message) {
+                                        actualQuestions = parsed.message;
+                                    }
+                                } catch (e) {
+                                    // 如果不是JSON，直接使用原字符串
+                                    actualQuestions = questions;
+                                }
+                            }
+                            
+                            if (actualQuestions && actualQuestions.trim()) {
+                                // 发送成功消息到AI助手
+                                if (window.addAIPracticeMessage) {
+                                    window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + actualQuestions, 'ai');
+                                    window.addAIPracticeMessage('生成成功！题目已准备就绪。', 'ai');
+                                }
+                                
+                                // 更新练习数据
+                                const updatedPracticeData = {
+                                    id: practiceId,
+                                    selectedText: selectedText,
+                                    questions: actualQuestions,
+                                    status: 'ready'
+                                };
+                                
+                                // 更新练习面板
+                                if (window.showAIPracticePanel) {
+                                    window.showAIPracticePanel(updatedPracticeData);
+                                }
+                                
+                                console.log('✅ AI助手题目生成成功');
+                            } else {
+                                console.error('❌ 生成结果为空或无效');
+                                if (window.addAIPracticeMessage) {
+                                    window.addAIPracticeMessage('抱歉，题目生成失败，请稍后重试。', 'ai');
+                                }
+                            }
+                        };
+                        
+                        // 检查返回值类型
+                        if (result && typeof result.then === 'function') {
+                            // 是Promise对象
+                            console.log('📦 检测到Promise对象，等待解析...');
+                            result.then(handleResult).catch(error => {
+                                console.error('❌ Promise解析失败:', error);
+                                if (window.addAIPracticeMessage) {
+                                    window.addAIPracticeMessage('题目生成过程中出现错误，请稍后重试。', 'ai');
+                                }
+                            });
+                        } else {
+                            // 直接返回值
+                            console.log('📦 检测到直接返回值');
+                            setTimeout(() => handleResult(result), 50);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ API调用失败:', error);
+                        setTimeout(() => {
+                            if (window.addAIPracticeMessage) {
+                                window.addAIPracticeMessage('题目生成失败，请检查网络连接后重试。', 'ai');
+                            }
+                        }, 50);
+                    }
+                }, 200); // 延迟200ms确保UI完全更新
+                
+            } catch (error) {
+                console.error('调用generatePracticeQuestions失败:', error);
+                if (window.addAIPracticeMessage) {
+                    window.addAIPracticeMessage('题目生成功能暂时不可用，请稍后重试。', 'ai');
+                }
+            }
+        } else {
+            console.log('🔄 使用模拟数据为AI助手生成题目...');
+            // 模拟异步生成题目
+            setTimeout(() => {
+                const mockQuestions = generateMockQuestions(selectedText);
+                if (window.addAIPracticeMessage) {
+                    window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + mockQuestions, 'ai');
+                    window.addAIPracticeMessage('题目已生成完成，请点击下方"开始练习"按钮开始答题。', 'ai');
+                }
+                
+                const updatedPracticeData = {
+                    id: practiceId,
+                    selectedText: selectedText,
+                    questions: mockQuestions,
+                    status: 'ready'
+                };
+                
+                if (window.showAIPracticePanel) {
+                    window.showAIPracticePanel(updatedPracticeData);
+                }
+            }, 2000);
+        }
     }
     
     // 练习面板相关变量

@@ -123,11 +123,22 @@
             justify-content: space-between;
         }
         
+        .ai-chat-content {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
         .ai-chat-messages {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 16px;
-            background: #f8f9fa;
+            background: white;
+            border-radius: 8px 8px 0 0;
+            max-height: 300px;
+            min-height: 200px;
+            height: 300px;
         }
         
         .ai-chat-input {
@@ -175,6 +186,231 @@
             color: white;
             margin-left: auto;
             margin-right: 0;
+        }
+        
+        /* AI助手Tab样式 */
+        .ai-chat-tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .ai-tab-btn {
+            flex: 1;
+            padding: 12px 16px;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6b7280;
+            transition: all 0.2s ease;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .ai-tab-btn:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        
+        .ai-tab-contents {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .ai-tab-content {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        .ai-tab-content.active {
+            display: flex;
+        }
+        
+        /* 最大化模式下的消息容器样式 */
+        .ai-tab-content .ai-chat-messages {
+            max-height: none;
+            min-height: 400px;
+            flex: 1;
+        }
+        
+        /* 练习面板专用样式 - 按照练习.html的颜色系统 */
+        .practice-main-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #F5F7F9; /* bg-light-blue-gray */
+            height: 100%;
+            overflow-y: auto; /* 启用垂直滚动 */
+            overflow-x: hidden; /* 隐藏水平滚动 */
+        }
+        
+        /* 练习面板内容区域滚动优化 */
+        .practice-main-container > div {
+            min-height: 0; /* 允许flex子元素收缩 */
+        }
+        
+        /* 题目展示区域滚动 */
+        .practice-main-container .flex-grow.mb-4.overflow-y-auto {
+            max-height: 400px; /* 限制题目区域最大高度 */
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        
+        /* 练习.html中的颜色变量 */
+        :root {
+            --primary: #32C77F;
+            --warning: #FF9B27;
+            --danger: #ED4B4B;
+            --text-dark-brown: #715D46;
+            --text-medium-brown: #9B8D7D;
+            --text-gray: #828282;
+            --bg-light-blue: #D5F8FF;
+            --bg-beige: #FFFFD6;
+            --bg-light-green: #E2F2EB;
+            --bg-light-gray: #F2F0ED;
+            --bg-light-blue-gray: #F5F7F9;
+        }
+        
+        /* 应用颜色变量到练习面板 */
+        .practice-main-container .text-primary { color: var(--primary); }
+        .practice-main-container .bg-primary { background-color: var(--primary); }
+        .practice-main-container .text-text-dark-brown { color: var(--text-dark-brown); }
+        .practice-main-container .text-text-medium-brown { color: var(--text-medium-brown); }
+        .practice-main-container .text-text-gray { color: var(--text-gray); }
+        .practice-main-container .bg-bg-light-gray { background-color: var(--bg-light-gray); }
+        .practice-main-container .bg-bg-light-green { background-color: var(--bg-light-green); }
+        .practice-main-container .bg-bg-light-blue-gray { background-color: var(--bg-light-blue-gray); }
+        .practice-main-container .focus\:ring-primary:focus { 
+            --tw-ring-color: var(--primary); 
+            --tw-ring-opacity: 0.5;
+        }
+        .practice-main-container .focus\:border-primary:focus { 
+            border-color: var(--primary); 
+        }
+        
+        /* 练习面板中的Markdown内容样式 */
+        .practice-main-container .markdown-content {
+            line-height: 1.6;
+            color: var(--text-dark-brown);
+        }
+        
+        .practice-main-container .markdown-content strong {
+            color: var(--primary);
+            font-weight: 600;
+        }
+        
+        .practice-main-container .markdown-content em {
+            color: var(--text-medium-brown);
+            font-style: italic;
+        }
+        
+        .practice-main-container .markdown-content code {
+            background-color: var(--bg-light-gray);
+            color: var(--text-dark-brown);
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.875rem;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .practice-main-container .markdown-content br + strong {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .practice-main-container .markdown-content br + span {
+            display: block;
+            margin-top: 6px;
+            margin-left: 16px;
+        }
+        
+        .ai-tab-btn.active {
+            color: #32c77b;
+            border-bottom-color: #32c77b;
+            background: white;
+        }
+        
+        /* 确保小窗口和最大化模式的正确切换 */
+        #aiChatWindow:not(.maximized) #aiTabContents {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+        }
+        
+        #aiChatWindow:not(.maximized) #aiChatTabs {
+            display: none !important;
+            visibility: hidden !important;
+        }
+        
+        #aiChatWindow:not(.maximized) #aiChatContent {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        #aiChatWindow.maximized #aiChatContent {
+            display: none !important;
+        }
+        
+        #aiChatWindow.maximized #aiTabContents {
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+        
+        #aiChatWindow.maximized #aiChatTabs {
+            display: flex !important;
+            visibility: visible !important;
+        }
+        
+        /* 练习面板样式 */
+        .practice-panel-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-radius: 8px;
+            margin: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .practice-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #f8f9fa;
+            border-radius: 8px 8px 0 0;
+        }
+        
+        .practice-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .practice-info {
+            margin-bottom: 16px;
+        }
+        
+        .question-area {
+            margin-bottom: 16px;
+        }
+        
+        .answer-area {
+            margin-bottom: 16px;
+        }
+        
+        .answer-history {
+            margin-top: 16px;
         }
 
         /* 历史对话弹窗样式 */
@@ -337,33 +573,166 @@
                 <span class="text-white font-medium">柯基AI助手</span>
             </div>
             <div class="flex items-center space-x-2">
-                <button id="historyChatBtn" class="text-white hover:text-gray-300 transition-colors" title="历史记录">
-                    <span class="material-icons-outlined">history</span>
+                <button id="historyChatBtn" class="text-white hover:bg-white hover:bg-opacity-20 p-1 rounded transition-colors" title="历史记录">
+                    <span class="material-icons-outlined text-sm">history</span>
                 </button>
-                <button id="maximizeChatBtn" class="text-white hover:text-gray-300 transition-colors" title="最大化">
-                    <span class="material-icons-outlined">fullscreen</span>
+                <button id="maximizeChatBtn" class="text-white hover:bg-white hover:bg-opacity-20 p-1 rounded transition-colors" title="最大化">
+                    <span class="material-icons-outlined text-sm">fullscreen</span>
                 </button>
-                <button id="closeChatBtn" class="text-white hover:text-gray-300 transition-colors" title="关闭">
-                    <span class="material-icons-outlined">close</span>
+                <button id="closeChatBtn" class="text-white hover:bg-white hover:bg-opacity-20 p-1 rounded transition-colors" title="关闭">
+                    <span class="material-icons-outlined text-sm">close</span>
                 </button>
             </div>
         </div>
-        <div class="ai-chat-messages" id="aiChatMessages">
-            <div class="ai-message">
-                <div class="message-avatar">🐕</div>
-                <div class="message-content">
-                    汪！我是你的学习小助手，有什么问题可以问我哦！
+        
+        <!-- Tab导航 - 只在最大化时显示 -->
+        <div class="ai-chat-tabs" id="aiChatTabs" style="display: none;">
+            <button class="ai-tab-btn active" data-tab="learning" id="learningTabBtn">
+                <span class="material-icons-outlined text-sm mr-1">school</span>
+                AI学习助手
+            </button>
+            <button class="ai-tab-btn" data-tab="practice" id="practiceTabBtn">
+                <span class="material-icons-outlined text-sm mr-1">quiz</span>
+                AI练习助手
+            </button>
+        </div>
+        
+        <!-- 小窗口模式 - 统一的聊天界面 -->
+        <div class="ai-chat-content" id="aiChatContent">
+            <div class="ai-chat-messages" id="aiChatMessages">
+                <!-- 聊天消息将在这里显示 -->
+            </div>
+            
+            <div class="ai-chat-input">
+                <div class="flex items-center space-x-2 mb-2">
+                    <button id="summaryChatBtn" class="px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors flex items-center">
+                        <span class="material-icons-outlined text-xs mr-1">summarize</span>
+                        总结
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="text" id="aiChatInput" placeholder="输入消息..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <button id="sendChatBtn" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                        发送
+                    </button>
                 </div>
             </div>
         </div>
-        <div class="ai-chat-input">
-            <input type="text" id="aiChatInput" placeholder="输入您的问题..." class="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-            <button id="summaryChatBtn" class="ml-2 px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors" title="总结对话">
-                <span class="material-icons-outlined text-sm">summarize</span>
-            </button>
-            <button id="sendChatBtn" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-                发送
-            </button>
+        
+        <!-- 最大化模式 - Tab内容 -->
+        <div class="ai-tab-contents" id="aiTabContents" style="display: none;">
+            <!-- 学习助手Tab内容 -->
+            <div class="ai-tab-content active" id="learningTabContent">
+                <div class="ai-chat-messages" id="aiChatMessagesMaximized">
+                    <!-- 最大化时的聊天消息 -->
+                </div>
+                
+                <div class="ai-chat-input">
+                    <div class="flex items-center space-x-2 mb-2">
+                        <button id="summaryChatBtnMaximized" class="px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors flex items-center">
+                            <span class="material-icons-outlined text-xs mr-1">summarize</span>
+                            总结
+                        </button>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="aiChatInputMaximized" placeholder="输入消息..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <button id="sendChatBtnMaximized" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors">
+                            发送
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 练习助手Tab内容 - 完全按照练习.html布局设计 -->
+            <div class="ai-tab-content" id="practiceTabContent">
+                <!-- 消息区域 - 只在没有练习面板时显示 -->
+                <div class="ai-chat-messages" id="aiPracticeMessages" style="display: block;">
+                    <!-- 练习相关消息 -->
+                </div>
+                
+                <!-- 练习面板区域 - 完全按照练习.html的main区域布局 -->
+                <div class="practice-main-container" id="practiceContainer" style="display: none;">
+                    <div class="p-6 flex-grow flex flex-col">
+                        <!-- 顶部工具栏 - 对应练习.html的94-121行 -->
+                        <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
+                            <div class="flex items-center space-x-4">
+                                <button class="flex items-center text-text-gray hover:text-primary" id="practiceHistoryBtn">
+                                    <span class="material-icons-outlined mr-1">history</span>
+                                    <span>练习历史</span>
+                                </button>
+                                <button class="flex items-center text-text-gray hover:text-primary" id="newPracticeBtn">
+                                    <span class="material-icons-outlined mr-1">add_circle_outline</span>
+                                    <span>新练习</span>
+                                </button>
+                                <button class="flex items-center text-white bg-primary px-4 py-2 rounded-lg shadow hover:bg-green-600" id="startPracticeBtn">
+                                    <span class="material-icons-outlined mr-2">play_arrow</span>
+                                    <span>开始新练习</span>
+                                </button>
+                                <button class="flex items-center text-text-gray hover:text-primary" id="saveResultBtn">
+                                    <span class="material-icons-outlined mr-1">save_alt</span>
+                                    <span>保存评估结果</span>
+                                </button>
+                                <button class="flex items-center text-text-gray hover:text-primary" id="addToErrorsBtn">
+                                    <span class="material-icons-outlined mr-1">rule_folder</span>
+                                    <span>错题入库</span>
+                                </button>
+                            </div>
+                            <div class="flex items-center text-sm text-text-medium-brown">
+                                <span>练习ID:</span>
+                                <span class="font-mono ml-2 p-1 bg-bg-light-gray rounded" id="practiceIdDisplay">TECH-20240917-001</span>
+                            </div>
+                        </div>
+                        
+                        <!-- 主要内容区域 - 对应练习.html的122-156行 -->
+                        <div class="flex-grow flex flex-col bg-white p-6 rounded-xl shadow-sm">
+                            <!-- 题目展示区 -->
+                            <div class="flex-grow mb-4 overflow-y-auto pr-2">
+                                <h3 class="text-lg font-semibold text-text-dark-brown mb-3">题目展示区</h3>
+                                <div class="bg-bg-light-gray p-4 rounded-lg mb-4" id="questionDisplayArea">
+                                    <p class="text-text-dark-brown leading-relaxed">
+                                        <strong>题目：</strong> <span id="questionContent">题目将在这里显示...</span>
+                                    </p>
+                                </div>
+                                <h4 class="text-md font-semibold text-text-dark-brown mb-2">用户答案记录：</h4>
+                                <div class="space-y-3 text-sm text-text-medium-brown" id="answerHistoryArea">
+                                    <!-- 答案历史将在这里显示 -->
+                                </div>
+                            </div>
+                            
+                            <!-- 答题区域 -->
+                            <div class="mb-4">
+                                <h3 class="text-lg font-semibold text-text-dark-brown mb-3">答题区域</h3>
+                                <textarea class="w-full h-28 p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-200" 
+                                          placeholder="请在此输入你的答案..." id="practiceAnswerInput"></textarea>
+                                <p class="text-xs text-text-gray mt-1">💡 提示: 尝试从定义、特性和应用场景三个方面来回答。</p>
+                            </div>
+                            
+                            <!-- 相关学习内容 -->
+                            <div class="mb-4">
+                                <details class="group">
+                                    <summary class="flex items-center justify-between cursor-pointer p-2 bg-bg-light-blue-gray rounded-lg hover:bg-gray-200">
+                                        <h3 class="text-lg font-semibold text-text-dark-brown">相关学习内容</h3>
+                                        <span class="material-icons-outlined transition-transform duration-300 group-open:rotate-180">expand_more</span>
+                                    </summary>
+                                    <div class="mt-3 p-4 bg-bg-light-green rounded-lg" id="relatedContentDisplay">
+                                        <p class="text-text-dark-brown">选中的学习内容将在这里显示...</p>
+                                    </div>
+                                </details>
+                            </div>
+                        </div>
+                        
+                        <!-- 底部按钮区域 - 对应练习.html的157-164行 -->
+                        <div class="mt-6 flex justify-end space-x-4">
+                            <button class="px-6 py-2 rounded-lg text-text-gray bg-gray-200 hover:bg-gray-300 transition" id="submitAnswerBtn">
+                                提交答案
+                            </button>
+                            <button class="px-6 py-2 rounded-lg text-white bg-primary hover:bg-green-600 transition shadow" id="aiEvaluateBtn">
+                                AI评判
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -564,13 +933,24 @@
             
             // 对话状态管理
             let conversationHistory = [];
-            let conversationId = generateConversationId();
+            let conversationId = '';
             let isMaximized = false;
+            let isWindowOpen = false;
+            let currentPracticeData = null;
             let selectedHistoryId = null;
+            
+            // Tab切换功能
+            const learningTabBtn = document.getElementById('learningTabBtn');
+            const practiceTabBtn = document.getElementById('practiceTabBtn');
+            const learningTabContent = document.getElementById('learningTabContent');
+            const practiceTabContent = document.getElementById('practiceTabContent');
+            
+            // 练习相关元素
+            const practiceContainer = document.getElementById('practiceContainer');
+            const aiPracticeMessages = document.getElementById('aiPracticeMessages');
             
             let isDragging = false;
             let dragOffset = { x: 0, y: 0 };
-            let isWindowOpen = false;
             let dragStartTime = 0;
             let dragStartPos = { x: 0, y: 0 };
             let hasMoved = false;
@@ -668,6 +1048,15 @@
             
             if (historySearchInput) {
                 historySearchInput.addEventListener('input', filterHistoryList);
+            }
+            
+            // Tab切换事件
+            if (learningTabBtn) {
+                learningTabBtn.addEventListener('click', () => switchTab('learning'));
+            }
+            
+            if (practiceTabBtn) {
+                practiceTabBtn.addEventListener('click', () => switchTab('practice'));
             }
             
             // 发送消息
@@ -785,6 +1174,109 @@
                 }
             }
             
+            // 最大化/还原聊天窗口
+            function toggleMaximizeChat() {
+                const chatWindow = document.getElementById('aiChatWindow');
+                const maximizeBtn = document.getElementById('maximizeChatBtn');
+                const maximizeIcon = maximizeBtn.querySelector('.material-icons-outlined');
+                const aiChatContent = document.getElementById('aiChatContent');
+                const aiTabContents = document.getElementById('aiTabContents');
+                const aiChatTabs = document.getElementById('aiChatTabs');
+                
+                if (isMaximized) {
+                    // 还原到小窗口
+                    chatWindow.classList.remove('maximized');
+                    maximizeIcon.textContent = 'fullscreen';
+                    isMaximized = false;
+                    
+                    // 强制显示小窗口聊天内容，完全隐藏Tab相关内容
+                    aiChatContent.style.display = 'flex';
+                    aiTabContents.style.display = 'none';
+                    aiChatTabs.style.display = 'none';
+                    
+                    // 确保小窗口内的消息区域可见
+                    const smallWindowMessages = document.getElementById('aiChatMessages');
+                    const smallWindowInput = document.querySelector('#aiChatContent .ai-chat-input');
+                    
+                    if (smallWindowMessages) {
+                        smallWindowMessages.style.display = 'flex';
+                    }
+                    if (smallWindowInput) {
+                        smallWindowInput.style.display = 'flex';
+                    }
+                    
+                    // 完全隐藏所有Tab内容区域
+                    const learningTabContent = document.getElementById('learningTabContent');
+                    const practiceTabContent = document.getElementById('practiceTabContent');
+                    
+                    if (learningTabContent) {
+                        learningTabContent.style.display = 'none';
+                    }
+                    if (practiceTabContent) {
+                        practiceTabContent.style.display = 'none';
+                    }
+                    
+                    // 重置Tab状态为学习助手（为下次最大化做准备）
+                    const learningTabBtn = document.getElementById('learningTabBtn');
+                    const practiceTabBtn = document.getElementById('practiceTabBtn');
+                    
+                    if (learningTabBtn) {
+                        learningTabBtn.classList.add('active');
+                    }
+                    if (practiceTabBtn) {
+                        practiceTabBtn.classList.remove('active');
+                    }
+                    
+                    // 强制重置所有可能影响显示的样式
+                    setTimeout(() => {
+                        // 确保小窗口内容完全可见
+                        if (aiChatContent) {
+                            aiChatContent.style.display = 'flex';
+                            aiChatContent.style.visibility = 'visible';
+                            aiChatContent.style.opacity = '1';
+                        }
+                        
+                        // 确保Tab内容完全隐藏
+                        if (aiTabContents) {
+                            aiTabContents.style.display = 'none';
+                            aiTabContents.style.visibility = 'hidden';
+                            aiTabContents.style.opacity = '0';
+                        }
+                        
+                        if (aiChatTabs) {
+                            aiChatTabs.style.display = 'none';
+                            aiChatTabs.style.visibility = 'hidden';
+                        }
+                    }, 50);
+                    
+                    // 同步消息内容回小窗口
+                    syncMessagesToSmallWindow();
+                } else {
+                    // 最大化
+                    chatWindow.classList.add('maximized');
+                    maximizeIcon.textContent = 'fullscreen_exit';
+                    isMaximized = true;
+                    
+                    // 隐藏小窗口内容，显示Tab内容
+                    aiChatContent.style.display = 'none';
+                    aiTabContents.style.display = 'flex';
+                    aiChatTabs.style.display = 'flex';
+                    
+                    // 同步消息内容到最大化窗口
+                    syncMessagesToMaximizedWindow();
+                }
+            }
+            
+            // 同步消息到小窗口（已废弃，现在addMessage自动同步）
+            function syncMessagesToSmallWindow() {
+                // 不需要手动同步，addMessage已经自动同步
+            }
+            
+            // 同步消息到最大化窗口（已废弃，现在addMessage自动同步）
+            function syncMessagesToMaximizedWindow() {
+                // 不需要手动同步，addMessage已经自动同步
+            }
+            
             // 生成对话ID
             function generateConversationId() {
                 return 'chat_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
@@ -793,83 +1285,162 @@
             
             // 添加消息到聊天窗口
             function addMessage(content, type, isSummary = false) {
-                if (!messagesContainer) return;
-                
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${type}`;
-                
-                const avatar = document.createElement('div');
-                avatar.className = 'message-avatar';
-                
-                if (type === 'ai') {
-                    avatar.className += ' bg-primary';
-                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
-                } else {
-                    avatar.className += ' bg-blue-500';
-                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">person</span>';
+                // 创建消息元素的函数
+                function createMessageElement() {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${type}`;
+                    
+                    const avatar = document.createElement('div');
+                    avatar.className = 'message-avatar';
+                    
+                    if (type === 'ai') {
+                        avatar.className += ' bg-primary';
+                        avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
+                    } else {
+                        avatar.className += ' bg-blue-500';
+                        avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">person</span>';
+                    }
+                    
+                    const messageContent = document.createElement('div');
+                    messageContent.className = 'message-content';
+                    messageContent.innerHTML = content.replace(/\n/g, '<br>');
+                    
+                    // 如果是总结消息，添加"插入到笔记"按钮
+                    if (isSummary && type === 'ai') {
+                        const buttonContainer = document.createElement('div');
+                        buttonContainer.className = 'mt-3 flex gap-2';
+                        
+                        const insertBtn = document.createElement('button');
+                        insertBtn.className = 'px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors flex items-center gap-1';
+                        insertBtn.innerHTML = '<span class="material-icons-outlined text-xs">note_add</span>插入到笔记';
+                        insertBtn.onclick = () => insertSummaryToNote(content);
+                        
+                        buttonContainer.appendChild(insertBtn);
+                        messageContent.appendChild(buttonContainer);
+                    }
+                    
+                    // 如果是练习成功消息，添加"开始练习"按钮
+                    if (type === 'ai' && (content.includes('练习题目生成完成') || content.includes('生成成功'))) {
+                        const buttonContainer = document.createElement('div');
+                        buttonContainer.className = 'mt-3 flex gap-2';
+                        
+                        const startBtn = document.createElement('button');
+                        startBtn.className = 'px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors flex items-center gap-1';
+                        startBtn.innerHTML = '<span class="material-icons-outlined text-xs">play_arrow</span>点击这里开始练习';
+                        startBtn.onclick = () => {
+                            if (window.startPracticeSession) {
+                                window.startPracticeSession();
+                            }
+                        };
+                        
+                        buttonContainer.appendChild(startBtn);
+                        messageContent.appendChild(buttonContainer);
+                    }
+                    
+                    messageDiv.appendChild(avatar);
+                    messageDiv.appendChild(messageContent);
+                    
+                    return messageDiv;
                 }
                 
-                const messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
-                messageContent.innerHTML = content.replace(/\n/g, '<br>');
+                // 同时添加到小窗口和最大化窗口的消息容器
+                const smallMessagesContainer = document.getElementById('aiChatMessages');
+                const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
                 
-                // 如果是总结消息，添加"插入到笔记"按钮
-                if (isSummary && type === 'ai') {
-                    const buttonContainer = document.createElement('div');
-                    buttonContainer.className = 'mt-3 flex gap-2';
-                    
-                    const insertBtn = document.createElement('button');
-                    insertBtn.className = 'px-3 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600 transition-colors flex items-center gap-1';
-                    insertBtn.innerHTML = '<span class="material-icons-outlined text-xs">note_add</span>插入到笔记';
-                    insertBtn.onclick = () => insertSummaryToNote(content);
-                    
-                    buttonContainer.appendChild(insertBtn);
-                    messageContent.appendChild(buttonContainer);
+                // 添加到小窗口容器
+                if (smallMessagesContainer) {
+                    const smallMessageElement = createMessageElement();
+                    smallMessagesContainer.appendChild(smallMessageElement);
+                    // 强制滚动到底部
+                    setTimeout(() => {
+                        smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                    }, 10);
+                    console.log('✅ 消息已添加到小窗口，滚动高度:', smallMessagesContainer.scrollHeight);
                 }
                 
-                messageDiv.appendChild(avatar);
-                messageDiv.appendChild(messageContent);
+                // 添加到最大化窗口容器
+                if (maxMessagesContainer) {
+                    const maxMessageElement = createMessageElement();
+                    maxMessagesContainer.appendChild(maxMessageElement);
+                    // 强制滚动到底部
+                    setTimeout(() => {
+                        maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                    }, 10);
+                    console.log('✅ 消息已添加到最大化窗口，滚动高度:', maxMessagesContainer.scrollHeight);
+                }
                 
-                messagesContainer.appendChild(messageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                
-                return messageDiv;
+                return smallMessagesContainer ? smallMessagesContainer.lastElementChild : null;
             }
             
             // 添加思考中的消息
             function addThinkingMessage() {
-                if (!messagesContainer) return null;
+                const smallMessagesContainer = document.getElementById('aiChatMessages');
+                const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
                 
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'message ai thinking-message';
+                function createThinkingElement() {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = 'message ai thinking-message';
+                    
+                    const avatar = document.createElement('div');
+                    avatar.className = 'message-avatar bg-primary';
+                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
+                    
+                    const messageContent = document.createElement('div');
+                    messageContent.className = 'message-content';
+                    messageContent.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>';
+                    
+                    messageDiv.appendChild(avatar);
+                    messageDiv.appendChild(messageContent);
+                    
+                    return messageDiv;
+                }
                 
-                const avatar = document.createElement('div');
-                avatar.className = 'message-avatar bg-primary';
-                avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
+                let thinkingElement = null;
                 
-                const messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
-                messageContent.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>';
+                // 添加到小窗口容器
+                if (smallMessagesContainer) {
+                    thinkingElement = createThinkingElement();
+                    smallMessagesContainer.appendChild(thinkingElement);
+                    setTimeout(() => {
+                        smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                    }, 10);
+                }
                 
-                messageDiv.appendChild(avatar);
-                messageDiv.appendChild(messageContent);
+                // 添加到最大化窗口容器
+                if (maxMessagesContainer) {
+                    const maxThinkingElement = createThinkingElement();
+                    maxMessagesContainer.appendChild(maxThinkingElement);
+                    setTimeout(() => {
+                        maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                    }, 10);
+                }
                 
-                messagesContainer.appendChild(messageDiv);
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                
-                return messageDiv;
+                return thinkingElement;
             }
             
             // 移除思考消息
             function removeThinkingMessage(thinkingMessageElement) {
-                if (thinkingMessageElement && thinkingMessageElement.parentNode) {
-                    thinkingMessageElement.parentNode.removeChild(thinkingMessageElement);
+                // 从小窗口容器中移除思考消息
+                const smallMessagesContainer = document.getElementById('aiChatMessages');
+                if (smallMessagesContainer) {
+                    const thinkingMessages = smallMessagesContainer.querySelectorAll('.thinking-message');
+                    thinkingMessages.forEach(msg => msg.remove());
+                }
+                
+                // 从最大化窗口容器中移除思考消息
+                const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
+                if (maxMessagesContainer) {
+                    const thinkingMessages = maxMessagesContainer.querySelectorAll('.thinking-message');
+                    thinkingMessages.forEach(msg => msg.remove());
                 }
             }
             
             // 逐字显示消息
             function addMessageWithTypewriter(content, type, speed = 30) {
-                if (!messagesContainer) return;
+                const smallMessagesContainer = document.getElementById('aiChatMessages');
+                const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
+                
+                if (!smallMessagesContainer && !maxMessagesContainer) return;
                 
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${type}`;
@@ -1065,6 +1636,253 @@
                     item.style.display = visible ? 'block' : 'none';
                 });
             }
+            
+            // Tab切换功能
+            function switchTab(tabName) {
+                // 只在最大化模式下才切换Tab
+                if (!isMaximized) return;
+                
+                // 更新Tab按钮状态
+                document.querySelectorAll('.ai-tab-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelectorAll('.ai-tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                
+                // 激活选中的Tab
+                if (tabName === 'learning') {
+                    const learningTabBtn = document.getElementById('learningTabBtn');
+                    const learningTabContent = document.getElementById('learningTabContent');
+                    if (learningTabBtn) learningTabBtn.classList.add('active');
+                    if (learningTabContent) learningTabContent.classList.add('active');
+                } else if (tabName === 'practice') {
+                    const practiceTabBtn = document.getElementById('practiceTabBtn');
+                    const practiceTabContent = document.getElementById('practiceTabContent');
+                    if (practiceTabBtn) practiceTabBtn.classList.add('active');
+                    if (practiceTabContent) practiceTabContent.classList.add('active');
+                }
+            }
+            
+            // 练习消息处理
+            function addPracticeMessage(content, type = 'ai') {
+                if (!aiPracticeMessages) return;
+                
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `ai-message ${type}`;
+                
+                const avatar = document.createElement('div');
+                avatar.className = 'message-avatar';
+                avatar.textContent = type === 'ai' ? '🐕' : '👤';
+                
+                const messageContent = document.createElement('div');
+                messageContent.className = 'message-content markdown-content';
+                
+                if (type === 'ai') {
+                    // 支持Markdown渲染
+                    messageContent.innerHTML = formatMarkdownContent(content);
+                } else {
+                    messageContent.textContent = content;
+                }
+                
+                messageDiv.appendChild(avatar);
+                messageDiv.appendChild(messageContent);
+                aiPracticeMessages.appendChild(messageDiv);
+                
+                // 滚动到底部
+                aiPracticeMessages.scrollTop = aiPracticeMessages.scrollHeight;
+            }
+            
+            // 显示练习面板
+            function showPracticePanel(practiceData) {
+                currentPracticeData = practiceData;
+                
+                // 只在最大化模式下显示练习面板
+                if (!isMaximized) return;
+                
+                // 切换到练习Tab
+                switchTab('practice');
+                
+                // 隐藏消息区域，显示练习面板
+                const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                if (aiPracticeMessages) {
+                    aiPracticeMessages.style.display = 'none';
+                }
+                
+                // 显示练习面板
+                if (practiceContainer) {
+                    practiceContainer.style.display = 'flex';
+                    
+                    // 更新练习信息
+                    const practiceIdDisplay = document.getElementById('practiceIdDisplay');
+                    const relatedContentDisplay = document.getElementById('relatedContentDisplay');
+                    const questionContent = document.getElementById('questionContent');
+                    const answerHistoryArea = document.getElementById('answerHistoryArea');
+                    
+                    if (practiceIdDisplay) {
+                        practiceIdDisplay.textContent = practiceData.id || 'TECH-' + Date.now();
+                    }
+                    
+                    if (relatedContentDisplay) {
+                        relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">${practiceData.selectedText || '选中的学习内容将在这里显示...'}</p>`;
+                    }
+                    
+                    if (questionContent) {
+                        if (practiceData.questions) {
+                            // 支持Markdown格式显示
+                            const questionDisplayArea = questionContent.parentElement;
+                            if (questionDisplayArea) {
+                                questionDisplayArea.innerHTML = `
+                                    <p class="text-text-dark-brown leading-relaxed">
+                                        <strong>题目：</strong> 
+                                        <div class="markdown-content mt-2">${formatMarkdownContent(practiceData.questions)}</div>
+                                    </p>
+                                `;
+                            }
+                        } else {
+                            questionContent.textContent = '题目将在这里显示...';
+                        }
+                    }
+                    
+                    // 清空答案历史
+                    if (answerHistoryArea) {
+                        answerHistoryArea.innerHTML = '';
+                    }
+                    
+                    // 如果没有题目，显示加载状态
+                    if (!practiceData.questions && questionContent) {
+                        const questionDisplayArea = questionContent.parentElement;
+                        if (questionDisplayArea) {
+                            questionDisplayArea.innerHTML = `
+                                <div class="flex flex-col items-center justify-center py-8">
+                                    <div class="w-16 h-16 mb-4">
+                                        <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-primary"></div>
+                                    </div>
+                                    <div class="text-center">
+                                        <h4 class="text-lg font-semibold text-text-dark-brown mb-2">正在生成练习题目</h4>
+                                        <p class="text-text-medium-brown mb-4">AI正在基于您选中的内容生成个性化练习题...</p>
+                                        <div class="w-64 bg-bg-light-gray rounded-full h-2">
+                                            <div class="bg-primary h-2 rounded-full animate-pulse" style="width: 60%"></div>
+                                        </div>
+                                        <p class="text-xs text-text-gray mt-2">预计需要10-30秒</p>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+                }
+                
+                // 打开AI助手窗口
+                if (!isWindowOpen) {
+                    toggleChatWindow();
+                }
+            }
+            
+            // 格式化Markdown内容
+            function formatMarkdownContent(content) {
+                if (!content) return '';
+                
+                // 基础Markdown格式化
+                let formatted = content
+                    // 处理换行
+                    .replace(/\n/g, '<br>')
+                    // 处理粗体 **text**
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    // 处理斜体 *text*
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    // 处理代码块 `code`
+                    .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
+                    // 处理题目编号 1. 2. 3.
+                    .replace(/^(\d+\.\s)/gm, '<br><strong class="text-primary">$1</strong>')
+                    // 处理选择题选项 A) B) C) D)
+                    .replace(/^([A-Z]\)\s)/gm, '<br><span class="text-blue-600 font-medium">$1</span>')
+                    // 处理列表项 -
+                    .replace(/^-\s/gm, '<br>• ')
+                    // 清理开头的<br>
+                    .replace(/^<br>/, '');
+                
+                return formatted;
+            }
+            
+            // 打开AI聊天窗口的全局函数
+            window.openAIChatWindow = function() {
+                if (!isWindowOpen) {
+                    toggleChatWindow();
+                }
+                
+                // 滚动到最新消息
+                setTimeout(() => {
+                    const messagesContainer = document.getElementById('aiChatMessages');
+                    if (messagesContainer) {
+                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    }
+                }, 100);
+            };
+            
+            // 发送AI消息的全局函数
+            window.sendAIMessage = function(message) {
+                const aiChatInput = document.getElementById('aiChatInput');
+                const sendBtn = document.getElementById('sendChatBtn');
+                
+                if (aiChatInput && sendBtn) {
+                    aiChatInput.value = message;
+                    // 触发发送按钮点击
+                    setTimeout(() => {
+                        sendBtn.click();
+                    }, 100);
+                    return true;
+                }
+                return false;
+            };
+            
+            // 开始练习会话 - 从消息中的按钮触发
+            window.startPracticeSession = function() {
+                // 自动最大化AI助手窗口
+                if (!isMaximized) {
+                    toggleMaximizeChat();
+                }
+                
+                // 切换到练习Tab并显示练习面板
+                setTimeout(() => {
+                    switchTab('practice');
+                    // 显示练习面板
+                    if (currentPracticeData) {
+                        showPracticePanel(currentPracticeData);
+                    }
+                }, 300);
+            };
+            
+            // 全局练习功能接口
+            window.showAIPracticePanel = function(practiceData) {
+                // 存储练习数据，但不立即显示面板
+                currentPracticeData = practiceData;
+            };
+            
+            window.addAIPracticeMessage = function(content, type = 'ai') {
+                // 在小窗口模式下，练习消息也显示在主聊天区域
+                if (!isMaximized) {
+                    addMessage(content, type);
+                } else {
+                    addPracticeMessage(content, type);
+                }
+            };
+            
+            // 开始练习按钮点击处理
+            window.startPracticeSession = function() {
+                // 自动最大化AI助手窗口
+                if (!isMaximized) {
+                    toggleMaximizeChat();
+                }
+                
+                // 切换到练习Tab
+                setTimeout(() => {
+                    switchTab('practice');
+                    // 显示练习面板
+                    if (currentPracticeData) {
+                        showPracticePanel(currentPracticeData);
+                    }
+                }, 300);
+            };
             
             // 加载选中的历史对话
             function loadSelectedHistory() {
