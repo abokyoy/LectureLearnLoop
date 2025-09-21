@@ -47,7 +47,7 @@ class CorgiWebBridge(QObject):
         # 菜单状态管理
         self.menu_state = {
             "dashboard": {"expanded": False, "children": []},
-            "learn": {"expanded": False, "children": ["learn_from_materials", "learn_from_audio"]},
+            "learn": {"expanded": False, "children": ["learn_from_materials", "online_course_notes"]},
             "practice": {"expanded": False, "children": ["practice_materials", "practice_knowledge", "practice_errors"]},
             "memory": {"expanded": False, "children": ["memory_knowledge", "memory_errors"]},
             "knowledge_base": {"expanded": False, "children": []},
@@ -206,6 +206,7 @@ class CorgiWebBridge(QObject):
                 "dashboard": "柯基的学习乐园",
                 "learn_from_materials": "从资料学习",
                 "learn_from_audio": "从音视频学习",
+                "online_course_notes": "网课笔记",
                 "practice_materials": "基于学习资料练习",
                 "practice_knowledge": "基于知识点练习", 
                 "practice_errors": "基于错题练习",

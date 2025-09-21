@@ -1,0 +1,163 @@
+<!-- 网课笔记页面 - 像素级还原录音室界面 -->
+
+<!-- 主内容区域 - 完全复制录音室的main部分 -->
+<div class="flex-1 flex flex-col p-8 overflow-y-auto" style="background-color: #F5F7F9;">
+    <!-- 页面头部 -->
+    <header class="flex-shrink-0 flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold" style="color: #715D46;">网课笔记</h2>
+        <div class="flex items-center space-x-4">
+            <button class="text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-green-600 transition duration-300" style="background-color: #32C77F;">
+                <span class="material-icons-outlined mr-2">play_arrow</span>
+                <span>开始录音</span>
+            </button>
+            <button class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">pause</span>
+                <span>暂停录音</span>
+            </button>
+            <button class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">save</span>
+                <span>保存笔记</span>
+            </button>
+            <button class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">auto_awesome</span>
+                <span>手动总结</span>
+            </button>
+            <button class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">photo_camera</span>
+                <span>截图笔记</span>
+            </button>
+        </div>
+    </header>
+    
+    <!-- 主要内容区域 - 两列布局 -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- 左侧：笔记总结 -->
+        <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+            <h3 class="text-xl font-semibold mb-4" style="color: #715D46;">笔记总结 (Markdown)</h3>
+            <div class="flex-1 border border-gray-200 rounded-lg p-4 prose max-w-none">
+                <h4># 标题一</h4>
+                <p>这是<strong>加粗</strong>的文本，这是<em>斜体</em>的文本。</p>
+                <ul>
+                    <li>列表项一</li>
+                    <li>列表项二</li>
+                </ul>
+                <pre><code>// 代码块
+function helloWorld() {
+  console.log("Hello, world!");
+}
+</code></pre>
+                <blockquote>
+                    <p>这是一段引用的文字。</p>
+                </blockquote>
+                <p>在这里编辑和查看您的Markdown笔记总结。</p>
+            </div>
+        </div>
+        
+        <!-- 右侧：实时语音转写 -->
+        <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold" style="color: #715D46;">实时语音转写</h3>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm" style="color: #828282;">音量</span>
+                    <div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div class="h-full" style="width: 60%; background-color: #32C77F;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 border border-gray-200 rounded-lg p-4 space-y-4 overflow-y-auto" style="min-height: 300px;">
+                <div class="flex">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:03]</span>
+                    <p style="color: #9B8D7D;">今天我们来学习一下柯基的日常行为习惯。柯基犬，全名彭布罗克威尔士柯基犬，是一种非常聪明活泼的犬种。</p>
+                </div>
+                <div class="flex">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:15]</span>
+                    <p style="color: #9B8D7D;">它们的精力非常旺盛，需要每天有足够的运动量来消耗体力，否则可能会出现一些破坏性行为。</p>
+                </div>
+                <div class="flex p-2 rounded-lg" style="background-color: #E2F2EB;">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:28]</span>
+                    <p style="color: #715D46;">请注意，这里的重点是运动量，这是保证柯基身心健康的关键。</p>
+                </div>
+                <div class="flex">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:40]</span>
+                    <p style="color: #9B8D7D;">在饮食方面，需要注意控制体重，因为它们天生容易发胖，过胖会对脊椎造成很大压力。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+    
+    // 调试函数
+    function debugLog(message) {
+        console.log('[Online Course Notes Debug]', message);
+    }
+
+    function debugError(message) {
+        console.error('[Online Course Notes Error]', message);
+    }
+
+    // 初始化网课笔记页面
+    function initializeOnlineCourseNotes() {
+        debugLog('初始化网课笔记页面');
+        
+        // 绑定按钮事件
+        bindButtonEvents();
+        
+        debugLog('网课笔记页面初始化完成');
+    }
+
+    // 绑定按钮事件
+    function bindButtonEvents() {
+        // 获取所有按钮
+        const buttons = document.querySelectorAll('header button');
+        
+        if (buttons.length >= 5) {
+            // 开始录音按钮
+            buttons[0].addEventListener('click', function() {
+                debugLog('点击开始录音');
+                // TODO: 实现录音功能
+                alert('录音功能开发中...');
+            });
+
+            // 暂停录音按钮
+            buttons[1].addEventListener('click', function() {
+                debugLog('点击暂停录音');
+                // TODO: 实现暂停录音功能
+                alert('暂停录音功能开发中...');
+            });
+
+            // 保存笔记按钮
+            buttons[2].addEventListener('click', function() {
+                debugLog('点击保存笔记');
+                // TODO: 实现保存笔记功能
+                alert('保存笔记功能开发中...');
+            });
+
+            // 手动总结按钮
+            buttons[3].addEventListener('click', function() {
+                debugLog('点击手动总结');
+                // TODO: 实现手动总结功能
+                alert('手动总结功能开发中...');
+            });
+
+            // 截图笔记按钮
+            buttons[4].addEventListener('click', function() {
+                debugLog('点击截图笔记');
+                // TODO: 实现截图笔记功能
+                alert('截图笔记功能开发中...');
+            });
+        }
+    }
+
+    // 页面初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeOnlineCourseNotes);
+    } else {
+        initializeOnlineCourseNotes();
+    }
+
+})();
+</script>

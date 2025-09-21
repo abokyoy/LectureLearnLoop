@@ -134,6 +134,7 @@ class TemplateManager:
             "dashboard": "工作台",
             "learn_from_materials": "从资料学习",
             "learn_from_audio": "从音视频学习", 
+            "online_course_notes": "网课笔记",
             "practice_materials": "基于学习资料练习",
             "practice_knowledge": "基于知识点练习",
             "practice_errors": "基于错题练习",

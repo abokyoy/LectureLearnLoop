@@ -1,10 +1,10 @@
 @echo off
 echo 正在启动应用程序...
 echo 切换到目标目录...
-cd /d "E:\LLM\summary"
+cd /d "E:\LLM\LectureLearnLoop"
 
 if %errorlevel% neq 0 (
-    echo 错误：无法切换到目录 E:\LLM\summary
+    echo 错误：无法切换到目录 E:\LLM\LectureLearnLoop
     pause
     exit /b 1
 )
