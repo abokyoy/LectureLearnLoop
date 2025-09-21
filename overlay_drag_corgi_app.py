@@ -59,7 +59,10 @@ class CorgiWebBridge(QObject):
         
         # 加载配置
         self.config = load_config()
-        self.logger.info(f"配置加载完成: {self.config.get('llm_provider', 'DeepSeek')}")
+        self.logger.info(f"配置加载完成: {self.config.get('llm_provider', 'Ollama')}")
+        self.logger.info(f"当前LLM提供商: {self.config.get('llm_provider')}")
+        self.logger.info(f"Ollama模型: {self.config.get('ollama_model')}")
+        self.logger.info(f"Ollama URL: {self.config.get('ollama_api_url')}")
         
         self.logger.info("CorgiWebBridge 初始化完成")
         
@@ -600,9 +603,9 @@ class CorgiWebBridge(QObject):
             self.logger.info(f"配置解析成功，包含 {len(new_config)} 个配置项")
             
             # 更新内存中的配置
-            old_provider = self.config.get("llm_provider", "DeepSeek")
+            old_provider = self.config.get("llm_provider", "Ollama")
             self.config.update(new_config)
-            new_provider = self.config.get("llm_provider", "DeepSeek")
+            new_provider = self.config.get("llm_provider", "Ollama")
             
             # 保存到文件
             success = save_config(self.config)
@@ -1599,12 +1602,16 @@ class CorgiWebBridge(QObject):
                 full_prompt += f"用户: {message}\nAI助手: "
                 
                 # 调用LLM API
+                self.logger.info(f"开始调用LLM API，提示词长度: {len(full_prompt)}")
                 ai_response = self._call_llm_api(full_prompt)
                 
                 if ai_response:
                     self.logger.info(f"AI回复生成成功: {ai_response[:50]}...")
                     result = json.dumps({"success": True, "message": ai_response}, ensure_ascii=False)
+                    # 通过信号发送结果到前端
+                    self.chatResponseReady.emit(result)
                 else:
+                    self.logger.warning("LLM API调用失败，使用fallback回复")
                     # 友好的回退回复
                     fallback_responses = [
                         "汪！我现在有点累了，稍后再聊好吗？",
@@ -1614,9 +1621,8 @@ class CorgiWebBridge(QObject):
                     ]
                     fallback_message = random.choice(fallback_responses)
                     result = json.dumps({"success": True, "message": fallback_message}, ensure_ascii=False)
-                
-                # 通过信号发送结果到前端
-                self.chatResponseReady.emit(result)
+                    # 通过信号发送结果到前端
+                    self.chatResponseReady.emit(result)
                     
             except Exception as e:
                 self.logger.error(f"AI聊天功能异常: {e}")
@@ -1629,17 +1635,51 @@ class CorgiWebBridge(QObject):
         thread.start()
     
     def _call_llm_api(self, prompt):
-        """调用LLM API - 支持多种模型"""
+        """调用LLM API - 支持多种模型，带自动fallback"""
         try:
             provider = self.config.get("llm_provider", "Ollama")
+            self.logger.info(f"使用LLM提供商: {provider}")
             
+            # 定义fallback顺序
+            fallback_order = []
             if provider == "Ollama":
-                return self._call_ollama_api(prompt)
+                fallback_order = ["Ollama", "DeepSeek", "Gemini"]
             elif provider == "Gemini":
-                return self._call_gemini_api(prompt)
+                fallback_order = ["Gemini", "Ollama", "DeepSeek"]
+            elif provider == "DeepSeek":
+                fallback_order = ["DeepSeek", "Ollama", "Gemini"]
             else:
-                self.logger.warning(f"未知的LLM提供商: {provider}")
-                return None
+                self.logger.warning(f"未知的LLM提供商: {provider}，使用默认fallback顺序")
+                fallback_order = ["Ollama", "DeepSeek", "Gemini"]
+            
+            # 尝试每个提供商
+            for i, current_provider in enumerate(fallback_order):
+                try:
+                    if i > 0:
+                        self.logger.info(f"尝试fallback到: {current_provider}")
+                    
+                    if current_provider == "Ollama":
+                        result = self._call_ollama_api(prompt)
+                    elif current_provider == "Gemini":
+                        result = self._call_gemini_api(prompt)
+                    elif current_provider == "DeepSeek":
+                        result = self._call_deepseek_api(prompt)
+                    else:
+                        continue
+                    
+                    if result:
+                        if i > 0:
+                            self.logger.info(f"✅ Fallback到{current_provider}成功")
+                        return result
+                    else:
+                        self.logger.warning(f"{current_provider} API返回空结果")
+                        
+                except Exception as e:
+                    self.logger.error(f"{current_provider} API调用失败: {e}")
+                    continue
+            
+            self.logger.error("所有LLM提供商都失败了")
+            return None
                 
         except Exception as e:
             self.logger.error(f"LLM API调用异常: {e}")
@@ -1652,15 +1692,35 @@ class CorgiWebBridge(QObject):
         url = self.config.get("ollama_api_url", "http://localhost:11434/api/generate")
         model = self.config.get("ollama_model", "deepseek-r1:1.5b")
         
+        self.logger.info(f"调用Ollama API: {url}, 模型: {model}")
+        self.logger.info(f"提示词长度: {len(prompt)} 字符")
+        self.logger.info(f"提示词前100字符: {prompt[:100]}...")
+        
         try:
             response = requests.post(url, json={
                 "model": model,
                 "prompt": prompt,
                 "stream": False
             }, timeout=120)
+            
+            self.logger.info(f"Ollama响应状态码: {response.status_code}")
             response.raise_for_status()
             data = response.json()
-            return data.get("response", "").strip()
+            ai_response = data.get("response", "").strip()
+            
+            if ai_response:
+                self.logger.info(f"Ollama回复成功，长度: {len(ai_response)}")
+                return ai_response
+            else:
+                self.logger.warning("Ollama返回空回复")
+                return None
+                
+        except requests.exceptions.ConnectionError as e:
+            self.logger.error(f"Ollama连接失败: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            self.logger.error(f"Ollama请求超时: {e}")
+            return None
         except Exception as e:
             self.logger.error(f"Ollama调用失败: {e}")
             return None
@@ -1701,6 +1761,63 @@ class CorgiWebBridge(QObject):
             return None
         except Exception as e:
             self.logger.error(f"Gemini请求异常: {e}")
+            return None
+    
+    def _call_deepseek_api(self, prompt):
+        """调用DeepSeek API"""
+        import requests
+        
+        api_key = self.config.get("deepseek_api_key", "").strip()
+        model = self.config.get("deepseek_model", "deepseek-chat").strip()
+        url = self.config.get("deepseek_api_url", "https://api.deepseek.com/v1/chat/completions").strip()
+        
+        if not api_key:
+            self.logger.error("DeepSeek未配置API Key")
+            return None
+        
+        self.logger.info(f"调用DeepSeek API: {url}, 模型: {model}")
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "stream": False
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            
+            self.logger.info(f"DeepSeek响应状态码: {response.status_code}")
+            
+            if not response.ok:
+                self.logger.error(f"DeepSeek调用失败: HTTP {response.status_code}")
+                return None
+            
+            data = response.json()
+            
+            if "choices" in data and len(data["choices"]) > 0:
+                content = data["choices"][0].get("message", {}).get("content", "").strip()
+                if content:
+                    self.logger.info(f"DeepSeek回复成功，长度: {len(content)}")
+                    return content
+            
+            self.logger.error("无法解析DeepSeek响应")
+            return None
+            
+        except requests.exceptions.ConnectionError as e:
+            self.logger.error(f"DeepSeek连接失败: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            self.logger.error(f"DeepSeek请求超时: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"DeepSeek请求异常: {e}")
             return None
 
     @Slot(str, result=str)

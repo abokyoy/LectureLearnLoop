@@ -565,6 +565,15 @@
         </div>
     </div>
     
+    <!-- 调试信息面板 -->
+    <div id="debugPanel" style="position: fixed; top: 10px; right: 10px; width: 300px; max-height: 400px; background: rgba(0,0,0,0.8); color: white; padding: 10px; border-radius: 5px; font-size: 12px; overflow-y: auto; z-index: 10000; display: none;">
+        <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 10px;">
+            <strong>🔍 调试信息</strong>
+            <button onclick="clearDebugLog()" style="background: #ff4444; color: white; border: none; padding: 2px 8px; border-radius: 3px; margin-left: auto;">清空</button>
+        </div>
+        <div id="debugLog"></div>
+    </div>
+    
     <!-- AI聊天窗口 -->
     <div class="ai-chat-window" id="aiChatWindow">
         <div class="ai-chat-header">
@@ -1262,20 +1271,136 @@
                     aiTabContents.style.display = 'flex';
                     aiChatTabs.style.display = 'flex';
                     
-                    // 同步消息内容到最大化窗口
-                    syncMessagesToMaximizedWindow();
+                    // 等待DOM更新后再同步消息
+                    setTimeout(() => {
+                        showDebug('🔄 开始同步消息到最大化窗口...');
+                        
+                        const smallMessages = document.getElementById('aiChatMessages');
+                        const maxMessages = document.getElementById('aiChatMessagesMaximized');
+                        
+                        showDebug(`📋 小窗口消息容器: ${!!smallMessages}`);
+                        showDebug(`📋 最大化消息容器: ${!!maxMessages}`);
+                        
+                        if (smallMessages && maxMessages) {
+                            const smallCount = smallMessages.children.length;
+                            const maxCount = maxMessages.children.length;
+                            
+                            showDebug(`📊 同步前 - 小窗口: ${smallCount} 条消息, 最大化窗口: ${maxCount} 条消息`);
+                            showDebug(`📝 小窗口内容预览: ${smallMessages.innerHTML.substring(0, 100)}...`);
+                            
+                            // 强制清空最大化窗口并重新复制
+                            maxMessages.innerHTML = '';
+                            maxMessages.innerHTML = smallMessages.innerHTML;
+                            
+                            showDebug(`✅ 同步后 - 最大化窗口: ${maxMessages.children.length} 条消息`);
+                            
+                            // 滚动到底部
+                            setTimeout(() => {
+                                maxMessages.scrollTop = maxMessages.scrollHeight;
+                                showDebug('📜 已滚动到底部');
+                            }, 100);
+                        } else {
+                            showDebug('❌ 无法找到消息容器');
+                        }
+                    }, 100);
                 }
             }
             
-            // 同步消息到小窗口（已废弃，现在addMessage自动同步）
+            // 同步消息到小窗口
             function syncMessagesToSmallWindow() {
-                // 不需要手动同步，addMessage已经自动同步
+                const smallWindowMessages = document.getElementById('aiChatMessages');
+                const maximizedMessages = document.getElementById('aiChatMessagesMaximized');
+                
+                if (smallWindowMessages && maximizedMessages) {
+                    // 复制最大化窗口的所有消息到小窗口
+                    smallWindowMessages.innerHTML = maximizedMessages.innerHTML;
+                    
+                    // 滚动到底部
+                    setTimeout(() => {
+                        smallWindowMessages.scrollTop = smallWindowMessages.scrollHeight;
+                    }, 100);
+                }
             }
             
-            // 同步消息到最大化窗口（已废弃，现在addMessage自动同步）
+            // 同步消息到最大化窗口
             function syncMessagesToMaximizedWindow() {
-                // 不需要手动同步，addMessage已经自动同步
+                showDebug('🔄 执行syncMessagesToMaximizedWindow函数');
+                const smallWindowMessages = document.getElementById('aiChatMessages');
+                const maximizedMessages = document.getElementById('aiChatMessagesMaximized');
+                
+                if (smallWindowMessages && maximizedMessages) {
+                    showDebug('📋 找到消息容器，开始同步');
+                    showDebug(`📊 小窗口消息数: ${smallWindowMessages.children.length}`);
+                    showDebug(`📊 最大化窗口消息数: ${maximizedMessages.children.length}`);
+                    
+                    // 强制清空并重新复制
+                    maximizedMessages.innerHTML = '';
+                    maximizedMessages.innerHTML = smallWindowMessages.innerHTML;
+                    
+                    showDebug(`✅ 同步完成，最大化窗口消息数: ${maximizedMessages.children.length}`);
+                    
+                    // 滚动到底部
+                    setTimeout(() => {
+                        maximizedMessages.scrollTop = maximizedMessages.scrollHeight;
+                        showDebug('📜 滚动到底部完成');
+                    }, 50);
+                } else {
+                    showDebug('❌ 无法找到消息容器进行同步');
+                    showDebug(`小窗口容器: ${!!smallWindowMessages}`);
+                    showDebug(`最大化容器: ${!!maximizedMessages}`);
+                }
             }
+            
+            // 调试面板相关函数
+            let debugVisible = false;
+            
+            function showDebug(message) {
+                const debugPanel = document.getElementById('debugPanel');
+                const debugLog = document.getElementById('debugLog');
+                
+                if (debugPanel && debugLog) {
+                    if (!debugVisible) {
+                        debugPanel.style.display = 'block';
+                        debugVisible = true;
+                    }
+                    
+                    const timestamp = new Date().toLocaleTimeString();
+                    const logEntry = document.createElement('div');
+                    logEntry.style.marginBottom = '5px';
+                    logEntry.style.borderBottom = '1px solid #444';
+                    logEntry.style.paddingBottom = '3px';
+                    logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> ${message}`;
+                    
+                    debugLog.appendChild(logEntry);
+                    debugLog.scrollTop = debugLog.scrollHeight;
+                }
+                
+                // 同时输出到控制台
+                console.log(message);
+            }
+            
+            function clearDebugLog() {
+                const debugLog = document.getElementById('debugLog');
+                if (debugLog) {
+                    debugLog.innerHTML = '';
+                }
+            }
+            
+            function toggleDebugPanel() {
+                const debugPanel = document.getElementById('debugPanel');
+                if (debugPanel) {
+                    debugVisible = !debugVisible;
+                    debugPanel.style.display = debugVisible ? 'block' : 'none';
+                }
+            }
+            
+            // 添加快捷键 Ctrl+D 显示/隐藏调试面板
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'd') {
+                    e.preventDefault();
+                    toggleDebugPanel();
+                }
+            });
             
             // 生成对话ID
             function generateConversationId() {
@@ -1347,6 +1472,9 @@
                 const smallMessagesContainer = document.getElementById('aiChatMessages');
                 const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
                 
+                showDebug(`📝 addMessage被调用 - 内容: ${content.substring(0, 50)}... 类型: ${type}`);
+                showDebug(`📋 小窗口容器: ${!!smallMessagesContainer} 最大化容器: ${!!maxMessagesContainer}`);
+                
                 // 添加到小窗口容器
                 if (smallMessagesContainer) {
                     const smallMessageElement = createMessageElement();
@@ -1355,7 +1483,9 @@
                     setTimeout(() => {
                         smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
                     }, 10);
-                    console.log('✅ 消息已添加到小窗口，滚动高度:', smallMessagesContainer.scrollHeight);
+                    showDebug(`✅ 消息已添加到小窗口，当前消息数: ${smallMessagesContainer.children.length}`);
+                } else {
+                    showDebug('❌ 小窗口容器未找到');
                 }
                 
                 // 添加到最大化窗口容器
@@ -1366,7 +1496,9 @@
                     setTimeout(() => {
                         maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
                     }, 10);
-                    console.log('✅ 消息已添加到最大化窗口，滚动高度:', maxMessagesContainer.scrollHeight);
+                    showDebug(`✅ 消息已添加到最大化窗口，当前消息数: ${maxMessagesContainer.children.length}`);
+                } else {
+                    showDebug('❌ 最大化窗口容器未找到');
                 }
                 
                 return smallMessagesContainer ? smallMessagesContainer.lastElementChild : null;
@@ -1437,54 +1569,104 @@
             
             // 逐字显示消息
             function addMessageWithTypewriter(content, type, speed = 30) {
+                showDebug(`🎬 addMessageWithTypewriter被调用 - 内容: ${content.substring(0, 50)}... 类型: ${type}`);
+                
                 const smallMessagesContainer = document.getElementById('aiChatMessages');
                 const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
                 
-                if (!smallMessagesContainer && !maxMessagesContainer) return;
+                showDebug(`📋 小窗口容器: ${!!smallMessagesContainer} 最大化容器: ${!!maxMessagesContainer}`);
                 
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${type}`;
-                
-                const avatar = document.createElement('div');
-                avatar.className = 'message-avatar';
-                
-                if (type === 'ai') {
-                    avatar.className += ' bg-primary';
-                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
-                } else {
-                    avatar.className += ' bg-blue-500';
-                    avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">person</span>';
+                if (!smallMessagesContainer && !maxMessagesContainer) {
+                    showDebug('❌ 没有找到任何消息容器');
+                    return;
                 }
                 
-                const messageContent = document.createElement('div');
-                messageContent.className = 'message-content';
+                // 创建消息元素的函数
+                function createMessageElement() {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${type}`;
+                    
+                    const avatar = document.createElement('div');
+                    avatar.className = 'message-avatar';
+                    
+                    if (type === 'ai') {
+                        avatar.className += ' bg-primary';
+                        avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">pets</span>';
+                    } else {
+                        avatar.className += ' bg-blue-500';
+                        avatar.innerHTML = '<span class="material-icons-outlined text-white text-sm">person</span>';
+                    }
+                    
+                    const messageContent = document.createElement('div');
+                    messageContent.className = 'message-content';
+                    
+                    messageDiv.appendChild(avatar);
+                    messageDiv.appendChild(messageContent);
+                    
+                    return { messageDiv, messageContent };
+                }
                 
-                messageDiv.appendChild(avatar);
-                messageDiv.appendChild(messageContent);
+                // 添加到小窗口容器
+                let smallMessageElement = null;
+                if (smallMessagesContainer) {
+                    const { messageDiv, messageContent } = createMessageElement();
+                    smallMessagesContainer.appendChild(messageDiv);
+                    smallMessageElement = { messageDiv, messageContent };
+                    showDebug(`✅ 消息已添加到小窗口，当前消息数: ${smallMessagesContainer.children.length}`);
+                }
                 
-                messagesContainer.appendChild(messageDiv);
+                // 添加到最大化窗口容器
+                let maxMessageElement = null;
+                if (maxMessagesContainer) {
+                    const { messageDiv, messageContent } = createMessageElement();
+                    maxMessagesContainer.appendChild(messageDiv);
+                    maxMessageElement = { messageDiv, messageContent };
+                    showDebug(`✅ 消息已添加到最大化窗口，当前消息数: ${maxMessagesContainer.children.length}`);
+                }
                 
                 // 逐字显示效果
                 let index = 0;
                 const text = content;
-                messageContent.innerHTML = '';
+                
+                // 初始化两个消息内容区域
+                if (smallMessageElement) {
+                    smallMessageElement.messageContent.innerHTML = '';
+                }
+                if (maxMessageElement) {
+                    maxMessageElement.messageContent.innerHTML = '';
+                }
                 
                 function typeWriter() {
                     if (index < text.length) {
                         const char = text.charAt(index);
-                        if (char === '\n') {
-                            messageContent.innerHTML += '<br>';
-                        } else {
-                            messageContent.innerHTML += char;
+                        const displayChar = char === '\n' ? '<br>' : char;
+                        
+                        // 同时更新两个容器的内容
+                        if (smallMessageElement) {
+                            smallMessageElement.messageContent.innerHTML += displayChar;
                         }
+                        if (maxMessageElement) {
+                            maxMessageElement.messageContent.innerHTML += displayChar;
+                        }
+                        
                         index++;
-                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        
+                        // 滚动到底部
+                        if (smallMessagesContainer) {
+                            smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                        }
+                        if (maxMessagesContainer) {
+                            maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                        }
+                        
                         setTimeout(typeWriter, speed);
+                    } else {
+                        showDebug('🎬 逐字显示完成');
                     }
                 }
                 
                 typeWriter();
-                return messageDiv;
+                return smallMessageElement ? smallMessageElement.messageDiv : (maxMessageElement ? maxMessageElement.messageDiv : null);
             }
             
             // 生成AI回复（简单示例）
@@ -1821,18 +2003,25 @@
             
             // 发送AI消息的全局函数
             window.sendAIMessage = function(message) {
+                showDebug(`🚀 sendAIMessage被调用 - 内容: ${message.substring(0, 50)}...`);
+                
                 const aiChatInput = document.getElementById('aiChatInput');
                 const sendBtn = document.getElementById('sendChatBtn');
                 
                 if (aiChatInput && sendBtn) {
+                    showDebug('📋 找到输入框和发送按钮，准备发送消息');
                     aiChatInput.value = message;
+                    
                     // 触发发送按钮点击
                     setTimeout(() => {
+                        showDebug('🔄 模拟点击发送按钮');
                         sendBtn.click();
                     }, 100);
                     return true;
+                } else {
+                    showDebug('❌ 未找到输入框或发送按钮');
+                    return false;
                 }
-                return false;
             };
             
             // 开始练习会话 - 从消息中的按钮触发
