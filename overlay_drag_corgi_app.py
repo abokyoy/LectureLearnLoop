@@ -3,19 +3,72 @@
 
 """
 {{ ... }}
-柯基学习小助手 - 覆盖层拖拽版本
 """
 
 import sys
 import os
 import json
-import json
 import logging
-import os
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
+import traceback
+import asyncio
+import threading
+import requests
+from typing import Dict, Any, Optional, List
+import queue
+import wave
+import numpy as np
+import pyaudio
+import torch
+# 导入语音转写模块
+whisper = None
+faster_whisper = None
+
+try:
+    # 优先尝试faster-whisper（更快更稳定）
+    from faster_whisper import WhisperModel
+    faster_whisper = WhisperModel
+    print("✅ 使用 faster-whisper 包")
+except ImportError:
+    try:
+        # 备选：尝试导入标准whisper包，但需要避免冲突
+        import subprocess
+        import sys
+        
+        # 临时重命名冲突的whisper.py文件
+        conflict_file = None
+        for path in sys.path:
+            potential_conflict = os.path.join(path, 'whisper.py')
+            if os.path.exists(potential_conflict):
+                # 检查是否是冲突的文件（不是OpenAI Whisper）
+                with open(potential_conflict, 'r', encoding='utf-8') as f:
+                    content = f.read(200)
+                    if 'ctypes.util.find_library' in content and 'fallocate' in content:
+                        conflict_file = potential_conflict
+                        backup_file = potential_conflict + '.backup'
+                        os.rename(conflict_file, backup_file)
+                        print(f"🔄 临时重命名冲突文件: {conflict_file}")
+                        break
+        
+        # 现在尝试导入whisper
+        import whisper
+        print("✅ 成功导入 OpenAI Whisper")
+        
+        # 恢复冲突文件
+        if conflict_file:
+            backup_file = conflict_file + '.backup'
+            if os.path.exists(backup_file):
+                os.rename(backup_file, conflict_file)
+                print(f"🔄 恢复冲突文件: {conflict_file}")
+                
+    except Exception as e:
+        print(f"⚠️ Whisper导入失败: {e}")
+        whisper = None
+
+if whisper is None and faster_whisper is None:
+    print("❌ 语音转写功能不可用，录音转写功能将被禁用")
 from config import load_config, save_config
 from template_manager import TemplateManager
 from llm_provider_factory import call_llm, test_llm_connection, llm_factory
@@ -26,7 +79,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebChannel import QWebChannel
-from PySide6.QtCore import QUrl, Qt, QObject, Slot, Signal, QPoint, QRect, QTimer
+from PySide6.QtCore import QUrl, Qt, QObject, Slot, Signal, QPoint, QRect, QTimer, QThread
 from PySide6.QtGui import QFont, QMouseEvent, QCursor, QIcon, QKeySequence, QShortcut
 
 class CorgiWebBridge(QObject):
@@ -53,6 +106,27 @@ class CorgiWebBridge(QObject):
             "knowledge_base": {"expanded": False, "children": []},
             "settings": {"expanded": False, "children": []}
         }
+        
+        # 录音相关状态
+        self.is_recording = False
+        self.transcription_text = ""
+        self.summary_text = ""
+        
+        # 从配置文件加载设备设置
+        self.selected_device_index = self.config.get("selected_audio_device_index", None)
+        self.selected_device_name = self.config.get("selected_audio_device_name", None)
+        
+        if self.selected_device_index is not None:
+            self.logger.info(f"🎤 已加载保存的音频设备: {self.selected_device_name} (索引: {self.selected_device_index})")
+        
+        # 录音和转写线程
+        self._rec_thread = None
+        self._rec_worker = None
+        self._tr_thread = None
+        self._tr_worker = None
+        
+        # 转写队列
+        self.transcription_queue = queue.Queue()
         
     def setup_logging(self):
         """设置日志记录"""
@@ -1962,6 +2036,315 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             self.logger.error(f"获取LLM调用日志失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    # ====== 网课笔记录音功能 ======
+    
+    @Slot()
+    def switchToRecording(self):
+        """切换到录音室页面 - 重定向到网课笔记"""
+        self.logger.info("切换到录音室页面，重定向到网课笔记")
+        self.loadContent("online_course_notes")
+    
+    @Slot(result=str)
+    def getAudioDevices(self):
+        """获取音频输入设备列表"""
+        self.logger.info("获取音频设备列表")
+        
+        try:
+            import pyaudio
+            p = pyaudio.PyAudio()
+            devices = []
+            
+            for i in range(p.get_device_count()):
+                info = p.get_device_info_by_index(i)
+                if info.get("maxInputChannels", 0) > 0:
+                    device_info = {
+                        "index": i,
+                        "name": info.get("name", f"设备{i}"),
+                        "channels": info.get("maxInputChannels", 0),
+                        "sampleRate": int(info.get("defaultSampleRate", 44100)),
+                        "displayName": f"[{i}] {info.get('name', f'设备{i}')} - {info.get('maxInputChannels', 0)}声道 - {int(info.get('defaultSampleRate', 44100))}Hz"
+                    }
+                    devices.append(device_info)
+            
+            p.terminate()
+            
+            self.logger.info(f"找到 {len(devices)} 个音频输入设备")
+            return json.dumps({"success": True, "devices": devices}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"获取音频设备失败: {e}")
+            return json.dumps({"success": False, "error": f"获取音频设备失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(int, str, result=str)
+    def selectAudioDevice(self, device_index, device_name):
+        """选择音频输入设备"""
+        self.logger.info(f"选择音频设备: {device_index} - {device_name}")
+        
+        try:
+            self.selected_device_index = device_index
+            self.selected_device_name = device_name
+            
+            # 保存设备选择到配置文件
+            self.config["selected_audio_device_index"] = device_index
+            self.config["selected_audio_device_name"] = device_name
+            save_config(self.config)
+            
+            self.logger.info(f"✅ 音频设备已选择并保存: {device_name}")
+            return json.dumps({"success": True, "message": f"已选择设备: {device_name}"}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"选择音频设备失败: {e}")
+            return json.dumps({"success": False, "error": f"选择设备失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def startRecording(self):
+        """开始录音"""
+        self.logger.info("🎤 开始录音请求")
+        
+        # 添加调用堆栈信息
+        import traceback
+        self.logger.info("调用堆栈:")
+        for line in traceback.format_stack():
+            self.logger.info(line.strip())
+        
+        if self.is_recording:
+            return json.dumps({"success": False, "error": "录音已在进行中"}, ensure_ascii=False)
+        
+        # 检查是否已选择音频设备
+        if self.selected_device_index is None:
+            return json.dumps({"success": False, "error": "请先选择音频输入设备", "needDeviceSelection": True}, ensure_ascii=False)
+        
+        try:
+            # 启动转写线程
+            self._tr_thread = QThread(self.main_window)
+            self._tr_worker = TranscriberWorker(
+                model_size=self.config.get("whisper_model_size", "small"),
+                language_setting=self.config.get("whisper_language", "auto")
+            )
+            self._tr_worker.moveToThread(self._tr_thread)
+            self._tr_thread.started.connect(self._tr_worker.start)
+            self._tr_worker.textReady.connect(self._on_transcription_ready)
+            self._tr_worker.status.connect(self._on_transcription_status)
+            self._tr_worker.finished.connect(self._tr_thread.quit)
+            self._tr_worker.finished.connect(lambda: self._cleanup_tr())
+            self._tr_thread.start()
+            
+            # 启动录音线程
+            self._rec_thread = QThread(self.main_window)
+            self._rec_worker = AudioRecorderWorker(device_index=self.selected_device_index)
+            self._rec_worker.moveToThread(self._rec_thread)
+            self._rec_thread.started.connect(self._rec_worker.start)
+            self._rec_worker.segmentReady.connect(self._on_audio_segment_ready)
+            self._rec_worker.status.connect(self._on_recording_status)
+            self._rec_worker.peakLevel.connect(self._on_peak_level)
+            self._rec_worker.finished.connect(self._rec_thread.quit)
+            self._rec_worker.finished.connect(lambda: self._cleanup_rec())
+            self._rec_thread.start()
+            
+            self.is_recording = True
+            self.logger.info("✅ 录音已启动")
+            
+            return json.dumps({"success": True, "message": "录音已启动"}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"启动录音失败: {e}")
+            return json.dumps({"success": False, "error": f"启动录音失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def stopRecording(self):
+        """停止录音"""
+        self.logger.info("停止录音请求")
+        
+        if not self.is_recording:
+            return json.dumps({"success": False, "error": "录音未在进行中"}, ensure_ascii=False)
+        
+        try:
+            # 停止录音和转写Worker
+            if self._rec_worker:
+                self._rec_worker.stop()
+            if self._tr_worker:
+                self._tr_worker.stop()
+            
+            self.is_recording = False
+            self.logger.info("✅ 录音已停止")
+            
+            return json.dumps({"success": True, "message": "录音已停止"}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"停止录音失败: {e}")
+            return json.dumps({"success": False, "error": f"停止录音失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def saveNotes(self):
+        """保存笔记"""
+        self.logger.info("保存笔记请求")
+        
+        try:
+            # 创建保存目录
+            notes_dir = os.path.join(os.path.dirname(__file__), "course_notes")
+            os.makedirs(notes_dir, exist_ok=True)
+            
+            # 生成文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"course_note_{timestamp}.md"
+            filepath = os.path.join(notes_dir, filename)
+            
+            # 构建Markdown内容
+            markdown_content = f"""# 网课笔记
+
+## 笔记总结
+
+{self.summary_text}
+
+---
+
+## 原始语音转文字
+
+{self.transcription_text}
+
+---
+
+*保存时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}*
+"""
+            
+            # 保存文件
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(markdown_content)
+            
+            self.logger.info(f"✅ 笔记已保存: {filepath}")
+            
+            return json.dumps({
+                "success": True, 
+                "message": f"笔记已保存: {filename}",
+                "filepath": filepath
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"保存笔记失败: {e}")
+            return json.dumps({"success": False, "error": f"保存笔记失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def manualSummary(self):
+        """手动总结"""
+        self.logger.info("手动总结请求")
+        
+        if not self.transcription_text.strip():
+            return json.dumps({"success": False, "error": "没有转写内容可以总结"}, ensure_ascii=False)
+        
+        try:
+            # 使用统一的LLM工厂进行总结
+            summary_prompt = f"""请对以下语音转写内容进行总结，提取关键信息和要点：
+
+{self.transcription_text}
+
+请用Markdown格式输出总结，包括：
+1. 主要内容概述
+2. 关键知识点
+3. 重要细节
+
+总结内容："""
+            
+            summary_result = call_llm(summary_prompt)
+            
+            if summary_result and not summary_result.startswith("LLM调用失败"):
+                self.summary_text = summary_result
+                self.logger.info("✅ 手动总结完成")
+                
+                return json.dumps({
+                    "success": True, 
+                    "message": "总结完成",
+                    "summary": summary_result
+                }, ensure_ascii=False)
+            else:
+                self.logger.error(f"总结失败: {summary_result}")
+                return json.dumps({"success": False, "error": f"总结失败: {summary_result}"}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"手动总结失败: {e}")
+            return json.dumps({"success": False, "error": f"手动总结失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def takeScreenshot(self):
+        """截图笔记"""
+        self.logger.info("截图笔记请求")
+        
+        try:
+            # 这里可以实现截图功能
+            # 暂时返回占位符
+            return json.dumps({"success": True, "message": "截图功能开发中..."}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"截图笔记失败: {e}")
+            return json.dumps({"success": False, "error": f"截图笔记失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def getTranscriptionText(self):
+        """获取转写文本"""
+        return json.dumps({
+            "success": True,
+            "transcription": self.transcription_text,
+            "summary": self.summary_text,
+            "is_recording": self.is_recording
+        }, ensure_ascii=False)
+    
+    # 录音相关回调方法
+    def _on_audio_segment_ready(self, filepath):
+        """音频片段准备就绪"""
+        if self._tr_worker:
+            self._tr_worker.enqueue_file(filepath)
+    
+    def _on_transcription_ready(self, text):
+        """转写文本准备就绪"""
+        self.transcription_text += f"[{datetime.now().strftime('%H:%M:%S')}] {text}\n"
+        self.logger.info(f"转写文本: {text[:50]}...")
+        
+        # 通知前端更新
+        if self.main_window and self.main_window.web_view:
+            js_code = f"""
+            if (typeof updateTranscriptionText === 'function') {{
+                updateTranscriptionText({json.dumps(text, ensure_ascii=False)});
+            }}
+            """
+            self.main_window.web_view.page().runJavaScript(js_code)
+    
+    def _on_recording_status(self, status):
+        """录音状态更新"""
+        self.logger.info(f"录音状态: {status}")
+        
+        # 通知前端更新状态
+        if self.main_window and self.main_window.web_view:
+            js_code = f"""
+            if (typeof updateRecordingStatus === 'function') {{
+                updateRecordingStatus({json.dumps(status, ensure_ascii=False)});
+            }}
+            """
+            self.main_window.web_view.page().runJavaScript(js_code)
+    
+    def _on_transcription_status(self, status):
+        """转写状态更新"""
+        self.logger.info(f"转写状态: {status}")
+    
+    def _on_peak_level(self, level):
+        """音量峰值更新"""
+        # 通知前端更新音量指示器
+        if self.main_window and self.main_window.web_view:
+            js_code = f"""
+            if (typeof updateVolumeLevel === 'function') {{
+                updateVolumeLevel({level});
+            }}
+            """
+            self.main_window.web_view.page().runJavaScript(js_code)
+    
+    def _cleanup_rec(self):
+        """清理录音线程"""
+        self._rec_thread = None
+        self._rec_worker = None
+    
+    def _cleanup_tr(self):
+        """清理转写线程"""
+        self._tr_thread = None
+        self._tr_worker = None
 
 
 class DragOverlay(QWidget):
@@ -2334,7 +2717,31 @@ class OverlayDragCorgiApp(QMainWindow):
             print(f"✅ 使用模板渲染页面内容: {content_id}")
             return html_content
         except Exception as e:
-            print(f"⚠️ 模板渲染失败，使用备用生成器: {content_id} - {e}")
+            print(f"⚠️ 模板渲染失败: {content_id} - {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # 对于online_course_notes，强制使用模板系统
+            if content_id == "online_course_notes":
+                print(f"🔄 强制重试模板渲染: {content_id}")
+                try:
+                    # 不使用context，直接渲染
+                    html_content = self.template_manager.render_page_content(content_id)
+                    print(f"✅ 强制重试成功: {content_id}")
+                    return html_content
+                except Exception as e2:
+                    print(f"❌ 强制重试也失败: {content_id} - {e2}")
+                    # 返回一个简单的错误页面
+                    return f'''
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center">
+                            <h2 class="text-2xl font-bold text-red-600 mb-4">模板加载失败</h2>
+                            <p class="text-gray-600">页面: {content_id}</p>
+                            <p class="text-gray-600">错误: {str(e2)}</p>
+                        </div>
+                    </div>
+                    '''
+            
             # 备用方案：使用原来的生成器
             content_generators = {
                 "dashboard": self.generate_dashboard_content,
@@ -3641,327 +4048,9 @@ class OverlayDragCorgiApp(QMainWindow):
         self.web_view.loadFinished.connect(on_load_finished)
         
     def create_recording_html(self):
-        """创建录音室页面的HTML内容"""
-        return '''<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <title>录音室 - 柯基学习小助手</title>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
-    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-    <script>
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        primary: "#32C77F",
-                        warning: "#FF9B27",
-                        danger: "#ED4B4B",
-                        "text-dark-brown": "#715D46",
-                        "text-medium-brown": "#9B8D7D",
-                        "text-gray": "#828282",
-                        "bg-light-blue": "#D5F8FF",
-                        "bg-beige": "#FFFFD6",
-                        "bg-light-green": "#E2F2EB",
-                        "bg-light-gray": "#F2F0ED",
-                        "bg-light-blue-gray": "#F5F7F9",
-                    },
-                    fontFamily: {
-                        sans: ['"Noto Sans SC"', 'sans-serif'],
-                    },
-                    borderRadius: {
-                        'xl': '1rem',
-                    },
-                }
-            }
-        };
-    </script>
-    <style>
-        #sidebar.collapsed .sidebar-text,
-        #sidebar.collapsed #user-profile,
-        #sidebar.collapsed .logo-text {
-            display: none;
-        }
-        #sidebar.collapsed .nav-item-icon {
-            margin-right: 0;
-        }
-        #sidebar.collapsed .nav-link {
-            justify-content: center;
-        }
-    </style>
-</head>
-<body class="bg-bg-light-blue-gray font-sans">
-    <div class="flex h-screen bg-white">
-        <aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
-            <div class="flex items-center mb-8 flex-shrink-0">
-                <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3 flex-shrink-0">
-                    <span class="material-icons-outlined text-white">pets</span>
-                </div>
-                <h1 class="text-lg font-bold text-text-dark-brown logo-text">柯基学习小助手</h1>
-            </div>
-            
-            <div class="flex flex-col items-center mb-8" id="user-profile">
-                <div class="w-20 h-20 rounded-full bg-primary flex items-center justify-center mb-2">
-                    <span class="material-icons-outlined text-white text-3xl">pets</span>
-                </div>
-                <p class="font-semibold text-text-dark-brown">柯基的主人</p>
-                <p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
-            </div>
-            
-            <nav class="flex-1 space-y-2">
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchToDashboard()">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">work</span>
-                    <span class="sidebar-text">工作台</span>
-                </a>
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchToNotebook()">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">edit_note</span>
-                    <span class="sidebar-text">笔记本</span>
-                </a>
-                <a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md nav-link" href="#">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">mic</span>
-                    <span class="sidebar-text">录音室</span>
-                </a>
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchToAIPartner()">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">smart_toy</span>
-                    <span class="sidebar-text">AI伙伴</span>
-                </a>
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#" onclick="switchToKnowledgeBase()">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">book</span>
-                    <span class="sidebar-text">知识库</span>
-                </a>
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">bar_chart</span>
-                    <span class="sidebar-text">学习报告</span>
-                </a>
-                <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
-                    <span class="material-icons-outlined mr-3 nav-item-icon">settings</span>
-                    <span class="sidebar-text">设置</span>
-                </a>
-            </nav>
-            
-            <div class="mt-auto">
-                <button class="flex items-center justify-center w-full py-2 text-text-gray hover:bg-bg-light-gray rounded-lg" onclick="toggleSidebar()">
-                    <span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
-                </button>
-            </div>
-        </aside>
-
-        <main class="flex-1 flex flex-col p-8 bg-bg-light-blue-gray overflow-y-auto">
-            <header class="flex-shrink-0 flex justify-between items-center mb-6">
-                <h2 class="text-2xl font-bold text-text-dark-brown">录音室</h2>
-                <div class="flex items-center space-x-4">
-                    <button class="bg-primary text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-green-600 transition duration-300" id="start-recording">
-                        <span class="material-icons-outlined mr-2">play_arrow</span>
-                        <span>开始录音</span>
-                    </button>
-                    <button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" id="pause-recording">
-                        <span class="material-icons-outlined mr-2">pause</span>
-                        <span>暂停录音</span>
-                    </button>
-                    <button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" id="save-notes">
-                        <span class="material-icons-outlined mr-2">save</span>
-                        <span>保存笔记</span>
-                    </button>
-                    <button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" id="manual-summary">
-                        <span class="material-icons-outlined mr-2">auto_awesome</span>
-                        <span>手动总结</span>
-                    </button>
-                    <button class="bg-white text-text-gray font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" id="screenshot-notes">
-                        <span class="material-icons-outlined mr-2">photo_camera</span>
-                        <span>截图笔记</span>
-                    </button>
-                    <div class="flex space-x-1 ml-4">
-                        <button class="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('minimizeWindow')">−</button>
-                        <button class="w-8 h-8 bg-warning hover:bg-yellow-500 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('maximizeWindow')">□</button>
-                        <button class="w-8 h-8 bg-danger hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('closeWindow')">×</button>
-                    </div>
-                </div>
-            </header>
-            
-            <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
-                    <h3 class="text-xl font-semibold text-text-dark-brown mb-4">笔记总结 (Markdown)</h3>
-                    <div class="flex-1 border border-gray-200 rounded-lg p-4 prose max-w-none" id="markdown-editor">
-                        <h4># 标题一</h4>
-                        <p>这是<strong>加粗</strong>的文本，这是<em>斜体</em>的文本。</p>
-                        <ul>
-                            <li>列表项一</li>
-                            <li>列表项二</li>
-                        </ul>
-                        <pre><code>// 代码块
-function helloWorld() {
-  console.log("Hello, world!");
-}
-                        </code></pre>
-                        <blockquote>
-                            <p>这是一段引用的文字。</p>
-                        </blockquote>
-                        <p>在这里编辑和查看您的Markdown笔记总结。</p>
-                    </div>
-                </div>
-                
-                <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xl font-semibold text-text-dark-brown">实时语音转写</h3>
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm text-text-gray">音量</span>
-                            <div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                <div class="h-full bg-primary transition-all duration-300" style="width: 60%;" id="volume-bar"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex-1 border border-gray-200 rounded-lg p-4 space-y-4 overflow-y-auto" style="min-height: 300px;" id="transcription-area">
-                        <div class="flex">
-                            <span class="text-sm font-semibold text-primary mr-3">[00:00:03]</span>
-                            <p class="text-text-medium-brown">今天我们来学习一下柯基的日常行为习惯。柯基犬，全名彭布罗克威尔士柯基犬，是一种非常聪明活泼的犬种。</p>
-                        </div>
-                        <div class="flex">
-                            <span class="text-sm font-semibold text-primary mr-3">[00:00:15]</span>
-                            <p class="text-text-medium-brown">它们的精力非常旺盛，需要每天有足够的运动量来消耗体力，否则可能会出现一些破坏性行为。</p>
-                        </div>
-                        <div class="flex bg-bg-light-green p-2 rounded-lg">
-                            <span class="text-sm font-semibold text-primary mr-3">[00:00:28]</span>
-                            <p class="text-text-dark-brown">请注意，这里的重点是运动量，这是保证柯基身心健康的关键。</p>
-                        </div>
-                        <div class="flex">
-                            <span class="text-sm font-semibold text-primary mr-3">[00:00:40]</span>
-                            <p class="text-text-medium-brown">在饮食方面，需要注意控制体重，因为它们天生容易发胖，过胖会对脊椎造成很大压力。</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <script>
-        let bridge = null;
-        let isRecording = false;
-
-        new QWebChannel(qt.webChannelTransport, function (channel) {
-            bridge = channel.objects.bridge;
-            console.log('WebChannel连接成功');
-        });
-
-        function callPythonFunction(functionName) {
-            if (bridge && bridge[functionName]) {
-                bridge[functionName]();
-            }
-        }
-
-        function switchToDashboard() {
-            if (bridge && bridge.switchToDashboard) {
-                bridge.switchToDashboard();
-            }
-        }
-
-        function switchToNotebook() {
-            if (bridge && bridge.switchToNotebook) {
-                bridge.switchToNotebook();
-            }
-        }
-
-        function switchToAIPartner() {
-            if (bridge && bridge.switchToAIPartner) {
-                bridge.switchToAIPartner();
-            }
-        }
-
-        function switchToKnowledgeBase() {
-            if (bridge && bridge.switchToKnowledgeBase) {
-                bridge.switchToKnowledgeBase();
-            }
-        }
-
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            sidebar.classList.toggle('collapsed');
-            const isCollapsed = sidebar.classList.contains('collapsed');
-            
-            if (isCollapsed) {
-                sidebar.classList.remove('w-64');
-                sidebar.classList.add('w-20');
-            } else {
-                sidebar.classList.remove('w-20');
-                sidebar.classList.add('w-64');
-            }
-            
-            const chevron = document.getElementById('toggle-icon');
-            if (isCollapsed) {
-                chevron.textContent = 'chevron_right';
-            } else {
-                chevron.textContent = 'chevron_left';
-            }
-        }
-
-        // 录音功能
-        document.addEventListener('DOMContentLoaded', function() {
-            const startBtn = document.getElementById('start-recording');
-            const pauseBtn = document.getElementById('pause-recording');
-            const saveBtn = document.getElementById('save-notes');
-            const summaryBtn = document.getElementById('manual-summary');
-            const screenshotBtn = document.getElementById('screenshot-notes');
-            const volumeBar = document.getElementById('volume-bar');
-
-            if (startBtn) {
-                startBtn.addEventListener('click', function() {
-                    if (!isRecording) {
-                        isRecording = true;
-                        startBtn.innerHTML = '<span class="material-icons-outlined mr-2">stop</span><span>停止录音</span>';
-                        startBtn.classList.remove('bg-primary');
-                        startBtn.classList.add('bg-danger');
-                        console.log('开始录音');
-                        
-                        // 模拟音量变化
-                        simulateVolumeChange();
-                    } else {
-                        isRecording = false;
-                        startBtn.innerHTML = '<span class="material-icons-outlined mr-2">play_arrow</span><span>开始录音</span>';
-                        startBtn.classList.remove('bg-danger');
-                        startBtn.classList.add('bg-primary');
-                        console.log('停止录音');
-                    }
-                });
-            }
-
-            if (pauseBtn) {
-                pauseBtn.addEventListener('click', function() {
-                    console.log('暂停录音');
-                });
-            }
-
-            if (saveBtn) {
-                saveBtn.addEventListener('click', function() {
-                    console.log('保存笔记');
-                });
-            }
-
-            if (summaryBtn) {
-                summaryBtn.addEventListener('click', function() {
-                    console.log('手动总结');
-                });
-            }
-
-            if (screenshotBtn) {
-                screenshotBtn.addEventListener('click', function() {
-                    console.log('截图笔记');
-                });
-            }
-
-            function simulateVolumeChange() {
-                if (!isRecording) return;
-                
-                const randomVolume = Math.random() * 100;
-                volumeBar.style.width = randomVolume + '%';
-                
-                setTimeout(simulateVolumeChange, 200);
-            }
-        });
-    </script>
-</body>
-</html>'''
+        """创建录音室页面的HTML内容 - 已废弃，使用模板系统"""
+        # 强制使用模板系统
+        return self.template_manager.render_page_content('online_course_notes')
 
     def create_ai_partner_html(self):
         """创建AI伙伴页面的HTML内容"""
@@ -5670,6 +5759,216 @@ def main():
     print("📝 支持工作台和笔记本功能切换")
     
     sys.exit(app.exec())
+
+# ====== 录音和转写Worker类 ======
+
+# 音频录制参数
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+RATE = 44100
+DEVICE_INDEX_KEYWORD = "CABLE Output"  # 如果找不到，将回退到默认输入设备
+OUTPUT_DIR = "recorded_audio_segments"
+SILENCE_THRESHOLD = 0.001  # 较低的阈值以检测更安静的输入
+SILENCE_SECONDS = 1.5
+MAX_RECORD_SECONDS = 30
+
+
+class AudioRecorderWorker(QObject):
+    """音频录制Worker"""
+    segmentReady = Signal(str)  # 音频文件路径
+    status = Signal(str)
+    peakLevel = Signal(float)   # 0..1 峰值用于UI音量表
+    finished = Signal()
+
+    def __init__(self, device_index: int = None):
+        super().__init__()
+        self._stop = False
+        self._device_index = device_index
+
+    @Slot()
+    def start(self):
+        try:
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            p = pyaudio.PyAudio()
+            device_index = self._device_index if self._device_index is not None else self._find_device_index(p, DEVICE_INDEX_KEYWORD)
+            if device_index is None:
+                # 回退到默认输入设备
+                try:
+                    def_dev = p.get_default_input_device_info()
+                    device_index = int(def_dev.get('index', 0))
+                    self.status.emit(f"使用默认输入设备: {def_dev.get('name', '未知设备')}")
+                except Exception:
+                    self.status.emit(f"未找到音频输入设备: 关键字 '{DEVICE_INDEX_KEYWORD}'，且无默认输入设备")
+                    self.finished.emit()
+                    return
+            dev_info = p.get_device_info_by_index(device_index)
+            dev_name = dev_info.get("name", "未知设备")
+            # 优先使用设备默认采样率以避免不兼容
+            use_rate = int(dev_info.get("defaultSampleRate", RATE)) or RATE
+            use_channels = min(max(1, int(dev_info.get("maxInputChannels", 1))), CHANNELS) or 1
+            self.status.emit(f"准备监听设备: {dev_name} (index={device_index}, rate={use_rate})")
+            stream = p.open(format=FORMAT, channels=use_channels, rate=use_rate, input=True,
+                            frames_per_buffer=CHUNK, input_device_index=device_index)
+            frames = []
+            silence_frames = 0
+            is_recording_segment = False
+            tick = 0
+            while not self._stop:
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                peak = float(np.max(np.abs(audio_np))) if audio_np.size else 0.0
+                is_silent = peak < SILENCE_THRESHOLD
+                # 每约1秒调试状态
+                tick += 1
+                if (tick % max(1, int(use_rate / CHUNK))) == 0:
+                    self.status.emit(f"录音中 峰值={peak:.4f} 阈值={SILENCE_THRESHOLD:.4f}")
+                # 频繁发出VU级别
+                try:
+                    self.peakLevel.emit(peak)
+                except Exception:
+                    pass
+                if is_silent:
+                    if is_recording_segment:
+                        silence_frames += 1
+                    if is_recording_segment and silence_frames >= int(SILENCE_SECONDS * use_rate / CHUNK) and len(frames) > 0:
+                        filename = os.path.join(OUTPUT_DIR, f"segment_{int(time.time())}.wav")
+                        with wave.open(filename, "wb") as wf:
+                            wf.setnchannels(CHANNELS)
+                            wf.setsampwidth(p.get_sample_size(FORMAT))
+                            wf.setframerate(use_rate)
+                            wf.writeframes(b"".join(frames))
+                        self.segmentReady.emit(filename)
+                        frames = []
+                        is_recording_segment = False
+                        silence_frames = 0
+                else:
+                    is_recording_segment = True
+                    silence_frames = 0
+                    frames.append(data)
+                if len(frames) >= int(MAX_RECORD_SECONDS * use_rate / CHUNK):
+                    filename = os.path.join(OUTPUT_DIR, f"segment_force_{int(time.time())}.wav")
+                    with wave.open(filename, "wb") as wf:
+                        wf.setnchannels(CHANNELS)
+                        wf.setsampwidth(p.get_sample_size(FORMAT))
+                        wf.setframerate(use_rate)
+                        wf.writeframes(b"".join(frames))
+                    self.segmentReady.emit(filename)
+                    frames = []
+                    is_recording_segment = False
+                    silence_frames = 0
+        except Exception as e:
+            self.status.emit(f"录音错误: {e}")
+        finally:
+            try:
+                stream.stop_stream(); stream.close()
+            except Exception:
+                pass
+            try:
+                p.terminate()
+            except Exception:
+                pass
+            self.finished.emit()
+
+    def stop(self):
+        self._stop = True
+
+    def _find_device_index(self, p: pyaudio.PyAudio, keyword: str):
+        for i in range(p.get_device_count()):
+            dev_info = p.get_device_info_by_index(i)
+            if keyword.lower() in dev_info.get("name", "").lower() and dev_info.get("maxInputChannels", 0) > 0:
+                return i
+        return None
+
+
+class TranscriberWorker(QObject):
+    """语音转写Worker"""
+    textReady = Signal(str)
+    status = Signal(str)
+    finished = Signal()
+
+    def __init__(self, model_size: str = "small", language_setting: str = "auto"):
+        super().__init__()
+        self._stop = False
+        self._queue = queue.Queue()
+        self._model = None
+        self._model_size = model_size
+        self._language_setting = language_setting
+
+    @Slot()
+    def start(self):
+        try:
+            if whisper is None and faster_whisper is None:
+                self.status.emit("语音转写模块未安装，无法进行语音转写")
+                self.finished.emit()
+                return
+                
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            
+            # 优先使用faster-whisper
+            if faster_whisper is not None:
+                self.status.emit(f"正在加载 Faster-Whisper 模型: {self._model_size} ({device}) ...")
+                self._model = faster_whisper(self._model_size, device=device)
+                self.status.emit("Faster-Whisper模型加载完成。等待音频...")
+                self._use_faster_whisper = True
+            else:
+                self.status.emit(f"正在加载 OpenAI Whisper 模型: {self._model_size} ({device}) ...")
+                self._model = whisper.load_model(self._model_size, device=device)
+                self.status.emit("OpenAI Whisper模型加载完成。等待音频...")
+                self._use_faster_whisper = False
+            
+            while not self._stop:
+                try:
+                    filepath = self._queue.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if not filepath:
+                    continue
+                try:
+                    self.status.emit(f"开始转写: {os.path.basename(filepath)}")
+                    language = None if self._language_setting == "auto" else self._language_setting
+                    
+                    if self._use_faster_whisper:
+                        # 使用faster-whisper
+                        segments, info = self._model.transcribe(
+                            filepath,
+                            language=language,
+                            task="transcribe"
+                        )
+                        text = " ".join([segment.text for segment in segments]).strip()
+                    else:
+                        # 使用标准whisper
+                        result = self._model.transcribe(
+                            filepath,
+                            language=language,
+                            fp16=torch.cuda.is_available(),
+                            task="transcribe",
+                        )
+                        text = result.get("text", "").strip()
+                    
+                    if text:
+                        self.textReady.emit(text)
+                        self.status.emit(f"完成转写: {len(text)} 字符")
+                    else:
+                        self.status.emit("转写结果为空")
+                except Exception as e:
+                    self.status.emit(f"转写错误: {e}")
+        except Exception as e:
+            self.status.emit(f"模型加载失败: {e}")
+        finally:
+            self.finished.emit()
+
+    @Slot(str)
+    def enqueue_file(self, filepath: str):
+        try:
+            self._queue.put_nowait(filepath)
+            self.status.emit(f"已入队: {os.path.basename(filepath)}")
+        except Exception:
+            pass
+
+    def stop(self):
+        self._stop = True
+
 
 if __name__ == "__main__":
     main()
