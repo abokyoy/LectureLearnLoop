@@ -227,6 +227,31 @@
         </div>
     </div>
 
+    <!-- LLM调用日志设置 -->
+    <div class="config-group">
+        <h3>LLM调用日志设置</h3>
+        <div class="form-row">
+            <label for="llm-logging-enabled">启用详细日志:</label>
+            <input type="checkbox" id="llm-logging-enabled" checked>
+            <span style="margin-left: 8px; color: #666; font-size: 12px;">记录所有LLM调用的详细信息（模型、响应时间、时间戳等）</span>
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="openLogViewer()" style="margin-right: 10px;">
+                📋 查看日志
+            </button>
+            <button type="button" class="save-btn" onclick="clearLogs()" style="background: #dc3545;">
+                🗑️ 清空日志
+            </button>
+        </div>
+        <div class="form-row">
+            <label></label>
+            <small style="color: #666;">
+                💡 提示：使用 <kbd>Ctrl + L</kbd> 快捷键可快速打开日志查看器
+            </small>
+        </div>
+    </div>
+
     <!-- 保存按钮 -->
     <div class="flex justify-end">
         <button class="save-btn" id="save-config-btn" onclick="saveConfiguration()">
@@ -350,6 +375,9 @@
         document.getElementById('manual-max-chars').value = config.manual_summary_max_chars || 20000;
         document.getElementById('whisper-language').value = config.whisper_language || 'auto';
         
+        // LLM日志设置
+        document.getElementById('llm-logging-enabled').checked = config.llm_call_logging_enabled !== false;
+        
         // 更新提供商可见性
         updateProviderVisibility();
         
@@ -407,7 +435,8 @@
                 auto_summary_interval: parseInt(document.getElementById('auto-interval').value) || 300,
                 auto_summary_max_chars: parseInt(document.getElementById('auto-max-chars').value) || 8000,
                 manual_summary_max_chars: parseInt(document.getElementById('manual-max-chars').value) || 20000,
-                whisper_language: document.getElementById('whisper-language').value
+                whisper_language: document.getElementById('whisper-language').value,
+                llm_call_logging_enabled: document.getElementById('llm-logging-enabled').checked
             };
             
             debugLog('配置数据收集完成: ' + JSON.stringify(newConfig, null, 2));
@@ -533,12 +562,61 @@
         const modal = document.getElementById('test-connection-modal');
         modal.classList.add('hidden');
     }
+    
+    // 打开日志查看器
+    function openLogViewer() {
+        debugLog('打开日志查看器');
+        
+        if (!window.bridge || !window.bridge.openLogViewer) {
+            showStatusMessage('日志查看器功能不可用', 'error');
+            return;
+        }
+        
+        try {
+            window.bridge.openLogViewer();
+        } catch (error) {
+            debugError('打开日志查看器失败: ' + error.message);
+            showStatusMessage('打开日志查看器失败: ' + error.message, 'error');
+        }
+    }
+    
+    // 清空日志
+    function clearLogs() {
+        debugLog('清空日志');
+        
+        if (!confirm('确定要清空所有LLM调用日志吗？此操作不可撤销。')) {
+            return;
+        }
+        
+        if (!window.bridge || !window.bridge.clearLLMLogs) {
+            showStatusMessage('清空日志功能不可用', 'error');
+            return;
+        }
+        
+        try {
+            window.bridge.clearLLMLogs().then(function(success) {
+                if (success) {
+                    showStatusMessage('日志已清空', 'success');
+                } else {
+                    showStatusMessage('清空日志失败', 'error');
+                }
+            }).catch(function(error) {
+                debugError('清空日志异常: ' + error);
+                showStatusMessage('清空日志异常: ' + error, 'error');
+            });
+        } catch (error) {
+            debugError('调用clearLLMLogs时发生错误: ' + error.message);
+            showStatusMessage('清空日志时发生错误: ' + error.message, 'error');
+        }
+    }
 
     // 将函数暴露到全局作用域
     window.saveConfiguration = saveConfiguration;
     window.testQwenConnection = testQwenConnection;
     window.testConnection = testConnection;
     window.closeTestModal = closeTestModal;
+    window.openLogViewer = openLogViewer;
+    window.clearLogs = clearLogs;
     window.loadContent = loadContent;
 
     // 页面初始化

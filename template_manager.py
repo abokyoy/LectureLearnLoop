@@ -140,7 +140,8 @@ class TemplateManager:
             "memory_knowledge": "基于知识点记忆",
             "memory_errors": "基于错题记忆",
             "knowledge_base": "知识库管理",
-            "settings": "设置"
+            "settings": "设置",
+            "llm_logs": "LLM调用日志"
         }
         
         title = page_titles.get(page_name, page_name)

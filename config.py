@@ -73,7 +73,10 @@ def load_config():
         "auto_summary_interval": 300,
         "whisper_language": "auto",
         "auto_summary_max_chars": 8000,
-        "manual_summary_max_chars": 20000
+        "manual_summary_max_chars": 20000,
+        
+        # LLM调用日志设置
+        "llm_call_logging_enabled": True  # 默认开启LLM调用日志记录
     }
     
     if os.path.exists(CONFIG_FILE):

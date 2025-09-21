@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from config import load_config, save_config
 from template_manager import TemplateManager
+from llm_provider_factory import call_llm, test_llm_connection, llm_factory
+from llm_call_logger import get_llm_call_records, get_llm_call_statistics, llm_call_logger
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QHBoxLayout, QLabel
 )
@@ -25,7 +27,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtCore import QUrl, Qt, QObject, Slot, Signal, QPoint, QRect, QTimer
-from PySide6.QtGui import QFont, QMouseEvent, QCursor, QIcon
+from PySide6.QtGui import QFont, QMouseEvent, QCursor, QIcon, QKeySequence, QShortcut
 
 class CorgiWebBridge(QObject):
     """Python与JavaScript通信桥梁"""
@@ -426,7 +428,7 @@ class CorgiWebBridge(QObject):
 请生成练习题目："""
 
             # 调用LLM API生成题目
-            response = self._call_llm_api(prompt)
+            response = call_llm(prompt, "生成练习题目")
             
             if response:
                 self.logger.info(f"✅ 练习题目生成成功，长度: {len(response)} 字符")
@@ -492,7 +494,7 @@ class CorgiWebBridge(QObject):
 请生成详细的评判报告："""
 
             # 调用LLM API进行评判
-            response = self._call_llm_api(prompt)
+            response = call_llm(prompt, "评判练习答案")
             
             if response:
                 self.logger.info(f"✅ 答案评判完成，长度: {len(response)} 字符")
@@ -617,6 +619,12 @@ class CorgiWebBridge(QObject):
                 self.logger.info(f"✅ 配置保存成功")
                 if old_provider != new_provider:
                     self.logger.info(f"LLM提供商从 {old_provider} 切换到 {new_provider}")
+                    # 强制重新加载LLM提供商
+                    try:
+                        llm_factory.get_provider(force_reload=True)
+                        self.logger.info(f"✅ LLM提供商已切换到 {new_provider}")
+                    except Exception as e:
+                        self.logger.error(f"❌ LLM提供商切换失败: {e}")
                 print(f"✅ 配置已保存")
                 return True
             else:
@@ -1074,26 +1082,35 @@ class CorgiWebBridge(QObject):
         try:
             self.logger.info(f"开始测试 {provider} 连接")
             
-            # 测试用的简单提示词
-            test_prompt = "请回复'连接测试成功'"
+            # 重新加载最新配置
+            self.config = load_config()
+            current_provider = self.config.get("llm_provider", "Ollama")
             
-            if provider == "Qwen":
-                result = self._call_qwen_api(test_prompt)
-            elif provider == "DeepSeek":
-                result = self._call_deepseek_api(test_prompt)
-            elif provider == "Gemini":
-                result = self._call_gemini_api(test_prompt)
-            elif provider == "Ollama":
-                result = self._call_ollama_api(test_prompt)
-            else:
-                return f"❌ 不支持的提供商: {provider}"
+            self.logger.info(f"当前配置的提供商: {current_provider}")
+            self.logger.info(f"请求测试的提供商: {provider}")
             
-            if result:
-                self.logger.info(f"✅ {provider} 连接测试成功")
-                return f"✅ {provider} 连接测试成功\n回复内容: {result[:100]}{'...' if len(result) > 100 else ''}"
-            else:
-                self.logger.error(f"❌ {provider} 连接测试失败: 无响应")
-                return f"❌ {provider} 连接测试失败: 无响应"
+            # 如果测试的提供商与当前配置不一致，提供详细信息
+            if provider != current_provider:
+                return f"""⚠️ 配置不一致检测:
+📋 当前配置的提供商: {current_provider}
+🔍 正在测试的提供商: {provider}
+💡 建议: 请先在设置中选择 {provider}，保存配置后再进行测试"""
+            
+            # 使用统一的测试方法
+            success, message = test_llm_connection()
+            
+            # 添加当前配置信息到测试结果
+            config_info = f"\n📋 当前配置: {current_provider}"
+            if current_provider == "Qwen":
+                config_info += f" (模型: {self.config.get('qwen_model', 'qwen-flash')})"
+            elif current_provider == "DeepSeek":
+                config_info += f" (模型: {self.config.get('deepseek_model', 'deepseek-chat')})"
+            elif current_provider == "Gemini":
+                config_info += f" (模型: {self.config.get('gemini_model', 'gemini-1.5-flash-002')})"
+            elif current_provider == "Ollama":
+                config_info += f" (模型: {self.config.get('ollama_model', 'deepseek-r1:1.5b')})"
+            
+            return message + config_info
                 
         except Exception as e:
             self.logger.error(f"❌ {provider} 连接测试异常: {e}")
@@ -1662,7 +1679,7 @@ class CorgiWebBridge(QObject):
                 
                 # 调用LLM API
                 self.logger.info(f"开始调用LLM API，提示词长度: {len(full_prompt)}")
-                ai_response = self._call_llm_api(full_prompt)
+                ai_response = call_llm(full_prompt, "AI聊天对话")
                 
                 if ai_response:
                     self.logger.info(f"AI回复生成成功: {ai_response[:50]}...")
@@ -1693,258 +1710,9 @@ class CorgiWebBridge(QObject):
         thread.daemon = True
         thread.start()
     
-    def _call_llm_api(self, prompt):
-        """调用LLM API - 支持多种模型，带自动fallback"""
-        try:
-            provider = self.config.get("llm_provider", "Ollama")
-            self.logger.info(f"使用LLM提供商: {provider}")
-            
-            # 定义fallback顺序
-            fallback_order = []
-            if provider == "Ollama":
-                fallback_order = ["Ollama", "DeepSeek", "Gemini", "Qwen"]
-            elif provider == "Gemini":
-                fallback_order = ["Gemini", "Ollama", "DeepSeek", "Qwen"]
-            elif provider == "DeepSeek":
-                fallback_order = ["DeepSeek", "Ollama", "Gemini", "Qwen"]
-            elif provider == "Qwen":
-                fallback_order = ["Qwen", "DeepSeek", "Ollama", "Gemini"]
-            else:
-                self.logger.warning(f"未知的LLM提供商: {provider}，使用默认fallback顺序")
-                fallback_order = ["Ollama", "DeepSeek", "Gemini", "Qwen"]
-            
-            # 尝试每个提供商
-            for i, current_provider in enumerate(fallback_order):
-                try:
-                    if i > 0:
-                        self.logger.info(f"尝试fallback到: {current_provider}")
-                    
-                    if current_provider == "Ollama":
-                        result = self._call_ollama_api(prompt)
-                    elif current_provider == "Gemini":
-                        result = self._call_gemini_api(prompt)
-                    elif current_provider == "DeepSeek":
-                        result = self._call_deepseek_api(prompt)
-                    elif current_provider == "Qwen":
-                        result = self._call_qwen_api(prompt)
-                    else:
-                        continue
-                    
-                    if result:
-                        if i > 0:
-                            self.logger.info(f"✅ Fallback到{current_provider}成功")
-                        return result
-                    else:
-                        self.logger.warning(f"{current_provider} API返回空结果")
-                        
-                except Exception as e:
-                    self.logger.error(f"{current_provider} API调用失败: {e}")
-                    continue
-            
-            self.logger.error("所有LLM提供商都失败了")
-            return None
-                
-        except Exception as e:
-            self.logger.error(f"LLM API调用异常: {e}")
-            return None
+    # 旧的LLM调用方法已被统一工厂替代，保留此注释作为标记
     
-    def _call_ollama_api(self, prompt):
-        """调用Ollama API"""
-        import requests
-        
-        url = self.config.get("ollama_api_url", "http://localhost:11434/api/generate")
-        model = self.config.get("ollama_model", "deepseek-r1:1.5b")
-        
-        self.logger.info(f"调用Ollama API: {url}, 模型: {model}")
-        self.logger.info(f"提示词长度: {len(prompt)} 字符")
-        self.logger.info(f"提示词前100字符: {prompt[:100]}...")
-        
-        try:
-            response = requests.post(url, json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False
-            }, timeout=120)
-            
-            self.logger.info(f"Ollama响应状态码: {response.status_code}")
-            response.raise_for_status()
-            data = response.json()
-            ai_response = data.get("response", "").strip()
-            
-            if ai_response:
-                self.logger.info(f"Ollama回复成功，长度: {len(ai_response)}")
-                return ai_response
-            else:
-                self.logger.warning("Ollama返回空回复")
-                return None
-                
-        except requests.exceptions.ConnectionError as e:
-            self.logger.error(f"Ollama连接失败: {e}")
-            return None
-        except requests.exceptions.Timeout as e:
-            self.logger.error(f"Ollama请求超时: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"Ollama调用失败: {e}")
-            return None
-    
-    def _call_gemini_api(self, prompt):
-        """调用Gemini API"""
-        import requests
-        
-        api_key = self.config.get("gemini_api_key", "").strip()
-        model = self.config.get("gemini_model", "gemini-1.5-flash-002").strip()
-        
-        if not api_key:
-            self.logger.error("Gemini未配置API Key")
-            return None
-        
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [
-                {"parts": [{"text": prompt}]}
-            ]
-        }
-        
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            if not response.ok:
-                self.logger.error(f"Gemini调用失败: HTTP {response.status_code}")
-                return None
-            
-            data = response.json()
-            candidates = data.get("candidates", [])
-            if candidates and "content" in candidates[0]:
-                parts = candidates[0]["content"].get("parts", [])
-                if parts and "text" in parts[0]:
-                    return parts[0]["text"].strip()
-            
-            self.logger.error("无法解析Gemini响应")
-            return None
-        except Exception as e:
-            self.logger.error(f"Gemini请求异常: {e}")
-            return None
-    
-    def _call_deepseek_api(self, prompt):
-        """调用DeepSeek API"""
-        import requests
-        
-        api_key = self.config.get("deepseek_api_key", "").strip()
-        model = self.config.get("deepseek_model", "deepseek-chat").strip()
-        url = self.config.get("deepseek_api_url", "https://api.deepseek.com/v1/chat/completions").strip()
-        
-        if not api_key:
-            self.logger.error("DeepSeek未配置API Key")
-            return None
-        
-        self.logger.info(f"调用DeepSeek API: {url}, 模型: {model}")
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "stream": False
-        }
-        
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            
-            self.logger.info(f"DeepSeek响应状态码: {response.status_code}")
-            
-            if not response.ok:
-                self.logger.error(f"DeepSeek调用失败: HTTP {response.status_code}")
-                return None
-            
-            data = response.json()
-            
-            if "choices" in data and len(data["choices"]) > 0:
-                content = data["choices"][0].get("message", {}).get("content", "").strip()
-                if content:
-                    self.logger.info(f"DeepSeek回复成功，长度: {len(content)}")
-                    return content
-            
-            self.logger.error("无法解析DeepSeek响应")
-            return None
-            
-        except requests.exceptions.ConnectionError as e:
-            self.logger.error(f"DeepSeek连接失败: {e}")
-            return None
-        except requests.exceptions.Timeout as e:
-            self.logger.error(f"DeepSeek请求超时: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"DeepSeek请求异常: {e}")
-            return None
-    
-    def _call_qwen_api(self, prompt):
-        """调用通义千问 API"""
-        import requests
-        
-        api_key = self.config.get("qwen_api_key", "").strip()
-        model = self.config.get("qwen_model", "qwen-flash").strip()
-        url = self.config.get("qwen_api_url", "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation").strip()
-        
-        if not api_key:
-            self.logger.error("通义千问未配置API Key")
-            return None
-        
-        self.logger.info(f"调用通义千问 API: {url}, 模型: {model}")
-        
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        payload = {
-            "model": model,
-            "input": {
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ]
-            },
-            "parameters": {
-                "result_format": "message"
-            }
-        }
-        
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=60)
-            
-            self.logger.info(f"通义千问响应状态码: {response.status_code}")
-            
-            if not response.ok:
-                self.logger.error(f"通义千问调用失败: HTTP {response.status_code}")
-                self.logger.error(f"响应内容: {response.text}")
-                return None
-            
-            data = response.json()
-            
-            if "output" in data and "choices" in data["output"] and len(data["output"]["choices"]) > 0:
-                content = data["output"]["choices"][0].get("message", {}).get("content", "").strip()
-                if content:
-                    self.logger.info(f"通义千问回复成功，长度: {len(content)}")
-                    return content
-            
-            self.logger.error("无法解析通义千问响应")
-            self.logger.error(f"响应数据: {data}")
-            return None
-            
-        except requests.exceptions.ConnectionError as e:
-            self.logger.error(f"通义千问连接失败: {e}")
-            return None
-        except requests.exceptions.Timeout as e:
-            self.logger.error(f"通义千问请求超时: {e}")
-            return None
-        except Exception as e:
-            self.logger.error(f"通义千问请求异常: {e}")
-            return None
+    # 所有旧的LLM API调用方法已被统一的LLM工厂替代
 
     @Slot(str, result=str)
     def summarizeConversation(self, conversation_history_json):
@@ -1976,7 +1744,7 @@ class CorgiWebBridge(QObject):
 请生成总结："""
             
             # 调用LLM API
-            summary = self._call_llm_api(summary_prompt)
+            summary = call_llm(summary_prompt, "对话总结")
             
             if summary:
                 self.logger.info(f"对话总结生成成功: {summary[:50]}...")
@@ -2137,6 +1905,63 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"保存笔记知识点映射失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
+    @Slot()
+    def openLogViewer(self):
+        """打开日志查看器"""
+        self.logger.info("打开LLM调用日志查看器")
+        
+        try:
+            # 这里可以打开一个新的窗口或面板来显示日志
+            # 暂时通过JavaScript在前端显示
+            records = get_llm_call_records(50)  # 获取最近50条记录
+            statistics = get_llm_call_statistics()
+            
+            log_data = {
+                "records": records,
+                "statistics": statistics
+            }
+            
+            # 通过JavaScript显示日志数据
+            js_code = f"showLogViewer({json.dumps(log_data, ensure_ascii=False)});"
+            if self.main_window and self.main_window.web_view:
+                self.main_window.web_view.page().runJavaScript(js_code)
+            
+            self.logger.info(f"日志查看器已打开，显示 {len(records)} 条记录")
+            
+        except Exception as e:
+            self.logger.error(f"打开日志查看器失败: {e}")
+    
+    @Slot(result=bool)
+    def clearLLMLogs(self):
+        """清空LLM调用日志"""
+        self.logger.info("清空LLM调用日志")
+        
+        try:
+            llm_call_logger.clear_records()
+            self.logger.info("✅ LLM调用日志已清空")
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ 清空LLM调用日志失败: {e}")
+            return False
+    
+    @Slot(result=str)
+    def getLLMCallLogs(self):
+        """获取LLM调用日志"""
+        try:
+            records = get_llm_call_records(100)  # 获取最近100条记录
+            statistics = get_llm_call_statistics()
+            
+            result = {
+                "success": True,
+                "records": records,
+                "statistics": statistics
+            }
+            
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            self.logger.error(f"获取LLM调用日志失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
 
 class DragOverlay(QWidget):
     """透明拖拽覆盖层"""
@@ -2327,6 +2152,22 @@ class OverlayDragCorgiApp(QMainWindow):
         
         # 保存初始的正常几何信息
         self.normal_geometry = self.geometry()
+        
+        # 设置快捷键
+        self.setup_shortcuts()
+    
+    def setup_shortcuts(self):
+        """设置快捷键"""
+        # Ctrl+L 打开日志查看器
+        log_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
+        log_shortcut.activated.connect(self.open_log_viewer)
+        print("✅ 快捷键 Ctrl+L 已设置 - 打开日志查看器")
+    
+    def open_log_viewer(self):
+        """打开日志查看器"""
+        print("🔍 快捷键触发：打开LLM调用日志查看器")
+        if self.bridge:
+            self.bridge.loadContent("llm_logs")
         
     def showEvent(self, event):
         """窗口显示时设置圆角mask"""
