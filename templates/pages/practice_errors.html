@@ -1,0 +1,69 @@
+<div class="bg-white rounded-xl shadow-sm p-6">
+    <div class="text-center py-16">
+        <span class="material-icons-outlined text-6xl text-gray-400 mb-4">error_outline</span>
+        <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于错题练习</h3>
+        <p class="text-text-gray mb-6">复习和练习之前做错的题目，避免重复犯错</p>
+        
+        <div class="max-w-2xl mx-auto">
+            <div class="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="text-lg font-semibold text-red-800">错题统计</h4>
+                    <span class="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm">23道错题</span>
+                </div>
+                
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                        <div class="text-2xl font-bold text-red-600">8</div>
+                        <div class="text-sm text-red-500">线性回归</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold text-red-600">5</div>
+                        <div class="text-sm text-red-500">神经网络</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold text-red-600">10</div>
+                        <div class="text-sm text-red-500">其他知识点</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="space-y-3 mb-6">
+                <div class="bg-gray-50 p-4 rounded-lg text-left">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">线性回归 - 损失函数</span>
+                        <span class="text-xs text-red-500">错误2次</span>
+                    </div>
+                    <p class="text-sm text-gray-600">最近错误时间: 2小时前</p>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-lg text-left">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">神经网络 - 反向传播</span>
+                        <span class="text-xs text-red-500">错误3次</span>
+                    </div>
+                    <p class="text-sm text-gray-600">最近错误时间: 1天前</p>
+                </div>
+                
+                <div class="bg-gray-50 p-4 rounded-lg text-left">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-700">决策树 - 信息增益</span>
+                        <span class="text-xs text-red-500">错误1次</span>
+                    </div>
+                    <p class="text-sm text-gray-600">最近错误时间: 3天前</p>
+                </div>
+            </div>
+            
+            <div class="flex space-x-4 justify-center">
+                <button class="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors">
+                    <span class="material-icons-outlined mr-2">refresh</span>
+                    重做所有错题
+                </button>
+                
+                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors">
+                    <span class="material-icons-outlined mr-2">trending_up</span>
+                    智能复习
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

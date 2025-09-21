@@ -1,0 +1,9 @@
+<!-- 顶部标题栏 -->
+<header class="flex justify-between items-center p-6 bg-white border-b border-gray-200">
+    <h2 id="page-title" class="text-2xl font-bold text-text-dark-brown">{{ page_title | default('柯基的学习乐园') }}</h2>
+    <div class="flex space-x-2">
+        <button class="w-8 h-8 bg-gray-300 hover:bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('minimizeWindow')">−</button>
+        <button class="w-8 h-8 bg-warning hover:bg-yellow-500 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('maximizeWindow')">□</button>
+        <button class="w-8 h-8 bg-danger hover:bg-red-600 rounded-full flex items-center justify-center text-white text-sm font-bold" onclick="callPythonFunction('closeWindow')">×</button>
+    </div>
+</header>

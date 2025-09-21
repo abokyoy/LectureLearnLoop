@@ -44,11 +44,31 @@ def load_config():
     import os
     
     default_config = {
-        "llm_provider": "Ollama",
+        "llm_provider": "Ollama",  # 当前选择的LLM提供商
+        
+        # Ollama配置
         "ollama_model": "deepseek-r1:1.5b",
         "ollama_api_url": "http://localhost:11434/api/generate",
+        "ollama_is_selected": True,  # 是否为当前选择的提供商
+        
+        # Gemini配置
         "gemini_api_key": "",
         "gemini_model": "gemini-1.5-flash-002",
+        "gemini_is_selected": False,
+        
+        # DeepSeek配置
+        "deepseek_api_key": "",
+        "deepseek_model": "deepseek-chat",
+        "deepseek_api_url": "https://api.deepseek.com/v1/chat/completions",
+        "deepseek_is_selected": False,
+        
+        # 通义千问配置
+        "qwen_api_key": "sk-36e5536af09040f998b75ba48b17c421",
+        "qwen_model": "qwen-flash",
+        "qwen_api_url": "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+        "qwen_is_selected": False,
+        
+        # 总结设置
         "summary_mode": "auto",
         "auto_summary_interval": 300,
         "whisper_language": "auto",

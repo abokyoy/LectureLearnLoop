@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Notebook</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#32C77F",
+            warning: "#FF9B27",
+            danger: "#ED4B4B",
+            "text-dark-brown": "#715D46",
+            "text-medium-brown": "#9B8D7D",
+            "text-gray": "#828282",
+            "bg-light-blue": "#D5F8FF",
+            "bg-beige": "#FFFFD6", // Corrected hex code
+            "bg-light-green": "#E2F2EB",
+            "bg-light-gray": "#F2F0ED",
+            "bg-light-blue-gray": "#F5F7F9",
+          },
+          fontFamily: {
+            sans: ['"Noto Sans SC"', 'sans-serif'],
+          },
+          borderRadius: {
+            'xl': '1rem',
+          },
+        },
+      },
+    };
+  </script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+<style>
+    #sidebar.collapsed .sidebar-text,
+    #sidebar.collapsed #user-profile,
+    #sidebar.collapsed .logo-text {
+      display: none;
+    }
+    #sidebar.collapsed .nav-item-icon {
+        margin-right: 0;
+    }
+    #sidebar.collapsed .nav-link {
+        justify-content: center;
+    }
+  </style>
+<script>
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const fileStructure = document.getElementById('file-structure');
+      const mainContent = document.getElementById('main-content');
+      sidebar.classList.toggle('collapsed');
+      const isCollapsed = sidebar.classList.contains('collapsed');
+      if (isCollapsed) {
+        fileStructure.classList.add('hidden');
+        sidebar.classList.remove('w-64');
+        sidebar.classList.add('w-20');
+      } else {
+        fileStructure.classList.remove('hidden');
+        sidebar.classList.remove('w-20');
+        sidebar.classList.add('w-64');
+      }
+      const chevron = document.getElementById('toggle-icon');
+      if (isCollapsed) {
+        chevron.textContent = 'chevron_right';
+      } else {
+        chevron.textContent = 'chevron_left';
+      }
+    }
+  </script>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+<div class="flex h-screen bg-white">
+<aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+<div class="flex items-center mb-8 flex-shrink-0">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3 flex-shrink-0">
+<span class="material-icons-outlined text-white">pets</span>
+</div>
+<h1 class="text-lg font-bold text-text-dark-brown logo-text">柯基学习小助手</h1>
+</div>
+<div class="flex flex-col items-center mb-8" id="user-profile">
+<img alt="User Avatar" class="w-20 h-20 rounded-full mb-2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXs0Mg4a15hzy1OIlUz-x1NZ2Sr6t75rKa8WMPlFSucuN1mgje2BiwHSB6red_l91Fdg1rduYwvlR2uNdrFIWLzNRhgz4LLuSsPiDs4D1i5ri5gPzDV-irooIfv4XuLChxg1VrwtdqEYXxxlXyYcI6YRydb5iUhiEpx0hymOo_dEsFhHO_zNl0fs2iXm-4eiT4JwkaIanx0jpD5PQtgSv4Ef9eucxao7dDZSrWN4h3S2wusUo4WDqCKBXi9G9pnwgdgcIOnede4LyT"/>
+<p class="font-semibold text-text-dark-brown">柯基的主人</p>
+<p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">work</span>
+<span class="sidebar-text">工作台</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">edit_note</span>
+<span class="sidebar-text">笔记本</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">mic</span>
+<span class="sidebar-text">录音室</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">smart_toy</span>
+<span class="sidebar-text">AI伙伴</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">book</span>
+<span class="sidebar-text">知识库</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">bar_chart</span>
+<span class="sidebar-text">学习报告</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg nav-link" href="#">
+<span class="material-icons-outlined mr-3 nav-item-icon">settings</span>
+<span class="sidebar-text">设置</span>
+</a>
+</nav>
+<div class="mt-auto">
+<button class="flex items-center justify-center w-full py-2 text-text-gray hover:bg-bg-light-gray rounded-lg" onclick="toggleSidebar()">
+<span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+</button>
+</div>
+</aside>
+<div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
+<div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+<div class="flex justify-between items-center mb-4">
+<h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+<div class="space-x-2">
+<button class="text-text-gray hover:text-primary">
+<span class="material-icons-outlined">create_new_folder</span>
+</button>
+<button class="text-text-gray hover:text-primary">
+<span class="material-icons-outlined">note_add</span>
+</button>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto pr-2">
+<ul class="space-y-1">
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+<span class="text-text-dark-brown font-medium">项目笔记</span>
+<span class="material-icons-outlined text-text-gray ml-auto">expand_more</span>
+</div>
+<ul class="pl-6 mt-1 space-y-1">
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer bg-bg-light-green">
+<span class="material-icons-outlined text-primary mr-2">description</span>
+<span class="text-primary font-semibold">柯基学习法.md</span>
+</div>
+</li>
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-gray-500 mr-2">description</span>
+<span class="text-text-medium-brown">产品设计文档.md</span>
+</div>
+</li>
+</ul>
+</li>
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+<span class="text-text-dark-brown font-medium">日常随笔</span>
+<span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
+</div>
+</li>
+<li>
+<div class="flex items-center p-2 rounded-md hover:bg-bg-light-gray cursor-pointer">
+<span class="material-icons-outlined text-yellow-500 mr-2">folder</span>
+<span class="text-text-dark-brown font-medium">会议纪要</span>
+<span class="material-icons-outlined text-text-gray ml-auto">chevron_right</span>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<main class="flex-1 p-6 flex flex-col">
+<header class="flex justify-between items-center mb-4">
+<h2 class="text-2xl font-bold text-text-dark-brown">柯基学习法.md</h2>
+<div class="flex items-center space-x-2">
+<button class="flex items-center bg-white border border-gray-300 px-3 py-1.5 rounded-lg text-text-gray hover:bg-gray-100">
+<span class="material-icons-outlined text-sm mr-1">visibility</span>
+<span>预览</span>
+</button>
+<button class="flex items-center bg-primary text-white px-3 py-1.5 rounded-lg hover:bg-green-600">
+<span class="material-icons-outlined text-sm mr-1">edit</span>
+<span>编辑</span>
+</button>
+</div>
+</header>
+<div class="flex-1 bg-white rounded-xl shadow-sm p-6 overflow-y-auto">
+<div class="prose max-w-none">
+<h1>柯基学习法核心原则</h1>
+<p>柯基学习法是一种以<strong>兴趣驱动</strong>和<strong>积极反馈</strong>为核心的学习方法论。它模仿了柯基犬活泼、好奇、聪明的特点，旨在让学习过程变得更加有趣和高效。</p>
+<h2>原则一：保持好奇心（像柯基一样探索）</h2>
+<ul>
+<li>主动发现问题，而不是被动接受知识。</li>
+<li>将大的学习目标分解成一个个“小玩具”，逐个攻破。</li>
+<li>勇于尝试新领域，不怕犯错。</li>
+</ul>
+<h2>原则二：短时高效（柯基的精力集中时间）</h2>
+<p>研究表明，柯基的注意力集中时间不长，这启发我们应该采用番茄工作法之类的技巧，进行短时间、高强度的学习。</p>
+<pre><code>// 伪代码示例
+function corgiStudy(sessionTime = 25, breakTime = 5) {
+  while(learning) {
+    focus(sessionTime);
+    play(breakTime);
+  }
+}
+</code></pre>
+<h2>原则三：及时奖励（得到小零食的快乐）</h2>
+<p>每完成一个小的学习任务，就给自己一个积极的反馈。可以是一杯咖啡、一集喜欢的剧，或者只是简单的自我肯定。</p>
+<blockquote>“汪！我真棒！”</blockquote>
+</div>
+</div>
+</main>
+<aside class="w-1/5 bg-white border-l border-gray-200 p-4 flex flex-col">
+<h2 class="text-lg font-semibold text-text-dark-brown mb-4">知识点列表</h2>
+<div class="flex-1 overflow-y-auto space-y-3">
+<div class="bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+<h3 class="font-semibold text-primary">兴趣驱动</h3>
+<p class="text-sm text-text-medium-brown mt-1">学习的核心动力来源，提高主动性。</p>
+</div>
+<div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+<h3 class="font-semibold text-text-dark-brown">积极反馈</h3>
+<p class="text-sm text-text-medium-brown mt-1">通过奖励机制巩固学习成果，提升动机。</p>
+</div>
+<div class="bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow">
+<h3 class="font-semibold text-text-dark-brown">番茄工作法</h3>
+<p class="text-sm text-text-medium-brown mt-1">一种时间管理方法，用于保持专注。</p>
+</div>
+</div>
+</aside>
+</div>
+</div>
+
+</body></html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>前端知识点提取调试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .debug-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        button { padding: 10px 20px; margin: 5px; }
+        #log { background: #f5f5f5; padding: 10px; height: 300px; overflow-y: scroll; }
+    </style>
+</head>
+<body>
+    <h1>前端知识点提取调试工具</h1>
+    
+    <div class="debug-section">
+        <h3>1. 检查Bridge对象</h3>
+        <button onclick="checkBridge()">检查Bridge</button>
+        <div id="bridge-status"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>2. 测试知识点提取</h3>
+        <input type="text" id="test-file-path" placeholder="输入测试文件路径" style="width: 300px;">
+        <button onclick="testExtraction()">测试提取</button>
+        <div id="extraction-status"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>3. 模拟知识点显示</h3>
+        <button onclick="testDisplay()">测试显示</button>
+        <div id="display-test"></div>
+    </div>
+    
+    <div class="debug-section">
+        <h3>4. 调试日志</h3>
+        <button onclick="clearLog()">清空日志</button>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        // 日志函数
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // 检查Bridge对象
+        function checkBridge() {
+            log('开始检查Bridge对象...');
+            
+            if (typeof window.bridge === 'undefined') {
+                log('❌ window.bridge 未定义', 'error');
+                document.getElementById('bridge-status').innerHTML = '<span class="error">❌ Bridge对象不存在</span>';
+                return false;
+            }
+            
+            log('✅ window.bridge 存在');
+            
+            if (typeof window.bridge.extractKnowledgePoints !== 'function') {
+                log('❌ extractKnowledgePoints 方法不存在', 'error');
+                document.getElementById('bridge-status').innerHTML = '<span class="error">❌ extractKnowledgePoints方法不存在</span>';
+                return false;
+            }
+            
+            log('✅ extractKnowledgePoints 方法存在');
+            document.getElementById('bridge-status').innerHTML = '<span class="success">✅ Bridge对象正常</span>';
+            return true;
+        }
+        
+        // 测试知识点提取
+        function testExtraction() {
+            log('开始测试知识点提取...');
+            
+            if (!checkBridge()) {
+                return;
+            }
+            
+            const filePath = document.getElementById('test-file-path').value.trim();
+            if (!filePath) {
+                log('❌ 请输入测试文件路径', 'error');
+                return;
+            }
+            
+            log(`测试文件路径: ${filePath}`);
+            document.getElementById('extraction-status').innerHTML = '<span class="info">🔄 正在提取...</span>';
+            
+            try {
+                window.bridge.extractKnowledgePoints(filePath, function(resultJson) {
+                    log(`收到提取结果，长度: ${resultJson.length} 字符`);
+                    log(`原始结果: ${resultJson.substring(0, 200)}...`);
+                    
+                    try {
+                        const result = JSON.parse(resultJson);
+                        log('✅ JSON解析成功', 'success');
+                        log(`结果结构: ${JSON.stringify(Object.keys(result))}`);
+                        
+                        if (result.success) {
+                            const points = result.knowledge_points || [];
+                            log(`✅ 成功提取 ${points.length} 个知识点`, 'success');
+                            
+                            document.getElementById('extraction-status').innerHTML = 
+                                `<span class="success">✅ 成功提取 ${points.length} 个知识点</span>`;
+                            
+                            // 显示前3个知识点
+                            points.slice(0, 3).forEach((point, index) => {
+                                log(`知识点${index + 1}: ${point.name} - ${point.description.substring(0, 50)}...`);
+                            });
+                            
+                        } else {
+                            const error = result.error || '未知错误';
+                            log(`❌ 提取失败: ${error}`, 'error');
+                            document.getElementById('extraction-status').innerHTML = 
+                                `<span class="error">❌ 提取失败: ${error}</span>`;
+                        }
+                        
+                    } catch (parseError) {
+                        log(`❌ JSON解析失败: ${parseError.message}`, 'error');
+                        document.getElementById('extraction-status').innerHTML = 
+                            `<span class="error">❌ JSON解析失败</span>`;
+                    }
+                });
+                
+            } catch (error) {
+                log(`❌ 调用extractKnowledgePoints失败: ${error.message}`, 'error');
+                document.getElementById('extraction-status').innerHTML = 
+                    `<span class="error">❌ 调用失败: ${error.message}</span>`;
+            }
+        }
+        
+        // 测试知识点显示
+        function testDisplay() {
+            log('测试知识点显示功能...');
+            
+            // 模拟成功的知识点数据
+            const mockResult = {
+                success: true,
+                knowledge_points: [
+                    {
+                        name: "人工智能",
+                        description: "计算机科学的一个分支，旨在创建能够执行通常需要人类智能的任务的系统。",
+                        category: "基础概念",
+                        importance: "高"
+                    },
+                    {
+                        name: "机器学习",
+                        description: "人工智能的一个子领域，使计算机能够从数据中学习并做出预测或决策。",
+                        category: "核心技术",
+                        importance: "高"
+                    },
+                    {
+                        name: "深度学习",
+                        description: "机器学习的一个分支，基于人工神经网络，特别是深层神经网络。",
+                        category: "高级技术",
+                        importance: "中等"
+                    }
+                ],
+                total_count: 3
+            };
+            
+            log('生成模拟知识点数据');
+            log(`模拟数据: ${JSON.stringify(mockResult, null, 2)}`);
+            
+            // 生成显示HTML
+            let html = `
+                <div style="border: 1px solid #ccc; padding: 15px; margin-top: 10px;">
+                    <h4 style="color: green;">✅ 成功提取 ${mockResult.knowledge_points.length} 个知识点</h4>
+            `;
+            
+            mockResult.knowledge_points.forEach((point, index) => {
+                const importanceColor = point.importance === '高' ? 'red' : 
+                                      point.importance === '中等' ? 'orange' : 'green';
+                html += `
+                    <div style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; background: #f9f9f9;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h5 style="margin: 0; color: #333;">${point.name}</h5>
+                            <span style="background: ${importanceColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                                ${point.importance}
+                            </span>
+                        </div>
+                        <p style="margin: 5px 0; color: #666; font-size: 14px;">${point.description}</p>
+                        ${point.category ? `<div style="margin-top: 5px;"><span style="background: #e3f2fd; color: #1976d2; padding: 2px 6px; border-radius: 4px; font-size: 12px;">${point.category}</span></div>` : ''}
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            document.getElementById('display-test').innerHTML = html;
+            log('✅ 知识点显示测试完成', 'success');
+        }
+        
+        // 页面加载时自动检查Bridge
+        window.addEventListener('load', function() {
+            log('页面加载完成，开始检查环境...');
+            setTimeout(checkBridge, 1000); // 延迟1秒检查，确保Bridge已加载
+        });
+    </script>
+</body>
+</html>

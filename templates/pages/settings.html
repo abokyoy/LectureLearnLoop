@@ -1,0 +1,552 @@
+<!-- 设置页面 -->
+<style>
+    .config-group {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        padding: 20px;
+    }
+    .config-group h3 {
+        color: #2d3748;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        border-bottom: 2px solid #32C77F;
+        padding-bottom: 8px;
+    }
+    .form-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .form-row label {
+        width: 120px;
+        color: #4a5568;
+        font-weight: 500;
+    }
+    .form-row input, .form-row select {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .form-row input:focus, .form-row select:focus {
+        outline: none;
+        border-color: #32C77F;
+        box-shadow: 0 0 0 3px rgba(50, 199, 127, 0.1);
+    }
+    .provider-radio {
+        margin-bottom: 8px;
+    }
+    .provider-radio input[type="radio"] {
+        margin-right: 8px;
+    }
+    .provider-radio label {
+        color: #2d3748;
+        font-weight: 500;
+        cursor: pointer;
+    }
+    .save-btn {
+        background: #32C77F;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .save-btn:hover {
+        background: #2bb06a;
+    }
+    .save-btn:disabled {
+        background: #a0aec0;
+        cursor: not-allowed;
+    }
+    .status-message {
+        padding: 10px 15px;
+        border-radius: 4px;
+        margin-top: 10px;
+        font-size: 14px;
+    }
+    .status-success {
+        background: #f0fff4;
+        color: #22543d;
+        border: 1px solid #9ae6b4;
+    }
+    .status-error {
+        background: #fed7d7;
+        color: #742a2a;
+        border: 1px solid #feb2b2;
+    }
+</style>
+
+<div class="p-8">
+    <h1 class="text-2xl font-bold text-text-dark-brown mb-6">系统设置</h1>
+    
+    <!-- 大语言模型提供商 -->
+    <div class="config-group">
+        <h3>大语言模型提供商</h3>
+        <div class="provider-radio">
+            <input type="radio" id="provider-deepseek" name="llm_provider" value="DeepSeek">
+            <label for="provider-deepseek">DeepSeek (在线)</label>
+        </div>
+        <div class="provider-radio">
+            <input type="radio" id="provider-gemini" name="llm_provider" value="Gemini">
+            <label for="provider-gemini">Gemini (云端)</label>
+        </div>
+        <div class="provider-radio">
+            <input type="radio" id="provider-qwen" name="llm_provider" value="Qwen">
+            <label for="provider-qwen">通义千问 (阿里云)</label>
+        </div>
+        <div class="provider-radio">
+            <input type="radio" id="provider-ollama" name="llm_provider" value="Ollama">
+            <label for="provider-ollama">Ollama (本地)</label>
+        </div>
+    </div>
+
+    <!-- DeepSeek 设置 -->
+    <div class="config-group" id="deepseek-config">
+        <h3>DeepSeek 设置</h3>
+        <div class="form-row">
+            <label for="deepseek-key">API Key:</label>
+            <input type="password" id="deepseek-key" placeholder="输入DeepSeek API Key">
+        </div>
+        <div class="form-row">
+            <label for="deepseek-model">模型名称:</label>
+            <input type="text" id="deepseek-model" placeholder="deepseek-chat">
+        </div>
+        <div class="form-row">
+            <label for="deepseek-url">API URL:</label>
+            <input type="text" id="deepseek-url" placeholder="https://api.deepseek.com/v1/chat/completions">
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testConnection('DeepSeek', 'DeepSeek')" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
+    </div>
+
+    <!-- Gemini 设置 -->
+    <div class="config-group" id="gemini-config">
+        <h3>Gemini 设置</h3>
+        <div class="form-row">
+            <label for="gemini-key">API Key:</label>
+            <input type="password" id="gemini-key" placeholder="输入Gemini API Key">
+        </div>
+        <div class="form-row">
+            <label for="gemini-model">模型名称:</label>
+            <input type="text" id="gemini-model" placeholder="gemini-1.5-flash-002">
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testConnection('Gemini', 'Gemini')" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
+    </div>
+
+    <!-- 通义千问设置 -->
+    <div class="config-group" id="qwen-config">
+        <h3>通义千问设置</h3>
+        <div class="form-row">
+            <label for="qwen-key">API Key:</label>
+            <input type="password" id="qwen-key" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" value="sk-36e5536af09040f998b75ba48b17c421">
+        </div>
+        <div class="form-row">
+            <label for="qwen-model">模型名称:</label>
+            <select id="qwen-model">
+                <option value="qwen-flash">qwen-flash (推荐)</option>
+                <option value="qwen-plus">qwen-plus</option>
+                <option value="qwen-max">qwen-max</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="qwen-url">API URL:</label>
+            <input type="text" id="qwen-url" placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation" value="https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation">
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testQwenConnection()" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
+    </div>
+
+    <!-- Ollama 设置 -->
+    <div class="config-group" id="ollama-config">
+        <h3>Ollama 设置</h3>
+        <div class="form-row">
+            <label for="ollama-url">API URL:</label>
+            <input type="text" id="ollama-url" placeholder="http://localhost:11434/api/generate">
+        </div>
+        <div class="form-row">
+            <label for="ollama-model">模型名称:</label>
+            <input type="text" id="ollama-model" placeholder="deepseek-r1:1.5b">
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testConnection('Ollama', 'Ollama')" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
+    </div>
+
+    <!-- 总结设置 -->
+    <div class="config-group">
+        <h3>总结设置</h3>
+        <div class="form-row">
+            <label for="summary-mode">总结模式:</label>
+            <select id="summary-mode">
+                <option value="auto">自动</option>
+                <option value="manual">手动</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="auto-interval">自动总结间隔(秒):</label>
+            <input type="number" id="auto-interval" min="10" max="3600" placeholder="300">
+        </div>
+        <div class="form-row">
+            <label for="auto-max-chars">自动总结最大字符数:</label>
+            <input type="number" id="auto-max-chars" min="100" max="1000000" placeholder="8000">
+        </div>
+        <div class="form-row">
+            <label for="manual-max-chars">手动总结最大字符数:</label>
+            <input type="number" id="manual-max-chars" min="100" max="1000000" placeholder="20000">
+        </div>
+        <div class="form-row">
+            <label for="whisper-language">Whisper语言:</label>
+            <select id="whisper-language">
+                <option value="auto">自动检测</option>
+                <option value="zh">中文</option>
+                <option value="en">英文</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- 保存按钮 -->
+    <div class="flex justify-end">
+        <button class="save-btn" id="save-config-btn" onclick="saveConfiguration()">
+            <span class="material-icons-outlined text-sm mr-1">save</span>
+            保存配置
+        </button>
+    </div>
+
+    <!-- 状态消息 -->
+    <div id="status-message" class="hidden"></div>
+    
+    <!-- 测试连接结果弹出面板 -->
+    <div id="test-connection-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50" onclick="closeTestModal()">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">连接测试结果</h3>
+                    <button onclick="closeTestModal()" class="text-gray-400 hover:text-gray-600">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
+                <div id="test-modal-content" class="mb-4">
+                    <!-- 测试结果内容将在这里显示 -->
+                </div>
+                <div class="flex justify-end">
+                    <button onclick="closeTestModal()" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+    
+    let currentConfig = {};
+
+    // 调试函数
+    function debugLog(message) {
+        console.log('[Settings Debug]', message);
+    }
+
+    function debugError(message) {
+        console.error('[Settings Error]', message);
+    }
+
+    // 页面初始化
+    function initializeSettings() {
+        debugLog('设置页面初始化开始');
+        
+        // 加载当前配置
+        loadCurrentConfig();
+        
+        // 添加提供商切换事件监听
+        document.querySelectorAll('input[name="llm_provider"]').forEach(radio => {
+            radio.addEventListener('change', updateProviderVisibility);
+        });
+    }
+
+    // 加载当前配置
+    function loadCurrentConfig() {
+        debugLog('加载当前配置');
+        
+        if (!window.bridge || !window.bridge.getConfig) {
+            debugError('Bridge对象或getConfig方法不可用');
+            return;
+        }
+        
+        try {
+            window.bridge.getConfig(function(configJson) {
+                debugLog('收到配置数据: ' + configJson.substring(0, 100) + '...');
+                
+                try {
+                    currentConfig = JSON.parse(configJson);
+                    populateConfigForm(currentConfig);
+                } catch (parseError) {
+                    debugError('解析配置JSON失败: ' + parseError.message);
+                }
+            });
+        } catch (error) {
+            debugError('调用getConfig时发生错误: ' + error.message);
+        }
+    }
+
+    // 填充配置表单
+    function populateConfigForm(config) {
+        debugLog('填充配置表单');
+        
+        // 设置LLM提供商
+        const provider = config.llm_provider || 'DeepSeek';
+        const providerRadio = document.querySelector(`input[name="llm_provider"][value="${provider}"]`);
+        if (providerRadio) {
+            providerRadio.checked = true;
+        }
+        
+        // DeepSeek配置
+        document.getElementById('deepseek-key').value = config.deepseek_api_key || '';
+        document.getElementById('deepseek-model').value = config.deepseek_model || 'deepseek-chat';
+        document.getElementById('deepseek-url').value = config.deepseek_api_url || 'https://api.deepseek.com/v1/chat/completions';
+        
+        // Gemini配置
+        document.getElementById('gemini-key').value = config.gemini_api_key || '';
+        document.getElementById('gemini-model').value = config.gemini_model || 'gemini-1.5-flash-002';
+        
+        // 通义千问配置
+        document.getElementById('qwen-key').value = config.qwen_api_key || 'sk-36e5536af09040f998b75ba48b17c421';
+        document.getElementById('qwen-model').value = config.qwen_model || 'qwen-flash';
+        document.getElementById('qwen-url').value = config.qwen_api_url || 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+        
+        // Ollama配置
+        document.getElementById('ollama-url').value = config.ollama_api_url || 'http://localhost:11434/api/generate';
+        document.getElementById('ollama-model').value = config.ollama_model || 'deepseek-r1:1.5b';
+        
+        // 总结设置
+        document.getElementById('summary-mode').value = config.summary_mode || 'auto';
+        document.getElementById('auto-interval').value = config.auto_summary_interval || 300;
+        document.getElementById('auto-max-chars').value = config.auto_summary_max_chars || 8000;
+        document.getElementById('manual-max-chars').value = config.manual_summary_max_chars || 20000;
+        document.getElementById('whisper-language').value = config.whisper_language || 'auto';
+        
+        // 更新提供商可见性
+        updateProviderVisibility();
+        
+        debugLog('配置表单填充完成');
+    }
+
+    // 更新提供商配置区域的可见性
+    function updateProviderVisibility() {
+        const selectedProvider = document.querySelector('input[name="llm_provider"]:checked')?.value;
+        
+        // 隐藏所有配置区域
+        document.getElementById('deepseek-config').style.display = 'none';
+        document.getElementById('gemini-config').style.display = 'none';
+        document.getElementById('qwen-config').style.display = 'none';
+        document.getElementById('ollama-config').style.display = 'none';
+        
+        // 显示选中的配置区域
+        if (selectedProvider === 'DeepSeek') {
+            document.getElementById('deepseek-config').style.display = 'block';
+        } else if (selectedProvider === 'Gemini') {
+            document.getElementById('gemini-config').style.display = 'block';
+        } else if (selectedProvider === 'Qwen') {
+            document.getElementById('qwen-config').style.display = 'block';
+        } else if (selectedProvider === 'Ollama') {
+            document.getElementById('ollama-config').style.display = 'block';
+        }
+    }
+
+    // 保存配置
+    function saveConfiguration() {
+        debugLog('开始保存配置');
+        
+        const saveBtn = document.getElementById('save-config-btn');
+        const originalText = saveBtn.innerHTML;
+        
+        // 显示保存状态
+        saveBtn.innerHTML = '<span class="material-icons-outlined text-sm mr-1 animate-spin">refresh</span>保存中...';
+        saveBtn.disabled = true;
+        
+        try {
+            // 收集表单数据
+            const newConfig = {
+                llm_provider: document.querySelector('input[name="llm_provider"]:checked')?.value || 'DeepSeek',
+                deepseek_api_key: document.getElementById('deepseek-key').value.trim(),
+                deepseek_model: document.getElementById('deepseek-model').value.trim(),
+                deepseek_api_url: document.getElementById('deepseek-url').value.trim(),
+                gemini_api_key: document.getElementById('gemini-key').value.trim(),
+                gemini_model: document.getElementById('gemini-model').value.trim(),
+                qwen_api_key: document.getElementById('qwen-key').value.trim(),
+                qwen_model: document.getElementById('qwen-model').value.trim(),
+                qwen_api_url: document.getElementById('qwen-url').value.trim(),
+                ollama_api_url: document.getElementById('ollama-url').value.trim(),
+                ollama_model: document.getElementById('ollama-model').value.trim(),
+                summary_mode: document.getElementById('summary-mode').value,
+                auto_summary_interval: parseInt(document.getElementById('auto-interval').value) || 300,
+                auto_summary_max_chars: parseInt(document.getElementById('auto-max-chars').value) || 8000,
+                manual_summary_max_chars: parseInt(document.getElementById('manual-max-chars').value) || 20000,
+                whisper_language: document.getElementById('whisper-language').value
+            };
+            
+            debugLog('配置数据收集完成: ' + JSON.stringify(newConfig, null, 2));
+            
+            if (!window.bridge || !window.bridge.saveConfig) {
+                throw new Error('Bridge对象或saveConfig方法不可用');
+            }
+            
+            // 调用后端保存配置
+            window.bridge.saveConfig(JSON.stringify(newConfig), function(success) {
+                debugLog('配置保存结果: ' + success);
+                
+                // 恢复按钮状态
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+                
+                if (success) {
+                    showStatusMessage('配置保存成功！', 'success');
+                    currentConfig = newConfig;
+                } else {
+                    showStatusMessage('配置保存失败，请重试', 'error');
+                }
+            });
+            
+        } catch (error) {
+            debugError('保存配置时发生错误: ' + error.message);
+            
+            // 恢复按钮状态
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+            
+            showStatusMessage('保存过程中发生错误: ' + error.message, 'error');
+        }
+    }
+
+    // 显示状态消息
+    function showStatusMessage(message, type) {
+        const statusDiv = document.getElementById('status-message');
+        statusDiv.className = `status-message status-${type}`;
+        statusDiv.textContent = message;
+        statusDiv.classList.remove('hidden');
+        
+        // 3秒后自动隐藏
+        setTimeout(() => {
+            statusDiv.classList.add('hidden');
+        }, 3000);
+    }
+
+    // 导航函数（兼容SPA）
+    function loadContent(contentId) {
+        if (window.bridge && window.bridge.loadContent) {
+            window.bridge.loadContent(contentId);
+        }
+    }
+
+    // 测试通义千问连接
+    function testQwenConnection() {
+        testConnection('Qwen', '通义千问');
+    }
+    
+    // 通用测试连接函数
+    function testConnection(provider, displayName) {
+        debugLog('开始测试' + displayName + '连接');
+        
+        if (!window.bridge || !window.bridge.testLLMConnection) {
+            showTestModal('❌ 连接测试失败', 'Bridge对象或testLLMConnection方法不可用', 'error');
+            return;
+        }
+        
+        // 显示测试中状态
+        showTestModal('🔄 正在测试连接', '正在测试 ' + displayName + ' 连接，请稍候...', 'loading');
+        
+        try {
+            window.bridge.testLLMConnection(provider).then(function(result) {
+                debugLog(displayName + '连接测试结果: ' + result);
+                
+                if (result && result.includes('✅')) {
+                    showTestModal('✅ 连接测试成功', result, 'success');
+                } else {
+                    showTestModal('❌ 连接测试失败', result || '无响应', 'error');
+                }
+            }).catch(function(error) {
+                debugError(displayName + '连接测试异常: ' + error);
+                showTestModal('❌ 连接测试异常', error.toString(), 'error');
+            });
+        } catch (error) {
+            debugError('调用testLLMConnection时发生错误: ' + error.message);
+            showTestModal('❌ 测试异常', '测试连接时发生错误: ' + error.message, 'error');
+        }
+    }
+    
+    // 显示测试结果弹出面板
+    function showTestModal(title, content, type) {
+        const modal = document.getElementById('test-connection-modal');
+        const modalContent = document.getElementById('test-modal-content');
+        
+        let bgColor = 'bg-blue-50';
+        let textColor = 'text-blue-800';
+        let borderColor = 'border-blue-200';
+        
+        if (type === 'success') {
+            bgColor = 'bg-green-50';
+            textColor = 'text-green-800';
+            borderColor = 'border-green-200';
+        } else if (type === 'error') {
+            bgColor = 'bg-red-50';
+            textColor = 'text-red-800';
+            borderColor = 'border-red-200';
+        }
+        
+        modalContent.innerHTML = `
+            <div class="p-4 rounded-lg ${bgColor} ${borderColor} border">
+                <h4 class="font-semibold ${textColor} mb-2">${title}</h4>
+                <pre class="text-sm ${textColor} whitespace-pre-wrap">${content}</pre>
+            </div>
+        `;
+        
+        modal.classList.remove('hidden');
+    }
+    
+    // 关闭测试结果弹出面板
+    function closeTestModal() {
+        const modal = document.getElementById('test-connection-modal');
+        modal.classList.add('hidden');
+    }
+
+    // 将函数暴露到全局作用域
+    window.saveConfiguration = saveConfiguration;
+    window.testQwenConnection = testQwenConnection;
+    window.testConnection = testConnection;
+    window.closeTestModal = closeTestModal;
+    window.loadContent = loadContent;
+
+    // 页面初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeSettings);
+    } else {
+        initializeSettings();
+    }
+
+})();
+</script>

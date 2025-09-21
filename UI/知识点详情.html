@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#32C77F",
+                        warning: "#FF9B27",
+                        danger: "#ED4B4B",
+                        "text-dark-brown": "#715D46",
+                        "text-medium-brown": "#9B8D7D",
+                        "text-gray": "#828282",
+                        "bg-light-blue": "#D5F8FF",
+                        "bg-beige": "#FFFFD6",
+                        "bg-light-green": "#E2F2EB",
+                        "bg-light-gray": "#F2F0ED",
+                        "bg-light-blue-gray": "#F5F7F9",
+                        "light-primary": "rgba(50, 199, 127, 0.1)",
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans SC"', 'sans-serif'],
+                    },
+                    borderRadius: {
+                        'xl': '1rem',
+                    },
+                },
+            },
+        };
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+<div class="flex h-screen bg-white">
+<aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+<div class="flex items-center mb-8">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3">
+<span class="material-icons-outlined text-white">pets</span>
+</div>
+<h1 class="text-lg font-bold text-text-dark-brown">柯基学习小助手</h1>
+</div>
+<div class="flex flex-col items-center mb-8">
+<img alt="User Avatar" class="w-20 h-20 rounded-full mb-2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXs0Mg4a15hzy1OIlUz-x1NZ2Sr6t75rKa8WMPlFSucuN1mgje2BiwHSB6red_l91Fdg1rduYwvlR2uNdrFIWLzNRhgz4LLuSsPiDs4D1i5ri5gPzDV-irooIfv4XuLChxg1VrwtdqEYXxxlXyYcI6YRydb5iUhiEpx0hymOo_dEsFhHO_zNl0fs2iXm-4eiT4JwkaIanx0jpD5PQtgSv4Ef9eucxao7dDZSrWN4h3S2wusUo4WDqCKBXi9G9pnwgdgcIOnede4LyT"/>
+<p class="font-semibold text-text-dark-brown">柯基的主人</p>
+<p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">work</span>
+<span>工作台</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">edit_note</span>
+<span>笔记本</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">mic</span>
+<span>录音室</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">smart_toy</span>
+<span>AI伙伴</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md" href="#">
+<span class="material-icons-outlined mr-3">book</span>
+<span>知识库</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">bar_chart</span>
+<span>学习报告</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">settings</span>
+<span>设置</span>
+</a>
+</nav>
+<div class="mt-auto">
+<button class="w-full flex items-center justify-center text-text-gray" id="toggle-sidebar">
+<span class="material-icons-outlined">chevron_left</span>
+</button>
+</div>
+</aside>
+<main class="flex-1 p-8 bg-bg-light-blue-gray overflow-y-auto">
+<header class="flex justify-between items-center mb-6">
+<div class="flex items-center text-sm text-text-gray">
+<a class="hover:text-primary" href="#">知识库</a>
+<span class="mx-2 material-icons-outlined text-base">chevron_right</span>
+<a class="hover:text-primary" href="#">机器学习</a>
+<span class="mx-2 material-icons-outlined text-base">chevron_right</span>
+<span class="text-text-dark-brown font-semibold">线性回归原理</span>
+</div>
+<div class="flex items-center space-x-4">
+<div class="relative">
+<input class="w-64 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" placeholder="全局搜索..." type="text"/>
+<span class="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-gray">search</span>
+</div>
+<button class="p-2 rounded-full hover:bg-gray-200">
+<span class="material-icons-outlined text-text-gray">notifications</span>
+</button>
+</div>
+</header>
+<div class="bg-white p-8 rounded-xl shadow-sm mb-6">
+<div class="flex justify-between items-start">
+<div>
+<h2 class="text-3xl font-bold text-text-dark-brown mb-2">线性回归原理</h2>
+<div class="flex items-center space-x-6 text-sm text-text-medium-brown">
+<span>掌握情况: <span class="text-primary font-semibold">已掌握</span></span>
+<span>建立时间: 2023-10-01</span>
+</div>
+</div>
+<div class="flex space-x-2">
+<button class="px-6 py-2.5 bg-primary text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">专项练习</button>
+<button class="px-6 py-2.5 bg-orange-400 text-white rounded-lg font-semibold hover:bg-orange-500 transition-colors">错题练习</button>
+</div>
+</div>
+<div class="grid grid-cols-3 gap-6 my-6 border-y py-6">
+<div class="flex items-center">
+<div class="p-3 rounded-lg bg-red-100 mr-4">
+<span class="material-icons-outlined text-danger">close</span>
+</div>
+<div>
+<p class="text-sm text-text-gray">错题数量</p>
+<p class="text-xl font-bold text-text-dark-brown">3 <span class="text-base font-normal">道</span></p>
+</div>
+</div>
+<div class="flex items-center">
+<div class="p-3 rounded-lg bg-blue-100 mr-4">
+<span class="material-icons-outlined text-blue-500">star_border</span>
+</div>
+<div>
+<p class="text-sm text-text-gray">收藏题目数</p>
+<p class="text-xl font-bold text-text-dark-brown">5 <span class="text-base font-normal">道</span></p>
+</div>
+</div>
+<div class="flex items-center">
+<div class="p-3 rounded-lg bg-bg-light-green mr-4">
+<span class="material-icons-outlined text-primary">bookmark_border</span>
+</div>
+<div>
+<p class="text-sm text-text-gray">关联笔记本</p>
+<p class="text-xl font-bold text-text-dark-brown">2 <span class="text-base font-normal">篇</span></p>
+</div>
+</div>
+</div>
+<div>
+<h3 class="text-lg font-semibold text-text-dark-brown mb-2">知识点描述</h3>
+<p class="text-text-medium-brown leading-relaxed">线性回归是利用数理统计中回归分析，来确定两种或两种以上变量间相互依赖的定量关系的一种统计分析方法。其表达形式为y = w'x+e，e为误差服从均值为0的正态分布。回归分析中，只包括一个自变量和一个因变量，且二者的关系可用一条直线近似表示，这种回归分析称为一元线性回归分析。如果回归分析中包括两个或两个以上的自变量，且因变量和自变量之间是线性关系，则称为多元线性回归分析。</p>
+</div>
+</div>
+<div class="bg-white p-8 rounded-xl shadow-sm mb-6">
+<h3 class="text-lg font-semibold text-text-dark-brown mb-4">关联笔记本</h3>
+<div class="grid grid-cols-2 gap-4">
+<a class="block p-4 bg-bg-light-blue-gray rounded-lg hover:shadow-md transition-shadow" href="#">
+<div class="flex items-center">
+<span class="material-icons-outlined text-primary mr-3">edit_note</span>
+<p class="font-semibold text-text-dark-brown">机器学习核心概念笔记</p>
+</div>
+</a>
+<a class="block p-4 bg-bg-light-blue-gray rounded-lg hover:shadow-md transition-shadow" href="#">
+<div class="flex items-center">
+<span class="material-icons-outlined text-primary mr-3">edit_note</span>
+<p class="font-semibold text-text-dark-brown">监督学习算法梳理</p>
+</div>
+</a>
+</div>
+</div>
+<div class="bg-white p-8 rounded-xl shadow-sm">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-lg font-semibold text-text-dark-brown">关联题目</h3>
+<div class="flex items-center space-x-4">
+<div class="relative">
+<input class="w-48 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" placeholder="搜索题目..." type="text"/>
+<span class="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-gray">search</span>
+</div>
+<select class="py-2 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+<option>所有类型</option>
+<option>选择题</option>
+<option>填空题</option>
+<option>简答题</option>
+</select>
+<select class="py-2 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+<option>默认排序</option>
+<option>按熟练度</option>
+<option>按时间</option>
+</select>
+</div>
+</div>
+<div class="space-y-4">
+<div class="p-4 border border-gray-200 rounded-lg flex items-center justify-between hover:border-primary transition-colors">
+<div>
+<p class="font-semibold text-text-dark-brown">1. 以下哪个是线性回归模型的假设？</p>
+<div class="flex items-center space-x-4 text-sm mt-2 text-text-gray">
+<span>类型: <span class="bg-blue-100 text-blue-800 px-2 py-0.5 rounded">选择题</span></span>
+<span>熟练度: 
+                                    <span class="text-yellow-500">★★★★☆</span>
+</span>
+<span>上次答题: <span class="text-primary">正确</span> (2024-05-10)</span>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">visibility</span></button>
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">edit</span></button>
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">star_border</span></button>
+</div>
+</div>
+<div class="p-4 border border-gray-200 rounded-lg flex items-center justify-between hover:border-primary transition-colors">
+<div>
+<p class="font-semibold text-text-dark-brown">2. 请简述线性回归的损失函数是什么？</p>
+<div class="flex items-center space-x-4 text-sm mt-2 text-text-gray">
+<span>类型: <span class="bg-green-100 text-green-800 px-2 py-0.5 rounded">简答题</span></span>
+<span>熟练度: 
+                                    <span class="text-yellow-500">★★★☆☆</span>
+</span>
+<span>上次答题: <span class="text-danger">错误</span> (2024-05-08)</span>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">visibility</span></button>
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">edit</span></button>
+<button class="p-2 rounded-full hover:bg-gray-100 text-yellow-500"><span class="material-icons-outlined">star</span></button>
+</div>
+</div>
+<div class="p-4 border border-gray-200 rounded-lg flex items-center justify-between hover:border-primary transition-colors">
+<div>
+<p class="font-semibold text-text-dark-brown">3. 线性回归中，用来评估模型拟合优度的指标是____。</p>
+<div class="flex items-center space-x-4 text-sm mt-2 text-text-gray">
+<span>类型: <span class="bg-purple-100 text-purple-800 px-2 py-0.5 rounded">填空题</span></span>
+<span>熟练度: 
+                                    <span class="text-yellow-500">★★★★★</span>
+</span>
+<span>上次答题: <span class="text-primary">正确</span> (2024-05-11)</span>
+</div>
+</div>
+<div class="flex items-center space-x-2">
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">visibility</span></button>
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">edit</span></button>
+<button class="p-2 rounded-full hover:bg-gray-100 text-text-gray"><span class="material-icons-outlined">star_border</span></button>
+</div>
+</div>
+</div>
+<div class="flex justify-center mt-8">
+<nav aria-label="Pagination" class="flex items-center space-x-2">
+<a class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50" href="#">
+<span class="material-icons-outlined text-base">chevron_left</span>
+</a>
+<a aria-current="page" class="z-10 bg-light-primary text-primary relative inline-flex items-center px-4 py-2 border border-primary text-sm font-medium" href="#"> 1 </a>
+<a class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium" href="#"> 2 </a>
+<a class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 hidden md:inline-flex relative items-center px-4 py-2 border text-sm font-medium" href="#"> 3 </a>
+<span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700"> ... </span>
+<a class="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 hidden md:inline-flex relative items-center px-4 py-2 border text-sm font-medium" href="#"> 8 </a>
+<a class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50" href="#">
+<span class="material-icons-outlined text-base">chevron_right</span>
+</a>
+</nav>
+</div>
+</div>
+</main>
+</div>
+<script>
+        const sidebar = document.getElementById('sidebar');
+        const toggleButton = document.getElementById('toggle-sidebar');
+        toggleButton.addEventListener('click', () => {
+            sidebar.classList.toggle('w-64');
+            sidebar.classList.toggle('w-20');
+            sidebar.querySelectorAll('nav span, h1, p').forEach(el => {
+                el.classList.toggle('hidden');
+            });
+            sidebar.querySelector('img').classList.toggle('w-20');
+            sidebar.querySelector('img').classList.toggle('w-12');
+            sidebar.querySelector('img').classList.toggle('h-20');
+            sidebar.querySelector('img').classList.toggle('h-12');
+             if(sidebar.classList.contains('w-20')) {
+                toggleButton.querySelector('span').textContent = 'chevron_right';
+            } else {
+                 toggleButton.querySelector('span').textContent = 'chevron_left';
+            }
+        });
+    </script>
+
+</body></html>

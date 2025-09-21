@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>科目详情 - 机器学习基础</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+<script>
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                primary: "#32C77F",
+                warning: "#FF9B27",
+                danger: "#ED4B4B",
+                "text-dark-brown": "#715D46",
+                "text-medium-brown": "#9B8D7D",
+                "text-gray": "#828282",
+                "bg-light-blue": "#D5F8FF",
+                "bg-beige": "#FFFFD6", 
+                "bg-light-green": "#E2F2EB",
+                "bg-light-gray": "#F2F0ED",
+                "bg-light-blue-gray": "#F5F7F9",
+                "brand-blue": "#3B82F6",
+                "brand-red": "#EF4444",
+                "brand-yellow": "#F59E0B"
+              },
+              fontFamily: {
+                sans: ['"Noto Sans SC"', 'sans-serif'],
+              },
+              borderRadius: {
+                'xl': '1rem',
+              },
+            },
+          },
+        };
+      </script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+<div class="flex h-screen bg-white">
+<aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300" id="sidebar">
+<div class="flex items-center mb-8">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3">
+<span class="material-icons-outlined text-white">pets</span>
+</div>
+<h1 class="text-lg font-bold text-text-dark-brown">柯基学习小助手</h1>
+</div>
+<div class="flex flex-col items-center mb-8">
+<img alt="User Avatar" class="w-20 h-20 rounded-full mb-2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXs0Mg4a15hzy1OIlUz-x1NZ2Sr6t75rKa8WMPlFSucuN1mgje2BiwHSB6red_l91Fdg1rduYwvlR2uNdrFIWLzNRhgz4LLuSsPiDs4D1i5ri5gPzDV-irooIfv4XuLChxg1VrwtdqEYXxxlXyYcI6YRydb5iUhiEpx0hymOo_dEsFhHO_zNl0fs2iXm-4eiT4JwkaIanx0jpD5PQtgSv4Ef9eucxao7dDZSrWN4h3S2wusUo4WDqCKBXi9G9pnwgdgcIOnede4LyT5"/>
+<p class="font-semibold text-text-dark-brown">柯基的主人</p>
+<p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">work</span>
+<span>工作台</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">edit_note</span>
+<span>笔记本</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">mic</span>
+<span>录音室</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">smart_toy</span>
+<span>AI伙伴</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md" href="#">
+<span class="material-icons-outlined mr-3">book</span>
+<span>知识库</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">bar_chart</span>
+<span>学习报告</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">settings</span>
+<span>设置</span>
+</a>
+</nav>
+<div class="mt-auto">
+<button class="w-full flex justify-start items-center text-text-gray" onclick="toggleSidebar()">
+<span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+<span class="ml-2" id="toggle-text">收起菜单</span>
+</button>
+</div>
+</aside>
+<main class="flex-1 p-8 bg-bg-light-blue-gray overflow-y-auto">
+<div class="flex justify-between items-center mb-6">
+<nav aria-label="Breadcrumb" class="text-sm text-text-medium-brown">
+<ol class="list-none p-0 inline-flex">
+<li class="flex items-center">
+<a class="hover:text-text-dark-brown" href="#">知识库</a>
+<span class="material-icons-outlined mx-2 text-base">chevron_right</span>
+</li>
+<li class="flex items-center">
+<span class="text-text-dark-brown font-semibold">机器学习基础</span>
+</li>
+</ol>
+</nav>
+<div class="relative">
+<input class="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary w-64" placeholder="搜索知识点..." type="text"/>
+<span class="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-gray">search</span>
+</div>
+</div>
+<div class="bg-white p-6 rounded-xl shadow-sm mb-8">
+<h2 class="text-2xl font-bold text-text-dark-brown mb-6">科目详情：机器学习基础</h2>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<div class="bg-blue-50 p-6 rounded-lg flex items-center">
+<div class="p-3 rounded-lg bg-blue-200 mr-4">
+<span class="material-icons-outlined text-brand-blue">functions</span>
+</div>
+<div>
+<p class="text-sm text-text-gray mb-1">科目知识点</p>
+<p class="text-2xl font-bold text-brand-blue">128 <span class="text-base font-normal text-text-medium-brown">个</span></p>
+</div>
+</div>
+<div class="bg-red-50 p-6 rounded-lg flex items-center">
+<div class="p-3 rounded-lg bg-red-200 mr-4">
+<span class="material-icons-outlined text-brand-red">cancel</span>
+</div>
+<div>
+<p class="text-sm text-text-gray mb-1">错题</p>
+<p class="text-2xl font-bold text-brand-red">32 <span class="text-base font-normal text-text-medium-brown">个</span></p>
+</div>
+</div>
+<div class="bg-yellow-50 p-6 rounded-lg flex items-center">
+<div class="p-3 rounded-lg bg-yellow-200 mr-4">
+<span class="material-icons-outlined text-brand-yellow">star_border</span>
+</div>
+<div>
+<p class="text-sm text-text-gray mb-1">收藏</p>
+<p class="text-2xl font-bold text-brand-yellow">45 <span class="text-base font-normal text-text-medium-brown">个</span></p>
+</div>
+</div>
+</div>
+</div>
+<div class="bg-white rounded-xl shadow-sm">
+<div class="overflow-x-auto">
+<table class="w-full text-sm text-left text-gray-500">
+<thead class="text-xs text-text-gray uppercase bg-gray-50">
+<tr>
+<th class="p-4" scope="col"><input class="form-checkbox h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" type="checkbox"/></th>
+<th class="px-6 py-3" scope="col">序号</th>
+<th class="px-6 py-3" scope="col">知识点名称</th>
+<th class="px-6 py-3" scope="col">掌握熟练度</th>
+<th class="px-6 py-3" scope="col">建立时间</th>
+<th class="px-6 py-3 text-center" scope="col">错题</th>
+<th class="px-6 py-3 text-center" scope="col">收藏</th>
+<th class="px-6 py-3 text-center" scope="col">复习次数</th>
+</tr>
+</thead>
+<tbody>
+<tr class="bg-white border-b hover:bg-gray-50">
+<td class="w-4 p-4"><input class="form-checkbox h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" type="checkbox"/></td>
+<td class="px-6 py-4">1</td>
+<td class="px-6 py-4">
+<div class="font-semibold text-text-dark-brown">线性回归</div>
+<div class="text-xs text-text-medium-brown mt-1">通过拟合线性方程来预测连续变量。</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center">
+<div class="w-full bg-gray-200 rounded-full h-2.5">
+<div class="bg-primary h-2.5 rounded-full" style="width: 85%"></div>
+</div>
+<span class="ml-2 text-primary font-semibold">85%</span>
+</div>
+</td>
+<td class="px-6 py-4">2024-09-10</td>
+<td class="px-6 py-4 text-center"><span class="text-danger">5</span></td>
+<td class="px-6 py-4 text-center"><span class="material-icons-outlined text-yellow-500 text-base">star</span></td>
+<td class="px-6 py-4 text-center">3</td>
+</tr>
+<tr class="bg-white border-b hover:bg-gray-50">
+<td class="w-4 p-4"><input class="form-checkbox h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" type="checkbox"/></td>
+<td class="px-6 py-4">2</td>
+<td class="px-6 py-4">
+<div class="font-semibold text-text-dark-brown">逻辑回归</div>
+<div class="text-xs text-text-medium-brown mt-1">用于二分类问题的分类算法。</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center">
+<div class="w-full bg-gray-200 rounded-full h-2.5">
+<div class="bg-warning h-2.5 rounded-full" style="width: 60%"></div>
+</div>
+<span class="ml-2 text-warning font-semibold">60%</span>
+</div>
+</td>
+<td class="px-6 py-4">2024-09-08</td>
+<td class="px-6 py-4 text-center"><span class="text-danger">2</span></td>
+<td class="px-6 py-4 text-center"><span class="material-icons-outlined text-gray-400 text-base">star_border</span></td>
+<td class="px-6 py-4 text-center">1</td>
+</tr>
+<tr class="bg-white border-b hover:bg-gray-50">
+<td class="w-4 p-4"><input class="form-checkbox h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" type="checkbox"/></td>
+<td class="px-6 py-4">3</td>
+<td class="px-6 py-4">
+<div class="font-semibold text-text-dark-brown">支持向量机 (SVM)</div>
+<div class="text-xs text-text-medium-brown mt-1">通过最大化间隔来找到最优超平面。</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center">
+<div class="w-full bg-gray-200 rounded-full h-2.5">
+<div class="bg-danger h-2.5 rounded-full" style="width: 30%"></div>
+</div>
+<span class="ml-2 text-danger font-semibold">30%</span>
+</div>
+</td>
+<td class="px-6 py-4">2024-09-05</td>
+<td class="px-6 py-4 text-center"><span class="text-danger">8</span></td>
+<td class="px-6 py-4 text-center"><span class="material-icons-outlined text-yellow-500 text-base">star</span></td>
+<td class="px-6 py-4 text-center">4</td>
+</tr>
+<tr class="bg-white border-b hover:bg-gray-50">
+<td class="w-4 p-4"><input class="form-checkbox h-4 w-4 text-primary rounded border-gray-300 focus:ring-primary" type="checkbox"/></td>
+<td class="px-6 py-4">4</td>
+<td class="px-6 py-4">
+<div class="font-semibold text-text-dark-brown">决策树</div>
+<div class="text-xs text-text-medium-brown mt-1">一种树状结构的分类和回归模型。</div>
+</td>
+<td class="px-6 py-4">
+<div class="flex items-center">
+<div class="w-full bg-gray-200 rounded-full h-2.5">
+<div class="bg-primary h-2.5 rounded-full" style="width: 95%"></div>
+</div>
+<span class="ml-2 text-primary font-semibold">95%</span>
+</div>
+</td>
+<td class="px-6 py-4">2024-09-02</td>
+<td class="px-6 py-4 text-center">0</td>
+<td class="px-6 py-4 text-center"><span class="material-icons-outlined text-gray-400 text-base">star_border</span></td>
+<td class="px-6 py-4 text-center">2</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="flex flex-col md:flex-row items-center justify-between p-4 space-y-4 md:space-y-0">
+<div class="flex items-center space-x-2">
+<button class="px-3 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary flex items-center">
+<span class="material-icons-outlined text-sm mr-1">task_alt</span> 批量标记掌握度
+                    </button>
+<button class="px-3 py-2 text-sm font-medium text-white bg-danger rounded-lg hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger flex items-center">
+<span class="material-icons-outlined text-sm mr-1">delete_outline</span> 批量删除
+                    </button>
+<button class="px-3 py-2 text-sm font-medium text-text-gray bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 flex items-center">
+<span class="material-icons-outlined text-sm mr-1">file_download</span> 批量导出
+                    </button>
+<button class="px-3 py-2 text-sm font-medium text-text-gray bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 flex items-center">
+<span class="material-icons-outlined text-sm mr-1">star_outline</span> 批量收藏
+                    </button>
+</div>
+<div class="flex items-center space-x-4 text-sm text-text-medium-brown">
+<span>总计 128 个知识点</span>
+<div class="flex items-center space-x-2">
+<span>每页显示:</span>
+<select class="form-select border-gray-300 rounded-md shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-50 text-sm py-1">
+<option>10</option>
+<option>20</option>
+<option>50</option>
+</select>
+</div>
+<div class="flex items-center space-x-2">
+<span>1-10 of 13 页</span>
+<button class="p-1 rounded-md hover:bg-gray-100 disabled:opacity-50" disabled="">
+<span class="material-icons-outlined text-base">chevron_left</span>
+</button>
+<button class="p-1 rounded-md hover:bg-gray-100">
+<span class="material-icons-outlined text-base">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<script>
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const toggleIcon = document.getElementById('toggle-icon');
+        const toggleText = document.getElementById('toggle-text');
+        sidebar.classList.toggle('w-64');
+        sidebar.classList.toggle('w-20');
+        const isCollapsed = sidebar.classList.contains('w-20');
+        toggleIcon.textContent = isCollapsed ? 'chevron_right' : 'chevron_left';
+        // Hide text and only show icons when collapsed
+        sidebar.querySelectorAll('nav a span:last-child').forEach(span => {
+            span.classList.toggle('hidden', isCollapsed);
+        });
+        sidebar.querySelector('h1').classList.toggle('hidden', isCollapsed);
+        sidebar.querySelector('.flex.flex-col.items-center.mb-8').classList.toggle('hidden', isCollapsed);
+        toggleText.classList.toggle('hidden', isCollapsed);
+        if(isCollapsed) {
+            sidebar.querySelector('nav').classList.add('items-center');
+            sidebar.querySelectorAll('nav a').forEach(a => a.classList.add('justify-center'));
+            sidebar.querySelector('.mt-auto button').classList.add('justify-center');
+        } else {
+            sidebar.querySelector('nav').classList.remove('items-center');
+            sidebar.querySelectorAll('nav a').forEach(a => a.classList.remove('justify-center'));
+            sidebar.querySelector('.mt-auto button').classList.remove('justify-center');
+        }
+    }
+</script>
+
+</body></html>

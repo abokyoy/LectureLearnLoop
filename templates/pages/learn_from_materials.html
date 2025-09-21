@@ -1,0 +1,4758 @@
+<!-- 从资料学习页面 - 完整的树形文件管理 -->
+
+<!-- Markdown增强功能的CSS和JS库 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+
+<style>
+    /* 侧边栏收缩样式 */
+    #sidebar.collapsed .sidebar-text,
+    #sidebar.collapsed #user-profile,
+    #sidebar.collapsed .logo-text {
+        display: none;
+    }
+    #sidebar.collapsed .nav-item-icon {
+        margin-right: 0;
+    }
+    #sidebar.collapsed .nav-link {
+        justify-content: center;
+    }
+    
+    /* 知识点高亮样式 */
+    .knowledge-highlight {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 3px;
+        padding: 1px 2px;
+        transition: all 0.3s ease;
+    }
+    
+    .knowledge-highlight.active-highlight {
+        background-color: #32C77F;
+        color: white;
+        border-color: #28a745;
+        box-shadow: 0 0 8px rgba(50, 199, 127, 0.4);
+        animation: pulse-highlight 1s ease-in-out;
+    }
+    
+    @keyframes pulse-highlight {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+    
+    /* 增强的Markdown预览样式 */
+    .markdown-content {
+        line-height: 1.6;
+        color: #333;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    }
+    
+    .markdown-content h1, .markdown-content h2, .markdown-content h3, 
+    .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+        font-weight: 600;
+        line-height: 1.25;
+    }
+    
+    .markdown-content h1 { font-size: 2em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
+    .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
+    .markdown-content h3 { font-size: 1.25em; }
+    .markdown-content h4 { font-size: 1em; }
+    .markdown-content h5 { font-size: 0.875em; }
+    .markdown-content h6 { font-size: 0.85em; color: #6a737d; }
+    
+    .markdown-content blockquote {
+        padding: 0 1em;
+        color: #6a737d;
+        border-left: 0.25em solid #dfe2e5;
+        margin: 1em 0;
+        background-color: #f6f8fa;
+    }
+    
+    .markdown-content code {
+        padding: 0.2em 0.4em;
+        margin: 0;
+        font-size: 85%;
+        background-color: rgba(27,31,35,0.05);
+        border-radius: 3px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    
+    .markdown-content pre {
+        padding: 16px;
+        overflow: auto;
+        font-size: 85%;
+        line-height: 1.45;
+        background-color: #f6f8fa;
+        border-radius: 6px;
+        margin: 1em 0;
+        border: 1px solid #e1e4e8;
+    }
+    
+    .markdown-content pre code {
+        display: inline;
+        max-width: auto;
+        padding: 0;
+        margin: 0;
+        overflow: visible;
+        line-height: inherit;
+        word-wrap: normal;
+        background-color: transparent;
+        border: 0;
+    }
+    
+    .markdown-content table {
+        border-spacing: 0;
+        border-collapse: collapse;
+        margin: 1em 0;
+        width: 100%;
+        display: block;
+        overflow: auto;
+    }
+    
+    .markdown-content table th,
+    .markdown-content table td {
+        padding: 6px 13px;
+        border: 1px solid #dfe2e5;
+    }
+    
+    .markdown-content table th {
+        font-weight: 600;
+        background-color: #f6f8fa;
+    }
+    
+    .markdown-content table tr:nth-child(2n) {
+        background-color: #f6f8fa;
+    }
+    
+    .markdown-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin: 1em 0;
+    }
+    
+    .markdown-content .mermaid {
+        text-align: center;
+        margin: 1em 0;
+        background: white;
+        border-radius: 6px;
+        padding: 1em;
+        border: 1px solid #e1e4e8;
+    }
+    
+    .markdown-content .katex-display {
+        margin: 1em 0;
+        text-align: center;
+    }
+    
+    .markdown-content .task-list-item {
+        list-style-type: none;
+    }
+    
+    .markdown-content .task-list-item input {
+        margin: 0 0.2em 0.25em -1.6em;
+        vertical-align: middle;
+    }
+    
+    .markdown-content mark {
+        background-color: #fff3cd;
+        padding: 0.1em 0.2em;
+        border-radius: 2px;
+    }
+    
+    .markdown-content .highlight {
+        background-color: #ffeb3b;
+        padding: 0.1em 0.2em;
+        border-radius: 2px;
+    }
+    
+    .markdown-content ul, .markdown-content ol {
+        padding-left: 2em;
+        margin: 1em 0;
+    }
+    
+    .markdown-content li {
+        margin: 0.25em 0;
+    }
+    
+    .markdown-content hr {
+        height: 0.25em;
+        padding: 0;
+        margin: 24px 0;
+        background-color: #e1e4e8;
+        border: 0;
+    }
+    
+    .markdown-content a {
+        color: #0366d6;
+        text-decoration: none;
+    }
+    
+    .markdown-content a:hover {
+        text-decoration: underline;
+    }
+    
+    /* 练习面板样式 */
+    .practice-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(4px);
+    }
+    
+    .practice-panel.hidden {
+        display: none;
+    }
+    
+    .practice-panel-content {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        width: 90%;
+        max-width: 1200px;
+        height: 90%;
+        max-height: 800px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .practice-header {
+        flex-shrink: 0;
+        padding: 20px;
+        border-bottom: 1px solid #e5e7eb;
+        background: #f8fafc;
+    }
+    
+    .practice-body {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .practice-panel .bg-primary {
+        background-color: #32C77F;
+    }
+    
+    .practice-panel .text-primary {
+        color: #32C77F;
+    }
+    
+    .practice-panel .hover\\:bg-green-600:hover {
+        background-color: #16a34a;
+    }
+    
+    .practice-panel .text-text-dark-brown {
+        color: #715D46;
+    }
+    
+    .practice-panel .text-text-medium-brown {
+        color: #9B8D7D;
+    }
+    
+    .practice-panel .text-text-gray {
+        color: #828282;
+    }
+    
+    .practice-panel .bg-bg-light-gray {
+        background-color: #F2F0ED;
+    }
+    
+    .practice-panel .bg-bg-light-blue-gray {
+        background-color: #F5F7F9;
+    }
+    
+    .practice-panel .bg-bg-light-green {
+        background-color: #E2F2EB;
+    }
+
+    /* 右键菜单样式 */
+    .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        padding: 4px 0;
+        z-index: 10000;
+        min-width: 180px;
+        display: none;
+    }
+    
+    .context-menu-item {
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #374151;
+        display: flex;
+        align-items: center;
+        transition: background-color 0.2s ease;
+    }
+    
+    .context-menu-item:hover {
+        background-color: #f3f4f6;
+    }
+    
+    .context-menu-item .material-icons-outlined {
+        margin-right: 8px;
+        font-size: 18px;
+        color: #32C77F;
+    }
+    
+    .context-menu-separator {
+        height: 1px;
+        background-color: #e5e7eb;
+        margin: 4px 0;
+    }
+    
+    /* 文件树样式 */
+    .file-item-content {
+        transition: all 0.2s ease;
+    }
+    .file-item-content:hover {
+        background-color: #f3f4f6;
+    }
+    .file-item-content.selected {
+        background-color: #32C77F !important;
+        color: white !important;
+    }
+    .file-item-content.drag-over {
+        border: 2px dashed #10b981;
+        background-color: rgba(16, 185, 129, 0.1);
+    }
+    .folder-toggle {
+        transition: transform 0.2s ease;
+    }
+    
+    /* 右键菜单样式 */
+    .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+        min-width: 150px;
+    }
+    .context-menu-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        font-size: 14px;
+    }
+    .context-menu-item:hover {
+        background-color: #f3f4f6;
+    }
+    .context-menu-item .material-icons-outlined {
+        margin-right: 8px;
+        font-size: 16px;
+    }
+</style>
+
+<div class="flex h-screen bg-white">
+    <!-- 主内容区域 -->
+    <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
+        
+        <!-- 左侧文件结构面板 -->
+        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+                <div class="space-x-2">
+                    <button class="text-text-gray hover:text-primary" onclick="createNewFolder()" title="新建文件夹">
+                        <span class="material-icons-outlined">create_new_folder</span>
+                    </button>
+                    <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
+                        <span class="material-icons-outlined">note_add</span>
+                    </button>
+                    <button class="text-red-600 hover:text-red-800" onclick="validateBackendFunctions()" title="验证后端功能">
+                        <span class="material-icons-outlined">bug_report</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 文件树容器 -->
+            <div class="flex-1 overflow-y-auto pr-2">
+                <div id="loading-indicator" class="flex items-center justify-center py-8">
+                    <div class="animate-spin">
+                        <span class="material-icons-outlined text-primary">refresh</span>
+                    </div>
+                    <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
+                </div>
+                <div id="file-tree-container"></div>
+            </div>
+        </div>
+
+        <!-- 中间文档预览/编辑区域 -->
+        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col">
+            <!-- 顶部工具栏 -->
+            <div class="border-b border-gray-200 p-4 flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <h2 class="text-lg font-semibold text-text-dark-brown" id="preview-title">文档预览区</h2>
+                    <span id="unsaved-indicator" class="text-orange-500 text-sm hidden">● 未保存</span>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="save-btn" class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm hidden" onclick="saveCurrentFile()" title="保存文件">
+                        <span class="material-icons-outlined text-sm mr-1">save</span>
+                        保存
+                    </button>
+                    <button id="preview-btn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm" onclick="switchToPreview()">预览</button>
+                    <button id="edit-btn" class="px-4 py-2 bg-white border border-gray-300 text-text-gray rounded-lg text-sm" onclick="switchToEdit()">编辑</button>
+                </div>
+            </div>
+            
+            <!-- 内容区域 -->
+            <div class="flex-1 p-4 overflow-y-auto">
+                <div id="preview-content" class="prose max-w-none markdown-content">
+                    <div class="text-center py-16 text-text-medium-brown">
+                        <span class="material-icons-outlined text-6xl mb-4">description</span>
+                        <p>请选择一个Markdown文件进行预览</p>
+                    </div>
+                </div>
+                <textarea id="edit-content" class="w-full h-full border border-gray-300 rounded-lg p-4 font-mono text-sm resize-none hidden" placeholder="在此编辑Markdown内容..."></textarea>
+            </div>
+        </div>
+
+        <!-- 右侧知识点面板 -->
+        <div class="w-1/4 bg-white p-4 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-text-dark-brown">知识点</h2>
+                <div class="flex gap-2">
+                    <button class="text-text-gray hover:text-primary" onclick="toggleDebugPanel()" title="切换调试面板" id="debug-toggle-btn">
+                        <span class="material-icons-outlined">terminal</span>
+                    </button>
+                    <button class="text-text-gray hover:text-primary" onclick="testBridgeConnection()" title="测试Bridge连接" id="test-btn">
+                        <span class="material-icons-outlined">bug_report</span>
+                    </button>
+                    <button class="text-text-gray hover:text-primary" onclick="extractKnowledgePoints()" title="提取全文知识点" id="extract-btn">
+                        <span class="material-icons-outlined">lightbulb</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto">
+                <div id="knowledge-points-container">
+                    <div class="text-center py-16 text-text-medium-brown" id="knowledge-placeholder">
+                        <span class="material-icons-outlined text-6xl mb-4">psychology</span>
+                        <p>选择文档后可提取知识点</p>
+                    </div>
+                    <div id="knowledge-loading" class="text-center py-16 text-primary hidden">
+                        <div class="animate-spin mb-4">
+                            <span class="material-icons-outlined text-6xl">refresh</span>
+                        </div>
+                        <p>正在提取知识点...</p>
+                    </div>
+                    <div id="knowledge-content" class="hidden">
+                        <!-- 知识点内容将在这里显示 -->
+                    </div>
+                    
+                    <!-- 调试面板 -->
+                    <div id="debug-panel" class="mt-4 p-3 bg-gray-100 border border-gray-300 rounded-lg hidden">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="text-sm font-semibold text-gray-700">调试日志</h4>
+                            <button onclick="clearDebugLog()" class="text-xs text-red-600 hover:text-red-800">清空</button>
+                        </div>
+                        <div id="debug-log" class="bg-white p-2 rounded border text-xs font-mono max-h-40 overflow-y-auto">
+                            <!-- 调试日志将在这里显示 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 右键菜单 -->
+<div id="context-menu" class="context-menu hidden">
+    <div class="context-menu-item" onclick="contextMenuAction('rename')">
+        <span class="material-icons-outlined">edit</span>
+        重命名
+    </div>
+    <div class="context-menu-item" onclick="contextMenuAction('delete')">
+        <span class="material-icons-outlined">delete</span>
+        删除
+    </div>
+    <div class="context-menu-item" onclick="contextMenuAction('newNote')">
+        <span class="material-icons-outlined">note_add</span>
+        新建笔记
+    </div>
+    <div class="context-menu-item" onclick="contextMenuAction('newFolder')">
+        <span class="material-icons-outlined">create_new_folder</span>
+        新建文件夹
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+    
+    let currentFilePath = '';
+    let currentFileName = '';
+    let isEditMode = false;
+    let contextMenuTarget = null;
+    let originalContent = '';  // 原始文件内容
+    let hasUnsavedChanges = false;  // 是否有未保存的更改
+
+    // 调试变量
+    let debugEnabled = false;
+    let debugLogCount = 0;
+
+    // 调试函数
+    function debugLog(message) {
+        console.log('[Learn Materials Debug]', message);
+        if (debugEnabled) {
+            addToDebugPanel('INFO', message);
+        }
+    }
+
+    function debugError(message) {
+        console.error('[Learn Materials Error]', message);
+        if (debugEnabled) {
+            addToDebugPanel('ERROR', message);
+        }
+    }
+
+    function debugWarn(message) {
+        console.warn('[Learn Materials Warn]', message);
+        if (debugEnabled) {
+            addToDebugPanel('WARN', message);
+        }
+    }
+
+    // 添加到调试面板
+    function addToDebugPanel(level, message) {
+        const debugLog = document.getElementById('debug-log');
+        if (!debugLog) return;
+        
+        debugLogCount++;
+        const timestamp = new Date().toLocaleTimeString();
+        const levelColor = {
+            'INFO': 'text-blue-600',
+            'ERROR': 'text-red-600',
+            'WARN': 'text-yellow-600',
+            'SUCCESS': 'text-green-600'
+        }[level] || 'text-gray-600';
+        
+        const logEntry = document.createElement('div');
+        logEntry.className = 'mb-1';
+        logEntry.innerHTML = `
+            <span class="text-gray-500">[${timestamp}]</span>
+            <span class="${levelColor} font-semibold">[${level}]</span>
+            <span>${message}</span>
+        `;
+        
+        debugLog.appendChild(logEntry);
+        debugLog.scrollTop = debugLog.scrollHeight;
+        
+        // 限制日志条数，避免占用太多内存
+        if (debugLogCount > 100) {
+            const firstChild = debugLog.firstChild;
+            if (firstChild) {
+                debugLog.removeChild(firstChild);
+                debugLogCount--;
+            }
+        }
+    }
+
+    // 切换调试面板
+    function toggleDebugPanel() {
+        const debugPanel = document.getElementById('debug-panel');
+        const debugToggleBtn = document.getElementById('debug-toggle-btn');
+        
+        if (debugPanel.classList.contains('hidden')) {
+            debugPanel.classList.remove('hidden');
+            debugEnabled = true;
+            debugToggleBtn.classList.add('text-primary');
+            debugToggleBtn.classList.remove('text-text-gray');
+            addToDebugPanel('SUCCESS', '调试面板已开启');
+        } else {
+            debugPanel.classList.add('hidden');
+            debugEnabled = false;
+            debugToggleBtn.classList.remove('text-primary');
+            debugToggleBtn.classList.add('text-text-gray');
+        }
+    }
+
+    // 清空调试日志
+    function clearDebugLog() {
+        const debugLog = document.getElementById('debug-log');
+        if (debugLog) {
+            debugLog.innerHTML = '';
+            debugLogCount = 0;
+            addToDebugPanel('INFO', '调试日志已清空');
+        }
+    }
+
+    // 页面初始化
+    function initializePage() {
+        debugLog('页面初始化开始');
+        
+        // 检查Bridge连接
+        if (window.bridge) {
+            debugLog('Bridge对象已可用');
+            loadFileStructure();
+        } else {
+            debugLog('Bridge对象不可用，等待连接...');
+            // 等待Bridge连接
+            setTimeout(() => {
+                if (window.bridge) {
+                    debugLog('Bridge连接成功，加载文件结构');
+                    loadFileStructure();
+                } else {
+                    debugError('Bridge连接超时');
+                }
+            }, 1000);
+        }
+        
+        // 添加全局事件监听器
+        document.addEventListener('click', hideContextMenu);
+        document.addEventListener('contextmenu', function(e) {
+            if (!e.target.closest('.file-item-content')) {
+                e.preventDefault();
+                hideContextMenu();
+            }
+        });
+        
+        // 添加键盘快捷键支持
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+S 保存文件
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                if (isEditMode && currentFilePath) {
+                    saveCurrentFile();
+                }
+            }
+        });
+        
+        // 页面离开前检查未保存的更改
+        window.addEventListener('beforeunload', function(e) {
+            if (hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '您有未保存的更改，确定要离开吗？';
+                return e.returnValue;
+            }
+        });
+    }
+
+    // 加载文件结构
+    function loadFileStructure() {
+        debugLog('开始加载文件结构');
+        
+        if (!window.bridge || typeof window.bridge.getFileStructure !== 'function') {
+            debugError('Bridge对象或getFileStructure方法不可用');
+            return;
+        }
+        
+        try {
+            window.bridge.getFileStructure(function(jsonString) {
+                debugLog('收到文件结构数据: ' + jsonString.substring(0, 100) + '...');
+                
+                try {
+                    const structure = JSON.parse(jsonString);
+                    renderFileTree(structure);
+                } catch (parseError) {
+                    debugError('解析文件结构JSON失败: ' + parseError.message);
+                }
+            });
+        } catch (error) {
+            debugError('调用getFileStructure时发生错误: ' + error.message);
+        }
+    }
+
+    // 文件树渲染函数
+    function renderFileTree(data) {
+        debugLog('渲染文件树，数据项数: ' + (data ? data.length : 0));
+        
+        const container = document.getElementById('file-tree-container');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+        }
+        
+        if (!container) {
+            debugError('文件树容器未找到');
+            return;
+        }
+        
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="text-center py-8 text-text-medium-brown">暂无文件</div>';
+            return;
+        }
+        
+        let html = '<ul class="space-y-1">';
+        data.forEach(item => {
+            html += renderFileItem(item, 0);
+        });
+        html += '</ul>';
+        
+        container.innerHTML = html;
+        
+        // 添加事件监听器
+        addFileTreeEventListeners();
+        debugLog('文件树渲染完成');
+    }
+
+    function renderFileItem(item, level) {
+        const indent = level * 20;
+        const isFolder = item.type === 'folder';
+        const icon = isFolder ? 'folder' : 'description';
+        const itemClass = isFolder ? 'folder-item' : 'file-item';
+        
+        let html = `
+            <li class="${itemClass}" data-path="${item.path}" data-type="${item.type}" data-name="${item.name}">
+                <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer file-item-content" 
+                     style="margin-left: ${indent}px"
+                     draggable="true">
+                    ${isFolder ? '<span class="material-icons-outlined text-sm mr-1 folder-toggle">chevron_right</span>' : '<span class="w-5"></span>'}
+                    <span class="material-icons-outlined text-sm mr-2 text-text-gray">${icon}</span>
+                    <span class="text-sm text-text-dark-brown flex-1 file-name">${item.name}</span>
+                </div>
+        `;
+        
+        if (isFolder && item.children && item.children.length > 0) {
+            html += '<ul class="folder-children hidden ml-4">';
+            item.children.forEach(child => {
+                html += renderFileItem(child, level + 1);
+            });
+            html += '</ul>';
+        }
+        
+        html += '</li>';
+        return html;
+    }
+
+    // 添加文件树事件监听器
+    function addFileTreeEventListeners() {
+        debugLog('添加文件树事件监听器');
+        
+        const fileItems = document.querySelectorAll('.file-item-content');
+        
+        fileItems.forEach(content => {
+            // 点击事件
+            content.addEventListener('click', function(e) {
+                const item = this.closest('li');
+                const path = item.getAttribute('data-path');
+                const type = item.getAttribute('data-type');
+                const name = item.getAttribute('data-name');
+                
+                handleFileClick(path, type, name, this);
+            });
+            
+            // 右键菜单
+            content.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                const item = this.closest('li');
+                const path = item.getAttribute('data-path');
+                const type = item.getAttribute('data-type');
+                const name = item.getAttribute('data-name');
+                
+                showContextMenu(e, path, type, name);
+            });
+            
+            // 拖拽事件
+            content.addEventListener('dragstart', handleDragStart);
+            content.addEventListener('dragover', handleDragOver);
+            content.addEventListener('drop', handleDrop);
+            content.addEventListener('dragenter', handleDragEnter);
+            content.addEventListener('dragleave', handleDragLeave);
+        });
+        
+        // 文件夹切换事件
+        const folderToggles = document.querySelectorAll('.folder-toggle');
+        folderToggles.forEach(toggle => {
+            toggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+                toggleFolder(this);
+            });
+        });
+    }
+
+    // 处理文件点击
+    function handleFileClick(path, type, name, element) {
+        debugLog(`文件点击: ${name} (${type}) - ${path}`);
+        
+        // 移除之前的选中状态
+        document.querySelectorAll('.file-item-content.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+        
+        // 添加选中状态
+        element.classList.add('selected');
+        
+        if (type === 'file' && path.endsWith('.md')) {
+            // 加载Markdown文件
+            loadFileContent(path, name);
+        }
+    }
+
+    // 加载文件内容
+    function loadFileContent(filePath, fileName) {
+        debugLog(`加载文件内容: ${fileName}`);
+        
+        currentFilePath = filePath;
+        currentFileName = fileName;
+        
+        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
+            return;
+        }
+        
+        // 更新文档预览区标题
+        const previewTitle = document.getElementById('preview-title');
+        if (previewTitle) {
+            previewTitle.textContent = fileName;
+        }
+        
+        // 显示加载状态
+        const previewContent = document.getElementById('preview-content');
+        if (previewContent) {
+            previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin mr-2"><span class="material-icons-outlined">refresh</span></div><span>加载中...</span></div>';
+        }
+        
+        // 调用后端加载原始Markdown内容
+        try {
+            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+                debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
+                
+                if (previewContent) {
+                    if (markdownContent) {
+                        // 使用增强的渲染函数
+                        const htmlContent = renderMarkdownContent(markdownContent);
+                        previewContent.innerHTML = htmlContent;
+                        
+                        // 渲染数学公式
+                        renderMathFormulas(previewContent);
+                        
+                        // 渲染Mermaid图表
+                        renderMermaidDiagrams(previewContent);
+                        
+                        // 高亮代码块
+                        if (typeof hljs !== 'undefined') {
+                            previewContent.querySelectorAll('pre code').forEach((block) => {
+                                hljs.highlightElement(block);
+                            });
+                        }
+                    } else {
+                        previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
+                    }
+                }
+                
+                // 确保处于预览模式（不重复调用switchToPreview）
+                if (!isEditMode) {
+                    // 只更新UI状态，不重新加载内容
+                    document.getElementById('preview-content').classList.remove('hidden');
+                    document.getElementById('edit-content').classList.add('hidden');
+                    document.getElementById('save-btn').classList.add('hidden');
+                    
+                    // 更新按钮状态
+                    document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
+                    document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+                    document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+                    document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+                }
+                
+                // 自动加载该笔记相关的知识点
+                loadNoteKnowledgePoints(filePath);
+            });
+        } catch (error) {
+            debugError(`加载文件内容时发生错误: ${error.message}`);
+            if (previewContent) {
+                previewContent.innerHTML = '<div class="text-center py-8 text-red-500">加载文件失败</div>';
+            }
+        }
+    }
+    
+    // 加载笔记相关的知识点
+    function loadNoteKnowledgePoints(filePath) {
+        debugLog(`加载笔记相关知识点: ${filePath}`);
+        
+        if (!window.bridge || !window.bridge.getNoteKnowledgePoints) {
+            debugLog('getNoteKnowledgePoints方法不可用');
+            return;
+        }
+        
+        window.bridge.getNoteKnowledgePoints(filePath, function(result) {
+            try {
+                const existingPoints = JSON.parse(result);
+                debugLog(`找到 ${existingPoints.length} 个相关知识点`);
+                
+                // 显示已存在的知识点
+                displayExistingKnowledgePoints(existingPoints);
+                
+            } catch (e) {
+                debugError(`解析笔记知识点失败: ${e.message}`);
+            }
+        });
+    }
+    
+    // 显示已存在的知识点
+    function displayExistingKnowledgePoints(existingPoints) {
+        const knowledgeContent = document.getElementById('knowledge-content');
+        if (!knowledgeContent) return;
+        
+        // 清空现有内容
+        knowledgeContent.innerHTML = '';
+        
+        if (existingPoints.length === 0) {
+            knowledgeContent.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <span class="material-icons-outlined text-4xl mb-2">lightbulb_outline</span>
+                    <p>该笔记暂无相关知识点</p>
+                    <p class="text-sm mt-1">点击上方按钮提取知识点</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<div class="space-y-3">';
+        
+        // 显示已存在的知识点（都使用绿色主题，像第一个一样）
+        existingPoints.forEach((point, index) => {
+            html += `
+                <div class="knowledge-point-item existing-point bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
+                     data-point-name="${point.name}" 
+                     data-point-description="${point.description}"
+                     data-point-type="existing"
+                     data-point-id="${point.id}">
+                    <h3 class="font-semibold text-primary">${point.name}</h3>
+                    <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        knowledgeContent.innerHTML = html;
+        
+        // 显示知识点面板
+        document.getElementById('knowledge-loading').classList.add('hidden');
+        document.getElementById('knowledge-placeholder').classList.add('hidden');
+        document.getElementById('knowledge-content').classList.remove('hidden');
+        
+        // 绑定知识点交互事件
+        bindKnowledgePointEvents();
+    }
+
+    // 重新加载预览内容（不触发模式切换）
+    function reloadPreviewContent(filePath, fileName) {
+        debugLog(`重新加载预览内容: ${fileName}`);
+        
+        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
+            return;
+        }
+        
+        // 显示加载状态
+        const previewContent = document.getElementById('preview-content');
+        if (previewContent) {
+            previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin mr-2"><span class="material-icons-outlined">refresh</span></div><span>重新加载中...</span></div>';
+        }
+        
+        // 调用后端加载原始Markdown内容
+        try {
+            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+                debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
+                
+                if (previewContent) {
+                    if (markdownContent) {
+                        // 使用增强的渲染函数
+                        const htmlContent = renderMarkdownContent(markdownContent);
+                        previewContent.innerHTML = htmlContent;
+                        
+                        // 渲染数学公式
+                        renderMathFormulas(previewContent);
+                        
+                        // 渲染Mermaid图表
+                        renderMermaidDiagrams(previewContent);
+                        
+                        // 高亮代码块
+                        if (typeof hljs !== 'undefined') {
+                            previewContent.querySelectorAll('pre code').forEach((block) => {
+                                hljs.highlightElement(block);
+                            });
+                        }
+                    } else {
+                        previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
+                    }
+                }
+            });
+        } catch (error) {
+            debugError(`重新加载预览内容时发生错误: ${error.message}`);
+            if (previewContent) {
+                previewContent.innerHTML = '<div class="text-center py-8 text-red-500">重新加载失败</div>';
+            }
+        }
+    }
+
+    // 切换到预览模式
+    function switchToPreview() {
+        debugLog('切换到预览模式');
+        
+        // 如果当前是编辑模式且有未保存的更改，先保存
+        if (isEditMode && hasUnsavedChanges) {
+            debugLog('检测到未保存的更改，自动保存...');
+            saveCurrentFile(function() {
+                // 保存成功后切换到预览模式
+                performPreviewSwitch();
+            });
+        } else {
+            performPreviewSwitch();
+        }
+    }
+    
+    // 执行预览模式切换
+    function performPreviewSwitch() {
+        debugLog('执行预览模式切换');
+        isEditMode = false;
+        
+        // 如果有当前文件，重新加载预览内容（但不调用switchToPreview避免循环）
+        if (currentFilePath) {
+            reloadPreviewContent(currentFilePath, currentFileName);
+        }
+        
+        document.getElementById('preview-content').classList.remove('hidden');
+        document.getElementById('edit-content').classList.add('hidden');
+        document.getElementById('save-btn').classList.add('hidden');
+        
+        // 更新按钮状态
+        document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
+        document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+        document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+        document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+        
+        // 隐藏未保存指示器
+        hideUnsavedIndicator();
+    }
+
+    // 切换到编辑模式
+    function switchToEdit() {
+        debugLog('切换到编辑模式');
+        
+        if (!currentFilePath) {
+            debugLog('没有选中的文件');
+            return;
+        }
+        
+        isEditMode = true;
+        
+        // 加载原始内容
+        if (window.bridge && window.bridge.loadMarkdownRaw) {
+            window.bridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
+                debugLog(`原始内容加载完成，长度: ${rawContent.length}`);
+                
+                const editContent = document.getElementById('edit-content');
+                if (editContent) {
+                    editContent.value = rawContent;
+                    originalContent = rawContent;  // 保存原始内容
+                    hasUnsavedChanges = false;     // 重置未保存状态
+                    
+                    // 添加内容变更监听
+                    editContent.addEventListener('input', handleContentChange);
+                }
+                
+                document.getElementById('preview-content').classList.add('hidden');
+                document.getElementById('edit-content').classList.remove('hidden');
+                document.getElementById('save-btn').classList.remove('hidden');
+                
+                // 更新按钮状态
+                document.getElementById('edit-btn').classList.add('bg-primary', 'text-white');
+                document.getElementById('edit-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+                document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+                document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
+                
+                // 聚焦到编辑器
+                editContent.focus();
+            });
+        }
+    }
+
+    // 处理内容变更
+    function handleContentChange() {
+        const editContent = document.getElementById('edit-content');
+        if (editContent) {
+            const currentContent = editContent.value;
+            hasUnsavedChanges = (currentContent !== originalContent);
+            
+            if (hasUnsavedChanges) {
+                showUnsavedIndicator();
+                debugLog('检测到内容变更，显示未保存指示器');
+            } else {
+                hideUnsavedIndicator();
+                debugLog('内容与原始内容相同，隐藏未保存指示器');
+            }
+        }
+    }
+
+    // 显示未保存指示器
+    function showUnsavedIndicator() {
+        const indicator = document.getElementById('unsaved-indicator');
+        if (indicator) {
+            indicator.classList.remove('hidden');
+        }
+    }
+
+    // 隐藏未保存指示器
+    function hideUnsavedIndicator() {
+        const indicator = document.getElementById('unsaved-indicator');
+        if (indicator) {
+            indicator.classList.add('hidden');
+        }
+    }
+
+    // 保存当前文件
+    function saveCurrentFile(callback) {
+        debugLog('开始保存当前文件');
+        
+        if (!currentFilePath) {
+            debugError('没有当前文件路径');
+            return;
+        }
+        
+        const editContent = document.getElementById('edit-content');
+        if (!editContent) {
+            debugError('编辑器元素未找到');
+            return;
+        }
+        
+        const content = editContent.value;
+        debugLog(`保存文件: ${currentFileName}, 内容长度: ${content.length}`);
+        
+        if (!window.bridge || !window.bridge.saveMarkdownFile) {
+            debugError('Bridge对象或saveMarkdownFile方法不可用');
+            return;
+        }
+        
+        // 显示保存状态
+        const saveBtn = document.getElementById('save-btn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="material-icons-outlined text-sm mr-1 animate-spin">refresh</span>保存中...';
+        saveBtn.disabled = true;
+        
+        try {
+            window.bridge.saveMarkdownFile(currentFilePath, content, function(success) {
+                debugLog(`文件保存结果: ${success}`);
+                
+                // 恢复按钮状态
+                saveBtn.innerHTML = originalText;
+                saveBtn.disabled = false;
+                
+                if (success) {
+                    originalContent = content;  // 更新原始内容
+                    hasUnsavedChanges = false;  // 重置未保存状态
+                    hideUnsavedIndicator();
+                    
+                    // 显示保存成功提示
+                    showSaveSuccessMessage();
+                    
+                    debugLog('✅ 文件保存成功');
+                    
+                    // 如果有回调函数，执行它
+                    if (callback && typeof callback === 'function') {
+                        callback();
+                    }
+                } else {
+                    debugError('❌ 文件保存失败');
+                    alert('保存失败，请重试');
+                }
+            });
+        } catch (error) {
+            debugError(`保存文件时发生错误: ${error.message}`);
+            
+            // 恢复按钮状态
+            saveBtn.innerHTML = originalText;
+            saveBtn.disabled = false;
+            
+            alert('保存过程中发生错误: ' + error.message);
+        }
+    }
+
+    // 显示保存成功消息
+    function showSaveSuccessMessage() {
+        const message = document.createElement('div');
+        message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        message.innerHTML = `
+            <div class="flex items-center">
+                <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                <span>文件已保存</span>
+            </div>
+        `;
+        document.body.appendChild(message);
+        
+        // 3秒后自动移除
+        setTimeout(() => {
+            if (message.parentElement) {
+                message.remove();
+            }
+        }, 3000);
+    }
+
+    // 切换文件夹展开/折叠
+    function toggleFolder(toggleElement) {
+        debugLog('切换文件夹状态');
+        
+        const folderItem = toggleElement.closest('.folder-item');
+        const children = folderItem.querySelector('.folder-children');
+        
+        if (children) {
+            const isHidden = children.classList.contains('hidden');
+            
+            if (isHidden) {
+                children.classList.remove('hidden');
+                toggleElement.textContent = 'expand_more';
+            } else {
+                children.classList.add('hidden');
+                toggleElement.textContent = 'chevron_right';
+            }
+        }
+    }
+
+    // 拖拽处理函数
+    let draggedElement = null;
+
+    function handleDragStart(e) {
+        draggedElement = this.closest('li');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', draggedElement.outerHTML);
+        
+        const path = draggedElement.getAttribute('data-path');
+        const name = draggedElement.getAttribute('data-name');
+        debugLog(`开始拖拽: ${name} - ${path}`);
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDragEnter(e) {
+        const targetItem = this.closest('li');
+        const targetType = targetItem.getAttribute('data-type');
+        
+        if (targetType === 'folder' && targetItem !== draggedElement) {
+            this.classList.add('drag-over');
+        }
+    }
+
+    function handleDragLeave(e) {
+        this.classList.remove('drag-over');
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        this.classList.remove('drag-over');
+        
+        const targetItem = this.closest('li');
+        const targetType = targetItem.getAttribute('data-type');
+        const targetPath = targetItem.getAttribute('data-path');
+        
+        if (targetType === 'folder' && targetItem !== draggedElement && draggedElement) {
+            const sourcePath = draggedElement.getAttribute('data-path');
+            const sourceName = draggedElement.getAttribute('data-name');
+            
+            debugLog(`拖拽移动: ${sourceName} -> ${targetPath}`);
+            
+            // 调用后端移动文件
+            if (window.bridge && window.bridge.moveFileOrFolder) {
+                window.bridge.moveFileOrFolder(sourcePath, targetPath, function(success) {
+                    if (success) {
+                        debugLog('文件移动成功');
+                        loadFileStructure(); // 重新加载文件结构
+                    } else {
+                        debugError('文件移动失败');
+                    }
+                });
+            }
+        }
+        
+        draggedElement = null;
+    }
+
+    // 右键菜单功能
+    function showContextMenu(e, path, type, name) {
+        e.preventDefault();
+        
+        const contextMenu = document.getElementById('context-menu');
+        contextMenuTarget = { path, type, name };
+        
+        contextMenu.style.left = e.pageX + 'px';
+        contextMenu.style.top = e.pageY + 'px';
+        contextMenu.classList.remove('hidden');
+        
+        debugLog(`显示右键菜单: ${name} (${type})`);
+    }
+
+    function hideContextMenu() {
+        const contextMenu = document.getElementById('context-menu');
+        contextMenu.classList.add('hidden');
+        contextMenuTarget = null;
+    }
+
+    function contextMenuAction(action) {
+        if (!contextMenuTarget) return;
+        
+        const { path, type, name } = contextMenuTarget;
+        debugLog(`右键菜单操作: ${action} - ${name}`);
+        
+        switch (action) {
+            case 'rename':
+                renameItem(path, name);
+                break;
+            case 'delete':
+                deleteItem(path, name);
+                break;
+            case 'newNote':
+                createNewNote(path);
+                break;
+            case 'newFolder':
+                createNewFolder(path);
+                break;
+        }
+        
+        hideContextMenu();
+    }
+
+    // 重命名功能
+    function renameItem(path, currentName) {
+        const newName = prompt('请输入新名称:', currentName);
+        if (newName && newName !== currentName) {
+            debugLog(`重命名: ${currentName} -> ${newName}`);
+            
+            if (window.bridge && window.bridge.renameFileOrFolder) {
+                window.bridge.renameFileOrFolder(path, newName, function(success) {
+                    if (success) {
+                        debugLog('重命名成功');
+                        loadFileStructure();
+                    } else {
+                        debugError('重命名失败');
+                        alert('重命名失败，请检查名称是否已存在');
+                    }
+                });
+            }
+        }
+    }
+
+    // 删除功能
+    function deleteItem(path, name) {
+        if (confirm(`确定要删除 "${name}" 吗？此操作不可恢复。`)) {
+            debugLog(`删除: ${name}`);
+            
+            if (window.bridge && window.bridge.deleteFileOrFolder) {
+                window.bridge.deleteFileOrFolder(path, function(success) {
+                    if (success) {
+                        debugLog('删除成功');
+                        loadFileStructure();
+                    } else {
+                        debugError('删除失败');
+                        alert('删除失败');
+                    }
+                });
+            }
+        }
+    }
+
+    // 文件操作函数
+    function createNewNote(parentPath = 'vault') {
+        debugLog('创建新笔记');
+        if (window.bridge && window.bridge.createNewNote) {
+            window.bridge.createNewNote(parentPath, function(result) {
+                debugLog('新笔记创建结果: ' + result);
+                if (result) {
+                    loadFileStructure();
+                }
+            });
+        }
+    }
+
+    function createNewFolder(parentPath = 'vault') {
+        debugLog('创建新文件夹');
+        if (window.bridge && window.bridge.createNewFolder) {
+            window.bridge.createNewFolder(parentPath, function(result) {
+                debugLog('新文件夹创建结果: ' + result);
+                if (result) {
+                    loadFileStructure();
+                }
+            });
+        }
+    }
+
+    // 验证后端功能
+    function validateBackendFunctions() {
+        debugLog('🔍 开始验证后端功能');
+        
+        if (!window.bridge || typeof window.bridge.validateAllFileOperations !== 'function') {
+            debugError('❌ Bridge对象或validateAllFileOperations方法不可用');
+            alert('❌ 无法连接到后端验证服务');
+            return;
+        }
+        
+        // 显示验证开始提示
+        const loadingDiv = document.createElement('div');
+        loadingDiv.id = 'validation-loading';
+        loadingDiv.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        loadingDiv.innerHTML = `
+            <div class="flex items-center">
+                <div class="animate-spin mr-2">
+                    <span class="material-icons-outlined">refresh</span>
+                </div>
+                <span>正在验证后端功能...</span>
+            </div>
+        `;
+        document.body.appendChild(loadingDiv);
+        
+        debugLog('调用后端验证功能...');
+        
+        try {
+            window.bridge.validateAllFileOperations(function(result) {
+                debugLog('🎯 后端验证完成');
+                debugLog('验证结果: ' + result);
+                
+                // 移除加载提示
+                const loadingElement = document.getElementById('validation-loading');
+                if (loadingElement) {
+                    loadingElement.remove();
+                }
+                
+                // 显示验证结果
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'fixed top-4 right-4 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-w-md p-4';
+                resultDiv.innerHTML = `
+                    <div class="flex justify-between items-start mb-2">
+                        <h3 class="font-semibold text-gray-800">后端功能验证结果</h3>
+                        <button onclick="this.parentElement.parentElement.remove()" class="text-gray-500 hover:text-gray-700">
+                            <span class="material-icons-outlined text-sm">close</span>
+                        </button>
+                    </div>
+                    <div class="text-sm text-gray-600 whitespace-pre-line max-h-64 overflow-y-auto">
+                        ${result}
+                    </div>
+                `;
+                document.body.appendChild(resultDiv);
+                
+                // 10秒后自动关闭
+                setTimeout(() => {
+                    if (resultDiv.parentElement) {
+                        resultDiv.remove();
+                    }
+                }, 10000);
+                
+                // 重新加载文件结构以反映任何更改
+                loadFileStructure();
+            });
+        } catch (error) {
+            debugError('调用后端验证时发生错误: ' + error.message);
+            
+            // 移除加载提示
+            const loadingElement = document.getElementById('validation-loading');
+            if (loadingElement) {
+                loadingElement.remove();
+            }
+            
+            alert('❌ 验证过程中发生错误: ' + error.message);
+        }
+    }
+
+    // 测试Bridge连接
+    function testBridgeConnection() {
+        debugLog('=== 开始测试Bridge连接 ===');
+        
+        // 1. 检查window.bridge
+        if (typeof window.bridge === 'undefined') {
+            debugError('❌ window.bridge 未定义');
+            alert('❌ window.bridge 未定义');
+            return;
+        }
+        debugLog('✅ window.bridge 存在');
+        
+        // 2. 检查extractKnowledgePoints方法
+        if (typeof window.bridge.extractKnowledgePoints !== 'function') {
+            debugError('❌ extractKnowledgePoints 方法不存在');
+            alert('❌ extractKnowledgePoints 方法不存在');
+            return;
+        }
+        debugLog('✅ extractKnowledgePoints 方法存在');
+        
+        // 3. 测试简单调用
+        try {
+            debugLog('测试调用extractKnowledgePoints...');
+            window.bridge.extractKnowledgePoints('test_path', function(result) {
+                debugLog(`测试调用成功，收到结果: ${result}`);
+                alert(`✅ Bridge连接正常！收到结果长度: ${result ? result.length : 'null'}`);
+            });
+        } catch (error) {
+            debugError(`❌ 测试调用失败: ${error.message}`);
+            alert(`❌ 测试调用失败: ${error.message}`);
+        }
+        
+        debugLog('=== Bridge连接测试完成 ===');
+    }
+
+    // 提取知识点功能
+    function extractKnowledgePoints() {
+        addToDebugPanel('INFO', '=== 开始知识点提取流程 ===');
+        debugLog('开始提取知识点');
+        
+        // 详细的调试信息
+        addToDebugPanel('INFO', `当前文件路径: ${currentFilePath}`);
+        addToDebugPanel('INFO', `当前文件名: ${currentFileName}`);
+        addToDebugPanel('INFO', `Bridge对象存在: ${!!window.bridge}`);
+        addToDebugPanel('INFO', `extractKnowledgePoints方法存在: ${!!(window.bridge && window.bridge.extractKnowledgePoints)}`);
+        
+        debugLog(`当前文件路径: ${currentFilePath}`);
+        debugLog(`当前文件名: ${currentFileName}`);
+        debugLog(`Bridge对象存在: ${!!window.bridge}`);
+        debugLog(`extractKnowledgePoints方法存在: ${!!(window.bridge && window.bridge.extractKnowledgePoints)}`);
+        
+        if (!currentFilePath) {
+            addToDebugPanel('ERROR', '没有选中的文件，无法提取知识点');
+            debugError('没有选中的文件');
+            alert('请先选择一个文档文件');
+            return;
+        }
+        
+        if (!window.bridge || !window.bridge.extractKnowledgePoints) {
+            addToDebugPanel('ERROR', 'Bridge对象或extractKnowledgePoints方法不可用');
+            addToDebugPanel('ERROR', `window.bridge: ${window.bridge}`);
+            addToDebugPanel('ERROR', `window.bridge.extractKnowledgePoints: ${window.bridge ? window.bridge.extractKnowledgePoints : 'bridge不存在'}`);
+            debugError('Bridge对象或extractKnowledgePoints方法不可用');
+            debugError(`window.bridge: ${window.bridge}`);
+            debugError(`window.bridge.extractKnowledgePoints: ${window.bridge ? window.bridge.extractKnowledgePoints : 'bridge不存在'}`);
+            alert('知识点提取功能不可用');
+            return;
+        }
+        
+        // 清空之前的知识点结果
+        addToDebugPanel('INFO', '清空之前的知识点结果');
+        const contentDiv = document.getElementById('knowledge-content');
+        if (contentDiv) {
+            contentDiv.innerHTML = '';
+            contentDiv.classList.add('hidden');
+        }
+        
+        // 显示加载状态
+        showKnowledgeLoading();
+        
+        // 禁用提取按钮
+        const extractBtn = document.getElementById('extract-btn');
+        if (extractBtn) {
+            extractBtn.style.opacity = '0.5';
+            extractBtn.style.pointerEvents = 'none';
+        }
+        
+        debugLog(`开始提取文件知识点: ${currentFileName}`);
+        
+        try {
+            addToDebugPanel('INFO', `准备调用bridge.extractKnowledgePoints，文件路径: ${currentFilePath}`);
+            debugLog(`调用bridge.extractKnowledgePoints，文件路径: ${currentFilePath}`);
+            
+            window.bridge.extractKnowledgePoints(currentFilePath, function(resultJson) {
+                addToDebugPanel('SUCCESS', '知识点提取回调函数被触发');
+                addToDebugPanel('INFO', `回调结果长度: ${resultJson ? resultJson.length : 'null'}`);
+                addToDebugPanel('INFO', `原始结果前200字符: ${resultJson ? resultJson.substring(0, 200) : 'null'}`);
+                
+                debugLog(`知识点提取回调触发，结果长度: ${resultJson ? resultJson.length : 'null'}`);
+                debugLog(`原始结果前200字符: ${resultJson ? resultJson.substring(0, 200) : 'null'}`);
+                
+                if (!resultJson) {
+                    addToDebugPanel('ERROR', '收到空的API结果');
+                    debugError('收到空的结果');
+                    showKnowledgeError('收到空的提取结果');
+                    return;
+                }
+                
+                try {
+                    addToDebugPanel('INFO', '开始解析JSON结果');
+                    const result = JSON.parse(resultJson);
+                    
+                    addToDebugPanel('SUCCESS', `JSON解析成功，结果类型: ${typeof result}`);
+                    addToDebugPanel('INFO', `结果是否为数组: ${Array.isArray(result)}`);
+                    addToDebugPanel('INFO', `结果包含的键: ${Object.keys(result)}`);
+                    addToDebugPanel('INFO', `success字段: ${result.success}`);
+                    addToDebugPanel('INFO', `knowledge_points字段存在: ${!!result.knowledge_points}`);
+                    addToDebugPanel('INFO', `knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+                    
+                    debugLog(`JSON解析成功，结果类型: ${typeof result}`);
+                    debugLog(`结果包含的键: ${Object.keys(result)}`);
+                    debugLog(`success字段: ${result.success}`);
+                    debugLog(`knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+                    
+                    // 检查是否是直接返回的知识点数组格式
+                    if (Array.isArray(result)) {
+                        addToDebugPanel('INFO', `检测到数组格式，包含 ${result.length} 个元素`);
+                        addToDebugPanel('INFO', '转换为标准格式');
+                        
+                        // 转换数组格式为标准格式
+                        const convertedResult = {
+                            success: true,
+                            knowledge_points: result.map(item => ({
+                                name: item.title || item.name || item.concept_name || '未命名知识点',
+                                description: item.content || item.description || item.core_definition || '无描述',
+                                category: item.category || '',
+                                importance: item.importance || '中等'
+                            })),
+                            total_count: result.length
+                        };
+                        
+                        addToDebugPanel('SUCCESS', `转换完成，包含 ${convertedResult.knowledge_points.length} 个知识点`);
+                        addToDebugPanel('INFO', '转换后的知识点详情:');
+                        convertedResult.knowledge_points.forEach((point, index) => {
+                            addToDebugPanel('INFO', `  知识点${index + 1}: ${point.name} - ${point.description}`);
+                        });
+                        
+                        displayKnowledgePoints(convertedResult);
+                    } else {
+                        // 标准对象格式
+                        if (result.knowledge_points && result.knowledge_points.length > 0) {
+                            addToDebugPanel('INFO', '标准对象格式，知识点详情:');
+                            result.knowledge_points.forEach((point, index) => {
+                                addToDebugPanel('INFO', `  知识点${index + 1}: ${JSON.stringify(point)}`);
+                            });
+                        }
+                        
+                        displayKnowledgePoints(result);
+                    }
+                } catch (parseError) {
+                    addToDebugPanel('ERROR', `JSON解析失败: ${parseError.message}`);
+                    addToDebugPanel('ERROR', `原始结果: ${resultJson}`);
+                    debugError(`解析知识点结果失败: ${parseError.message}`);
+                    debugError(`原始结果: ${resultJson}`);
+                    showKnowledgeError('解析知识点结果失败: ' + parseError.message);
+                }
+                
+                // 恢复提取按钮
+                if (extractBtn) {
+                    extractBtn.style.opacity = '1';
+                    extractBtn.style.pointerEvents = 'auto';
+                }
+            });
+        } catch (error) {
+            debugError(`提取知识点时发生错误: ${error.message}`);
+            showKnowledgeError('提取知识点时发生错误: ' + error.message);
+            
+            // 恢复提取按钮
+            if (extractBtn) {
+                extractBtn.style.opacity = '1';
+                extractBtn.style.pointerEvents = 'auto';
+            }
+        }
+    }
+
+    // 显示知识点加载状态
+    function showKnowledgeLoading() {
+        const placeholderDiv = document.getElementById('knowledge-placeholder');
+        const contentDiv = document.getElementById('knowledge-content');
+        const loadingDiv = document.getElementById('knowledge-loading');
+        
+        if (placeholderDiv) placeholderDiv.classList.add('hidden');
+        if (contentDiv) contentDiv.classList.add('hidden');
+        if (loadingDiv) loadingDiv.classList.remove('hidden');
+    }
+
+    // 显示知识点内容
+    function displayKnowledgePoints(result) {
+        addToDebugPanel('INFO', '=== 开始显示知识点内容 ===');
+        debugLog('显示知识点内容');
+        debugLog(`传入的result: ${JSON.stringify(result)}`);
+        
+        const loadingDiv = document.getElementById('knowledge-loading');
+        const contentDiv = document.getElementById('knowledge-content');
+        const placeholderDiv = document.getElementById('knowledge-placeholder');
+        
+        addToDebugPanel('INFO', `DOM元素检查 - loading: ${!!loadingDiv}, content: ${!!contentDiv}, placeholder: ${!!placeholderDiv}`);
+        debugLog(`DOM元素检查 - loading: ${!!loadingDiv}, content: ${!!contentDiv}, placeholder: ${!!placeholderDiv}`);
+        
+        // 隐藏加载状态
+        if (loadingDiv) {
+            loadingDiv.classList.add('hidden');
+            addToDebugPanel('INFO', '隐藏加载状态');
+        }
+        if (placeholderDiv) {
+            placeholderDiv.classList.add('hidden');
+            addToDebugPanel('INFO', '隐藏占位符');
+        }
+        
+        addToDebugPanel('INFO', `result.success: ${result.success}`);
+        addToDebugPanel('INFO', `result.knowledge_points存在: ${!!result.knowledge_points}`);
+        addToDebugPanel('INFO', `result.knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+        
+        debugLog(`result.success: ${result.success}`);
+        debugLog(`result.knowledge_points存在: ${!!result.knowledge_points}`);
+        debugLog(`result.knowledge_points长度: ${result.knowledge_points ? result.knowledge_points.length : 'undefined'}`);
+        
+        if (result.success && result.knowledge_points && result.knowledge_points.length > 0) {
+            addToDebugPanel('SUCCESS', `准备显示 ${result.knowledge_points.length} 个新提取的知识点`);
+            const knowledgePoints = result.knowledge_points;
+            debugLog(`成功提取 ${knowledgePoints.length} 个知识点`);
+            
+            // 检查是否已有内容（已存在的知识点）
+            const existingContent = contentDiv.innerHTML.trim();
+            addToDebugPanel('INFO', `已存在内容长度: ${existingContent.length}`);
+            addToDebugPanel('INFO', `已存在内容前100字符: ${existingContent.substring(0, 100)}`);
+            let html = '';
+            
+            if (existingContent) {
+                // 如果已有内容，保留原有内容并追加新提取的知识点
+                addToDebugPanel('INFO', '检测到已存在内容，保留并追加新知识点');
+                html = existingContent;
+                
+                // 添加分隔线和标题
+                html += `
+                    <div class="my-4 border-t border-gray-200"></div>
+                    <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div class="flex items-center text-green-800">
+                            <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                            <span class="font-medium">新提取 ${knowledgePoints.length} 个知识点</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // 如果没有已存在的内容，显示提取成功信息
+                html = `
+                    <div class="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div class="flex items-center text-green-800">
+                            <span class="material-icons-outlined text-sm mr-2">check_circle</span>
+                            <span class="font-medium">成功提取 ${knowledgePoints.length} 个知识点</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // 添加新提取的知识点容器
+            html += '<div class="space-y-3">';
+            
+            // 添加新提取的知识点（所有新提取的都使用灰色主题）
+            knowledgePoints.forEach((point, index) => {
+                // 所有新提取的知识点都使用灰色主题
+                const bgClass = 'bg-bg-light-gray';
+                const titleClass = 'text-text-dark-brown';
+                
+                html += `
+                    <div class="knowledge-point-item ${bgClass} p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group" 
+                         data-point-name="${point.name.replace(/"/g, '&quot;')}" 
+                         data-point-description="${point.description.replace(/"/g, '&quot;')}"
+                         data-point-type="extracted"
+                         data-point-index="${index}">
+                        <h3 class="font-semibold ${titleClass}">${point.name}</h3>
+                        <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                        
+                        <!-- 悬停时显示的操作按钮 -->
+                        <div class="knowledge-point-actions absolute -bottom-10 left-1/2 transform -translate-x-1/2 
+                                    bg-white border border-gray-200 rounded-lg shadow-lg px-2 py-1 
+                                    opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 
+                                    flex items-center space-x-2">
+                            <button class="edit-knowledge-btn p-1 text-text-gray hover:text-primary transition-colors" 
+                                    title="编辑知识点" data-index="${index}">
+                                <span class="material-icons-outlined text-sm">edit</span>
+                            </button>
+                            <button class="delete-knowledge-btn p-1 text-text-gray hover:text-danger transition-colors" 
+                                    title="删除知识点" data-index="${index}">
+                                <span class="material-icons-outlined text-sm">delete</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            
+            html += `
+                </div>
+                
+                <!-- 手动添加知识点按钮 -->
+                <div class="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                    <button id="add-knowledge-btn" class="w-full flex items-center justify-center py-2 px-3 
+                                                           border-2 border-dashed border-gray-300 rounded-lg 
+                                                           text-text-gray hover:border-primary hover:text-primary 
+                                                           transition-colors duration-200">
+                        <span class="material-icons-outlined mr-2">add</span>
+                        <span>手动添加知识点</span>
+                    </button>
+                    
+                    <!-- 保存知识点按钮 -->
+                    <button id="save-knowledge-btn" class="w-full flex items-center justify-center py-2 px-3 
+                                                           bg-primary text-white rounded-lg 
+                                                           hover:bg-green-600 transition-colors duration-200">
+                        <span class="material-icons-outlined mr-2">save</span>
+                        <span>保存知识点</span>
+                    </button>
+                </div>
+            `;
+            
+            if (contentDiv) {
+                contentDiv.innerHTML = html;
+                contentDiv.classList.remove('hidden');
+                
+                // 绑定知识点交互事件
+                bindKnowledgePointEvents();
+            }
+            
+        } else {
+            const errorMsg = result.error || '未能提取到知识点';
+            debugError(`知识点提取失败: ${errorMsg}`);
+            showKnowledgeError(errorMsg);
+        }
+    }
+
+    // 全局变量用于跟踪当前高亮状态
+    let currentHighlightIndex = -1;
+    let currentHighlightElements = [];
+    let currentSearchKeyword = '';
+
+    // 绑定知识点交互事件
+    function bindKnowledgePointEvents() {
+        addToDebugPanel('INFO', '绑定知识点交互事件');
+        
+        // 为所有知识点添加点击事件
+        const knowledgeItems = document.querySelectorAll('.knowledge-point-item');
+        knowledgeItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                // 如果点击的是操作按钮，不触发高亮功能
+                if (e.target.closest('.knowledge-point-actions')) {
+                    return;
+                }
+                
+                const pointName = this.getAttribute('data-point-name');
+                const pointDescription = this.getAttribute('data-point-description');
+                
+                // 高亮并定位到笔记中的关键字
+                highlightAndLocateInNote(pointName, pointDescription);
+            });
+        });
+        
+        // 2. 编辑知识点按钮
+        const editBtns = document.querySelectorAll('.edit-knowledge-btn');
+        editBtns.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const index = parseInt(this.dataset.index);
+                editKnowledgePoint(index);
+            });
+        });
+        
+        // 3. 删除知识点按钮
+        const deleteBtns = document.querySelectorAll('.delete-knowledge-btn');
+        deleteBtns.forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const index = parseInt(this.dataset.index);
+                deleteKnowledgePoint(index);
+            });
+        });
+        
+        // 4. 手动添加知识点按钮
+        const addBtn = document.getElementById('add-knowledge-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                showAddKnowledgePointModal();
+            });
+        }
+        
+        // 5. 保存知识点按钮
+        const saveBtn = document.getElementById('save-knowledge-btn');
+        if (saveBtn) {
+            // 移除之前的事件监听器（如果存在）
+            saveBtn.removeEventListener('click', showKnowledgeManagementPanel);
+            saveBtn.addEventListener('click', function() {
+                showKnowledgeManagementPanel();
+            });
+        }
+    }
+    
+    // 高亮并定位到笔记中的关键字
+    function highlightAndLocateInNote(pointName, pointDescription) {
+        addToDebugPanel('INFO', `点击知识点: ${pointName}`);
+        
+        // 获取预览内容区域
+        const previewContent = document.getElementById('preview-content');
+        if (!previewContent) {
+            addToDebugPanel('ERROR', '未找到预览内容区域');
+            return;
+        }
+        
+        // 如果是同一个关键字，切换到下一个高亮位置
+        if (currentSearchKeyword === pointName && currentHighlightElements.length > 0) {
+            currentHighlightIndex = (currentHighlightIndex + 1) % currentHighlightElements.length;
+            scrollToHighlight(currentHighlightIndex);
+            addToDebugPanel('INFO', `切换到第 ${currentHighlightIndex + 1} 个匹配项`);
+            return;
+        }
+        
+        // 清除之前的高亮
+        clearHighlights();
+        
+        // 设置新的搜索关键字
+        currentSearchKeyword = pointName;
+        currentHighlightIndex = -1;
+        
+        // 搜索并高亮关键字
+        const matches = highlightTextInElement(previewContent, pointName);
+        
+        if (matches > 0) {
+            addToDebugPanel('SUCCESS', `找到 ${matches} 个匹配项`);
+            currentHighlightIndex = 0;
+            scrollToHighlight(0);
+        } else {
+            addToDebugPanel('WARNING', `未找到关键字: ${pointName}`);
+            // 尝试搜索描述中的关键词
+            const descriptionWords = pointDescription.split(/[，。！？；：\s]+/).filter(word => word.length > 1);
+            for (const word of descriptionWords) {
+                const wordMatches = highlightTextInElement(previewContent, word);
+                if (wordMatches > 0) {
+                    addToDebugPanel('SUCCESS', `通过描述关键词找到 ${wordMatches} 个匹配项: ${word}`);
+                    currentSearchKeyword = word;
+                    currentHighlightIndex = 0;
+                    scrollToHighlight(0);
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 在元素中高亮文本
+    function highlightTextInElement(element, searchText) {
+        if (!searchText || searchText.length < 1) return 0;
+        
+        let matchCount = 0;
+        currentHighlightElements = [];
+        
+        // 创建文本节点遍历器
+        const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            textNodes.push(node);
+        }
+        
+        // 在每个文本节点中搜索并替换
+        textNodes.forEach(textNode => {
+            const text = textNode.textContent;
+            const regex = new RegExp(escapeRegExp(searchText), 'gi');
+            const matches = text.match(regex);
+            
+            if (matches) {
+                const highlightedHTML = text.replace(regex, (match) => {
+                    matchCount++;
+                    return `<mark class="knowledge-highlight" data-highlight-index="${matchCount - 1}">${match}</mark>`;
+                });
+                
+                // 创建临时容器来解析HTML
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = highlightedHTML;
+                
+                // 替换原文本节点
+                const parent = textNode.parentNode;
+                while (tempDiv.firstChild) {
+                    parent.insertBefore(tempDiv.firstChild, textNode);
+                }
+                parent.removeChild(textNode);
+            }
+        });
+        
+        // 收集所有高亮元素
+        currentHighlightElements = Array.from(element.querySelectorAll('.knowledge-highlight'));
+        
+        return matchCount;
+    }
+    
+    // 清除所有高亮
+    function clearHighlights() {
+        const highlights = document.querySelectorAll('.knowledge-highlight');
+        highlights.forEach(highlight => {
+            const parent = highlight.parentNode;
+            parent.replaceChild(document.createTextNode(highlight.textContent), highlight);
+            parent.normalize(); // 合并相邻的文本节点
+        });
+        currentHighlightElements = [];
+        currentHighlightIndex = -1;
+    }
+    
+    // 滚动到指定的高亮位置
+    function scrollToHighlight(index) {
+        if (index < 0 || index >= currentHighlightElements.length) return;
+        
+        // 移除之前的活动高亮
+        currentHighlightElements.forEach(el => el.classList.remove('active-highlight'));
+        
+        // 设置当前高亮为活动状态
+        const currentElement = currentHighlightElements[index];
+        currentElement.classList.add('active-highlight');
+        
+        // 滚动到可视区域
+        currentElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'nearest'
+        });
+        
+        addToDebugPanel('INFO', `定位到第 ${index + 1}/${currentHighlightElements.length} 个匹配项`);
+    }
+    
+    // 转义正则表达式特殊字符
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    // 高亮文档中的文本
+    function highlightTextInDocument(searchText) {
+        addToDebugPanel('INFO', `在文档中搜索并高亮: ${searchText}`);
+        
+        const previewContent = document.getElementById('preview-content');
+        if (!previewContent) {
+            addToDebugPanel('WARN', '预览内容区域不存在');
+            return;
+        }
+        
+        // 清除之前的高亮
+        clearHighlights();
+        
+        // 搜索并高亮文本
+        const walker = document.createTreeWalker(
+            previewContent,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.textContent.includes(searchText)) {
+                textNodes.push(node);
+            }
+        }
+        
+        if (textNodes.length === 0) {
+            addToDebugPanel('WARN', `未在文档中找到文本: ${searchText}`);
+            return;
+        }
+        
+        addToDebugPanel('SUCCESS', `找到 ${textNodes.length} 个匹配项`);
+        
+        // 高亮所有匹配的文本
+        textNodes.forEach((textNode, index) => {
+            const parent = textNode.parentNode;
+            const text = textNode.textContent;
+            const highlightedText = text.replace(
+                new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+                `<mark class="bg-yellow-200 px-1 rounded" data-highlight-index="${index}">$&</mark>`
+            );
+            
+            const wrapper = document.createElement('span');
+            wrapper.innerHTML = highlightedText;
+            parent.replaceChild(wrapper, textNode);
+        });
+        
+        // 滚动到第一个高亮位置
+        const firstHighlight = previewContent.querySelector('mark[data-highlight-index="0"]');
+        if (firstHighlight) {
+            firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            addToDebugPanel('SUCCESS', '已定位到第一个匹配项');
+        }
+    }
+    
+    // 清除文档中的高亮
+    function clearHighlights() {
+        const previewContent = document.getElementById('preview-content');
+        if (!previewContent) return;
+        
+        const highlights = previewContent.querySelectorAll('mark[data-highlight-index]');
+        highlights.forEach(mark => {
+            const parent = mark.parentNode;
+            parent.replaceChild(document.createTextNode(mark.textContent), mark);
+            parent.normalize(); // 合并相邻的文本节点
+        });
+    }
+    
+    // 编辑知识点
+    function editKnowledgePoint(index) {
+        addToDebugPanel('INFO', `编辑知识点 ${index}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (!knowledgeItem) return;
+        
+        const currentName = knowledgeItem.dataset.pointName;
+        const currentDescription = knowledgeItem.dataset.pointDescription;
+        
+        // 创建编辑模态框
+        showEditKnowledgePointModal(index, currentName, currentDescription);
+    }
+    
+    // 删除知识点
+    function deleteKnowledgePoint(index) {
+        addToDebugPanel('INFO', `删除知识点 ${index}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (!knowledgeItem) return;
+        
+        const pointName = knowledgeItem.dataset.pointName;
+        
+        // 显示确认对话框
+        showDeleteConfirmModal(index, pointName);
+    }
+    
+    // 显示添加知识点模态框
+    function showAddKnowledgePointModal() {
+        addToDebugPanel('INFO', '显示添加知识点模态框');
+        
+        const modal = createKnowledgePointModal({
+            title: '添加知识点',
+            nameValue: '',
+            descriptionValue: '',
+            confirmText: '添加',
+            onConfirm: (name, description) => {
+                addNewKnowledgePoint(name, description);
+            }
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    // 显示编辑知识点模态框
+    function showEditKnowledgePointModal(index, currentName, currentDescription) {
+        addToDebugPanel('INFO', `显示编辑知识点模态框: ${currentName}`);
+        
+        const modal = createKnowledgePointModal({
+            title: '编辑知识点',
+            nameValue: currentName,
+            descriptionValue: currentDescription,
+            confirmText: '保存',
+            onConfirm: (name, description) => {
+                updateKnowledgePoint(index, name, description);
+            }
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    // 显示删除确认模态框
+    function showDeleteConfirmModal(index, pointName) {
+        addToDebugPanel('INFO', `显示删除确认对话框: ${pointName}`);
+        
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <div class="flex items-center mb-4">
+                    <span class="material-icons-outlined text-danger mr-3">warning</span>
+                    <h3 class="text-lg font-semibold text-text-dark-brown">确认删除</h3>
+                </div>
+                <p class="text-text-medium-brown mb-6">
+                    确定要删除知识点 "<strong>${pointName}</strong>" 吗？此操作无法撤销。
+                </p>
+                <div class="flex justify-end space-x-3">
+                    <button class="cancel-btn px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button class="confirm-btn px-4 py-2 bg-danger text-white rounded-lg hover:bg-red-600">
+                        删除
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 绑定事件
+        const cancelBtn = modal.querySelector('.cancel-btn');
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        confirmBtn.addEventListener('click', () => {
+            removeKnowledgePoint(index);
+            document.body.removeChild(modal);
+        });
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        document.body.appendChild(modal);
+    }
+    
+    // 创建知识点编辑模态框
+    function createKnowledgePointModal({ title, nameValue, descriptionValue, confirmText, onConfirm }) {
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-semibold text-text-dark-brown mb-4">${title}</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-text-dark-brown mb-2">知识点名称</label>
+                        <input type="text" class="knowledge-name-input w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" 
+                               placeholder="请输入知识点名称" value="${nameValue}">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-text-dark-brown mb-2">知识点描述</label>
+                        <textarea class="knowledge-desc-input w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" 
+                                  rows="3" placeholder="请输入知识点描述">${descriptionValue}</textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button class="cancel-btn px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button class="confirm-btn px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600">
+                        ${confirmText}
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 绑定事件
+        const nameInput = modal.querySelector('.knowledge-name-input');
+        const descInput = modal.querySelector('.knowledge-desc-input');
+        const cancelBtn = modal.querySelector('.cancel-btn');
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        confirmBtn.addEventListener('click', () => {
+            const name = nameInput.value.trim();
+            const description = descInput.value.trim();
+            
+            if (!name) {
+                alert('请输入知识点名称');
+                nameInput.focus();
+                return;
+            }
+            
+            if (!description) {
+                alert('请输入知识点描述');
+                descInput.focus();
+                return;
+            }
+            
+            onConfirm(name, description);
+            document.body.removeChild(modal);
+        });
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        // 自动聚焦到名称输入框
+        setTimeout(() => {
+            nameInput.focus();
+            nameInput.select();
+        }, 100);
+        
+        return modal;
+    }
+    
+    // 添加新知识点
+    function addNewKnowledgePoint(name, description) {
+        addToDebugPanel('SUCCESS', `添加新知识点: ${name}`);
+        
+        // 获取当前知识点列表
+        const knowledgeItems = document.querySelectorAll('.knowledge-point-item');
+        const newIndex = knowledgeItems.length;
+        
+        // 创建新知识点HTML
+        const newPointHtml = `
+            <div class="knowledge-point-item bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group" 
+                 data-point-name="${name.replace(/"/g, '&quot;')}" 
+                 data-point-description="${description.replace(/"/g, '&quot;')}"
+                 data-point-index="${newIndex}">
+                <h3 class="font-semibold text-text-dark-brown">${name}</h3>
+                <p class="text-sm text-text-medium-brown mt-1">${description}</p>
+                
+                <!-- 悬停时显示的操作按钮 -->
+                <div class="knowledge-point-actions absolute -bottom-10 left-1/2 transform -translate-x-1/2 
+                            bg-white border border-gray-200 rounded-lg shadow-lg px-2 py-1 
+                            opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10 
+                            flex items-center space-x-2">
+                    <button class="edit-knowledge-btn p-1 text-text-gray hover:text-primary transition-colors" 
+                            title="编辑知识点" data-index="${newIndex}">
+                        <span class="material-icons-outlined text-sm">edit</span>
+                    </button>
+                    <button class="delete-knowledge-btn p-1 text-text-gray hover:text-danger transition-colors" 
+                            title="删除知识点" data-index="${newIndex}">
+                        <span class="material-icons-outlined text-sm">delete</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 插入到知识点列表中
+        const knowledgeContainer = document.querySelector('.flex-1.overflow-y-auto.space-y-3');
+        if (knowledgeContainer) {
+            knowledgeContainer.insertAdjacentHTML('beforeend', newPointHtml);
+            
+            // 重新绑定事件
+            bindKnowledgePointEvents();
+            
+            addToDebugPanel('SUCCESS', '新知识点已添加到列表');
+        }
+    }
+    
+    // 更新知识点
+    function updateKnowledgePoint(index, name, description) {
+        addToDebugPanel('SUCCESS', `更新知识点 ${index}: ${name}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (!knowledgeItem) return;
+        
+        // 更新数据属性
+        knowledgeItem.dataset.pointName = name;
+        knowledgeItem.dataset.pointDescription = description;
+        
+        // 更新显示内容
+        const titleElement = knowledgeItem.querySelector('h3');
+        const descElement = knowledgeItem.querySelector('p');
+        
+        if (titleElement) titleElement.textContent = name;
+        if (descElement) descElement.textContent = description;
+        
+        addToDebugPanel('SUCCESS', '知识点已更新');
+    }
+    
+    // 删除知识点
+    function removeKnowledgePoint(index) {
+        addToDebugPanel('SUCCESS', `删除知识点 ${index}`);
+        
+        const knowledgeItem = document.querySelector(`[data-point-index="${index}"]`);
+        if (knowledgeItem) {
+            knowledgeItem.remove();
+            
+            // 重新编号剩余的知识点
+            const remainingItems = document.querySelectorAll('.knowledge-point-item');
+            remainingItems.forEach((item, newIndex) => {
+                item.dataset.pointIndex = newIndex;
+                
+                // 更新按钮的data-index
+                const editBtn = item.querySelector('.edit-knowledge-btn');
+                const deleteBtn = item.querySelector('.delete-knowledge-btn');
+                if (editBtn) editBtn.dataset.index = newIndex;
+                if (deleteBtn) deleteBtn.dataset.index = newIndex;
+            });
+            
+            addToDebugPanel('SUCCESS', '知识点已删除');
+        }
+    }
+    
+    // 显示知识点管理面板
+    function showKnowledgeManagementPanel() {
+        addToDebugPanel('INFO', '显示知识点管理面板');
+        
+        try {
+            // 获取当前笔记的知识点
+            const currentKnowledgePoints = getCurrentKnowledgePoints();
+            addToDebugPanel('INFO', `获取到 ${currentKnowledgePoints.length} 个知识点`);
+            
+            if (currentKnowledgePoints.length === 0) {
+                alert('当前没有提取到知识点，请先提取知识点');
+                return;
+            }
+            
+            // 生成笔记唯一ID
+            const noteId = generateNoteId();
+            addToDebugPanel('INFO', `当前笔记ID: ${noteId}`);
+            
+            // 创建管理面板
+            addToDebugPanel('INFO', '开始创建管理面板');
+            const panel = createKnowledgeManagementPanel(currentKnowledgePoints, noteId);
+            addToDebugPanel('INFO', '管理面板创建成功，添加到页面');
+            document.body.appendChild(panel);
+            
+            // DOM添加后再初始化，确保所有元素都已渲染
+            setTimeout(() => {
+                initializeKnowledgeManagementPanel(panel, currentKnowledgePoints, noteId);
+                addToDebugPanel('SUCCESS', '知识点管理面板显示成功');
+            }, 100);
+            
+        } catch (error) {
+            addToDebugPanel('ERROR', `显示管理面板失败: ${error.message}`);
+            console.error('显示管理面板失败:', error);
+            alert('显示管理面板失败: ' + error.message);
+        }
+    }
+    
+    // 获取当前知识点列表
+    function getCurrentKnowledgePoints() {
+        const knowledgeItems = document.querySelectorAll('.knowledge-point-item');
+        const points = [];
+        
+        addToDebugPanel('INFO', `查找知识点元素，找到 ${knowledgeItems.length} 个 .knowledge-point-item`);
+        
+        knowledgeItems.forEach((item, index) => {
+            const name = item.dataset.pointName;
+            const description = item.dataset.pointDescription;
+            
+            addToDebugPanel('INFO', `知识点 ${index + 1}: ${name} - ${description}`);
+            
+            points.push({
+                id: index,
+                name: name,
+                description: description,
+                processed: false // 标记是否已处理
+            });
+        });
+        
+        addToDebugPanel('SUCCESS', `获取到 ${points.length} 个当前知识点`);
+        return points;
+    }
+    
+    // 生成笔记唯一ID
+    function generateNoteId() {
+        const fileName = currentFileName || 'unknown';
+        const filePath = currentFilePath || 'unknown';
+        const timestamp = Date.now();
+        
+        // 使用安全的方式编码文件路径（支持中文）
+        const encodedPath = encodeURIComponent(filePath).replace(/[^a-zA-Z0-9]/g, '');
+        return `note_${encodedPath}_${timestamp}`;
+    }
+    
+    // 创建知识点管理面板
+    function createKnowledgeManagementPanel(knowledgePoints, noteId) {
+        const panel = document.createElement('div');
+        panel.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        panel.id = 'knowledge-management-panel';
+        
+        panel.innerHTML = `
+            <div class="bg-white rounded-lg w-11/12 h-5/6 max-w-7xl flex flex-col">
+                <!-- 头部 -->
+                <div class="flex items-center justify-between p-4 border-b border-gray-200">
+                    <h2 class="text-xl font-semibold text-text-dark-brown">知识点管理</h2>
+                    <button class="close-panel-btn text-text-gray hover:text-text-dark-brown">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
+                
+                <!-- 科目选择 -->
+                <div class="p-4 border-b border-gray-200">
+                    <label class="block text-sm font-medium text-text-dark-brown mb-2">选择科目</label>
+                    <div class="flex space-x-2">
+                        <select id="subject-select" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+                            <option value="">请选择科目</option>
+                        </select>
+                        <button id="add-subject-btn" class="px-3 py-2 bg-primary text-white rounded-lg hover:bg-green-600 transition-colors">
+                            <span class="material-icons-outlined text-sm">add</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 主要内容区域 -->
+                <div class="flex-1 flex p-4 space-x-4 overflow-hidden">
+                    <!-- 左侧：当前笔记知识点 -->
+                    <div class="w-1/3 flex flex-col">
+                        <h3 class="text-lg font-semibold text-text-dark-brown mb-3">当前笔记知识点</h3>
+                        <div class="flex-1 overflow-y-auto space-y-2" id="current-knowledge-list">
+                            <!-- 当前知识点列表 -->
+                        </div>
+                    </div>
+                    
+                    <!-- 右侧：相似知识点匹配 -->
+                    <div class="w-1/3 flex flex-col">
+                        <h3 class="text-lg font-semibold text-text-dark-brown mb-3">相似知识点匹配</h3>
+                        <div class="flex-1 overflow-y-auto" id="similar-knowledge-list">
+                            <div class="text-center text-text-gray py-8">
+                                <span class="material-icons-outlined text-4xl mb-2">search</span>
+                                <p>请选择左侧知识点查看相似匹配</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 操作区域 -->
+                    <div class="w-1/3 flex flex-col">
+                        <h3 class="text-lg font-semibold text-text-dark-brown mb-3">操作</h3>
+                        <div class="space-y-3" id="action-buttons">
+                            <button id="merge-knowledge-btn" class="w-full py-2 px-4 bg-warning text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                <span class="material-icons-outlined mr-2">merge</span>
+                                合并知识点
+                            </button>
+                            <button id="create-new-knowledge-btn" class="w-full py-2 px-4 bg-primary text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                <span class="material-icons-outlined mr-2">add_circle</span>
+                                新增知识点
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 底部：科目知识点列表 -->
+                <div class="border-t border-gray-200 p-4">
+                    <h3 class="text-lg font-semibold text-text-dark-brown mb-3">科目知识点库</h3>
+                    <div class="h-32 overflow-y-auto bg-gray-50 rounded-lg p-3" id="subject-knowledge-list">
+                        <div class="text-center text-text-gray py-4">
+                            <p>请先选择科目</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 底部按钮 -->
+                <div class="flex justify-end space-x-3 p-4 border-t border-gray-200">
+                    <button class="cancel-btn px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button class="finish-btn px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600">
+                        完成
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 先返回面板，让DOM完全渲染后再初始化
+        return panel;
+    }
+    
+    // 初始化知识点管理面板
+    function initializeKnowledgeManagementPanel(panel, knowledgePoints, noteId) {
+        addToDebugPanel('INFO', '初始化知识点管理面板');
+        
+        // 加载科目列表
+        loadSubjectsList();
+        
+        // 渲染当前知识点列表
+        renderCurrentKnowledgeList(knowledgePoints);
+        
+        // 绑定事件
+        bindKnowledgeManagementEvents(panel, knowledgePoints, noteId);
+    }
+    
+    // 渲染当前知识点列表
+    function renderCurrentKnowledgeList(knowledgePoints) {
+        const listContainer = document.getElementById('current-knowledge-list');
+        if (!listContainer) {
+            addToDebugPanel('ERROR', '找不到current-knowledge-list容器');
+            return;
+        }
+        
+        addToDebugPanel('INFO', `开始渲染当前知识点列表，共 ${knowledgePoints.length} 个知识点`);
+        
+        if (knowledgePoints.length === 0) {
+            listContainer.innerHTML = `
+                <div class="text-center text-text-gray py-8">
+                    <span class="material-icons-outlined text-4xl mb-2">lightbulb_outline</span>
+                    <p>没有提取到知识点</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        knowledgePoints.forEach((point, index) => {
+            const processedClass = point.processed ? 'opacity-50' : '';
+            const processedIcon = point.processed ? '<span class="material-icons-outlined text-green-600 ml-2">check_circle</span>' : '';
+            
+            addToDebugPanel('INFO', `渲染知识点 ${index + 1}: ${point.name}`);
+            
+            html += `
+                <div class="current-knowledge-item p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 ${processedClass}" 
+                     data-point-id="${point.id}" data-processed="${point.processed}">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-text-dark-brown">${point.name}</h4>
+                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                        </div>
+                        ${processedIcon}
+                    </div>
+                </div>
+            `;
+        });
+        
+        listContainer.innerHTML = html;
+        addToDebugPanel('SUCCESS', `当前知识点列表渲染完成，共 ${knowledgePoints.length} 个`);
+    }
+    
+    // 绑定知识点管理面板事件
+    function bindKnowledgeManagementEvents(panel, knowledgePoints, noteId) {
+        // 关闭面板
+        const closeBtn = panel.querySelector('.close-panel-btn');
+        const cancelBtn = panel.querySelector('.cancel-btn');
+        const finishBtn = panel.querySelector('.finish-btn');
+        
+        [closeBtn, cancelBtn].forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.body.removeChild(panel);
+            });
+        });
+        
+        finishBtn.addEventListener('click', () => {
+            finishKnowledgeManagement(knowledgePoints, noteId);
+            document.body.removeChild(panel);
+        });
+        
+        // 科目选择
+        const subjectSelect = document.getElementById('subject-select');
+        if (subjectSelect) {
+            subjectSelect.addEventListener('change', function() {
+                const selectedSubject = this.value;
+                addToDebugPanel('INFO', `科目选择变更: ${selectedSubject}`);
+                
+                if (selectedSubject) {
+                    // 加载该科目下的知识点到底部列表
+                    loadSubjectKnowledgeList(selectedSubject);
+                } else {
+                    // 清空底部知识点列表
+                    const subjectKnowledgeList = document.getElementById('subject-knowledge-list');
+                    if (subjectKnowledgeList) {
+                        subjectKnowledgeList.innerHTML = `
+                            <div class="text-center text-text-gray py-4">
+                                <p>请先选择科目</p>
+                            </div>
+                        `;
+                    }
+                }
+                
+                // 清空相似知识点匹配区域
+                const similarKnowledgeList = document.getElementById('similar-knowledge-list');
+                if (similarKnowledgeList) {
+                    similarKnowledgeList.innerHTML = `
+                        <div class="text-center text-text-gray py-8">
+                            <span class="material-icons-outlined text-4xl mb-2">search</span>
+                            <p>请选择左侧知识点查看相似匹配</p>
+                        </div>
+                    `;
+                }
+                
+                // 禁用操作按钮
+                const mergeBtn = document.getElementById('merge-knowledge-btn');
+                const createBtn = document.getElementById('create-new-knowledge-btn');
+                if (mergeBtn) mergeBtn.disabled = true;
+                if (createBtn) createBtn.disabled = true;
+            });
+        }
+        
+        // 添加科目按钮
+        const addSubjectBtn = document.getElementById('add-subject-btn');
+        if (addSubjectBtn) {
+            addSubjectBtn.addEventListener('click', function() {
+                showAddSubjectModal();
+            });
+        }
+        
+        // 当前知识点点击
+        const currentKnowledgeList = document.getElementById('current-knowledge-list');
+        if (currentKnowledgeList) {
+            currentKnowledgeList.addEventListener('click', function(e) {
+                const item = e.target.closest('.current-knowledge-item');
+                if (!item || item.dataset.processed === 'true') return;
+                
+                // 清除其他选中状态
+                currentKnowledgeList.querySelectorAll('.current-knowledge-item').forEach(el => {
+                    el.classList.remove('ring-2', 'ring-primary');
+                });
+                
+                // 设置当前选中
+                item.classList.add('ring-2', 'ring-primary');
+                
+                const pointId = parseInt(item.dataset.pointId);
+                const point = knowledgePoints[pointId];
+                
+                // 查找相似知识点
+                const subjectSelect = document.getElementById('subject-select');
+                const selectedSubject = subjectSelect ? subjectSelect.value : '';
+                findSimilarKnowledgePoints(point, selectedSubject);
+                
+                // 启用操作按钮
+                const mergeBtn = document.getElementById('merge-knowledge-btn');
+                const createBtn = document.getElementById('create-new-knowledge-btn');
+                if (mergeBtn) mergeBtn.disabled = false;
+                if (createBtn) createBtn.disabled = false;
+            });
+        }
+        
+        // 合并知识点按钮
+        const mergeBtn = document.getElementById('merge-knowledge-btn');
+        if (mergeBtn) {
+            mergeBtn.addEventListener('click', function() {
+                mergeKnowledgePoint(knowledgePoints, noteId);
+            });
+        }
+        
+        // 新增知识点按钮
+        const createBtn = document.getElementById('create-new-knowledge-btn');
+        if (createBtn) {
+            createBtn.addEventListener('click', function() {
+                createNewKnowledgePoint(knowledgePoints, noteId);
+            });
+        }
+    }
+    
+    // 加载科目列表
+    function loadSubjectsList() {
+        addToDebugPanel('INFO', '加载科目列表');
+        
+        if (!window.bridge || !window.bridge.getSubjects) {
+            addToDebugPanel('WARN', 'getSubjects方法不可用');
+            return;
+        }
+        
+        window.bridge.getSubjects(function(result) {
+            try {
+                const subjects = JSON.parse(result);
+                const subjectSelect = document.getElementById('subject-select');
+                
+                if (subjectSelect) {
+                    // 清空现有选项（保留默认选项）
+                    subjectSelect.innerHTML = '<option value="">请选择科目</option>';
+                    
+                    // 添加数据库中的科目
+                    subjects.forEach(subject => {
+                        const option = document.createElement('option');
+                        option.value = subject;
+                        option.textContent = subject;
+                        subjectSelect.appendChild(option);
+                    });
+                    
+                    addToDebugPanel('SUCCESS', `加载了 ${subjects.length} 个科目`);
+                }
+            } catch (e) {
+                addToDebugPanel('ERROR', `解析科目列表失败: ${e.message}`);
+            }
+        });
+    }
+    
+    // 加载科目知识点列表
+    function loadSubjectKnowledgeList(subject) {
+        addToDebugPanel('INFO', `加载科目知识点列表: ${subject}`);
+        
+        if (!window.bridge || !window.bridge.getSubjectKnowledgePoints) {
+            addToDebugPanel('WARN', 'getSubjectKnowledgePoints方法不可用');
+            return;
+        }
+        
+        // 调用后端获取科目知识点
+        window.bridge.getSubjectKnowledgePoints(subject, function(result) {
+            try {
+                const knowledgePoints = JSON.parse(result);
+                renderSubjectKnowledgeList(knowledgePoints);
+            } catch (e) {
+                addToDebugPanel('ERROR', `解析科目知识点失败: ${e.message}`);
+            }
+        });
+    }
+    
+    // 渲染科目知识点列表
+    function renderSubjectKnowledgeList(knowledgePoints) {
+        const listContainer = document.getElementById('subject-knowledge-list');
+        if (!listContainer) {
+            addToDebugPanel('ERROR', '找不到subject-knowledge-list容器');
+            return;
+        }
+        
+        addToDebugPanel('INFO', `开始渲染科目知识点列表，共 ${knowledgePoints.length} 个知识点`);
+        
+        if (knowledgePoints.length === 0) {
+            listContainer.innerHTML = `
+                <div class="text-center text-text-gray py-4">
+                    <span class="material-icons-outlined text-2xl mb-2">folder_open</span>
+                    <p>该科目暂无知识点</p>
+                </div>
+            `;
+            addToDebugPanel('INFO', '该科目没有知识点');
+            return;
+        }
+        
+        let html = '<div class="space-y-2">';
+        knowledgePoints.forEach((point, index) => {
+            addToDebugPanel('INFO', `渲染科目知识点 ${index + 1}: ${point.name}`);
+            
+            html += `
+                <div class="subject-knowledge-item p-2 border border-gray-200 rounded bg-white hover:bg-gray-50" 
+                     data-knowledge-id="${point.id}">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <h5 class="font-medium text-text-dark-brown text-sm">${point.name}</h5>
+                            <p class="text-xs text-text-medium-brown mt-1">${point.description}</p>
+                        </div>
+                        <div class="text-xs text-text-gray">
+                            来源: ${point.sources ? point.sources.length : 0} 篇笔记
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        
+        listContainer.innerHTML = html;
+        addToDebugPanel('SUCCESS', `科目知识点列表渲染完成，共 ${knowledgePoints.length} 个`);
+    }
+    
+    // 查找相似知识点
+    function findSimilarKnowledgePoints(currentPoint, subject) {
+        addToDebugPanel('INFO', `查找相似知识点: ${currentPoint.name} (科目: ${subject})`);
+        
+        if (!subject) {
+            showSimilarKnowledgeError('请先选择科目');
+            return;
+        }
+        
+        if (!window.bridge || !window.bridge.findSimilarKnowledgePoints) {
+            addToDebugPanel('WARN', 'findSimilarKnowledgePoints方法不可用');
+            showSimilarKnowledgeError('相似度匹配功能不可用');
+            return;
+        }
+        
+        // 显示加载状态
+        showSimilarKnowledgeLoading();
+        
+        // 调用后端进行embedding匹配
+        const requestData = {
+            subject: subject,
+            point: currentPoint,
+            limit: 10 // 最多返回10个相似知识点
+        };
+        
+        window.bridge.findSimilarKnowledgePoints(JSON.stringify(requestData), function(result) {
+            try {
+                const similarPoints = JSON.parse(result);
+                renderSimilarKnowledgeList(similarPoints);
+            } catch (e) {
+                addToDebugPanel('ERROR', `解析相似知识点失败: ${e.message}`);
+                showSimilarKnowledgeError('查找相似知识点失败');
+            }
+        });
+    }
+    
+    // 显示相似知识点加载状态
+    function showSimilarKnowledgeLoading() {
+        const listContainer = document.getElementById('similar-knowledge-list');
+        if (!listContainer) return;
+        
+        listContainer.innerHTML = `
+            <div class="text-center text-text-gray py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                <p>正在匹配相似知识点...</p>
+            </div>
+        `;
+    }
+    
+    // 显示相似知识点错误
+    function showSimilarKnowledgeError(message) {
+        const listContainer = document.getElementById('similar-knowledge-list');
+        if (!listContainer) return;
+        
+        listContainer.innerHTML = `
+            <div class="text-center text-red-600 py-8">
+                <span class="material-icons-outlined text-4xl mb-2">error_outline</span>
+                <p>${message}</p>
+            </div>
+        `;
+    }
+    
+    // 渲染相似知识点列表
+    function renderSimilarKnowledgeList(similarPoints) {
+        const listContainer = document.getElementById('similar-knowledge-list');
+        if (!listContainer) return;
+        
+        if (similarPoints.length === 0) {
+            listContainer.innerHTML = `
+                <div class="text-center text-text-gray py-8">
+                    <span class="material-icons-outlined text-4xl mb-2">search_off</span>
+                    <p>未找到相似知识点</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<div class="space-y-2">';
+        similarPoints.forEach((point, index) => {
+            const similarityPercent = Math.round(point.similarity * 100);
+            const similarityColor = similarityPercent >= 80 ? 'text-green-600' : 
+                                   similarityPercent >= 60 ? 'text-yellow-600' : 'text-red-600';
+            
+            html += `
+                <div class="similar-knowledge-item p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 hover:ring-2 hover:ring-blue-300" 
+                     data-knowledge-id="${point.id}" data-similarity="${point.similarity}">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-text-dark-brown">${point.name}</h4>
+                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                            <div class="flex items-center mt-2 text-xs text-text-gray">
+                                <span>来源: ${point.sources ? point.sources.length : 0} 篇笔记</span>
+                            </div>
+                        </div>
+                        <div class="ml-3 text-right">
+                            <div class="${similarityColor} font-semibold text-sm">${similarityPercent}%</div>
+                            <div class="text-xs text-text-gray">相似度</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        
+        listContainer.innerHTML = html;
+        
+        // 绑定点击事件
+        bindSimilarKnowledgeEvents();
+    }
+    
+    // 绑定相似知识点事件
+    function bindSimilarKnowledgeEvents() {
+        const similarItems = document.querySelectorAll('.similar-knowledge-item');
+        similarItems.forEach(item => {
+            item.addEventListener('click', function() {
+                // 清除其他选中状态
+                similarItems.forEach(el => {
+                    el.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
+                });
+                
+                // 设置当前选中
+                this.classList.add('ring-2', 'ring-blue-500', 'bg-blue-50');
+                
+                // 启用合并按钮
+                document.getElementById('merge-knowledge-btn').disabled = false;
+            });
+        });
+    }
+    
+    // 合并知识点
+    function mergeKnowledgePoint(knowledgePoints, noteId) {
+        addToDebugPanel('INFO', '开始合并知识点');
+        
+        // 获取选中的当前知识点
+        const selectedCurrentItem = document.querySelector('.current-knowledge-item.ring-primary');
+        if (!selectedCurrentItem) {
+            alert('请先选择要合并的当前知识点');
+            return;
+        }
+        
+        // 获取选中的相似知识点
+        const selectedSimilarItem = document.querySelector('.similar-knowledge-item.ring-blue-500');
+        if (!selectedSimilarItem) {
+            alert('请先选择要合并到的相似知识点');
+            return;
+        }
+        
+        const currentPointId = parseInt(selectedCurrentItem.dataset.pointId);
+        const similarKnowledgeId = selectedSimilarItem.dataset.knowledgeId;
+        const currentPoint = knowledgePoints[currentPointId];
+        
+        // 确认合并
+        if (!confirm(`确定要将"${currentPoint.name}"合并到已存在的知识点吗？`)) {
+            return;
+        }
+        
+        // 调用后端合并知识点
+        const mergeData = {
+            noteId: noteId,
+            currentPoint: currentPoint,
+            targetKnowledgeId: similarKnowledgeId
+        };
+        
+        if (window.bridge && window.bridge.mergeKnowledgePoint) {
+            window.bridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
+                try {
+                    const response = JSON.parse(result);
+                    if (response.success) {
+                        addToDebugPanel('SUCCESS', '知识点合并成功');
+                        
+                        // 标记当前知识点为已处理
+                        currentPoint.processed = true;
+                        selectedCurrentItem.dataset.processed = 'true';
+                        selectedCurrentItem.classList.add('opacity-50');
+                        selectedCurrentItem.querySelector('.flex').insertAdjacentHTML('beforeend', 
+                            '<span class="material-icons-outlined text-green-600 ml-2">check_circle</span>');
+                        
+                        // 清除选中状态
+                        selectedCurrentItem.classList.remove('ring-2', 'ring-primary');
+                        selectedSimilarItem.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
+                        
+                        // 禁用操作按钮
+                        document.getElementById('merge-knowledge-btn').disabled = true;
+                        document.getElementById('create-new-knowledge-btn').disabled = true;
+                        
+                        // 清空相似知识点列表
+                        document.getElementById('similar-knowledge-list').innerHTML = `
+                            <div class="text-center text-text-gray py-8">
+                                <span class="material-icons-outlined text-4xl mb-2">search</span>
+                                <p>请选择左侧知识点查看相似匹配</p>
+                            </div>
+                        `;
+                        
+                        // 刷新科目知识点列表
+                        const subject = document.getElementById('subject-select').value;
+                        if (subject) {
+                            loadSubjectKnowledgeList(subject);
+                        }
+                        
+                    } else {
+                        addToDebugPanel('ERROR', `合并失败: ${response.error}`);
+                        alert('合并知识点失败: ' + response.error);
+                    }
+                } catch (e) {
+                    addToDebugPanel('ERROR', `解析合并结果失败: ${e.message}`);
+                    alert('合并知识点失败');
+                }
+            });
+        } else {
+            addToDebugPanel('WARN', 'mergeKnowledgePoint方法不可用');
+        }
+    }
+    
+    // 创建新知识点
+    function createNewKnowledgePoint(knowledgePoints, noteId) {
+        addToDebugPanel('INFO', '创建新知识点');
+        
+        // 获取选中的当前知识点
+        const selectedCurrentItem = document.querySelector('.current-knowledge-item.ring-primary');
+        if (!selectedCurrentItem) {
+            alert('请先选择要创建的知识点');
+            return;
+        }
+        
+        // 获取选中的科目
+        const subjectSelect = document.getElementById('subject-select');
+        if (!subjectSelect || !subjectSelect.value) {
+            alert('请先选择科目');
+            return;
+        }
+        
+        const currentPointId = selectedCurrentItem.dataset.pointId;
+        const currentPoint = knowledgePoints[currentPointId];
+        const subject = subjectSelect.value;
+        
+        if (!window.bridge || !window.bridge.createNewKnowledgePoint) {
+            addToDebugPanel('WARN', 'createNewKnowledgePoint方法不可用');
+            return;
+        }
+        
+        const createData = {
+            noteInfo: {
+                fileName: currentFileName || 'unknown.md',
+                filePath: currentFilePath || 'unknown',
+                title: currentFileName ? currentFileName.replace('.md', '') : 'unknown'
+            },
+            subject: subject,
+            point: currentPoint
+        };
+        
+        addToDebugPanel('INFO', `准备创建知识点: ${currentPoint.name} (科目: ${subject})`);
+        
+        window.bridge.createNewKnowledgePoint(JSON.stringify(createData), function(result) {
+            try {
+                const response = JSON.parse(result);
+                if (response.success) {
+                    addToDebugPanel('SUCCESS', `新知识点创建成功: ${response.knowledge_id}`);
+                    
+                    // 标记当前知识点为已处理
+                    selectedCurrentItem.dataset.processed = 'true';
+                    selectedCurrentItem.classList.add('opacity-50');
+                    selectedCurrentItem.classList.remove('ring-2', 'ring-primary');
+                    
+                    // 添加已处理标记
+                    const processedIcon = '<span class="material-icons-outlined text-green-600 ml-2">check_circle</span>';
+                    const iconContainer = selectedCurrentItem.querySelector('.flex');
+                    if (iconContainer && !iconContainer.querySelector('.material-icons-outlined')) {
+                        iconContainer.insertAdjacentHTML('beforeend', processedIcon);
+                    }
+                    
+                    // 禁用操作按钮
+                    document.getElementById('merge-knowledge-btn').disabled = true;
+                    document.getElementById('create-new-knowledge-btn').disabled = true;
+                    
+                    // 清空相似知识点显示
+                    const similarKnowledgeList = document.getElementById('similar-knowledge-list');
+                    if (similarKnowledgeList) {
+                        similarKnowledgeList.innerHTML = `
+                            <div class="text-center text-text-gray py-8">
+                                <span class="material-icons-outlined text-4xl mb-2">search</span>
+                                <p>请选择左侧知识点查看相似匹配</p>
+                            </div>
+                        `;
+                    }
+                    
+                    // 刷新底部科目知识点列表
+                    if (subject) {
+                        addToDebugPanel('INFO', '刷新科目知识点列表');
+                        loadSubjectKnowledgeList(subject);
+                    }
+                    
+                } else {
+                    addToDebugPanel('ERROR', `创建新知识点失败: ${response.error}`);
+                    alert('创建新知识点失败: ' + response.error);
+                }
+            } catch (e) {
+                addToDebugPanel('ERROR', `解析创建结果失败: ${e.message}`);
+                alert('创建新知识点失败');
+            }
+        });
+    }
+        
+    // 合并知识点
+    function mergeKnowledgePoint(knowledgePoints, noteId) {
+    addToDebugPanel('INFO', '开始合并知识点');
+            
+    // 获取选中的当前知识点
+    const selectedCurrentItem = document.querySelector('.current-knowledge-item.ring-primary');
+    if (!selectedCurrentItem) {
+        alert('请先选择要合并的当前知识点');
+        return;
+    }
+            
+    // 获取选中的相似知识点
+    const selectedSimilarItem = document.querySelector('.similar-knowledge-item.ring-blue-500');
+    if (!selectedSimilarItem) {
+        alert('请先选择要合并到的相似知识点');
+        return;
+    }
+            
+    const currentPointId = parseInt(selectedCurrentItem.dataset.pointId);
+    const similarKnowledgeId = selectedSimilarItem.dataset.knowledgeId;
+    const currentPoint = knowledgePoints[currentPointId];
+            
+    // 确认合并
+    if (!confirm(`确定要将"${currentPoint.name}"合并到已存在的知识点吗？`)) {
+        return;
+    }
+            
+    // 调用后端合并知识点
+    const mergeData = {
+        noteInfo: {
+            fileName: currentFileName || 'unknown.md',
+            filePath: currentFilePath || 'unknown',
+            title: currentFileName ? currentFileName.replace('.md', '') : 'unknown'
+        },
+        currentPoint: currentPoint,
+        targetKnowledgeId: similarKnowledgeId
+    };
+            
+    if (window.bridge && window.bridge.mergeKnowledgePoint) {
+        window.bridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
+            try {
+                const response = JSON.parse(result);
+                if (response.success) {
+                    addToDebugPanel('SUCCESS', '知识点合并成功');
+                    
+                    // 标记当前知识点为已处理
+                    currentPoint.processed = true;
+                    selectedCurrentItem.dataset.processed = 'true';
+                    selectedCurrentItem.classList.add('opacity-50');
+                    selectedCurrentItem.querySelector('.flex').insertAdjacentHTML('beforeend', 
+                        '<span class="material-icons-outlined text-green-600 ml-2">check_circle</span>');
+                    
+                    // 清除选中状态
+                    selectedCurrentItem.classList.remove('ring-2', 'ring-primary');
+                    selectedSimilarItem.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
+                    
+                    // 禁用操作按钮
+                    document.getElementById('merge-knowledge-btn').disabled = true;
+                    document.getElementById('create-new-knowledge-btn').disabled = true;
+                    
+                    // 清空相似知识点列表
+                    document.getElementById('similar-knowledge-list').innerHTML = `
+                        <div class="text-center text-text-gray py-8">
+                            <span class="material-icons-outlined text-4xl mb-2">search</span>
+                            <p>请选择左侧知识点查看相似匹配</p>
+                        </div>
+                    `;
+                    
+                    // 刷新科目知识点列表
+                    const subject = document.getElementById('subject-select').value;
+                    if (subject) {
+                        loadSubjectKnowledgeList(subject);
+                    }
+                    
+                } else {
+                    addToDebugPanel('ERROR', `合并失败: ${response.error}`);
+                    alert('合并知识点失败: ' + response.error);
+                }
+            } catch (e) {
+                addToDebugPanel('ERROR', `解析合并结果失败: ${e.message}`);
+                alert('合并知识点失败');
+            }
+        });
+    } else {
+        addToDebugPanel('WARN', 'mergeKnowledgePoint方法不可用');
+    }
+}
+    
+    // 完成知识点管理
+    function finishKnowledgeManagement(knowledgePoints, noteId) {
+        addToDebugPanel('INFO', '完成知识点管理');
+        
+        // 检查是否还有未处理的知识点
+        const unprocessedPoints = knowledgePoints.filter(point => !point.processed);
+        
+        if (unprocessedPoints.length > 0) {
+            const pointNames = unprocessedPoints.map(p => p.name).join('、');
+            if (!confirm(`还有 ${unprocessedPoints.length} 个知识点未处理：${pointNames}\n\n确定要退出吗？`)) {
+                return false;
+            }
+        }
+        
+        // 保存笔记映射关系
+        if (window.bridge && window.bridge.saveNoteKnowledgeMapping) {
+            const mappingData = {
+                noteId: noteId,
+                fileName: currentFileName,
+                filePath: currentFilePath,
+                processedPoints: knowledgePoints.filter(point => point.processed)
+            };
+            
+            window.bridge.saveNoteKnowledgeMapping(JSON.stringify(mappingData), function(result) {
+                try {
+                    const response = JSON.parse(result);
+                    if (response.success) {
+                        addToDebugPanel('SUCCESS', '笔记知识点映射已保存');
+                    } else {
+                        addToDebugPanel('ERROR', `保存映射失败: ${response.error}`);
+                    }
+                } catch (e) {
+                    addToDebugPanel('ERROR', `解析保存结果失败: ${e.message}`);
+                }
+            });
+        }
+        
+        return true;
+    }
+    
+    // 显示添加科目模态框
+    function showAddSubjectModal() {
+        addToDebugPanel('INFO', '显示添加科目模态框');
+        
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-semibold text-text-dark-brown mb-4">添加新科目</h3>
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-text-dark-brown mb-2">科目名称</label>
+                    <input type="text" id="new-subject-input" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent" 
+                           placeholder="请输入科目名称">
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button class="cancel-btn px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-50">
+                        取消
+                    </button>
+                    <button class="confirm-btn px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600">
+                        添加
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 绑定事件
+        const input = modal.querySelector('#new-subject-input');
+        const cancelBtn = modal.querySelector('.cancel-btn');
+        const confirmBtn = modal.querySelector('.confirm-btn');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+        
+        confirmBtn.addEventListener('click', () => {
+            const subjectName = input.value.trim();
+            if (!subjectName) {
+                alert('请输入科目名称');
+                input.focus();
+                return;
+            }
+            
+            addNewSubject(subjectName);
+            document.body.removeChild(modal);
+        });
+        
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                document.body.removeChild(modal);
+            }
+        });
+        
+        // 回车确认
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                confirmBtn.click();
+            }
+        });
+        
+        document.body.appendChild(modal);
+        
+        // 自动聚焦
+        setTimeout(() => {
+            input.focus();
+        }, 100);
+    }
+    
+    // 添加新科目
+    function addNewSubject(subjectName) {
+        addToDebugPanel('INFO', `添加新科目: ${subjectName}`);
+        
+        if (!window.bridge || !window.bridge.addSubject) {
+            addToDebugPanel('WARN', 'addSubject方法不可用');
+            alert('添加科目功能不可用');
+            return;
+        }
+        
+        window.bridge.addSubject(subjectName, function(result) {
+            try {
+                const response = JSON.parse(result);
+                if (response.success) {
+                    addToDebugPanel('SUCCESS', `科目"${subjectName}"添加成功`);
+                    
+                    // 重新加载科目列表
+                    loadSubjectsList();
+                    
+                    // 选中新添加的科目
+                    setTimeout(() => {
+                        const subjectSelect = document.getElementById('subject-select');
+                        if (subjectSelect) {
+                            subjectSelect.value = subjectName;
+                            // 触发change事件
+                            subjectSelect.dispatchEvent(new Event('change'));
+                        }
+                    }, 500);
+                    
+                } else {
+                    addToDebugPanel('ERROR', `添加科目失败: ${response.error}`);
+                    alert('添加科目失败: ' + response.error);
+                }
+            } catch (e) {
+                addToDebugPanel('ERROR', `解析添加科目结果失败: ${e.message}`);
+                alert('添加科目失败');
+            }
+        });
+    }
+
+    // 显示知识点错误
+    function showKnowledgeError(message) {
+        const loadingDiv = document.getElementById('knowledge-loading');
+        const contentDiv = document.getElementById('knowledge-content');
+        const placeholderDiv = document.getElementById('knowledge-placeholder');
+        
+        if (loadingDiv) loadingDiv.classList.add('hidden');
+        if (placeholderDiv) placeholderDiv.classList.add('hidden');
+        
+        if (contentDiv) {
+            contentDiv.innerHTML = `
+                <div class="text-center py-16 text-red-600">
+                    <span class="material-icons-outlined text-6xl mb-4">error_outline</span>
+                    <p class="text-lg font-medium mb-2">知识点提取失败</p>
+                    <p class="text-sm">${message}</p>
+                </div>
+            `;
+            contentDiv.classList.remove('hidden');
+        }
+    }
+
+    // 获取重要性颜色
+    function getImportanceColor(importance) {
+        switch (importance) {
+            case '高':
+            case '重要':
+                return 'bg-red-100 text-red-800';
+            case '中':
+            case '中等':
+                return 'bg-yellow-100 text-yellow-800';
+            case '低':
+            case '一般':
+                return 'bg-green-100 text-green-800';
+            default:
+                return 'bg-gray-100 text-gray-800';
+        }
+    }
+
+    // 导航函数（兼容SPA）
+    function loadContent(contentId) {
+        if (window.bridge && window.bridge.loadContent) {
+            window.bridge.loadContent(contentId);
+        }
+    }
+
+    // 将函数暴露到全局作用域
+    window.toggleFolder = toggleFolder;
+    window.handleFileClick = handleFileClick;
+    window.switchToPreview = switchToPreview;
+    window.switchToEdit = switchToEdit;
+    window.saveCurrentFile = saveCurrentFile;
+    window.createNewNote = createNewNote;
+    window.createNewFolder = createNewFolder;
+    window.validateBackendFunctions = validateBackendFunctions;
+    window.contextMenuAction = contextMenuAction;
+    window.testBridgeConnection = testBridgeConnection;
+    window.toggleDebugPanel = toggleDebugPanel;
+    window.clearDebugLog = clearDebugLog;
+    window.extractKnowledgePoints = extractKnowledgePoints;
+    window.loadContent = loadContent;
+    
+    // 插入文本到当前笔记的全局函数
+    window.insertTextToCurrentNote = function(content) {
+        console.log('插入文本到笔记:', content);
+        
+        // 检查是否有打开的文件
+        if (!currentFilePath) {
+            showToast('请先打开一个笔记文件', 'warning');
+            return false;
+        }
+        
+        // 获取编辑器元素
+        const editContent = document.getElementById('edit-content');
+        const previewContent = document.getElementById('preview-content');
+        
+        if (isEditMode && editContent) {
+            // 编辑模式：插入到编辑器
+            insertTextToEditor(editContent, content);
+        } else if (!isEditMode && previewContent) {
+            // 预览模式：先切换到编辑模式，然后插入
+            switchToEdit();
+            setTimeout(() => {
+                const editContentAfterSwitch = document.getElementById('edit-content');
+                if (editContentAfterSwitch) {
+                    insertTextToEditor(editContentAfterSwitch, content);
+                }
+            }, 100);
+        } else {
+            showToast('无法找到编辑器，请稍后再试', 'error');
+            return false;
+        }
+        
+        return true;
+    };
+    
+    // 显示提示消息
+    function showToast(message, type = 'info') {
+        // 创建提示元素
+        const toast = document.createElement('div');
+        toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
+        
+        // 根据类型设置颜色
+        switch (type) {
+            case 'success':
+                toast.className += ' bg-green-500';
+                break;
+            case 'warning':
+                toast.className += ' bg-yellow-500';
+                break;
+            case 'error':
+                toast.className += ' bg-red-500';
+                break;
+            default:
+                toast.className += ' bg-blue-500';
+        }
+        
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        // 显示动画
+        setTimeout(() => {
+            toast.classList.remove('translate-x-full');
+        }, 100);
+        
+        // 自动隐藏
+        setTimeout(() => {
+            toast.classList.add('translate-x-full');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    // 智能插入文本到编辑器
+    function insertTextToEditor(editor, content) {
+        console.log('插入文本到编辑器');
+        
+        try {
+            // 获取当前选中的文本
+            const selection = window.getSelection();
+            const selectedText = selection.toString();
+            
+            if (selectedText && editor.contains(selection.anchorNode)) {
+                // 情况1: 有选中文字且在编辑器中，插入到选中文字之后
+                console.log('插入到选中文字之后');
+                const range = selection.getRangeAt(0);
+                range.collapse(false); // 移动到选中文字的末尾
+                
+                // 创建文本节点
+                const textNode = document.createTextNode(content);
+                range.insertNode(textNode);
+                
+                // 移动光标到插入内容之后
+                range.setStartAfter(textNode);
+                range.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                
+            } else if (editor.selectionStart !== undefined) {
+                // 情况2: textarea元素，有光标位置
+                console.log('插入到光标位置');
+                const cursorPos = editor.selectionStart;
+                const textBefore = editor.value.substring(0, cursorPos);
+                const textAfter = editor.value.substring(editor.selectionEnd);
+                
+                editor.value = textBefore + content + textAfter;
+                
+                // 设置光标位置到插入内容之后
+                const newCursorPos = cursorPos + content.length;
+                editor.setSelectionRange(newCursorPos, newCursorPos);
+                editor.focus();
+                
+            } else {
+                // 情况3: 没有光标位置，插入到文末
+                console.log('插入到文末');
+                if (editor.tagName === 'TEXTAREA') {
+                    editor.value += content;
+                    editor.scrollTop = editor.scrollHeight;
+                    editor.focus();
+                } else {
+                    // contenteditable元素
+                    editor.innerHTML += content.replace(/\n/g, '<br>');
+                    editor.scrollTop = editor.scrollHeight;
+                }
+            }
+            
+            // 标记为已修改
+            hasUnsavedChanges = true;
+            showUnsavedIndicator();
+            
+            // 触发input事件以更新其他相关功能
+            const inputEvent = new Event('input', { bubbles: true });
+            editor.dispatchEvent(inputEvent);
+            
+            console.log('文本插入成功');
+            
+        } catch (error) {
+            console.error('插入文本失败:', error);
+            showToast('插入文本失败', 'error');
+        }
+    }
+
+    // 右键菜单功能
+    let selectedText = '';
+    let contextMenu = null;
+    
+    function initContextMenu() {
+        console.log('=== 开始初始化右键菜单 ===');
+        
+        // 等待DOM完全加载
+        const checkElements = () => {
+            contextMenu = document.getElementById('contextMenu');
+            const deepLearningMenuItem = document.getElementById('deepLearningMenuItem');
+            const previewContent = document.getElementById('preview-content');
+            const editContent = document.getElementById('edit-content');
+            
+            console.log('检查元素:');
+            console.log('- contextMenu:', contextMenu);
+            console.log('- deepLearningMenuItem:', deepLearningMenuItem);
+            console.log('- previewContent:', previewContent);
+            console.log('- editContent:', editContent);
+            
+            if (!contextMenu) {
+                console.error('❌ contextMenu元素未找到，尝试创建...');
+                createContextMenu();
+                return;
+            }
+            
+            if (!deepLearningMenuItem) {
+                console.error('❌ deepLearningMenuItem元素未找到');
+                return;
+            }
+            
+            // 为整个文档添加右键菜单监听器（简化测试）
+            console.log('✅ 为整个文档添加右键菜单监听器');
+            document.addEventListener('contextmenu', handleContextMenu);
+            
+            // 点击菜单项
+            deepLearningMenuItem.addEventListener('click', handleDeepLearning);
+            
+            // 绑定练习菜单项点击事件
+            const practiceMenuItem = document.getElementById('practiceMenuItem');
+            if (practiceMenuItem) {
+                practiceMenuItem.addEventListener('click', handlePractice);
+                console.log('✅ 练习菜单项事件已绑定');
+            }
+            
+            // 点击其他地方隐藏菜单
+            document.addEventListener('click', hideContextMenu);
+            
+            console.log('✅ 右键菜单初始化完成');
+        };
+        
+        checkElements();
+    }
+    
+    // 创建右键菜单元素（如果不存在）
+    function createContextMenu() {
+        console.log('创建右键菜单元素...');
+        
+        const menu = document.createElement('div');
+        menu.id = 'contextMenu';
+        menu.className = 'context-menu';
+        menu.innerHTML = `
+            <div class="context-menu-item" id="deepLearningMenuItem">
+                <span class="material-icons-outlined">psychology</span>
+                继续深入学习
+            </div>
+            <div class="context-menu-item" id="practiceMenuItem">
+                <span class="material-icons-outlined">quiz</span>
+                练习
+            </div>
+        `;
+        
+        document.body.appendChild(menu);
+        contextMenu = menu;
+        
+        console.log('✅ 右键菜单元素已创建');
+    }
+    
+    function handleContextMenu(e) {
+        console.log('🎯 右键菜单事件触发，目标:', e.target);
+        
+        // 检查是否有选中的文本
+        const selection = window.getSelection();
+        const selectedTextContent = selection.toString().trim();
+        
+        console.log('选中的文本:', selectedTextContent);
+        console.log('选中文本长度:', selectedTextContent.length);
+        
+        // 暂时移除文本选择限制，用于测试
+        // if (selectedTextContent.length === 0) {
+        //     console.log('没有选中文本，不显示菜单');
+        //     return;
+        // }
+        
+        e.preventDefault();
+        selectedText = selectedTextContent || '测试文本';
+        
+        console.log('🎯 准备显示右键菜单，位置:', e.pageX, e.pageY);
+        console.log('🎯 contextMenu元素:', contextMenu);
+        
+        if (!contextMenu) {
+            console.error('❌ contextMenu为null，尝试重新获取');
+            contextMenu = document.getElementById('contextMenu');
+            if (!contextMenu) {
+                console.error('❌ 仍然无法找到contextMenu元素');
+                return;
+            }
+        }
+        
+        // 显示右键菜单
+        contextMenu.style.display = 'block';
+        contextMenu.style.left = e.pageX + 'px';
+        contextMenu.style.top = e.pageY + 'px';
+        
+        console.log('✅ 右键菜单应该已显示');
+        
+        // 确保菜单不会超出屏幕
+        const rect = contextMenu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) {
+            contextMenu.style.left = (e.pageX - rect.width) + 'px';
+        }
+        if (rect.bottom > window.innerHeight) {
+            contextMenu.style.top = (e.pageY - rect.height) + 'px';
+        }
+    }
+    
+    function handleTextSelection(e) {
+        // 延迟检查选中文本，确保选择完成
+        setTimeout(() => {
+            const selection = window.getSelection();
+            selectedText = selection.toString().trim();
+        }, 10);
+    }
+    
+    function hideContextMenu() {
+        if (contextMenu) {
+            contextMenu.style.display = 'none';
+        }
+    }
+    
+    function handleDeepLearning() {
+        if (!selectedText) {
+            showToast('请先选择要深入学习的文本内容', 'warning');
+            return;
+        }
+        
+        hideContextMenu();
+        
+        // 构建深入学习的提示词
+        const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
+
+"${selectedText}"
+
+要求：
+1. 深入浅出地讲解这段内容的核心概念和要点
+2. 提供相关的背景知识和上下文信息  
+3. 举例说明，帮助理解抽象概念
+4. 分析其重要性和实际应用价值
+5. 如果涉及技术概念，请解释其工作原理
+6. 提供进一步学习的建议和相关资源
+
+请用通俗易懂的语言进行详细解释，就像一位耐心的老师在为学生答疑解惑。`;
+        
+        // 打开AI聊天窗口并发送消息
+        openChatWithMessage(deepLearningPrompt);
+        
+        showToast('已将选中内容发送给AI助手进行深入解释', 'success');
+    }
+    
+    function openChatWithMessage(message) {
+        // 使用全局函数打开AI聊天窗口
+        if (window.openAIChatWindow) {
+            window.openAIChatWindow();
+        }
+        
+        // 等待窗口打开后设置消息内容并发送
+        setTimeout(() => {
+            if (window.sendAIMessage) {
+                window.sendAIMessage(message);
+            } else {
+                // 备用方案：直接操作DOM
+                const aiChatInput = document.getElementById('aiChatInput');
+                const sendBtn = document.getElementById('sendChatBtn');
+                
+                if (aiChatInput && sendBtn) {
+                    aiChatInput.value = message;
+                    setTimeout(() => {
+                        sendBtn.click();
+                    }, 100);
+                } else {
+                    showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+                }
+            }
+        }, 300);
+    }
+    
+    function handlePractice() {
+        if (!selectedText) {
+            showToast('请先选择要练习的文本内容', 'warning');
+            return;
+        }
+        
+        hideContextMenu();
+        
+        // 首先确保AI聊天窗口打开
+        if (window.openAIChatWindow) {
+            window.openAIChatWindow();
+        }
+        
+        // 发送消息到AI练习助手
+        if (window.addAIPracticeMessage) {
+            window.addAIPracticeMessage('正在生成练习题目，请稍候...', 'ai');
+        }
+        
+        // 生成练习ID
+        const practiceId = 'practice_' + Date.now();
+        
+        // 创建练习数据
+        const practiceData = {
+            id: practiceId,
+            selectedText: selectedText,
+            questions: null,
+            status: 'generating'
+        };
+        
+        // 显示AI练习面板
+        if (window.showAIPracticePanel) {
+            window.showAIPracticePanel(practiceData);
+        }
+        
+        // 异步生成题目
+        setTimeout(() => {
+            generatePracticeQuestionsForAI(selectedText, practiceId);
+        }, 500);
+        
+        showToast('已切换到AI练习助手', 'success');
+    }
+    
+    // 为AI助手生成练习题目
+    function generatePracticeQuestionsForAI(selectedText, practiceId) {
+        if (window.bridge && window.bridge.generatePracticeQuestions) {
+            try {
+                // 使用setTimeout真正异步执行，避免界面冻结
+                setTimeout(() => {
+                    try {
+                        console.log('🔄 开始为AI助手生成题目...');
+                        const result = window.bridge.generatePracticeQuestions(selectedText);
+                        
+                        // 处理可能的Promise返回值
+                        const handleResult = (questions) => {
+                            console.log('📝 收到AI助手题目数据:', typeof questions, questions);
+                            
+                            // 检查是否是JSON字符串
+                            let actualQuestions = questions;
+                            if (typeof questions === 'string') {
+                                try {
+                                    const parsed = JSON.parse(questions);
+                                    if (parsed && parsed.message) {
+                                        actualQuestions = parsed.message;
+                                    }
+                                } catch (e) {
+                                    // 如果不是JSON，直接使用原字符串
+                                    actualQuestions = questions;
+                                }
+                            }
+                            
+                            if (actualQuestions && actualQuestions.trim()) {
+                                // 发送成功消息到AI助手
+                                if (window.addAIPracticeMessage) {
+                                    window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + actualQuestions, 'ai');
+                                    window.addAIPracticeMessage('生成成功！题目已准备就绪。', 'ai');
+                                }
+                                
+                                // 更新练习数据
+                                const updatedPracticeData = {
+                                    id: practiceId,
+                                    selectedText: selectedText,
+                                    questions: actualQuestions,
+                                    status: 'ready'
+                                };
+                                
+                                // 更新练习面板
+                                if (window.showAIPracticePanel) {
+                                    window.showAIPracticePanel(updatedPracticeData);
+                                }
+                                
+                                console.log('✅ AI助手题目生成成功');
+                            } else {
+                                console.error('❌ 生成结果为空或无效');
+                                if (window.addAIPracticeMessage) {
+                                    window.addAIPracticeMessage('抱歉，题目生成失败，请稍后重试。', 'ai');
+                                }
+                            }
+                        };
+                        
+                        // 检查返回值类型
+                        if (result && typeof result.then === 'function') {
+                            // 是Promise对象
+                            console.log('📦 检测到Promise对象，等待解析...');
+                            result.then(handleResult).catch(error => {
+                                console.error('❌ Promise解析失败:', error);
+                                if (window.addAIPracticeMessage) {
+                                    window.addAIPracticeMessage('题目生成过程中出现错误，请稍后重试。', 'ai');
+                                }
+                            });
+                        } else {
+                            // 直接返回值
+                            console.log('📦 检测到直接返回值');
+                            setTimeout(() => handleResult(result), 50);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ API调用失败:', error);
+                        setTimeout(() => {
+                            if (window.addAIPracticeMessage) {
+                                window.addAIPracticeMessage('题目生成失败，请检查网络连接后重试。', 'ai');
+                            }
+                        }, 50);
+                    }
+                }, 200); // 延迟200ms确保UI完全更新
+                
+            } catch (error) {
+                console.error('调用generatePracticeQuestions失败:', error);
+                if (window.addAIPracticeMessage) {
+                    window.addAIPracticeMessage('题目生成功能暂时不可用，请稍后重试。', 'ai');
+                }
+            }
+        } else {
+            console.log('🔄 使用模拟数据为AI助手生成题目...');
+            // 模拟异步生成题目
+            setTimeout(() => {
+                const mockQuestions = generateMockQuestions(selectedText);
+                if (window.addAIPracticeMessage) {
+                    window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + mockQuestions, 'ai');
+                    window.addAIPracticeMessage('题目已生成完成，请点击下方"开始练习"按钮开始答题。', 'ai');
+                }
+                
+                const updatedPracticeData = {
+                    id: practiceId,
+                    selectedText: selectedText,
+                    questions: mockQuestions,
+                    status: 'ready'
+                };
+                
+                if (window.showAIPracticePanel) {
+                    window.showAIPracticePanel(updatedPracticeData);
+                }
+            }, 2000);
+        }
+    }
+    
+    // 练习面板相关变量
+    let currentPracticeData = {
+        id: '',
+        selectedText: '',
+        questions: '',
+        answers: [],
+        evaluation: '',
+        status: 'generating' // generating, ready, answered, evaluated
+    };
+    
+    function showPracticePanel(selectedText) {
+        const practicePanel = document.getElementById('practicePanel');
+        if (!practicePanel) {
+            console.error('练习面板元素未找到');
+            return;
+        }
+        
+        // 立即显示面板，不等待题目生成
+        practicePanel.classList.remove('hidden');
+        console.log('✅ 练习面板已立即显示');
+        
+        // 初始化练习数据
+        currentPracticeData = {
+            id: generatePracticeId(),
+            selectedText: selectedText,
+            questions: '',
+            answers: [],
+            evaluation: '',
+            status: 'generating'
+        };
+        
+        // 更新练习ID显示
+        const practiceIdElement = document.getElementById('practiceId');
+        if (practiceIdElement) {
+            practiceIdElement.textContent = currentPracticeData.id;
+        }
+        
+        // 更新相关学习内容
+        const relatedContent = document.getElementById('relatedContent');
+        if (relatedContent) {
+            relatedContent.innerHTML = `
+                <h4 class="font-semibold text-text-dark-brown mb-2">选中的学习内容：</h4>
+                <div class="bg-white p-3 rounded border">
+                    <p class="text-sm text-text-dark-brown">${selectedText}</p>
+                </div>
+            `;
+        }
+        
+        // 重置答题区域
+        const answerTextarea = document.getElementById('practiceAnswer');
+        if (answerTextarea) {
+            answerTextarea.value = '';
+            answerTextarea.placeholder = '题目生成完成后，请在此输入您的答案...';
+        }
+        
+        // 重置答案历史
+        const answerHistory = document.getElementById('answerHistory');
+        if (answerHistory) {
+            answerHistory.innerHTML = '<p class="text-gray-500">暂无答题记录</p>';
+        }
+        
+        // 隐藏AI评判按钮
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        if (evaluateBtn) {
+            evaluateBtn.classList.add('hidden');
+        }
+        
+        // 绑定事件
+        bindPracticeEvents();
+        
+        // 异步生成练习题目（不阻塞UI）
+        setTimeout(() => {
+            generatePracticeQuestions(selectedText);
+        }, 50);
+    }
+    
+    function generatePracticeId() {
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '');
+        const randomStr = Math.random().toString(36).substr(2, 3).toUpperCase();
+        return `PRACTICE-${dateStr}-${timeStr}-${randomStr}`;
+    }
+    
+    function bindPracticeEvents() {
+        // 关闭按钮
+        const closeBtn = document.getElementById('closePracticeBtn');
+        if (closeBtn) {
+            closeBtn.onclick = hidePracticePanel;
+        }
+        
+        // 提交答案按钮
+        const submitBtn = document.getElementById('submitAnswerBtn');
+        if (submitBtn) {
+            submitBtn.onclick = submitPracticeAnswer;
+        }
+        
+        // AI评判按钮
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        if (evaluateBtn) {
+            evaluateBtn.onclick = evaluatePracticeAnswer;
+        }
+        
+        // 开始新练习按钮
+        const startBtn = document.getElementById('startPracticeBtn');
+        if (startBtn) {
+            startBtn.onclick = () => {
+                if (currentPracticeData.selectedText) {
+                    generatePracticeQuestions(currentPracticeData.selectedText);
+                }
+            };
+        }
+        
+        // 点击面板外部关闭
+        const practicePanel = document.getElementById('practicePanel');
+        if (practicePanel) {
+            practicePanel.onclick = (e) => {
+                if (e.target === practicePanel) {
+                    hidePracticePanel();
+                }
+            };
+        }
+    }
+    
+    function hidePracticePanel() {
+        const practicePanel = document.getElementById('practicePanel');
+        if (practicePanel) {
+            practicePanel.classList.add('hidden');
+        }
+    }
+    
+    function generatePracticeQuestions(selectedText) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        // 立即显示加载状态和进度条
+        questionDisplay.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8">
+                <div class="w-16 h-16 mb-4">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-primary"></div>
+                </div>
+                <div class="text-center">
+                    <h4 class="text-lg font-semibold text-text-dark-brown mb-2">正在生成练习题目</h4>
+                    <p class="text-text-medium-brown mb-4">AI正在基于您选中的内容生成个性化练习题...</p>
+                    <div class="w-64 bg-gray-200 rounded-full h-2">
+                        <div class="bg-primary h-2 rounded-full animate-pulse" style="width: 60%"></div>
+                    </div>
+                    <p class="text-xs text-text-gray mt-2">预计需要10-30秒</p>
+                </div>
+            </div>
+        `;
+        
+        // 使用setTimeout确保UI立即更新，避免阻塞
+        setTimeout(() => {
+            generateQuestionsAsync(selectedText);
+        }, 100);
+    }
+    
+    function generateQuestionsAsync(selectedText) {
+        // 异步调用后端生成题目
+        if (window.bridge && window.bridge.generatePracticeQuestions) {
+            try {
+                // 使用setTimeout真正异步执行，避免界面冻结
+                setTimeout(() => {
+                    try {
+                        console.log('🔄 开始调用后端API生成题目...');
+                        const result = window.bridge.generatePracticeQuestions(selectedText);
+                        
+                        // 处理可能的Promise返回值
+                        const handleResult = (questions) => {
+                            console.log('📝 收到题目数据:', typeof questions, questions);
+                            
+                            // 检查是否是JSON字符串
+                            let actualQuestions = questions;
+                            if (typeof questions === 'string') {
+                                try {
+                                    const parsed = JSON.parse(questions);
+                                    if (parsed && parsed.message) {
+                                        actualQuestions = parsed.message;
+                                    }
+                                } catch (e) {
+                                    // 如果不是JSON，直接使用原字符串
+                                    actualQuestions = questions;
+                                }
+                            }
+                            
+                            if (actualQuestions && actualQuestions.trim()) {
+                                currentPracticeData.questions = actualQuestions;
+                                currentPracticeData.status = 'ready';
+                                displayPracticeQuestions(actualQuestions);
+                                showToast('练习题目生成完成！', 'success');
+                                console.log('✅ 题目生成成功');
+                            } else {
+                                console.error('❌ 生成结果为空或无效');
+                                showQuestionGenerationError();
+                            }
+                        };
+                        
+                        // 检查返回值类型
+                        if (result && typeof result.then === 'function') {
+                            // 是Promise对象
+                            console.log('📦 检测到Promise对象，等待解析...');
+                            result.then(handleResult).catch(error => {
+                                console.error('❌ Promise解析失败:', error);
+                                showQuestionGenerationError();
+                            });
+                        } else {
+                            // 直接返回值
+                            console.log('📦 检测到直接返回值');
+                            setTimeout(() => handleResult(result), 50);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ API调用失败:', error);
+                        setTimeout(() => {
+                            showQuestionGenerationError();
+                        }, 50);
+                    }
+                }, 200); // 延迟200ms确保UI完全更新
+                
+            } catch (error) {
+                console.error('调用generatePracticeQuestions失败:', error);
+                showQuestionGenerationError();
+            }
+        } else {
+            console.log('🔄 使用模拟数据生成题目...');
+            // 模拟异步生成题目（用于测试）
+            simulateQuestionGeneration(selectedText);
+        }
+    }
+    
+    function simulateQuestionGeneration(selectedText) {
+        // 模拟生成过程的进度更新
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 20;
+            if (progress > 90) progress = 90;
+            
+            updateGenerationProgress(progress);
+        }, 500);
+        
+        // 模拟生成完成
+        setTimeout(() => {
+            clearInterval(progressInterval);
+            updateGenerationProgress(100);
+            
+            setTimeout(() => {
+                const mockQuestions = generateMockQuestions(selectedText);
+                currentPracticeData.questions = mockQuestions;
+                currentPracticeData.status = 'ready';
+                displayPracticeQuestions(mockQuestions);
+                showToast('练习题目生成完成！', 'success');
+            }, 500);
+        }, 3000);
+    }
+    
+    function updateGenerationProgress(progress) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        const progressBar = questionDisplay.querySelector('.bg-primary');
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
+        
+        const statusText = questionDisplay.querySelector('p.text-text-medium-brown');
+        if (statusText) {
+            if (progress < 30) {
+                statusText.textContent = 'AI正在分析您选中的学习内容...';
+            } else if (progress < 60) {
+                statusText.textContent = '正在设计适合的题目类型...';
+            } else if (progress < 90) {
+                statusText.textContent = '正在生成具体的练习题目...';
+            } else {
+                statusText.textContent = '即将完成，请稍候...';
+            }
+        }
+    }
+    
+    function showQuestionGenerationError() {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            <div class="text-center py-8">
+                <div class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                    <span class="material-icons-outlined text-red-500 text-2xl">error</span>
+                </div>
+                <h4 class="text-lg font-semibold text-red-600 mb-2">生成失败</h4>
+                <p class="text-text-medium-brown mb-4">练习题目生成失败，请稍后重试</p>
+                <button onclick="retryQuestionGeneration()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600 transition">
+                    <span class="material-icons-outlined mr-1 text-sm">refresh</span>
+                    重新生成
+                </button>
+            </div>
+        `;
+        
+        showToast('题目生成失败，请重试', 'error');
+    }
+    
+    function retryQuestionGeneration() {
+        if (currentPracticeData.selectedText) {
+            generatePracticeQuestions(currentPracticeData.selectedText);
+        }
+    }
+    
+    function generateMockQuestions(selectedText) {
+        return `基于以下内容的练习题目：
+
+1. 请简要解释以下内容的核心概念：
+"${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"
+
+2. 这个概念在实际应用中有哪些重要作用？
+
+3. 请举一个具体的例子来说明这个概念的应用。
+
+4. 如果要深入学习这个主题，你认为还需要掌握哪些相关知识？
+
+5. 请分析这个概念可能存在的局限性或需要注意的问题。`;
+    }
+    
+    function displayPracticeQuestions(questions) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            <div class="text-text-dark-brown leading-relaxed whitespace-pre-line">
+                ${questions}
+            </div>
+        `;
+        
+        // 重置答题区域
+        const answerTextarea = document.getElementById('practiceAnswer');
+        if (answerTextarea) {
+            answerTextarea.value = '';
+            answerTextarea.placeholder = '请在此输入你的答案...';
+        }
+        
+        // 重置答案历史
+        const answerHistory = document.getElementById('answerHistory');
+        if (answerHistory) {
+            answerHistory.innerHTML = '<p class="text-gray-500">暂无答题记录</p>';
+        }
+        
+        showToast('练习题目生成完成，请开始答题', 'success');
+    }
+    
+    function submitPracticeAnswer() {
+        const answerTextarea = document.getElementById('practiceAnswer');
+        if (!answerTextarea) return;
+        
+        const answer = answerTextarea.value.trim();
+        if (!answer) {
+            showToast('请先输入答案再提交', 'warning');
+            return;
+        }
+        
+        // 保存答案
+        const timestamp = new Date().toLocaleString('zh-CN');
+        currentPracticeData.answers.push({
+            content: answer,
+            timestamp: timestamp
+        });
+        currentPracticeData.status = 'answered';
+        
+        // 更新答案历史显示
+        updateAnswerHistory();
+        
+        // 清空答题区域
+        answerTextarea.value = '';
+        
+        // 显示AI评判按钮
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        if (evaluateBtn) {
+            evaluateBtn.classList.remove('hidden');
+        }
+        
+        showToast('答案已提交，可以继续答题或点击AI评判', 'success');
+    }
+    
+    function updateAnswerHistory() {
+        const answerHistory = document.getElementById('answerHistory');
+        if (!answerHistory || currentPracticeData.answers.length === 0) return;
+        
+        const historyHtml = currentPracticeData.answers.map((answer, index) => `
+            <div class="border-l-4 border-primary pl-3 mb-3">
+                <p class="text-sm text-text-medium-brown mb-1">
+                    <strong>第${index + 1}次提交</strong> - ${answer.timestamp}
+                </p>
+                <p class="text-text-dark-brown">${answer.content}</p>
+            </div>
+        `).join('');
+        
+        answerHistory.innerHTML = historyHtml;
+    }
+    
+    function evaluatePracticeAnswer() {
+        if (currentPracticeData.answers.length === 0) {
+            showToast('请先提交答案再进行评判', 'warning');
+            return;
+        }
+        
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (questionDisplay) {
+            // 保存原始内容
+            const originalContent = questionDisplay.innerHTML;
+            
+            // 立即显示评判进度界面
+            showEvaluationProgress();
+            
+            // 异步执行评判
+            setTimeout(() => {
+                evaluateAnswersAsync(originalContent);
+            }, 100);
+        }
+    }
+    
+    function showEvaluationProgress() {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8">
+                <div class="w-16 h-16 mb-4">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+                </div>
+                <div class="text-center">
+                    <h4 class="text-lg font-semibold text-text-dark-brown mb-2">AI正在评判答案</h4>
+                    <p class="text-text-medium-brown mb-4">正在分析您的答案并生成详细评判报告...</p>
+                    <div class="w-64 bg-gray-200 rounded-full h-2">
+                        <div class="bg-blue-500 h-2 rounded-full animate-pulse" style="width: 70%"></div>
+                    </div>
+                    <p class="text-xs text-text-gray mt-2">预计需要15-45秒</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    function evaluateAnswersAsync(originalContent) {
+        // 调用后端AI评判
+        if (window.bridge && window.bridge.evaluatePracticeAnswers) {
+            try {
+                // 使用setTimeout真正异步执行，避免界面冻结
+                setTimeout(() => {
+                    try {
+                        console.log('🔄 开始调用后端API评判答案...');
+                        const allAnswers = currentPracticeData.answers.map(a => a.content).join('\n\n---\n\n');
+                        const result = window.bridge.evaluatePracticeAnswers(currentPracticeData.questions, allAnswers);
+                        
+                        // 处理可能的Promise返回值
+                        const handleResult = (evaluation) => {
+                            console.log('📝 收到评判数据:', typeof evaluation, evaluation);
+                            
+                            // 检查是否是JSON字符串
+                            let actualEvaluation = evaluation;
+                            if (typeof evaluation === 'string') {
+                                try {
+                                    const parsed = JSON.parse(evaluation);
+                                    if (parsed && parsed.message) {
+                                        actualEvaluation = parsed.message;
+                                    }
+                                } catch (e) {
+                                    // 如果不是JSON，直接使用原字符串
+                                    actualEvaluation = evaluation;
+                                }
+                            }
+                            
+                            if (actualEvaluation && actualEvaluation.trim()) {
+                                currentPracticeData.evaluation = actualEvaluation;
+                                currentPracticeData.status = 'evaluated';
+                                displayEvaluationResult(originalContent, actualEvaluation);
+                                showToast('AI评判完成！', 'success');
+                                console.log('✅ 评判完成');
+                            } else {
+                                console.error('❌ 评判结果为空或无效');
+                                showEvaluationError(originalContent);
+                            }
+                        };
+                        
+                        // 检查返回值类型
+                        if (result && typeof result.then === 'function') {
+                            // 是Promise对象
+                            console.log('📦 检测到Promise对象，等待解析...');
+                            result.then(handleResult).catch(error => {
+                                console.error('❌ Promise解析失败:', error);
+                                showEvaluationError(originalContent);
+                            });
+                        } else {
+                            // 直接返回值
+                            console.log('📦 检测到直接返回值');
+                            setTimeout(() => handleResult(result), 50);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ 评判API调用失败:', error);
+                        setTimeout(() => {
+                            showEvaluationError(originalContent);
+                        }, 50);
+                    }
+                }, 200); // 延迟200ms确保UI完全更新
+                
+            } catch (error) {
+                console.error('调用evaluatePracticeAnswers失败:', error);
+                showEvaluationError(originalContent);
+            }
+        } else {
+            console.log('🔄 使用模拟数据评判答案...');
+            // 模拟异步评判
+            simulateEvaluation(originalContent);
+        }
+    }
+    
+    function simulateEvaluation(originalContent) {
+        // 模拟评判过程
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 15;
+            if (progress > 90) progress = 90;
+            
+            updateEvaluationProgress(progress);
+        }, 800);
+        
+        // 模拟评判完成
+        setTimeout(() => {
+            clearInterval(progressInterval);
+            updateEvaluationProgress(100);
+            
+            setTimeout(() => {
+                const evaluation = generateMockEvaluation();
+                currentPracticeData.evaluation = evaluation;
+                currentPracticeData.status = 'evaluated';
+                displayEvaluationResult(originalContent, evaluation);
+                showToast('AI评判完成！', 'success');
+            }, 500);
+        }, 4000);
+    }
+    
+    function updateEvaluationProgress(progress) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        const progressBar = questionDisplay.querySelector('.bg-blue-500');
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
+        
+        const statusText = questionDisplay.querySelector('p.text-text-medium-brown');
+        if (statusText) {
+            if (progress < 25) {
+                statusText.textContent = '正在分析您的答案内容...';
+            } else if (progress < 50) {
+                statusText.textContent = '正在对比标准答案...';
+            } else if (progress < 75) {
+                statusText.textContent = '正在生成详细评判...';
+            } else if (progress < 95) {
+                statusText.textContent = '正在整理评判报告...';
+            } else {
+                statusText.textContent = '即将完成，请稍候...';
+            }
+        }
+    }
+    
+    function displayEvaluationResult(originalContent, evaluation) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            ${originalContent}
+            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 class="font-semibold text-blue-800 mb-2">
+                    <span class="material-icons-outlined mr-1">psychology</span>
+                    AI评判结果
+                </h4>
+                <div class="text-blue-700 whitespace-pre-line">
+                    ${evaluation}
+                </div>
+            </div>
+        `;
+    }
+    
+    function showEvaluationError(originalContent) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            ${originalContent}
+            <div class="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div class="text-center">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-red-100 rounded-full flex items-center justify-center">
+                        <span class="material-icons-outlined text-red-500">error</span>
+                    </div>
+                    <h4 class="text-lg font-semibold text-red-600 mb-2">评判失败</h4>
+                    <p class="text-red-600 mb-4">AI评判过程中出现错误，请稍后重试</p>
+                    <button onclick="retryEvaluation()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
+                        <span class="material-icons-outlined mr-1 text-sm">refresh</span>
+                        重新评判
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        showToast('评判失败，请重试', 'error');
+    }
+    
+    function retryEvaluation() {
+        if (currentPracticeData.answers.length > 0) {
+            evaluatePracticeAnswer();
+        }
+    }
+    
+    function generateMockEvaluation() {
+        return `📊 答题评估报告
+
+✅ 整体表现：良好
+您的回答显示了对核心概念的基本理解，思路清晰，表达较为准确。
+
+📝 具体评价：
+• 概念理解：★★★★☆ (4/5)
+  - 能够准确把握主要概念
+  - 表达清晰，逻辑性强
+
+• 应用能力：★★★☆☆ (3/5)
+  - 能够举出相关例子
+  - 实际应用的深度可以进一步加强
+
+• 分析深度：★★★☆☆ (3/5)
+  - 分析较为全面
+  - 可以更深入探讨细节和关联
+
+💡 改进建议：
+1. 可以结合更多实际案例来说明概念
+2. 尝试从不同角度分析问题
+3. 注意概念之间的关联性
+
+🎯 知识点掌握程度：75%
+建议继续深入学习相关内容，加强实践应用。`;
+    }
+
+    // 初始化Markdown增强功能
+    function initMarkdownEnhancements() {
+        // 配置Mermaid
+        if (typeof mermaid !== 'undefined') {
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: 'default',
+                securityLevel: 'loose',
+                fontFamily: 'Arial, sans-serif'
+            });
+        }
+        
+        // 配置marked
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                highlight: function(code, lang) {
+                    if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                        try {
+                            return hljs.highlight(code, { language: lang }).value;
+                        } catch (err) {}
+                    }
+                    return code;
+                },
+                breaks: true,
+                gfm: true
+            });
+        }
+    }
+    
+    // 增强的Markdown渲染函数
+    function renderMarkdownContent(content) {
+        if (!content || typeof marked === 'undefined') {
+            return content;
+        }
+        
+        try {
+            // 预处理：支持任务列表
+            content = content.replace(/^\s*- \[([ x])\] /gm, function(match, checked) {
+                const isChecked = checked === 'x' ? 'checked' : '';
+                return `<li class="task-list-item"><input type="checkbox" ${isChecked} disabled> `;
+            });
+            
+            // 预处理：支持高亮语法 ==text==
+            content = content.replace(/==(.*?)==/g, '<mark>$1</mark>');
+            
+            // 预处理：支持Mermaid图表
+            content = content.replace(/```mermaid\n([\s\S]*?)\n```/g, function(match, code) {
+                const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+                return `<div class="mermaid" id="${id}">${code}</div>`;
+            });
+            
+            // 使用marked渲染
+            let html = marked.parse(content);
+            
+            // 后处理：修复任务列表
+            html = html.replace(/<li class="task-list-item"><input[^>]*>/g, function(match) {
+                return match.replace('<li class="task-list-item">', '<li class="task-list-item">');
+            });
+            
+            return html;
+        } catch (error) {
+            console.error('Markdown渲染错误:', error);
+            return content.replace(/\n/g, '<br>');
+        }
+    }
+    
+    // 渲染数学公式
+    function renderMathFormulas(element) {
+        if (typeof renderMathInElement !== 'undefined') {
+            try {
+                renderMathInElement(element, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false}
+                    ]
+                });
+            } catch (error) {
+                console.error('数学公式渲染错误:', error);
+            }
+        }
+    }
+    
+    // 渲染Mermaid图表
+    function renderMermaidDiagrams(element) {
+        if (typeof mermaid !== 'undefined') {
+            const mermaidElements = element.querySelectorAll('.mermaid');
+            mermaidElements.forEach((el, index) => {
+                try {
+                    mermaid.render(`mermaid-${Date.now()}-${index}`, el.textContent, (svgCode) => {
+                        el.innerHTML = svgCode;
+                    });
+                } catch (error) {
+                    console.error('Mermaid图表渲染错误:', error);
+                    el.innerHTML = `<pre>${el.textContent}</pre>`;
+                }
+            });
+        }
+    }
+    
+    // 页面初始化
+    function initAll() {
+        console.log('开始初始化页面...');
+        initializePage();
+        initMarkdownEnhancements();
+        
+        // 延迟初始化右键菜单，确保DOM完全加载
+        setTimeout(() => {
+            console.log('延迟初始化右键菜单...');
+            initContextMenu();
+            
+            // 添加全局右键测试
+            document.addEventListener('contextmenu', function(e) {
+                console.log('全局右键事件触发，目标元素:', e.target);
+                console.log('目标元素ID:', e.target.id);
+                console.log('目标元素类名:', e.target.className);
+            });
+        }, 1000);
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initAll);
+    } else {
+        initAll();
+    }
+
+})();
+</script>
+
+<!-- 右键菜单 -->
+<div id="contextMenu" class="context-menu">
+    <div class="context-menu-item" id="deepLearningMenuItem">
+        <span class="material-icons-outlined">psychology</span>
+        继续深入学习
+    </div>
+    <div class="context-menu-item" id="practiceMenuItem">
+        <span class="material-icons-outlined">quiz</span>
+        练习
+    </div>
+</div>
+
+<!-- 练习面板 -->
+<div id="practicePanel" class="practice-panel hidden">
+    <div class="practice-panel-content">
+        <div class="practice-header">
+            <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
+                <div class="flex items-center space-x-4">
+                    <button id="practiceHistoryBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">history</span>
+                        <span>练习历史</span>
+                    </button>
+                    <button id="newPracticeBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">add_circle_outline</span>
+                        <span>新练习</span>
+                    </button>
+                    <button id="startPracticeBtn" class="flex items-center text-white bg-primary px-4 py-2 rounded-lg shadow hover:bg-green-600">
+                        <span class="material-icons-outlined mr-2">play_arrow</span>
+                        <span>开始新练习</span>
+                    </button>
+                    <button id="savePracticeBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">save_alt</span>
+                        <span>保存评估结果</span>
+                    </button>
+                    <button id="errorBankBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">rule_folder</span>
+                        <span>错题入库</span>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="flex items-center text-sm text-text-medium-brown">
+                        <span>练习ID:</span>
+                        <span id="practiceId" class="font-mono ml-2 p-1 bg-bg-light-gray rounded">TECH-20240917-001</span>
+                    </div>
+                    <button id="closePracticeBtn" class="text-text-gray hover:text-red-500">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="practice-body">
+            <div class="flex-grow flex flex-col bg-white p-6 rounded-xl shadow-sm">
+                <div class="flex-grow mb-4 overflow-y-auto pr-2">
+                    <h3 class="text-lg font-semibold text-text-dark-brown mb-3">题目展示区</h3>
+                    <div id="questionDisplay" class="bg-bg-light-gray p-4 rounded-lg mb-4">
+                        <p class="text-text-dark-brown leading-relaxed">
+                            正在生成练习题目，请稍候...
+                        </p>
+                    </div>
+                    <h4 class="text-md font-semibold text-text-dark-brown mb-2">用户答案记录：</h4>
+                    <div id="answerHistory" class="space-y-3 text-sm text-text-medium-brown">
+                        <p class="text-gray-500">暂无答题记录</p>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-text-dark-brown mb-3">答题区域</h3>
+                    <textarea id="practiceAnswer" class="w-full h-28 p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-200" placeholder="请在此输入你的答案..."></textarea>
+                    <p class="text-xs text-text-gray mt-1">💡 提示: 请仔细阅读题目，认真思考后再作答。</p>
+                </div>
+                <div class="mb-4">
+                    <details class="group">
+                        <summary class="flex items-center justify-between cursor-pointer p-2 bg-bg-light-blue-gray rounded-lg hover:bg-gray-200">
+                            <h3 class="text-lg font-semibold text-text-dark-brown">相关学习内容</h3>
+                            <span class="material-icons-outlined transition-transform duration-300 group-open:rotate-180">expand_more</span>
+                        </summary>
+                        <div id="relatedContent" class="mt-3 p-4 bg-bg-light-green rounded-lg">
+                            <p class="text-text-dark-brown">基于选中的学习内容生成的练习题目</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button id="submitAnswerBtn" class="px-6 py-2 rounded-lg text-white bg-primary hover:bg-green-600 transition shadow">
+                    提交答案
+                </button>
+                <button id="evaluateBtn" class="px-6 py-2 rounded-lg text-white bg-blue-500 hover:bg-blue-600 transition shadow hidden">
+                    AI评判
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

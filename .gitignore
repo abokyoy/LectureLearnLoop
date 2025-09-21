@@ -2,6 +2,8 @@
 env/
 __pycache__/
 attachments/
+conversations/
+vault/
 # 忽略录音片段目录
 recorded_audio_segments/
 transcription_results.txt
@@ -9,3 +11,23 @@ summary_results.txt
 transcription.txt
 测试.md
 测试.md
+conversations/conversation_20250914_195617.json
+
+
+# 忽略所有以 .log 结尾的文件
+*.log
+
+# 忽略所有以 .db 结尾的文件
+*.db
+
+# 忽略所有以 .txt 结尾的文件
+*.txt
+
+# 忽略所有以 .json 结尾的文件
+*.json
+
+# 忽略所有以 .png 结尾的文件
+*.png
+
+# 忽略所有以 test_ 开头的 .py 文件
+test_*.py
