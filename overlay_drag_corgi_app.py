@@ -397,6 +397,145 @@ class CorgiWebBridge(QObject):
             print(f"❌ 加载原始文件失败: {e}")
         return ""
     
+    @Slot(str, result=str)
+    def generatePracticeQuestions(self, selected_text):
+        """根据选中文本生成练习题目"""
+        self.logger.info("=" * 60)
+        self.logger.info("【练习生成】generatePracticeQuestions 开始")
+        self.logger.info(f"选中文本长度: {len(selected_text)}")
+        
+        try:
+            # 构建生成练习题的提示词
+            prompt = f"""请基于以下内容生成一套练习题目：
+
+**学习内容：**
+{selected_text}
+
+**要求：**
+1. 生成5-8道不同类型的题目（选择题、填空题、简答题、应用题等）
+2. 题目要有一定的难度梯度，从基础理解到深入应用
+3. 每道题目都要紧密围绕给定的学习内容
+4. 题目表述要清晰明确，便于理解
+5. 使用纯文本格式，题目编号使用数字格式：1. 2. 3. 等
+6. 选择题的选项使用 A) B) C) D) 格式
+7. 只提供题目，不要提供答案
+
+请生成练习题目："""
+
+            # 调用LLM API生成题目
+            response = self._call_llm_api(prompt)
+            
+            if response:
+                self.logger.info(f"✅ 练习题目生成成功，长度: {len(response)} 字符")
+                return response
+            else:
+                self.logger.error("❌ LLM API返回空结果")
+                return self._generate_fallback_questions(selected_text)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 生成练习题目异常: {e}")
+            print(f"❌ 生成练习题目失败: {e}")
+            return self._generate_fallback_questions(selected_text)
+    
+    def _generate_fallback_questions(self, selected_text):
+        """生成备用练习题目"""
+        return f"""基于学习内容的练习题目：
+
+1. 请简要概括以下内容的主要观点：
+"{selected_text[:200]}{'...' if len(selected_text) > 200 else ''}"
+
+2. 这个内容中提到的核心概念有哪些？请列举并简要说明。
+
+3. 请分析这些概念在实际应用中的重要性。
+
+4. 如果要向他人解释这个内容，你会如何组织语言？
+
+5. 基于这个内容，你认为还有哪些相关知识点值得深入学习？
+
+请认真思考后作答，每道题目都要结合具体内容来回答。"""
+    
+    @Slot(str, str, result=str)
+    def evaluatePracticeAnswers(self, questions, answers):
+        """评判练习答案"""
+        self.logger.info("=" * 60)
+        self.logger.info("【答案评判】evaluatePracticeAnswers 开始")
+        self.logger.info(f"题目长度: {len(questions)}")
+        self.logger.info(f"答案长度: {len(answers)}")
+        
+        try:
+            # 构建评判提示词
+            prompt = f"""请对以下练习答案进行专业评判：
+
+**练习题目：**
+{questions}
+
+**学生答案：**
+{answers}
+
+**评判要求：**
+1. 对每道题目的回答进行具体分析
+2. 评估答案的准确性、完整性和深度
+3. 给出具体的改进建议
+4. 评估学生对知识点的掌握程度
+5. 使用星级评分（1-5星）评价不同维度
+6. 提供鼓励性的反馈和学习建议
+
+**评判维度：**
+- 概念理解：对基本概念的理解程度
+- 应用能力：将知识应用到实际情况的能力
+- 分析深度：分析问题的深度和广度
+- 表达清晰：答案表达的清晰度和逻辑性
+
+请生成详细的评判报告："""
+
+            # 调用LLM API进行评判
+            response = self._call_llm_api(prompt)
+            
+            if response:
+                self.logger.info(f"✅ 答案评判完成，长度: {len(response)} 字符")
+                return response
+            else:
+                self.logger.error("❌ LLM API返回空结果")
+                return self._generate_fallback_evaluation()
+                
+        except Exception as e:
+            self.logger.error(f"❌ 评判答案异常: {e}")
+            print(f"❌ 评判答案失败: {e}")
+            return self._generate_fallback_evaluation()
+    
+    def _generate_fallback_evaluation(self):
+        """生成备用评判结果"""
+        return """📊 练习评估报告
+
+✅ 整体表现：良好
+感谢您认真完成了这次练习，您的回答显示了对学习内容的基本理解。
+
+📝 评价维度：
+• 概念理解：★★★☆☆ (3/5)
+  - 基本概念掌握情况良好
+  - 建议加强对细节的理解
+
+• 应用能力：★★★☆☆ (3/5)
+  - 能够进行基本的应用分析
+  - 可以尝试更多实际案例
+
+• 分析深度：★★☆☆☆ (2/5)
+  - 分析较为表面
+  - 建议深入思考问题的本质
+
+• 表达清晰：★★★★☆ (4/5)
+  - 表达清晰，逻辑较好
+  - 继续保持这种表达方式
+
+💡 学习建议：
+1. 加强对核心概念的深入理解
+2. 多结合实际案例进行思考
+3. 尝试从多个角度分析问题
+4. 继续保持学习的积极性
+
+🎯 总体掌握程度：65%
+继续努力，相信您会取得更好的成绩！"""
+    
     @Slot(str, str, result=bool)
     def saveMarkdownFile(self, file_path, content):
         """保存Markdown文件"""

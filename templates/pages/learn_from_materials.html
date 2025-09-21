@@ -1,4 +1,14 @@
 <!-- 从资料学习页面 - 完整的树形文件管理 -->
+
+<!-- Markdown增强功能的CSS和JS库 -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+
 <style>
     /* 侧边栏收缩样式 */
     #sidebar.collapsed .sidebar-text,
@@ -36,6 +46,244 @@
         100% { transform: scale(1); }
     }
     
+    /* 增强的Markdown预览样式 */
+    .markdown-content {
+        line-height: 1.6;
+        color: #333;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    }
+    
+    .markdown-content h1, .markdown-content h2, .markdown-content h3, 
+    .markdown-content h4, .markdown-content h5, .markdown-content h6 {
+        margin-top: 1.5em;
+        margin-bottom: 0.5em;
+        font-weight: 600;
+        line-height: 1.25;
+    }
+    
+    .markdown-content h1 { font-size: 2em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
+    .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: 0.3em; }
+    .markdown-content h3 { font-size: 1.25em; }
+    .markdown-content h4 { font-size: 1em; }
+    .markdown-content h5 { font-size: 0.875em; }
+    .markdown-content h6 { font-size: 0.85em; color: #6a737d; }
+    
+    .markdown-content blockquote {
+        padding: 0 1em;
+        color: #6a737d;
+        border-left: 0.25em solid #dfe2e5;
+        margin: 1em 0;
+        background-color: #f6f8fa;
+    }
+    
+    .markdown-content code {
+        padding: 0.2em 0.4em;
+        margin: 0;
+        font-size: 85%;
+        background-color: rgba(27,31,35,0.05);
+        border-radius: 3px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    }
+    
+    .markdown-content pre {
+        padding: 16px;
+        overflow: auto;
+        font-size: 85%;
+        line-height: 1.45;
+        background-color: #f6f8fa;
+        border-radius: 6px;
+        margin: 1em 0;
+        border: 1px solid #e1e4e8;
+    }
+    
+    .markdown-content pre code {
+        display: inline;
+        max-width: auto;
+        padding: 0;
+        margin: 0;
+        overflow: visible;
+        line-height: inherit;
+        word-wrap: normal;
+        background-color: transparent;
+        border: 0;
+    }
+    
+    .markdown-content table {
+        border-spacing: 0;
+        border-collapse: collapse;
+        margin: 1em 0;
+        width: 100%;
+        display: block;
+        overflow: auto;
+    }
+    
+    .markdown-content table th,
+    .markdown-content table td {
+        padding: 6px 13px;
+        border: 1px solid #dfe2e5;
+    }
+    
+    .markdown-content table th {
+        font-weight: 600;
+        background-color: #f6f8fa;
+    }
+    
+    .markdown-content table tr:nth-child(2n) {
+        background-color: #f6f8fa;
+    }
+    
+    .markdown-content img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        margin: 1em 0;
+    }
+    
+    .markdown-content .mermaid {
+        text-align: center;
+        margin: 1em 0;
+        background: white;
+        border-radius: 6px;
+        padding: 1em;
+        border: 1px solid #e1e4e8;
+    }
+    
+    .markdown-content .katex-display {
+        margin: 1em 0;
+        text-align: center;
+    }
+    
+    .markdown-content .task-list-item {
+        list-style-type: none;
+    }
+    
+    .markdown-content .task-list-item input {
+        margin: 0 0.2em 0.25em -1.6em;
+        vertical-align: middle;
+    }
+    
+    .markdown-content mark {
+        background-color: #fff3cd;
+        padding: 0.1em 0.2em;
+        border-radius: 2px;
+    }
+    
+    .markdown-content .highlight {
+        background-color: #ffeb3b;
+        padding: 0.1em 0.2em;
+        border-radius: 2px;
+    }
+    
+    .markdown-content ul, .markdown-content ol {
+        padding-left: 2em;
+        margin: 1em 0;
+    }
+    
+    .markdown-content li {
+        margin: 0.25em 0;
+    }
+    
+    .markdown-content hr {
+        height: 0.25em;
+        padding: 0;
+        margin: 24px 0;
+        background-color: #e1e4e8;
+        border: 0;
+    }
+    
+    .markdown-content a {
+        color: #0366d6;
+        text-decoration: none;
+    }
+    
+    .markdown-content a:hover {
+        text-decoration: underline;
+    }
+    
+    /* 练习面板样式 */
+    .practice-panel {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(4px);
+    }
+    
+    .practice-panel.hidden {
+        display: none;
+    }
+    
+    .practice-panel-content {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+        width: 90%;
+        max-width: 1200px;
+        height: 90%;
+        max-height: 800px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .practice-header {
+        flex-shrink: 0;
+        padding: 20px;
+        border-bottom: 1px solid #e5e7eb;
+        background: #f8fafc;
+    }
+    
+    .practice-body {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .practice-panel .bg-primary {
+        background-color: #32C77F;
+    }
+    
+    .practice-panel .text-primary {
+        color: #32C77F;
+    }
+    
+    .practice-panel .hover\\:bg-green-600:hover {
+        background-color: #16a34a;
+    }
+    
+    .practice-panel .text-text-dark-brown {
+        color: #715D46;
+    }
+    
+    .practice-panel .text-text-medium-brown {
+        color: #9B8D7D;
+    }
+    
+    .practice-panel .text-text-gray {
+        color: #828282;
+    }
+    
+    .practice-panel .bg-bg-light-gray {
+        background-color: #F2F0ED;
+    }
+    
+    .practice-panel .bg-bg-light-blue-gray {
+        background-color: #F5F7F9;
+    }
+    
+    .practice-panel .bg-bg-light-green {
+        background-color: #E2F2EB;
+    }
+
     /* 右键菜单样式 */
     .context-menu {
         position: fixed;
@@ -173,7 +421,7 @@
             
             <!-- 内容区域 -->
             <div class="flex-1 p-4 overflow-y-auto">
-                <div id="preview-content" class="prose max-w-none">
+                <div id="preview-content" class="prose max-w-none markdown-content">
                     <div class="text-center py-16 text-text-medium-brown">
                         <span class="material-icons-outlined text-6xl mb-4">description</span>
                         <p>请选择一个Markdown文件进行预览</p>
@@ -563,8 +811,8 @@
         currentFilePath = filePath;
         currentFileName = fileName;
         
-        if (!window.bridge || !window.bridge.loadMarkdownFile) {
-            debugError('Bridge对象或loadMarkdownFile方法不可用');
+        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
             return;
         }
         
@@ -580,14 +828,29 @@
             previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin mr-2"><span class="material-icons-outlined">refresh</span></div><span>加载中...</span></div>';
         }
         
-        // 调用后端加载文件
+        // 调用后端加载原始Markdown内容
         try {
-            window.bridge.loadMarkdownFile(filePath, function(htmlContent) {
-                debugLog(`文件内容加载完成，长度: ${htmlContent.length}`);
+            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+                debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
                 
                 if (previewContent) {
-                    if (htmlContent) {
+                    if (markdownContent) {
+                        // 使用增强的渲染函数
+                        const htmlContent = renderMarkdownContent(markdownContent);
                         previewContent.innerHTML = htmlContent;
+                        
+                        // 渲染数学公式
+                        renderMathFormulas(previewContent);
+                        
+                        // 渲染Mermaid图表
+                        renderMermaidDiagrams(previewContent);
+                        
+                        // 高亮代码块
+                        if (typeof hljs !== 'undefined') {
+                            previewContent.querySelectorAll('pre code').forEach((block) => {
+                                hljs.highlightElement(block);
+                            });
+                        }
                     } else {
                         previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
                     }
@@ -692,8 +955,8 @@
     function reloadPreviewContent(filePath, fileName) {
         debugLog(`重新加载预览内容: ${fileName}`);
         
-        if (!window.bridge || !window.bridge.loadMarkdownFile) {
-            debugError('Bridge对象或loadMarkdownFile方法不可用');
+        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
             return;
         }
         
@@ -703,14 +966,29 @@
             previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin mr-2"><span class="material-icons-outlined">refresh</span></div><span>重新加载中...</span></div>';
         }
         
-        // 调用后端加载文件
+        // 调用后端加载原始Markdown内容
         try {
-            window.bridge.loadMarkdownFile(filePath, function(htmlContent) {
-                debugLog(`预览内容重新加载完成，长度: ${htmlContent.length}`);
+            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+                debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
                 
                 if (previewContent) {
-                    if (htmlContent) {
+                    if (markdownContent) {
+                        // 使用增强的渲染函数
+                        const htmlContent = renderMarkdownContent(markdownContent);
                         previewContent.innerHTML = htmlContent;
+                        
+                        // 渲染数学公式
+                        renderMathFormulas(previewContent);
+                        
+                        // 渲染Mermaid图表
+                        renderMermaidDiagrams(previewContent);
+                        
+                        // 高亮代码块
+                        if (typeof hljs !== 'undefined') {
+                            previewContent.querySelectorAll('pre code').forEach((block) => {
+                                hljs.highlightElement(block);
+                            });
+                        }
                     } else {
                         previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
                     }
@@ -3157,6 +3435,46 @@
         return true;
     };
     
+    // 显示提示消息
+    function showToast(message, type = 'info') {
+        // 创建提示元素
+        const toast = document.createElement('div');
+        toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
+        
+        // 根据类型设置颜色
+        switch (type) {
+            case 'success':
+                toast.className += ' bg-green-500';
+                break;
+            case 'warning':
+                toast.className += ' bg-yellow-500';
+                break;
+            case 'error':
+                toast.className += ' bg-red-500';
+                break;
+            default:
+                toast.className += ' bg-blue-500';
+        }
+        
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        
+        // 显示动画
+        setTimeout(() => {
+            toast.classList.remove('translate-x-full');
+        }, 100);
+        
+        // 自动隐藏
+        setTimeout(() => {
+            toast.classList.add('translate-x-full');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, 3000);
+    }
+
     // 智能插入文本到编辑器
     function insertTextToEditor(editor, content) {
         console.log('插入文本到编辑器');
@@ -3264,6 +3582,13 @@
             // 点击菜单项
             deepLearningMenuItem.addEventListener('click', handleDeepLearning);
             
+            // 绑定练习菜单项点击事件
+            const practiceMenuItem = document.getElementById('practiceMenuItem');
+            if (practiceMenuItem) {
+                practiceMenuItem.addEventListener('click', handlePractice);
+                console.log('✅ 练习菜单项事件已绑定');
+            }
+            
             // 点击其他地方隐藏菜单
             document.addEventListener('click', hideContextMenu);
             
@@ -3284,6 +3609,10 @@
             <div class="context-menu-item" id="deepLearningMenuItem">
                 <span class="material-icons-outlined">psychology</span>
                 继续深入学习
+            </div>
+            <div class="context-menu-item" id="practiceMenuItem">
+                <span class="material-icons-outlined">quiz</span>
+                练习
             </div>
         `;
         
@@ -3408,11 +3737,765 @@
             showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
         }
     }
+    
+    function handlePractice() {
+        if (!selectedText) {
+            showToast('请先选择要练习的文本内容', 'warning');
+            return;
+        }
+        
+        hideContextMenu();
+        
+        // 显示练习面板
+        showPracticePanel(selectedText);
+        
+        showToast('正在为您生成练习题目...', 'info');
+    }
+    
+    // 练习面板相关变量
+    let currentPracticeData = {
+        id: '',
+        selectedText: '',
+        questions: '',
+        answers: [],
+        evaluation: '',
+        status: 'generating' // generating, ready, answered, evaluated
+    };
+    
+    function showPracticePanel(selectedText) {
+        const practicePanel = document.getElementById('practicePanel');
+        if (!practicePanel) {
+            console.error('练习面板元素未找到');
+            return;
+        }
+        
+        // 立即显示面板，不等待题目生成
+        practicePanel.classList.remove('hidden');
+        console.log('✅ 练习面板已立即显示');
+        
+        // 初始化练习数据
+        currentPracticeData = {
+            id: generatePracticeId(),
+            selectedText: selectedText,
+            questions: '',
+            answers: [],
+            evaluation: '',
+            status: 'generating'
+        };
+        
+        // 更新练习ID显示
+        const practiceIdElement = document.getElementById('practiceId');
+        if (practiceIdElement) {
+            practiceIdElement.textContent = currentPracticeData.id;
+        }
+        
+        // 更新相关学习内容
+        const relatedContent = document.getElementById('relatedContent');
+        if (relatedContent) {
+            relatedContent.innerHTML = `
+                <h4 class="font-semibold text-text-dark-brown mb-2">选中的学习内容：</h4>
+                <div class="bg-white p-3 rounded border">
+                    <p class="text-sm text-text-dark-brown">${selectedText}</p>
+                </div>
+            `;
+        }
+        
+        // 重置答题区域
+        const answerTextarea = document.getElementById('practiceAnswer');
+        if (answerTextarea) {
+            answerTextarea.value = '';
+            answerTextarea.placeholder = '题目生成完成后，请在此输入您的答案...';
+        }
+        
+        // 重置答案历史
+        const answerHistory = document.getElementById('answerHistory');
+        if (answerHistory) {
+            answerHistory.innerHTML = '<p class="text-gray-500">暂无答题记录</p>';
+        }
+        
+        // 隐藏AI评判按钮
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        if (evaluateBtn) {
+            evaluateBtn.classList.add('hidden');
+        }
+        
+        // 绑定事件
+        bindPracticeEvents();
+        
+        // 异步生成练习题目（不阻塞UI）
+        setTimeout(() => {
+            generatePracticeQuestions(selectedText);
+        }, 50);
+    }
+    
+    function generatePracticeId() {
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
+        const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '');
+        const randomStr = Math.random().toString(36).substr(2, 3).toUpperCase();
+        return `PRACTICE-${dateStr}-${timeStr}-${randomStr}`;
+    }
+    
+    function bindPracticeEvents() {
+        // 关闭按钮
+        const closeBtn = document.getElementById('closePracticeBtn');
+        if (closeBtn) {
+            closeBtn.onclick = hidePracticePanel;
+        }
+        
+        // 提交答案按钮
+        const submitBtn = document.getElementById('submitAnswerBtn');
+        if (submitBtn) {
+            submitBtn.onclick = submitPracticeAnswer;
+        }
+        
+        // AI评判按钮
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        if (evaluateBtn) {
+            evaluateBtn.onclick = evaluatePracticeAnswer;
+        }
+        
+        // 开始新练习按钮
+        const startBtn = document.getElementById('startPracticeBtn');
+        if (startBtn) {
+            startBtn.onclick = () => {
+                if (currentPracticeData.selectedText) {
+                    generatePracticeQuestions(currentPracticeData.selectedText);
+                }
+            };
+        }
+        
+        // 点击面板外部关闭
+        const practicePanel = document.getElementById('practicePanel');
+        if (practicePanel) {
+            practicePanel.onclick = (e) => {
+                if (e.target === practicePanel) {
+                    hidePracticePanel();
+                }
+            };
+        }
+    }
+    
+    function hidePracticePanel() {
+        const practicePanel = document.getElementById('practicePanel');
+        if (practicePanel) {
+            practicePanel.classList.add('hidden');
+        }
+    }
+    
+    function generatePracticeQuestions(selectedText) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        // 立即显示加载状态和进度条
+        questionDisplay.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8">
+                <div class="w-16 h-16 mb-4">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-primary"></div>
+                </div>
+                <div class="text-center">
+                    <h4 class="text-lg font-semibold text-text-dark-brown mb-2">正在生成练习题目</h4>
+                    <p class="text-text-medium-brown mb-4">AI正在基于您选中的内容生成个性化练习题...</p>
+                    <div class="w-64 bg-gray-200 rounded-full h-2">
+                        <div class="bg-primary h-2 rounded-full animate-pulse" style="width: 60%"></div>
+                    </div>
+                    <p class="text-xs text-text-gray mt-2">预计需要10-30秒</p>
+                </div>
+            </div>
+        `;
+        
+        // 使用setTimeout确保UI立即更新，避免阻塞
+        setTimeout(() => {
+            generateQuestionsAsync(selectedText);
+        }, 100);
+    }
+    
+    function generateQuestionsAsync(selectedText) {
+        // 异步调用后端生成题目
+        if (window.bridge && window.bridge.generatePracticeQuestions) {
+            try {
+                // 使用setTimeout真正异步执行，避免界面冻结
+                setTimeout(() => {
+                    try {
+                        console.log('🔄 开始调用后端API生成题目...');
+                        const result = window.bridge.generatePracticeQuestions(selectedText);
+                        
+                        // 处理可能的Promise返回值
+                        const handleResult = (questions) => {
+                            console.log('📝 收到题目数据:', typeof questions, questions);
+                            
+                            // 检查是否是JSON字符串
+                            let actualQuestions = questions;
+                            if (typeof questions === 'string') {
+                                try {
+                                    const parsed = JSON.parse(questions);
+                                    if (parsed && parsed.message) {
+                                        actualQuestions = parsed.message;
+                                    }
+                                } catch (e) {
+                                    // 如果不是JSON，直接使用原字符串
+                                    actualQuestions = questions;
+                                }
+                            }
+                            
+                            if (actualQuestions && actualQuestions.trim()) {
+                                currentPracticeData.questions = actualQuestions;
+                                currentPracticeData.status = 'ready';
+                                displayPracticeQuestions(actualQuestions);
+                                showToast('练习题目生成完成！', 'success');
+                                console.log('✅ 题目生成成功');
+                            } else {
+                                console.error('❌ 生成结果为空或无效');
+                                showQuestionGenerationError();
+                            }
+                        };
+                        
+                        // 检查返回值类型
+                        if (result && typeof result.then === 'function') {
+                            // 是Promise对象
+                            console.log('📦 检测到Promise对象，等待解析...');
+                            result.then(handleResult).catch(error => {
+                                console.error('❌ Promise解析失败:', error);
+                                showQuestionGenerationError();
+                            });
+                        } else {
+                            // 直接返回值
+                            console.log('📦 检测到直接返回值');
+                            setTimeout(() => handleResult(result), 50);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ API调用失败:', error);
+                        setTimeout(() => {
+                            showQuestionGenerationError();
+                        }, 50);
+                    }
+                }, 200); // 延迟200ms确保UI完全更新
+                
+            } catch (error) {
+                console.error('调用generatePracticeQuestions失败:', error);
+                showQuestionGenerationError();
+            }
+        } else {
+            console.log('🔄 使用模拟数据生成题目...');
+            // 模拟异步生成题目（用于测试）
+            simulateQuestionGeneration(selectedText);
+        }
+    }
+    
+    function simulateQuestionGeneration(selectedText) {
+        // 模拟生成过程的进度更新
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 20;
+            if (progress > 90) progress = 90;
+            
+            updateGenerationProgress(progress);
+        }, 500);
+        
+        // 模拟生成完成
+        setTimeout(() => {
+            clearInterval(progressInterval);
+            updateGenerationProgress(100);
+            
+            setTimeout(() => {
+                const mockQuestions = generateMockQuestions(selectedText);
+                currentPracticeData.questions = mockQuestions;
+                currentPracticeData.status = 'ready';
+                displayPracticeQuestions(mockQuestions);
+                showToast('练习题目生成完成！', 'success');
+            }, 500);
+        }, 3000);
+    }
+    
+    function updateGenerationProgress(progress) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        const progressBar = questionDisplay.querySelector('.bg-primary');
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
+        
+        const statusText = questionDisplay.querySelector('p.text-text-medium-brown');
+        if (statusText) {
+            if (progress < 30) {
+                statusText.textContent = 'AI正在分析您选中的学习内容...';
+            } else if (progress < 60) {
+                statusText.textContent = '正在设计适合的题目类型...';
+            } else if (progress < 90) {
+                statusText.textContent = '正在生成具体的练习题目...';
+            } else {
+                statusText.textContent = '即将完成，请稍候...';
+            }
+        }
+    }
+    
+    function showQuestionGenerationError() {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            <div class="text-center py-8">
+                <div class="w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full flex items-center justify-center">
+                    <span class="material-icons-outlined text-red-500 text-2xl">error</span>
+                </div>
+                <h4 class="text-lg font-semibold text-red-600 mb-2">生成失败</h4>
+                <p class="text-text-medium-brown mb-4">练习题目生成失败，请稍后重试</p>
+                <button onclick="retryQuestionGeneration()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600 transition">
+                    <span class="material-icons-outlined mr-1 text-sm">refresh</span>
+                    重新生成
+                </button>
+            </div>
+        `;
+        
+        showToast('题目生成失败，请重试', 'error');
+    }
+    
+    function retryQuestionGeneration() {
+        if (currentPracticeData.selectedText) {
+            generatePracticeQuestions(currentPracticeData.selectedText);
+        }
+    }
+    
+    function generateMockQuestions(selectedText) {
+        return `基于以下内容的练习题目：
 
+1. 请简要解释以下内容的核心概念：
+"${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"
+
+2. 这个概念在实际应用中有哪些重要作用？
+
+3. 请举一个具体的例子来说明这个概念的应用。
+
+4. 如果要深入学习这个主题，你认为还需要掌握哪些相关知识？
+
+5. 请分析这个概念可能存在的局限性或需要注意的问题。`;
+    }
+    
+    function displayPracticeQuestions(questions) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            <div class="text-text-dark-brown leading-relaxed whitespace-pre-line">
+                ${questions}
+            </div>
+        `;
+        
+        // 重置答题区域
+        const answerTextarea = document.getElementById('practiceAnswer');
+        if (answerTextarea) {
+            answerTextarea.value = '';
+            answerTextarea.placeholder = '请在此输入你的答案...';
+        }
+        
+        // 重置答案历史
+        const answerHistory = document.getElementById('answerHistory');
+        if (answerHistory) {
+            answerHistory.innerHTML = '<p class="text-gray-500">暂无答题记录</p>';
+        }
+        
+        showToast('练习题目生成完成，请开始答题', 'success');
+    }
+    
+    function submitPracticeAnswer() {
+        const answerTextarea = document.getElementById('practiceAnswer');
+        if (!answerTextarea) return;
+        
+        const answer = answerTextarea.value.trim();
+        if (!answer) {
+            showToast('请先输入答案再提交', 'warning');
+            return;
+        }
+        
+        // 保存答案
+        const timestamp = new Date().toLocaleString('zh-CN');
+        currentPracticeData.answers.push({
+            content: answer,
+            timestamp: timestamp
+        });
+        currentPracticeData.status = 'answered';
+        
+        // 更新答案历史显示
+        updateAnswerHistory();
+        
+        // 清空答题区域
+        answerTextarea.value = '';
+        
+        // 显示AI评判按钮
+        const evaluateBtn = document.getElementById('evaluateBtn');
+        if (evaluateBtn) {
+            evaluateBtn.classList.remove('hidden');
+        }
+        
+        showToast('答案已提交，可以继续答题或点击AI评判', 'success');
+    }
+    
+    function updateAnswerHistory() {
+        const answerHistory = document.getElementById('answerHistory');
+        if (!answerHistory || currentPracticeData.answers.length === 0) return;
+        
+        const historyHtml = currentPracticeData.answers.map((answer, index) => `
+            <div class="border-l-4 border-primary pl-3 mb-3">
+                <p class="text-sm text-text-medium-brown mb-1">
+                    <strong>第${index + 1}次提交</strong> - ${answer.timestamp}
+                </p>
+                <p class="text-text-dark-brown">${answer.content}</p>
+            </div>
+        `).join('');
+        
+        answerHistory.innerHTML = historyHtml;
+    }
+    
+    function evaluatePracticeAnswer() {
+        if (currentPracticeData.answers.length === 0) {
+            showToast('请先提交答案再进行评判', 'warning');
+            return;
+        }
+        
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (questionDisplay) {
+            // 保存原始内容
+            const originalContent = questionDisplay.innerHTML;
+            
+            // 立即显示评判进度界面
+            showEvaluationProgress();
+            
+            // 异步执行评判
+            setTimeout(() => {
+                evaluateAnswersAsync(originalContent);
+            }, 100);
+        }
+    }
+    
+    function showEvaluationProgress() {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            <div class="flex flex-col items-center justify-center py-8">
+                <div class="w-16 h-16 mb-4">
+                    <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+                </div>
+                <div class="text-center">
+                    <h4 class="text-lg font-semibold text-text-dark-brown mb-2">AI正在评判答案</h4>
+                    <p class="text-text-medium-brown mb-4">正在分析您的答案并生成详细评判报告...</p>
+                    <div class="w-64 bg-gray-200 rounded-full h-2">
+                        <div class="bg-blue-500 h-2 rounded-full animate-pulse" style="width: 70%"></div>
+                    </div>
+                    <p class="text-xs text-text-gray mt-2">预计需要15-45秒</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    function evaluateAnswersAsync(originalContent) {
+        // 调用后端AI评判
+        if (window.bridge && window.bridge.evaluatePracticeAnswers) {
+            try {
+                // 使用setTimeout真正异步执行，避免界面冻结
+                setTimeout(() => {
+                    try {
+                        console.log('🔄 开始调用后端API评判答案...');
+                        const allAnswers = currentPracticeData.answers.map(a => a.content).join('\n\n---\n\n');
+                        const result = window.bridge.evaluatePracticeAnswers(currentPracticeData.questions, allAnswers);
+                        
+                        // 处理可能的Promise返回值
+                        const handleResult = (evaluation) => {
+                            console.log('📝 收到评判数据:', typeof evaluation, evaluation);
+                            
+                            // 检查是否是JSON字符串
+                            let actualEvaluation = evaluation;
+                            if (typeof evaluation === 'string') {
+                                try {
+                                    const parsed = JSON.parse(evaluation);
+                                    if (parsed && parsed.message) {
+                                        actualEvaluation = parsed.message;
+                                    }
+                                } catch (e) {
+                                    // 如果不是JSON，直接使用原字符串
+                                    actualEvaluation = evaluation;
+                                }
+                            }
+                            
+                            if (actualEvaluation && actualEvaluation.trim()) {
+                                currentPracticeData.evaluation = actualEvaluation;
+                                currentPracticeData.status = 'evaluated';
+                                displayEvaluationResult(originalContent, actualEvaluation);
+                                showToast('AI评判完成！', 'success');
+                                console.log('✅ 评判完成');
+                            } else {
+                                console.error('❌ 评判结果为空或无效');
+                                showEvaluationError(originalContent);
+                            }
+                        };
+                        
+                        // 检查返回值类型
+                        if (result && typeof result.then === 'function') {
+                            // 是Promise对象
+                            console.log('📦 检测到Promise对象，等待解析...');
+                            result.then(handleResult).catch(error => {
+                                console.error('❌ Promise解析失败:', error);
+                                showEvaluationError(originalContent);
+                            });
+                        } else {
+                            // 直接返回值
+                            console.log('📦 检测到直接返回值');
+                            setTimeout(() => handleResult(result), 50);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ 评判API调用失败:', error);
+                        setTimeout(() => {
+                            showEvaluationError(originalContent);
+                        }, 50);
+                    }
+                }, 200); // 延迟200ms确保UI完全更新
+                
+            } catch (error) {
+                console.error('调用evaluatePracticeAnswers失败:', error);
+                showEvaluationError(originalContent);
+            }
+        } else {
+            console.log('🔄 使用模拟数据评判答案...');
+            // 模拟异步评判
+            simulateEvaluation(originalContent);
+        }
+    }
+    
+    function simulateEvaluation(originalContent) {
+        // 模拟评判过程
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 15;
+            if (progress > 90) progress = 90;
+            
+            updateEvaluationProgress(progress);
+        }, 800);
+        
+        // 模拟评判完成
+        setTimeout(() => {
+            clearInterval(progressInterval);
+            updateEvaluationProgress(100);
+            
+            setTimeout(() => {
+                const evaluation = generateMockEvaluation();
+                currentPracticeData.evaluation = evaluation;
+                currentPracticeData.status = 'evaluated';
+                displayEvaluationResult(originalContent, evaluation);
+                showToast('AI评判完成！', 'success');
+            }, 500);
+        }, 4000);
+    }
+    
+    function updateEvaluationProgress(progress) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        const progressBar = questionDisplay.querySelector('.bg-blue-500');
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+        }
+        
+        const statusText = questionDisplay.querySelector('p.text-text-medium-brown');
+        if (statusText) {
+            if (progress < 25) {
+                statusText.textContent = '正在分析您的答案内容...';
+            } else if (progress < 50) {
+                statusText.textContent = '正在对比标准答案...';
+            } else if (progress < 75) {
+                statusText.textContent = '正在生成详细评判...';
+            } else if (progress < 95) {
+                statusText.textContent = '正在整理评判报告...';
+            } else {
+                statusText.textContent = '即将完成，请稍候...';
+            }
+        }
+    }
+    
+    function displayEvaluationResult(originalContent, evaluation) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            ${originalContent}
+            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h4 class="font-semibold text-blue-800 mb-2">
+                    <span class="material-icons-outlined mr-1">psychology</span>
+                    AI评判结果
+                </h4>
+                <div class="text-blue-700 whitespace-pre-line">
+                    ${evaluation}
+                </div>
+            </div>
+        `;
+    }
+    
+    function showEvaluationError(originalContent) {
+        const questionDisplay = document.getElementById('questionDisplay');
+        if (!questionDisplay) return;
+        
+        questionDisplay.innerHTML = `
+            ${originalContent}
+            <div class="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div class="text-center">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-red-100 rounded-full flex items-center justify-center">
+                        <span class="material-icons-outlined text-red-500">error</span>
+                    </div>
+                    <h4 class="text-lg font-semibold text-red-600 mb-2">评判失败</h4>
+                    <p class="text-red-600 mb-4">AI评判过程中出现错误，请稍后重试</p>
+                    <button onclick="retryEvaluation()" class="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">
+                        <span class="material-icons-outlined mr-1 text-sm">refresh</span>
+                        重新评判
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        showToast('评判失败，请重试', 'error');
+    }
+    
+    function retryEvaluation() {
+        if (currentPracticeData.answers.length > 0) {
+            evaluatePracticeAnswer();
+        }
+    }
+    
+    function generateMockEvaluation() {
+        return `📊 答题评估报告
+
+✅ 整体表现：良好
+您的回答显示了对核心概念的基本理解，思路清晰，表达较为准确。
+
+📝 具体评价：
+• 概念理解：★★★★☆ (4/5)
+  - 能够准确把握主要概念
+  - 表达清晰，逻辑性强
+
+• 应用能力：★★★☆☆ (3/5)
+  - 能够举出相关例子
+  - 实际应用的深度可以进一步加强
+
+• 分析深度：★★★☆☆ (3/5)
+  - 分析较为全面
+  - 可以更深入探讨细节和关联
+
+💡 改进建议：
+1. 可以结合更多实际案例来说明概念
+2. 尝试从不同角度分析问题
+3. 注意概念之间的关联性
+
+🎯 知识点掌握程度：75%
+建议继续深入学习相关内容，加强实践应用。`;
+    }
+
+    // 初始化Markdown增强功能
+    function initMarkdownEnhancements() {
+        // 配置Mermaid
+        if (typeof mermaid !== 'undefined') {
+            mermaid.initialize({
+                startOnLoad: false,
+                theme: 'default',
+                securityLevel: 'loose',
+                fontFamily: 'Arial, sans-serif'
+            });
+        }
+        
+        // 配置marked
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                highlight: function(code, lang) {
+                    if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+                        try {
+                            return hljs.highlight(code, { language: lang }).value;
+                        } catch (err) {}
+                    }
+                    return code;
+                },
+                breaks: true,
+                gfm: true
+            });
+        }
+    }
+    
+    // 增强的Markdown渲染函数
+    function renderMarkdownContent(content) {
+        if (!content || typeof marked === 'undefined') {
+            return content;
+        }
+        
+        try {
+            // 预处理：支持任务列表
+            content = content.replace(/^\s*- \[([ x])\] /gm, function(match, checked) {
+                const isChecked = checked === 'x' ? 'checked' : '';
+                return `<li class="task-list-item"><input type="checkbox" ${isChecked} disabled> `;
+            });
+            
+            // 预处理：支持高亮语法 ==text==
+            content = content.replace(/==(.*?)==/g, '<mark>$1</mark>');
+            
+            // 预处理：支持Mermaid图表
+            content = content.replace(/```mermaid\n([\s\S]*?)\n```/g, function(match, code) {
+                const id = 'mermaid-' + Math.random().toString(36).substr(2, 9);
+                return `<div class="mermaid" id="${id}">${code}</div>`;
+            });
+            
+            // 使用marked渲染
+            let html = marked.parse(content);
+            
+            // 后处理：修复任务列表
+            html = html.replace(/<li class="task-list-item"><input[^>]*>/g, function(match) {
+                return match.replace('<li class="task-list-item">', '<li class="task-list-item">');
+            });
+            
+            return html;
+        } catch (error) {
+            console.error('Markdown渲染错误:', error);
+            return content.replace(/\n/g, '<br>');
+        }
+    }
+    
+    // 渲染数学公式
+    function renderMathFormulas(element) {
+        if (typeof renderMathInElement !== 'undefined') {
+            try {
+                renderMathInElement(element, {
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true},
+                        {left: '$', right: '$', display: false},
+                        {left: '\\[', right: '\\]', display: true},
+                        {left: '\\(', right: '\\)', display: false}
+                    ]
+                });
+            } catch (error) {
+                console.error('数学公式渲染错误:', error);
+            }
+        }
+    }
+    
+    // 渲染Mermaid图表
+    function renderMermaidDiagrams(element) {
+        if (typeof mermaid !== 'undefined') {
+            const mermaidElements = element.querySelectorAll('.mermaid');
+            mermaidElements.forEach((el, index) => {
+                try {
+                    mermaid.render(`mermaid-${Date.now()}-${index}`, el.textContent, (svgCode) => {
+                        el.innerHTML = svgCode;
+                    });
+                } catch (error) {
+                    console.error('Mermaid图表渲染错误:', error);
+                    el.innerHTML = `<pre>${el.textContent}</pre>`;
+                }
+            });
+        }
+    }
+    
     // 页面初始化
     function initAll() {
         console.log('开始初始化页面...');
         initializePage();
+        initMarkdownEnhancements();
         
         // 延迟初始化右键菜单，确保DOM完全加载
         setTimeout(() => {
@@ -3442,5 +4525,91 @@
     <div class="context-menu-item" id="deepLearningMenuItem">
         <span class="material-icons-outlined">psychology</span>
         继续深入学习
+    </div>
+    <div class="context-menu-item" id="practiceMenuItem">
+        <span class="material-icons-outlined">quiz</span>
+        练习
+    </div>
+</div>
+
+<!-- 练习面板 -->
+<div id="practicePanel" class="practice-panel hidden">
+    <div class="practice-panel-content">
+        <div class="practice-header">
+            <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
+                <div class="flex items-center space-x-4">
+                    <button id="practiceHistoryBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">history</span>
+                        <span>练习历史</span>
+                    </button>
+                    <button id="newPracticeBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">add_circle_outline</span>
+                        <span>新练习</span>
+                    </button>
+                    <button id="startPracticeBtn" class="flex items-center text-white bg-primary px-4 py-2 rounded-lg shadow hover:bg-green-600">
+                        <span class="material-icons-outlined mr-2">play_arrow</span>
+                        <span>开始新练习</span>
+                    </button>
+                    <button id="savePracticeBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">save_alt</span>
+                        <span>保存评估结果</span>
+                    </button>
+                    <button id="errorBankBtn" class="flex items-center text-text-gray hover:text-primary">
+                        <span class="material-icons-outlined mr-1">rule_folder</span>
+                        <span>错题入库</span>
+                    </button>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="flex items-center text-sm text-text-medium-brown">
+                        <span>练习ID:</span>
+                        <span id="practiceId" class="font-mono ml-2 p-1 bg-bg-light-gray rounded">TECH-20240917-001</span>
+                    </div>
+                    <button id="closePracticeBtn" class="text-text-gray hover:text-red-500">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="practice-body">
+            <div class="flex-grow flex flex-col bg-white p-6 rounded-xl shadow-sm">
+                <div class="flex-grow mb-4 overflow-y-auto pr-2">
+                    <h3 class="text-lg font-semibold text-text-dark-brown mb-3">题目展示区</h3>
+                    <div id="questionDisplay" class="bg-bg-light-gray p-4 rounded-lg mb-4">
+                        <p class="text-text-dark-brown leading-relaxed">
+                            正在生成练习题目，请稍候...
+                        </p>
+                    </div>
+                    <h4 class="text-md font-semibold text-text-dark-brown mb-2">用户答案记录：</h4>
+                    <div id="answerHistory" class="space-y-3 text-sm text-text-medium-brown">
+                        <p class="text-gray-500">暂无答题记录</p>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold text-text-dark-brown mb-3">答题区域</h3>
+                    <textarea id="practiceAnswer" class="w-full h-28 p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-200" placeholder="请在此输入你的答案..."></textarea>
+                    <p class="text-xs text-text-gray mt-1">💡 提示: 请仔细阅读题目，认真思考后再作答。</p>
+                </div>
+                <div class="mb-4">
+                    <details class="group">
+                        <summary class="flex items-center justify-between cursor-pointer p-2 bg-bg-light-blue-gray rounded-lg hover:bg-gray-200">
+                            <h3 class="text-lg font-semibold text-text-dark-brown">相关学习内容</h3>
+                            <span class="material-icons-outlined transition-transform duration-300 group-open:rotate-180">expand_more</span>
+                        </summary>
+                        <div id="relatedContent" class="mt-3 p-4 bg-bg-light-green rounded-lg">
+                            <p class="text-text-dark-brown">基于选中的学习内容生成的练习题目</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-4">
+                <button id="submitAnswerBtn" class="px-6 py-2 rounded-lg text-white bg-primary hover:bg-green-600 transition shadow">
+                    提交答案
+                </button>
+                <button id="evaluateBtn" class="px-6 py-2 rounded-lg text-white bg-blue-500 hover:bg-blue-600 transition shadow hidden">
+                    AI评判
+                </button>
+            </div>
+        </div>
     </div>
 </div>

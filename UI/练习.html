@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            primary: "#32C77F",
+            warning: "#FF9B27",
+            danger: "#ED4B4B",
+            "text-dark-brown": "#715D46",
+            "text-medium-brown": "#9B8D7D",
+            "text-gray": "#828282",
+            "bg-light-blue": "#D5F8FF",
+            "bg-beige": "#FFFFD6", // Corrected hex code
+            "bg-light-green": "#E2F2EB",
+            "bg-light-gray": "#F2F0ED",
+            "bg-light-blue-gray": "#F5F7F9",
+          },
+          fontFamily: {
+            sans: ['"Noto Sans SC"', 'sans-serif'],
+          },
+          borderRadius: {
+            'xl': '1rem',
+          },
+        },
+      },
+    };
+  </script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet"/>
+</head>
+<body class="bg-bg-light-blue-gray font-sans">
+<div class="flex h-screen bg-white">
+<aside class="w-64 flex flex-col p-4 bg-white border-r border-gray-200" id="sidebar">
+<div class="flex items-center mb-8">
+<div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center mr-3">
+<span class="material-icons-outlined text-white">pets</span>
+</div>
+<h1 class="text-lg font-bold text-text-dark-brown">柯基学习小助手</h1>
+</div>
+<div class="flex flex-col items-center mb-8">
+<img alt="User Avatar" class="w-20 h-20 rounded-full mb-2" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXs0Mg4a15hzy1OIlUz-x1NZ2Sr6t75rKa8WMPlFSucuN1mgje2BiwHSB6red_l91Fdg1rduYwvlR2uNdrFIWLzNRhgz4LLuSsPiDs4D1i5ri5gPzDV-irooIfv4XuLChxg1VrwtdqEYXxxlXyYcI6YRydb5iUhiEpx0hymOo_dEsFhHO_zNl0fs2iXm-4eiT4JwkaIanx0jpD5PQtgSv4Ef9eucxao7dDZSrWN4h3S2wusUo4WDqCKBXi9G9pnwgdgcIOnede4LyT"/>
+<p class="font-semibold text-text-dark-brown">柯基的主人</p>
+<p class="text-sm text-text-medium-brown">学习等级: Lv.5 <span class="text-yellow-400">⭐</span></p>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">work</span>
+<span>工作台</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">edit_note</span>
+<span>笔记本</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-white bg-primary rounded-lg shadow-md" href="#">
+<span class="material-icons-outlined mr-3">model_training</span>
+<span>技术练习</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">mic</span>
+<span>录音室</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">smart_toy</span>
+<span>AI伙伴</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">book</span>
+<span>知识库</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">bar_chart</span>
+<span>学习报告</span>
+</a>
+<a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg" href="#">
+<span class="material-icons-outlined mr-3">settings</span>
+<span>设置</span>
+</a>
+</nav>
+<div class="mt-auto">
+<button class="w-full flex justify-center items-center text-text-gray" onclick="document.getElementById('sidebar').classList.toggle('w-64'); document.getElementById('sidebar').classList.toggle('w-20');">
+<span class="material-icons-outlined">chevron_left</span>
+</button>
+</div>
+</aside>
+<main class="flex-1 flex flex-col bg-bg-light-blue-gray">
+<div class="p-6 flex-grow flex flex-col">
+<div class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
+<div class="flex items-center space-x-4">
+<button class="flex items-center text-text-gray hover:text-primary">
+<span class="material-icons-outlined mr-1">history</span>
+<span>练习历史</span>
+</button>
+<button class="flex items-center text-text-gray hover:text-primary">
+<span class="material-icons-outlined mr-1">add_circle_outline</span>
+<span>新练习</span>
+</button>
+<button class="flex items-center text-white bg-primary px-4 py-2 rounded-lg shadow hover:bg-green-600">
+<span class="material-icons-outlined mr-2">play_arrow</span>
+<span>开始新练习</span>
+</button>
+<button class="flex items-center text-text-gray hover:text-primary">
+<span class="material-icons-outlined mr-1">save_alt</span>
+<span>保存评估结果</span>
+</button>
+<button class="flex items-center text-text-gray hover:text-primary">
+<span class="material-icons-outlined mr-1">rule_folder</span>
+<span>错题入库</span>
+</button>
+</div>
+<div class="flex items-center text-sm text-text-medium-brown">
+<span>练习ID:</span>
+<span class="font-mono ml-2 p-1 bg-bg-light-gray rounded">TECH-20240917-001</span>
+</div>
+</div>
+<div class="flex-grow flex flex-col bg-white p-6 rounded-xl shadow-sm">
+<div class="flex-grow mb-4 overflow-y-auto pr-2">
+<h3 class="text-lg font-semibold text-text-dark-brown mb-3">题目展示区</h3>
+<div class="bg-bg-light-gray p-4 rounded-lg mb-4">
+<p class="text-text-dark-brown leading-relaxed">
+<strong>原题：</strong> 请解释一下什么是“闭包”（Closure）？并举一个在JavaScript中的实际应用例子。
+                        </p>
+</div>
+<h4 class="text-md font-semibold text-text-dark-brown mb-2">用户答案记录：</h4>
+<div class="space-y-3 text-sm text-text-medium-brown">
+<p><strong>第一次尝试:</strong> 闭包是一个函数，它可以访问其外部函数作用域中的变量。</p>
+<p><strong>第二次尝试:</strong> 闭包是指有权访问另一个函数作用域中的变量的函数。创建闭包的常见方式就是在一个函数内部创建另一个函数。当内部函数被返回或传递到外部时，它会“记住”其创建时的环境（词法作用域）。</p>
+</div>
+</div>
+<div class="mb-4">
+<h3 class="text-lg font-semibold text-text-dark-brown mb-3">答题区域</h3>
+<textarea class="w-full h-28 p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-200" placeholder="请在此输入你的答案..."></textarea>
+<p class="text-xs text-text-gray mt-1">💡 提示: 尝试从定义、特性和应用场景三个方面来回答。</p>
+</div>
+<div class="mb-4">
+<details class="group">
+<summary class="flex items-center justify-between cursor-pointer p-2 bg-bg-light-blue-gray rounded-lg hover:bg-gray-200">
+<h3 class="text-lg font-semibold text-text-dark-brown">相关学习内容</h3>
+<span class="material-icons-outlined transition-transform duration-300 group-open:rotate-180">expand_more</span>
+</summary>
+<div class="mt-3 p-4 bg-bg-light-green rounded-lg">
+<ul class="list-disc list-inside space-y-2 text-text-dark-brown">
+<li><strong>MDN文档:</strong> 闭包 - JavaScript | MDN</li>
+<li><strong>视频教程:</strong> JavaScript 闭包（Closure）通俗易懂的讲解</li>
+<li><strong>相关知识点:</strong> 作用域链、词法作用域、内存管理</li>
+</ul>
+</div>
+</details>
+</div>
+</div>
+<div class="mt-6 flex justify-end space-x-4">
+<button class="px-6 py-2 rounded-lg text-text-gray bg-gray-200 hover:bg-gray-300 transition">
+                    关闭
+                </button>
+<button class="px-6 py-2 rounded-lg text-white bg-primary hover:bg-green-600 transition shadow">
+                    保存练习
+                </button>
+</div>
+</div>
+</main>
+</div>
+
+</body></html>
