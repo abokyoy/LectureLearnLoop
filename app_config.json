@@ -1,9 +1,19 @@
 {
-  "llm_provider": "Ollama",
+  "llm_provider": "Qwen",
   "ollama_model": "deepseek-r1:14b",
   "ollama_api_url": "http://localhost:11434/api/generate",
+  "ollama_is_selected": false,
   "gemini_api_key": "AIzaSyD8wj1WlhKZ4v281Vwb4KZyW1x2jkyqG4M",
   "gemini_model": "gemini-1.5-flash-002",
+  "gemini_is_selected": false,
+  "deepseek_api_key": "sk-1b53cb42e4f6455bbd475dc41cc3cc61",
+  "deepseek_model": "deepseek-chat",
+  "deepseek_api_url": "https://api.deepseek.com/v1/chat/completions",
+  "deepseek_is_selected": false,
+  "qwen_api_key": "sk-36e5536af09040f998b75ba48b17c421",
+  "qwen_model": "qwen-flash",
+  "qwen_api_url": "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+  "qwen_is_selected": true,
   "summary_mode": "manual",
   "auto_summary_interval": 20,
   "whisper_language": "auto",
@@ -12,9 +22,5 @@
   "last_document_path": "D:/obsidian/具体事务/学习/大模型相关学习/【機器學習2021】機器學習任務攻略 下.md",
   "main_window_geometry": "AdnQywADAAAAAAFrAAAAAAAABhoAAAP4AAABawAAAB4AAAYaAAAD+AAAAAAAAAAABqsAAAFrAAAAHgAABhoAAAP4",
   "main_window_state_v1": "AAAA/wAAAAH9AAAAAgAAAAAAAASaAAADnvwCAAAAAfwAAAAhAAADngAAAMQA/////AEAAAAC/AAAAAAAAAMsAAABtQD////8AgAAAAL7AAAAGABDAG8AbgB0AHIAbwBsAHMARABvAGMAawEAAAAhAAAAjgAAAEEA////+wAAABYAUwB1AG0AbQBhAHIAeQBEAG8AYwBrAQAAALMAAAMMAAAAfwD////7AAAAIgBUAHIAYQBuAHMAYwByAGkAcAB0AGkAbwBuAEQAbwBjAGsBAAADMAAAAWoAAABtAP///wAAAAMAAASwAAAA1/wBAAAAAfsAAAAOAEwAbwBnAEQAbwBjAGsAAAAAAAAABLAAAABPAP///wAAABIAAAOeAAAABAAAAAQAAAAIAAAACPwAAAAA",
-  "deepseek_api_key": "sk-1b53cb42e4f6455bbd475dc41cc3cc61",
-  "deepseek_model": "deepseek-chat",
-  "deepseek_api_url": "https://api.deepseek.com/v1/chat/completions",
-  "last_selected_subject": "机器学习",
-  "test_key": "test_value"
+  "last_selected_subject": "机器学习"
 }

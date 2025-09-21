@@ -98,6 +98,10 @@
             <label for="provider-gemini">Gemini (云端)</label>
         </div>
         <div class="provider-radio">
+            <input type="radio" id="provider-qwen" name="llm_provider" value="Qwen">
+            <label for="provider-qwen">通义千问 (阿里云)</label>
+        </div>
+        <div class="provider-radio">
             <input type="radio" id="provider-ollama" name="llm_provider" value="Ollama">
             <label for="provider-ollama">Ollama (本地)</label>
         </div>
@@ -118,6 +122,12 @@
             <label for="deepseek-url">API URL:</label>
             <input type="text" id="deepseek-url" placeholder="https://api.deepseek.com/v1/chat/completions">
         </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testConnection('DeepSeek', 'DeepSeek')" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
     </div>
 
     <!-- Gemini 设置 -->
@@ -131,6 +141,39 @@
             <label for="gemini-model">模型名称:</label>
             <input type="text" id="gemini-model" placeholder="gemini-1.5-flash-002">
         </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testConnection('Gemini', 'Gemini')" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
+    </div>
+
+    <!-- 通义千问设置 -->
+    <div class="config-group" id="qwen-config">
+        <h3>通义千问设置</h3>
+        <div class="form-row">
+            <label for="qwen-key">API Key:</label>
+            <input type="password" id="qwen-key" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" value="sk-36e5536af09040f998b75ba48b17c421">
+        </div>
+        <div class="form-row">
+            <label for="qwen-model">模型名称:</label>
+            <select id="qwen-model">
+                <option value="qwen-flash">qwen-flash (推荐)</option>
+                <option value="qwen-plus">qwen-plus</option>
+                <option value="qwen-max">qwen-max</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="qwen-url">API URL:</label>
+            <input type="text" id="qwen-url" placeholder="https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation" value="https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation">
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testQwenConnection()" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
+        </div>
     </div>
 
     <!-- Ollama 设置 -->
@@ -143,6 +186,12 @@
         <div class="form-row">
             <label for="ollama-model">模型名称:</label>
             <input type="text" id="ollama-model" placeholder="deepseek-r1:1.5b">
+        </div>
+        <div class="form-row">
+            <label></label>
+            <button type="button" class="save-btn" onclick="testConnection('Ollama', 'Ollama')" style="margin-right: 10px;">
+                🔗 测试连接
+            </button>
         </div>
     </div>
 
@@ -188,6 +237,28 @@
 
     <!-- 状态消息 -->
     <div id="status-message" class="hidden"></div>
+    
+    <!-- 测试连接结果弹出面板 -->
+    <div id="test-connection-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50" onclick="closeTestModal()">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6" onclick="event.stopPropagation()">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">连接测试结果</h3>
+                    <button onclick="closeTestModal()" class="text-gray-400 hover:text-gray-600">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
+                <div id="test-modal-content" class="mb-4">
+                    <!-- 测试结果内容将在这里显示 -->
+                </div>
+                <div class="flex justify-end">
+                    <button onclick="closeTestModal()" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -263,6 +334,11 @@
         document.getElementById('gemini-key').value = config.gemini_api_key || '';
         document.getElementById('gemini-model').value = config.gemini_model || 'gemini-1.5-flash-002';
         
+        // 通义千问配置
+        document.getElementById('qwen-key').value = config.qwen_api_key || 'sk-36e5536af09040f998b75ba48b17c421';
+        document.getElementById('qwen-model').value = config.qwen_model || 'qwen-flash';
+        document.getElementById('qwen-url').value = config.qwen_api_url || 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+        
         // Ollama配置
         document.getElementById('ollama-url').value = config.ollama_api_url || 'http://localhost:11434/api/generate';
         document.getElementById('ollama-model').value = config.ollama_model || 'deepseek-r1:1.5b';
@@ -287,6 +363,7 @@
         // 隐藏所有配置区域
         document.getElementById('deepseek-config').style.display = 'none';
         document.getElementById('gemini-config').style.display = 'none';
+        document.getElementById('qwen-config').style.display = 'none';
         document.getElementById('ollama-config').style.display = 'none';
         
         // 显示选中的配置区域
@@ -294,6 +371,8 @@
             document.getElementById('deepseek-config').style.display = 'block';
         } else if (selectedProvider === 'Gemini') {
             document.getElementById('gemini-config').style.display = 'block';
+        } else if (selectedProvider === 'Qwen') {
+            document.getElementById('qwen-config').style.display = 'block';
         } else if (selectedProvider === 'Ollama') {
             document.getElementById('ollama-config').style.display = 'block';
         }
@@ -319,6 +398,9 @@
                 deepseek_api_url: document.getElementById('deepseek-url').value.trim(),
                 gemini_api_key: document.getElementById('gemini-key').value.trim(),
                 gemini_model: document.getElementById('gemini-model').value.trim(),
+                qwen_api_key: document.getElementById('qwen-key').value.trim(),
+                qwen_model: document.getElementById('qwen-model').value.trim(),
+                qwen_api_url: document.getElementById('qwen-url').value.trim(),
                 ollama_api_url: document.getElementById('ollama-url').value.trim(),
                 ollama_model: document.getElementById('ollama-model').value.trim(),
                 summary_mode: document.getElementById('summary-mode').value,
@@ -381,8 +463,82 @@
         }
     }
 
+    // 测试通义千问连接
+    function testQwenConnection() {
+        testConnection('Qwen', '通义千问');
+    }
+    
+    // 通用测试连接函数
+    function testConnection(provider, displayName) {
+        debugLog('开始测试' + displayName + '连接');
+        
+        if (!window.bridge || !window.bridge.testLLMConnection) {
+            showTestModal('❌ 连接测试失败', 'Bridge对象或testLLMConnection方法不可用', 'error');
+            return;
+        }
+        
+        // 显示测试中状态
+        showTestModal('🔄 正在测试连接', '正在测试 ' + displayName + ' 连接，请稍候...', 'loading');
+        
+        try {
+            window.bridge.testLLMConnection(provider).then(function(result) {
+                debugLog(displayName + '连接测试结果: ' + result);
+                
+                if (result && result.includes('✅')) {
+                    showTestModal('✅ 连接测试成功', result, 'success');
+                } else {
+                    showTestModal('❌ 连接测试失败', result || '无响应', 'error');
+                }
+            }).catch(function(error) {
+                debugError(displayName + '连接测试异常: ' + error);
+                showTestModal('❌ 连接测试异常', error.toString(), 'error');
+            });
+        } catch (error) {
+            debugError('调用testLLMConnection时发生错误: ' + error.message);
+            showTestModal('❌ 测试异常', '测试连接时发生错误: ' + error.message, 'error');
+        }
+    }
+    
+    // 显示测试结果弹出面板
+    function showTestModal(title, content, type) {
+        const modal = document.getElementById('test-connection-modal');
+        const modalContent = document.getElementById('test-modal-content');
+        
+        let bgColor = 'bg-blue-50';
+        let textColor = 'text-blue-800';
+        let borderColor = 'border-blue-200';
+        
+        if (type === 'success') {
+            bgColor = 'bg-green-50';
+            textColor = 'text-green-800';
+            borderColor = 'border-green-200';
+        } else if (type === 'error') {
+            bgColor = 'bg-red-50';
+            textColor = 'text-red-800';
+            borderColor = 'border-red-200';
+        }
+        
+        modalContent.innerHTML = `
+            <div class="p-4 rounded-lg ${bgColor} ${borderColor} border">
+                <h4 class="font-semibold ${textColor} mb-2">${title}</h4>
+                <pre class="text-sm ${textColor} whitespace-pre-wrap">${content}</pre>
+            </div>
+        `;
+        
+        modal.classList.remove('hidden');
+    }
+    
+    // 关闭测试结果弹出面板
+    function closeTestModal() {
+        const modal = document.getElementById('test-connection-modal');
+        modal.classList.add('hidden');
+    }
+
     // 将函数暴露到全局作用域
     window.saveConfiguration = saveConfiguration;
+    window.testQwenConnection = testQwenConnection;
+    window.testConnection = testConnection;
+    window.closeTestModal = closeTestModal;
     window.loadContent = loadContent;
 
     // 页面初始化

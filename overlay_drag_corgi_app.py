@@ -607,6 +607,9 @@ class CorgiWebBridge(QObject):
             self.config.update(new_config)
             new_provider = self.config.get("llm_provider", "Ollama")
             
+            # 更新选择标志位
+            self._update_provider_selection(new_provider)
+            
             # 保存到文件
             success = save_config(self.config)
             
@@ -626,6 +629,19 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             self.logger.error(f"❌ 保存配置异常: {e}")
             return False
+    
+    def _update_provider_selection(self, selected_provider):
+        """更新LLM提供商的选择标志位"""
+        providers = ["ollama", "gemini", "deepseek", "qwen"]
+        
+        for provider in providers:
+            is_selected_key = f"{provider}_is_selected"
+            if provider.lower() == selected_provider.lower():
+                self.config[is_selected_key] = True
+                self.logger.info(f"✅ 设置 {provider} 为选中状态")
+            else:
+                self.config[is_selected_key] = False
+                self.logger.info(f"❌ 设置 {provider} 为未选中状态")
 
     # ==================== 知识点提取功能 ====================
     
@@ -1039,6 +1055,49 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"❌ 删除异常: {e}")
             print(f"❌ 删除失败: {e}")
             return False
+    
+    @Slot()
+    def triggerManualDebug(self):
+        """手动触发调试验证面板"""
+        print("\n" + "="*80)
+        print("🔧 手动触发调试验证面板")
+        print("="*80)
+        result = self.validateAllFileOperations()
+        print("\n📋 调试验证结果:")
+        print(result)
+        print("="*80)
+        return result
+    
+    @Slot(str, result=str)
+    def testLLMConnection(self, provider):
+        """测试LLM连接"""
+        try:
+            self.logger.info(f"开始测试 {provider} 连接")
+            
+            # 测试用的简单提示词
+            test_prompt = "请回复'连接测试成功'"
+            
+            if provider == "Qwen":
+                result = self._call_qwen_api(test_prompt)
+            elif provider == "DeepSeek":
+                result = self._call_deepseek_api(test_prompt)
+            elif provider == "Gemini":
+                result = self._call_gemini_api(test_prompt)
+            elif provider == "Ollama":
+                result = self._call_ollama_api(test_prompt)
+            else:
+                return f"❌ 不支持的提供商: {provider}"
+            
+            if result:
+                self.logger.info(f"✅ {provider} 连接测试成功")
+                return f"✅ {provider} 连接测试成功\n回复内容: {result[:100]}{'...' if len(result) > 100 else ''}"
+            else:
+                self.logger.error(f"❌ {provider} 连接测试失败: 无响应")
+                return f"❌ {provider} 连接测试失败: 无响应"
+                
+        except Exception as e:
+            self.logger.error(f"❌ {provider} 连接测试异常: {e}")
+            return f"❌ {provider} 连接测试异常: {str(e)}"
     
     @Slot(result=str)
     def validateAllFileOperations(self):
@@ -1643,14 +1702,16 @@ class CorgiWebBridge(QObject):
             # 定义fallback顺序
             fallback_order = []
             if provider == "Ollama":
-                fallback_order = ["Ollama", "DeepSeek", "Gemini"]
+                fallback_order = ["Ollama", "DeepSeek", "Gemini", "Qwen"]
             elif provider == "Gemini":
-                fallback_order = ["Gemini", "Ollama", "DeepSeek"]
+                fallback_order = ["Gemini", "Ollama", "DeepSeek", "Qwen"]
             elif provider == "DeepSeek":
-                fallback_order = ["DeepSeek", "Ollama", "Gemini"]
+                fallback_order = ["DeepSeek", "Ollama", "Gemini", "Qwen"]
+            elif provider == "Qwen":
+                fallback_order = ["Qwen", "DeepSeek", "Ollama", "Gemini"]
             else:
                 self.logger.warning(f"未知的LLM提供商: {provider}，使用默认fallback顺序")
-                fallback_order = ["Ollama", "DeepSeek", "Gemini"]
+                fallback_order = ["Ollama", "DeepSeek", "Gemini", "Qwen"]
             
             # 尝试每个提供商
             for i, current_provider in enumerate(fallback_order):
@@ -1664,6 +1725,8 @@ class CorgiWebBridge(QObject):
                         result = self._call_gemini_api(prompt)
                     elif current_provider == "DeepSeek":
                         result = self._call_deepseek_api(prompt)
+                    elif current_provider == "Qwen":
+                        result = self._call_qwen_api(prompt)
                     else:
                         continue
                     
@@ -1818,6 +1881,69 @@ class CorgiWebBridge(QObject):
             return None
         except Exception as e:
             self.logger.error(f"DeepSeek请求异常: {e}")
+            return None
+    
+    def _call_qwen_api(self, prompt):
+        """调用通义千问 API"""
+        import requests
+        
+        api_key = self.config.get("qwen_api_key", "").strip()
+        model = self.config.get("qwen_model", "qwen-flash").strip()
+        url = self.config.get("qwen_api_url", "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation").strip()
+        
+        if not api_key:
+            self.logger.error("通义千问未配置API Key")
+            return None
+        
+        self.logger.info(f"调用通义千问 API: {url}, 模型: {model}")
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        payload = {
+            "model": model,
+            "input": {
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            },
+            "parameters": {
+                "result_format": "message"
+            }
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            
+            self.logger.info(f"通义千问响应状态码: {response.status_code}")
+            
+            if not response.ok:
+                self.logger.error(f"通义千问调用失败: HTTP {response.status_code}")
+                self.logger.error(f"响应内容: {response.text}")
+                return None
+            
+            data = response.json()
+            
+            if "output" in data and "choices" in data["output"] and len(data["output"]["choices"]) > 0:
+                content = data["output"]["choices"][0].get("message", {}).get("content", "").strip()
+                if content:
+                    self.logger.info(f"通义千问回复成功，长度: {len(content)}")
+                    return content
+            
+            self.logger.error("无法解析通义千问响应")
+            self.logger.error(f"响应数据: {data}")
+            return None
+            
+        except requests.exceptions.ConnectionError as e:
+            self.logger.error(f"通义千问连接失败: {e}")
+            return None
+        except requests.exceptions.Timeout as e:
+            self.logger.error(f"通义千问请求超时: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"通义千问请求异常: {e}")
             return None
 
     @Slot(str, result=str)
@@ -2753,7 +2879,7 @@ class OverlayDragCorgiApp(QMainWindow):
         '''
     
     def generate_settings_content(self):
-        """生成设置内容"""
+        """生成设置内容 - 备用方案，实际使用模板系统"""
         return '''
         <div class="bg-white rounded-xl shadow-sm p-6">
             <h3 class="text-xl font-semibold text-text-dark-brown mb-6">设置</h3>
@@ -2763,6 +2889,7 @@ class OverlayDragCorgiApp(QMainWindow):
                     <select class="w-full p-3 border border-gray-300 rounded-lg">
                         <option>Gemini Pro</option>
                         <option>Ollama</option>
+                        <option>通义千问</option>
                         <option>规则匹配</option>
                     </select>
                 </div>
@@ -5671,10 +5798,11 @@ def main():
     
     window = OverlayDragCorgiApp()
     
-    # 在应用启动后立即验证后端功能
-    def validate_on_startup():
+    # 手动调试验证功能（不自动执行）
+    def manual_validate_debug():
+        """手动触发调试验证功能"""
         print("\n" + "="*80)
-        print("🚀 应用启动完成，开始验证后端功能")
+        print("🚀 手动触发调试验证功能")
         print("="*80)
         
         # 获取bridge对象并验证功能
@@ -5689,8 +5817,8 @@ def main():
         else:
             print("❌ 无法获取bridge对象")
     
-    # 延迟3秒后执行验证，确保应用完全启动
-    QTimer.singleShot(3000, validate_on_startup)
+    # 将手动验证函数绑定到window对象，以便需要时调用
+    window.manual_validate_debug = manual_validate_debug
     
     window.show()
     

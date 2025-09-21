@@ -1358,12 +1358,8 @@
                 const debugPanel = document.getElementById('debugPanel');
                 const debugLog = document.getElementById('debugLog');
                 
+                // 只记录调试信息到日志容器，但不自动显示面板
                 if (debugPanel && debugLog) {
-                    if (!debugVisible) {
-                        debugPanel.style.display = 'block';
-                        debugVisible = true;
-                    }
-                    
                     const timestamp = new Date().toLocaleTimeString();
                     const logEntry = document.createElement('div');
                     logEntry.style.marginBottom = '5px';
