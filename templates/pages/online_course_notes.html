@@ -362,9 +362,65 @@
     .context-menu-item:hover {
         background-color: #f3f4f6;
     }
-    .context-menu-item .material-icons-outlined {
+    .task-list-item .material-icons-outlined {
         margin-right: 8px;
         font-size: 16px;
+    }
+    
+    /* 设备选择面板样式 */
+    .device-item {
+        transition: all 0.2s ease;
+    }
+    
+    .device-item:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    
+    .device-item.selected {
+        border-color: #10b981 !important;
+        background-color: #ecfdf5 !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+    }
+    
+    /* 电平条动画 */
+    .level-bar {
+        transition: width 0.1s ease-out;
+    }
+    
+    /* 弹出面板动画 */
+    .modal-enter {
+        animation: modalEnter 0.3s ease-out;
+    }
+    
+    @keyframes modalEnter {
+        from {
+            opacity: 0;
+            transform: scale(0.9);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+    
+    /* 设备选择面板滚动条样式 */
+    #device-list::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    #device-list::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 3px;
+    }
+    
+    #device-list::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 3px;
+    }
+    
+    #device-list::-webkit-scrollbar-thumb:hover {
+        background: #a1a1a1;
     }
 </style>
 
@@ -466,6 +522,18 @@
                 
                 <!-- 录音控制区域 -->
                 <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <!-- 设备选择区域 -->
+                    <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                        <div id="selected-device-info" class="flex items-center text-sm text-gray-600">
+                            <span class="material-icons-outlined mr-1 text-sm">settings_input_component</span>
+                            <span id="device-name">未选择设备</span>
+                        </div>
+                        <button id="choose-device-btn" class="px-3 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600" onclick="chooseInputDevice()">
+                            <span class="material-icons-outlined mr-1 text-xs">mic</span>
+                            选择设备
+                        </button>
+                    </div>
+                    
                     <div class="flex items-center justify-between mb-3">
                         <div id="recording-status" class="flex items-center text-sm text-gray-500">
                             <span class="material-icons-outlined mr-1 text-sm">mic_off</span>
@@ -551,6 +619,58 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 设备选择弹出面板 -->
+<div id="device-selector-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+        <!-- 头部 -->
+        <div class="flex items-center justify-between p-6 border-b border-gray-200">
+            <div class="flex items-center">
+                <span class="material-icons-outlined text-primary mr-3 text-2xl">settings_input_component</span>
+                <h2 class="text-xl font-semibold text-text-dark-brown">选择音频输入设备</h2>
+            </div>
+            <button onclick="closeDeviceSelector()" class="text-text-gray hover:text-red-500 transition-colors">
+                <span class="material-icons-outlined">close</span>
+            </button>
+        </div>
+        
+        <!-- 设备列表区域 -->
+        <div class="p-6">
+            <div class="mb-4">
+                <p class="text-sm text-text-medium-brown mb-2">
+                    <span class="material-icons-outlined text-sm mr-1">info</span>
+                    选择您要使用的音频输入设备，点击设备进行选择
+                </p>
+            </div>
+            
+            <!-- 设备列表 -->
+            <div id="device-list" class="space-y-3 max-h-96 overflow-y-auto">
+                <div class="flex items-center justify-center py-8">
+                    <div class="animate-spin mr-3">
+                        <span class="material-icons-outlined text-primary text-2xl">refresh</span>
+                    </div>
+                    <span class="text-text-medium-brown">正在扫描音频设备...</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 底部按钮 -->
+        <div class="flex items-center justify-between p-6 border-t border-gray-200 bg-gray-50">
+            <div class="text-sm text-text-medium-brown">
+                <span class="material-icons-outlined text-sm mr-1">info</span>
+                选择您要用于录音的音频输入设备
+            </div>
+            <div class="flex gap-3">
+                <button onclick="closeDeviceSelector()" class="px-4 py-2 text-text-gray border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors">
+                    取消
+                </button>
+                <button id="confirm-device-btn" onclick="simpleConfirmDevice()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed" disabled>
+                    确认选择
+                </button>
             </div>
         </div>
     </div>
@@ -733,6 +853,382 @@
         showAudioDeviceSelector();
     };
     
+    // 选择输入设备 - 显示HTML弹出面板
+    window.chooseInputDevice = function() {
+        debugLog('打开设备选择面板');
+        
+        const modal = document.getElementById('device-selector-modal');
+        if (modal) {
+            // 显示面板
+            modal.classList.remove('hidden');
+            modal.style.display = '';
+            
+            // 添加动画效果
+            const modalContent = modal.querySelector('.bg-white');
+            if (modalContent) {
+                modalContent.classList.add('modal-enter');
+            }
+            
+            // 重置面板状态
+            const confirmBtn = document.getElementById('confirm-device-btn');
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+            }
+            
+            // 开始扫描设备
+            scanAudioDevices();
+        } else {
+            showMessage('设备选择面板不可用', 'error');
+        }
+    };
+    
+    // 关闭设备选择面板
+    window.closeDeviceSelector = function() {
+        debugLog('关闭设备选择面板');
+        
+        const modal = document.getElementById('device-selector-modal');
+        if (modal) {
+            modal.classList.add('hidden');
+        }
+        
+        // 停止设备监控
+        stopDeviceMonitoring();
+        
+        // 重置确认按钮状态
+        const confirmBtn = document.getElementById('confirm-device-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+        }
+        
+        // 重置选择状态
+        selectedDeviceIndex = null;
+        selectedDeviceName = null;
+        selectedDeviceDisplayName = null;
+        window.selectedDeviceIndex = null;
+        window.selectedDeviceName = null;
+        window.selectedDeviceDisplayName = null;
+        
+        // 清空设备列表
+        const deviceList = document.getElementById('device-list');
+        if (deviceList) {
+            deviceList.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin mr-3"><span class="material-icons-outlined text-primary text-2xl">refresh</span></div><span class="text-text-medium-brown">正在扫描音频设备...</span></div>';
+        }
+    };
+    
+    // 全局变量
+    let deviceMonitoringInterval = null;
+    let selectedDeviceIndex = null;
+    let selectedDeviceName = null;
+    let selectedDeviceDisplayName = null;
+    let availableDevices = [];
+    
+    // 简化的日志函数
+    function debugLog(message) {
+        console.log(message);
+    }
+    
+    // 扫描音频设备
+    function scanAudioDevices() {
+        debugLog('开始扫描音频设备');
+        
+        if (window.bridge && window.bridge.getAudioDevices) {
+            window.bridge.getAudioDevices(function(result) {
+                try {
+                    const data = JSON.parse(result);
+                    if (data.success && data.devices) {
+                        availableDevices = data.devices;
+                        displayDeviceList(data.devices);
+                        
+                        // 暂时禁用设备监控，避免卡死
+                        // setTimeout(() => {
+                        //     startDeviceMonitoring();
+                        // }, 1000);
+                        
+                        debugLog('设备列表显示完成，电平监控已禁用');
+                    } else {
+                        showDeviceError('未找到可用的音频输入设备');
+                    }
+                } catch (e) {
+                    debugError('解析设备列表失败: ' + e.message);
+                    showDeviceError('获取设备列表失败');
+                }
+            });
+        } else {
+            showDeviceError('设备扫描功能不可用');
+        }
+    }
+    
+    // 显示设备列表
+    function displayDeviceList(devices) {
+        const deviceList = document.getElementById('device-list');
+        if (!deviceList) return;
+        
+        deviceList.innerHTML = '';
+        
+        devices.forEach((device, index) => {
+            const deviceItem = document.createElement('div');
+            deviceItem.className = 'device-item p-4 border border-gray-200 rounded-lg hover:border-primary hover:bg-blue-50 cursor-pointer transition-all';
+            deviceItem.dataset.deviceIndex = device.index;
+            deviceItem.dataset.deviceName = device.name;
+            
+            deviceItem.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <div class="flex items-center mb-2">
+                            <span class="material-icons-outlined text-primary mr-2">mic</span>
+                            <h3 class="font-medium text-text-dark-brown">${device.displayName}</h3>
+                        </div>
+                        <div class="text-sm text-text-medium-brown">
+                            <span class="mr-4">索引: ${device.index}</span>
+                            <span class="mr-4">声道: ${device.channels}</span>
+                            <span>采样率: ${device.sampleRate}Hz</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center ml-4">
+                        <span class="material-icons-outlined text-gray-400">radio_button_unchecked</span>
+                    </div>
+                </div>
+            `;
+            
+            // 点击选择设备
+            deviceItem.addEventListener('click', function() {
+                selectDevice(device.index, device.name, device.displayName);
+            });
+            
+            deviceList.appendChild(deviceItem);
+        });
+    }
+    
+    // 选择设备
+    function selectDevice(deviceIndex, deviceName, displayName) {
+        debugLog(`选择设备: [${deviceIndex}] ${displayName}`);
+        
+        // 更新选择状态 - 明确设置为全局变量
+        window.selectedDeviceIndex = deviceIndex;
+        window.selectedDeviceName = deviceName;  // 原始设备名称，用于后端
+        window.selectedDeviceDisplayName = displayName;  // 显示名称，用于界面
+        
+        // 同时设置局部变量（向后兼容）
+        selectedDeviceIndex = deviceIndex;
+        selectedDeviceName = deviceName;
+        selectedDeviceDisplayName = displayName;
+        
+        debugLog(`设备选择完成: ${selectedDeviceIndex} - ${selectedDeviceName}`);
+        
+        // 更新UI显示
+        const deviceItems = document.querySelectorAll('.device-item');
+        deviceItems.forEach(item => {
+            item.classList.remove('border-primary', 'bg-blue-100', 'selected');
+            item.classList.add('border-gray-200');
+        });
+        
+        const selectedItem = document.querySelector(`[data-device-index="${deviceIndex}"]`);
+        if (selectedItem) {
+            selectedItem.classList.remove('border-gray-200');
+            selectedItem.classList.add('border-primary', 'bg-blue-100', 'selected');
+            
+            // 更新单选按钮为选中状态
+            const radioIcon = selectedItem.querySelector('.material-icons-outlined:last-child');
+            if (radioIcon) {
+                radioIcon.textContent = 'radio_button_checked';
+                radioIcon.classList.remove('text-gray-400');
+                radioIcon.classList.add('text-primary');
+            }
+        }
+        
+        // 重置其他设备的单选按钮
+        deviceItems.forEach(item => {
+            if (item !== selectedItem) {
+                const radioIcon = item.querySelector('.material-icons-outlined:last-child');
+                if (radioIcon) {
+                    radioIcon.textContent = 'radio_button_unchecked';
+                    radioIcon.classList.remove('text-primary');
+                    radioIcon.classList.add('text-gray-400');
+                }
+            }
+        });
+        
+        // 启用确认按钮
+        const confirmBtn = document.getElementById('confirm-device-btn');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+        }
+    }
+    
+
+    // 确认设备选择
+    window.simpleConfirmDevice = function() {
+        debugLog('确认设备选择');
+        
+        if (window.selectedDeviceIndex !== null && window.selectedDeviceIndex !== undefined) {
+            debugLog(`选择的设备: ${window.selectedDeviceIndex} - ${window.selectedDeviceName}`);
+            
+            if (window.bridge && window.bridge.selectAudioDevice) {
+                window.bridge.selectAudioDevice(window.selectedDeviceIndex, window.selectedDeviceName, function(result) {
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.success) {
+                            // 更新主界面显示
+                            const deviceNameSpan = document.getElementById('device-name');
+                            if (deviceNameSpan) {
+                                deviceNameSpan.textContent = window.selectedDeviceDisplayName;
+                                deviceNameSpan.className = 'text-green-600 font-medium';
+                            }
+                            
+                            // 启用录音按钮
+                            const startBtn = document.getElementById('start-recording-btn');
+                            if (startBtn) {
+                                startBtn.disabled = false;
+                                startBtn.className = 'px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600';
+                            }
+                            
+                            showMessage('设备选择成功', 'success');
+                            setTimeout(() => closeDeviceSelector(), 1500);
+                        } else {
+                            showMessage(data.message || '设备选择失败', 'error');
+                        }
+                    } catch (e) {
+                        showMessage('设备选择失败', 'error');
+                    }
+                });
+            } else {
+                showMessage('设备选择功能不可用', 'error');
+            }
+        } else {
+            showMessage('请先选择一个设备', 'warning');
+        }
+    };
+
+    
+    // 开始设备监控 - 优化版本
+    function startDeviceMonitoring() {
+        if (deviceMonitoringInterval) {
+            clearInterval(deviceMonitoringInterval);
+        }
+        
+        // 降低更新频率，避免卡死
+        deviceMonitoringInterval = setInterval(function() {
+            if (window.bridge && window.bridge.getDeviceLevels) {
+                window.bridge.getDeviceLevels(function(result) {
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.success && data.levels) {
+                            updateDeviceLevels(data.levels);
+                        }
+                    } catch (e) {
+                        debugError('获取设备电平失败: ' + e.message);
+                    }
+                });
+            }
+        }, 500); // 降低到每500ms更新一次，减少系统负担
+    }
+    
+    // 停止设备监控
+    function stopDeviceMonitoring() {
+        if (deviceMonitoringInterval) {
+            clearInterval(deviceMonitoringInterval);
+            deviceMonitoringInterval = null;
+        }
+    }
+    
+    // 更新设备电平显示
+    function updateDeviceLevels(levels) {
+        Object.keys(levels).forEach(deviceIndex => {
+            const level = Math.max(0, Math.min(100, levels[deviceIndex] * 100));
+            
+            const levelBar = document.getElementById(`level-bar-${deviceIndex}`);
+            const levelText = document.getElementById(`level-text-${deviceIndex}`);
+            
+            if (levelBar) {
+                levelBar.style.width = `${level}%`;
+            }
+            
+            if (levelText) {
+                levelText.textContent = `${Math.round(level)}%`;
+            }
+        });
+    }
+    
+    // 显示设备错误
+    function showDeviceError(message) {
+        const deviceList = document.getElementById('device-list');
+        if (deviceList) {
+            deviceList.innerHTML = `
+                <div class="flex items-center justify-center py-8">
+                    <div class="text-center">
+                        <span class="material-icons-outlined text-red-500 text-3xl mb-2">error</span>
+                        <p class="text-text-medium-brown">${message}</p>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    // 获取当前选择的设备信息
+    function updateSelectedDeviceInfo() {
+        if (window.bridge && window.bridge.getSelectedDevice) {
+            window.bridge.getSelectedDevice(function(result) {
+                try {
+                    const data = JSON.parse(result);
+                    if (data.success) {
+                        const deviceNameSpan = document.getElementById('device-name');
+                        if (deviceNameSpan) {
+                            deviceNameSpan.textContent = data.device_name || '已选择设备';
+                            deviceNameSpan.className = 'text-green-600 font-medium';
+                        }
+                        
+                        // 启用录音按钮
+                        const startBtn = document.getElementById('start-recording-btn');
+                        if (startBtn) {
+                            startBtn.disabled = false;
+                            startBtn.className = 'px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600';
+                        }
+                    }
+                } catch (e) {
+                    console.error('获取设备信息失败:', e);
+                }
+            });
+        }
+    }
+    
+    // 显示消息提示
+    function showMessage(message, type = 'info') {
+        debugLog(`显示消息: [${type}] ${message}`);
+        
+        // 创建消息提示元素
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `fixed top-4 right-4 p-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform`;
+        
+        // 根据类型设置样式
+        switch (type) {
+            case 'success':
+                messageDiv.className += ' bg-green-500 text-white';
+                break;
+            case 'error':
+                messageDiv.className += ' bg-red-500 text-white';
+                break;
+            case 'warning':
+                messageDiv.className += ' bg-yellow-500 text-white';
+                break;
+            default:
+                messageDiv.className += ' bg-blue-500 text-white';
+        }
+        
+        messageDiv.textContent = message;
+        document.body.appendChild(messageDiv);
+        
+        // 3秒后自动移除
+        setTimeout(() => {
+            messageDiv.style.opacity = '0';
+            messageDiv.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (messageDiv.parentNode) {
+                    messageDiv.parentNode.removeChild(messageDiv);
+                }
+            }, 300);
+        }, 3000);
+    }
+    
     window.testRecording = function() {
         debugLog('测试录音');
         if (window.bridge && window.bridge.testRecording) {
@@ -749,34 +1245,25 @@
         debugLog('开始录音');
         if (isRecording) {
             debugLog('已经在录音中');
+            showMessage('录音已在进行中', 'warning');
             return;
         }
         
-        // 先检查并选择音频设备
-        if (window.bridge && window.bridge.getAudioDevices) {
-            window.bridge.getAudioDevices(function(devicesResult) {
+        // 检查是否已选择设备
+        if (window.bridge && window.bridge.getSelectedDevice) {
+            window.bridge.getSelectedDevice(function(deviceResult) {
                 try {
-                    const result = JSON.parse(devicesResult);
-                    if (result.success && result.devices && result.devices.length > 0) {
-                        // 自动选择第一个设备
-                        const firstDevice = result.devices[0];
-                        debugLog('自动选择音频设备: ' + firstDevice.displayName);
-                        
-                        if (window.bridge.selectAudioDevice) {
-                            window.bridge.selectAudioDevice(firstDevice.index, firstDevice.name, function(selectResult) {
-                                debugLog('设备选择结果: ' + selectResult);
-                                // 设备选择成功后开始录音
-                                actualStartRecording();
-                            });
-                        } else {
-                            actualStartRecording();
-                        }
+                    const deviceData = JSON.parse(deviceResult);
+                    if (deviceData.success) {
+                        debugLog('使用已选择的设备: ' + deviceData.device_name);
+                        actualStartRecording();
                     } else {
-                        alert('未找到可用的音频输入设备');
+                        showMessage('请先选择音频输入设备', 'warning');
+                        debugLog('未选择设备，提示用户选择');
                     }
                 } catch (e) {
-                    debugError('解析音频设备列表失败: ' + e.message);
-                    alert('获取音频设备失败');
+                    debugError('检查设备选择失败: ' + e.message);
+                    showMessage('设备检查失败', 'error');
                 }
             });
         } else {
@@ -5552,12 +6039,13 @@
         initializePage();
         initMarkdownEnhancements();
         
-        // 延迟初始化右键菜单，确保DOM完全加载
-        setTimeout(() => {
-            console.log('延迟初始化右键菜单...');
-            initContextMenu();
-            
-            // 添加全局右键测试
+        // 延迟更新设备信息，等待bridge连接
+        setTimeout(function() {
+            updateSelectedDeviceInfo();
+        }, 1000);
+        
+        // 延迟添加全局右键测试
+        setTimeout(function() {
             document.addEventListener('contextmenu', function(e) {
                 console.log('全局右键事件触发，目标元素:', e.target);
                 console.log('目标元素ID:', e.target.id);
