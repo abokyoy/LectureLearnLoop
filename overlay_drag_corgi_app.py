@@ -112,6 +112,7 @@ class CorgiWebBridge(QObject):
         self.is_recording = False
         self.transcription_text = ""
         self.summary_text = ""
+        self.is_test_mode = False
         
         # 从配置文件加载设备设置
         self.selected_device_index = self.config.get("selected_audio_device_index", None)
@@ -133,39 +134,52 @@ class CorgiWebBridge(QObject):
         
     def setup_logging(self):
         """设置日志记录"""
-        # 初始化日志记录器
-        self.logger = logging.getLogger(__name__)
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
         
-        # 加载配置
-        self.config = load_config()
-        self.logger.info(f"配置加载完成: {self.config.get('llm_provider', 'Ollama')}")
-        self.logger.info(f"当前LLM提供商: {self.config.get('llm_provider')}")
-        self.logger.info(f"Ollama模型: {self.config.get('ollama_model')}")
-        self.logger.info(f"Ollama URL: {self.config.get('ollama_api_url')}")
+        # 创建logger
+        self.logger = logging.getLogger('CorgiWebBridge')
+        self.logger.setLevel(logging.DEBUG)
         
-        self.logger.info("CorgiWebBridge 初始化完成")
+        # 清除现有的handlers
+        self.logger.handlers.clear()
         
-        # 清除现有的处理器
-        for handler in self.logger.handlers[:]:
-            self.logger.removeHandler(handler)
-        
-        # 创建文件处理器
-        log_file = f"file_structure_debug_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        # 创建文件handler
+        log_file = os.path.join(log_dir, f"corgi_bridge_{datetime.now().strftime('%Y%m%d')}.log")
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.DEBUG)
         
-        # 创建控制台处理器
+        # 创建控制台handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         
-        # 创建格式器
+        # 创建formatter
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
         
-        # 添加处理器
+        # 添加handlers
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
+        
+        # 创建专门的录音测试日志
+        test_log_file = os.path.join(log_dir, f"recording_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
+        self.test_logger = logging.getLogger('RecordingTest')
+        self.test_logger.setLevel(logging.DEBUG)
+        self.test_logger.handlers.clear()
+        
+        test_file_handler = logging.FileHandler(test_log_file, encoding='utf-8')
+        test_file_handler.setLevel(logging.DEBUG)
+        test_formatter = logging.Formatter('%(asctime)s - [TEST] - %(message)s')
+        test_file_handler.setFormatter(test_formatter)
+        self.test_logger.addHandler(test_file_handler)
+        
+        self.logger.info(f"日志文件: {log_file}")
+        self.logger.info(f"测试日志文件: {test_log_file}")
+        
+        # 加载配置
+        self.config = load_config()
         
         self.logger.info("=" * 80)
         self.logger.info("文件结构调试日志开始")
@@ -536,6 +550,161 @@ class CorgiWebBridge(QObject):
 5. 基于这个内容，你认为还有哪些相关知识点值得深入学习？
 
 请认真思考后作答，每道题目都要结合具体内容来回答。"""
+    
+    @Slot(str, result=str)
+    def evaluatePracticeAnswer(self, evaluation_data_json):
+        """评估单个练习答案 - 与前端的evaluatePracticeAnswer调用保持一致"""
+        self.logger.info("=" * 60)
+        self.logger.info("【答案评估】evaluatePracticeAnswer 开始")
+        
+        try:
+            import json
+            evaluation_data = json.loads(evaluation_data_json)
+            
+            question = evaluation_data.get('question', '')
+            answer = evaluation_data.get('answer', '')
+            practice_id = evaluation_data.get('practice_id', '')
+            
+            self.logger.info(f"题目长度: {len(question)}")
+            self.logger.info(f"答案长度: {len(answer)}")
+            self.logger.info(f"练习ID: {practice_id}")
+            
+            # 构建评估提示词 - 使用不会与内容中的花括号冲突的方式
+            prompt_template = """请对以下练习答案进行专业评估：
+
+**练习题目：**
+{question}
+
+**学生答案：**
+{answer}
+
+**评估要求：**
+1. 对答案的准确性、完整性和深度进行评估
+2. 给出具体的改进建议
+3. 评估学生对知识点的掌握程度
+4. 给出0-100分的数值评分
+5. 提供鼓励性的反馈和学习建议
+
+**评估维度：**
+- 概念理解：对基本概念的理解程度
+- 应用能力：将知识应用到实际情况的能力
+- 分析深度：分析问题的深度和广度
+- 表达清晰：答案表达的清晰度和逻辑性
+
+请生成详细的评估结果，并以JSON格式返回：
+{{
+  "score": 85,
+  "feedback": "详细的反馈内容",
+  "suggestions": ["建议1", "建议2"]
+}}"""
+            
+            # 使用.format()方法来避免花括号冲突
+            prompt = prompt_template.format(question=question, answer=answer)
+            
+            # 调用LLM API进行评估
+            response = call_llm(prompt, "评估练习答案")
+            
+            if response:
+                try:
+                    # 尝试解析JSON格式的回答
+                    import re
+                    json_match = re.search(r'\{[^}]*"score"[^}]*\}', response, re.DOTALL)
+                    if json_match:
+                        evaluation_result = json.loads(json_match.group())
+                        self.logger.info(f"✅ 评估结果解析成功: {evaluation_result}")
+                    else:
+                        # 如果不是JSON格式，创建默认的评估结果
+                        evaluation_result = {
+                            "score": 75,
+                            "feedback": response,
+                            "suggestions": ["继续加油，加深理解", "多练习相关问题"]
+                        }
+                        
+                    result = {
+                        "success": True,
+                        "data": evaluation_result
+                    }
+                    self.logger.info(f"✅ 答案评估完成，得分: {evaluation_result.get('score', 'N/A')}")
+                    return json.dumps(result, ensure_ascii=False)
+                    
+                except Exception as parse_error:
+                    self.logger.error(f"❗ 解析评估结果失败: {parse_error}")
+                    # 使用原始回答作为反馈
+                    result = {
+                        "success": True,
+                        "data": {
+                            "score": 75,
+                            "feedback": response,
+                            "suggestions": ["继续加油，加深理解", "多练习相关问题"]
+                        }
+                    }
+                    return json.dumps(result, ensure_ascii=False)
+            else:
+                self.logger.error("❌ LLM API返回空结果")
+                result = {
+                    "success": False,
+                    "error": "AI评估服务暂时不可用"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 评估答案异常: {e}")
+            result = {
+                "success": False,
+                "error": str(e)
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def generateNewPractice(self):
+        """生成新的练习题目 - 基于最近的学习内容"""
+        self.logger.info("=" * 60)
+        self.logger.info("【练习生成】generateNewPractice 开始")
+        
+        try:
+            # 这里可以根据实际需要来获取最近的学习内容
+            # 目前使用模拟内容
+            recent_content = """机器学习基础概念：
+机器学习是人工智能的一个分支，它是一种让计算机系统能够自动地从数据中学习和改善性能的方法。
+主要包括监督学习、无监督学习和强化学习三大类别。
+常见的算法包括线性回归、决策树、随机森林、支持向量机等。"""
+            
+            # 调用已有的generatePracticeQuestions方法
+            questions = self.generatePracticeQuestions(recent_content)
+            
+            if questions:
+                # 生成练习ID
+                import time
+                practice_id = f"TECH-{int(time.time())}"
+                
+                result = {
+                    "success": True,
+                    "data": {
+                        "id": practice_id,
+                        "question": questions,
+                        "questions": questions,  # 兼容两种字段名
+                        "related_content": "基于最近学习的机器学习基础概念生成",
+                        "selectedText": recent_content
+                    }
+                }
+                
+                self.logger.info(f"✅ 新练习生成成功，练习ID: {practice_id}")
+                return json.dumps(result, ensure_ascii=False)
+            else:
+                self.logger.error("❌ 练习题目生成失败")
+                result = {
+                    "success": False,
+                    "error": "生成练习题目失败"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 生成新练习异常: {e}")
+            result = {
+                "success": False,
+                "error": str(e)
+            }
+            return json.dumps(result, ensure_ascii=False)
     
     @Slot(str, str, result=str)
     def evaluatePracticeAnswers(self, questions, answers):
@@ -2048,83 +2217,159 @@ class CorgiWebBridge(QObject):
         self.logger.info("切换到录音室页面，重定向到网课笔记")
         self.loadContent("online_course_notes")
     
+    def _cleanup_tr(self):
+        """清理转写线程"""
+        self._tr_thread = None
+        self._tr_worker = None
+
+    # ====== AI练习助手功能 ======
     
-    
-    @Slot(int, str, result=str)
-    def selectAudioDevice(self, device_index, device_name):
-        """选择音频输入设备"""
-        self.logger.info(f"选择音频设备: {device_index} - {device_name}")
+    @Slot(result=str)
+    def getPracticeHistory(self):
+        """获取练习历史列表"""
+        self.logger.info("获取练习历史列表")
         
         try:
-            self.selected_device_index = device_index
-            self.selected_device_name = device_name
+            import os
+            import json
             
-            # 保存设备选择到配置文件
-            self.config["selected_audio_device_index"] = device_index
-            self.config["selected_audio_device_name"] = device_name
-            save_config(self.config)
+            practice_dir = "practice_sessions"
+            if not os.path.exists(practice_dir):
+                return json.dumps({"success": True, "practices": []}, ensure_ascii=False)
             
-            self.logger.info(f"✅ 音频设备选择成功: {device_name}")
-            return json.dumps({"success": True, "message": f"设备选择成功: {device_name}"}, ensure_ascii=False)
+            practice_files = [f for f in os.listdir(practice_dir) if f.startswith("practice_") and f.endswith(".json")]
+            practice_files.sort(reverse=True)  # 最新的在前
+            
+            practices = []
+            for filename in practice_files[:20]:  # 最多返回20个最近的练习
+                filepath = os.path.join(practice_dir, filename)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        practice_data = json.load(f)
+                    
+                    practices.append({
+                        "id": practice_data.get("practice_id", ""),
+                        "timestamp": practice_data.get("timestamp", ""),
+                        "status": practice_data.get("status", "unknown"),
+                        "selected_text": practice_data.get("selected_text", "")[:100] + "...",
+                        "has_evaluation": bool(practice_data.get("evaluation_result", ""))
+                    })
+                except Exception as e:
+                    self.logger.warning(f"加载练习文件失败 {filename}: {e}")
+            
+            return json.dumps({"success": True, "practices": practices}, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"选择音频设备失败: {e}")
-            return json.dumps({"success": False, "error": f"选择设备失败: {str(e)}"}, ensure_ascii=False)
+            self.logger.error(f"获取练习历史失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
-    @Slot(int, str, result=str)
-    def testDeviceCompatibility(self, device_index, device_name):
-        """简单测试设备兼容性，不进行实际录制"""
-        self.logger.info(f"测试设备兼容性: {device_index} - {device_name}")
+    @Slot(str, result=str)
+    def loadPracticeHistory(self, practice_id):
+        """加载指定的练习历史"""
+        self.logger.info(f"加载练习历史: {practice_id}")
         
         try:
-            import pyaudio
-            p = pyaudio.PyAudio()
+            import os
+            import json
             
-            try:
-                # 获取设备信息
-                device_info = p.get_device_info_by_index(device_index)
-                device_rate = int(device_info.get('defaultSampleRate', 44100))
-                max_input_channels = device_info.get('maxInputChannels', 0)
-                
-                if max_input_channels == 0:
-                    raise Exception("设备不支持音频输入")
-                
-                # 尝试打开音频流（不录制）
-                stream = p.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=device_rate,
-                    input=True,
-                    input_device_index=device_index,
-                    frames_per_buffer=1024
-                )
-                
-                # 立即关闭
-                stream.close()
-                p.terminate()
-                
-                self.logger.info(f"✅ 设备 {device_name} 兼容性测试通过")
-                return json.dumps({
-                    "success": True, 
-                    "message": f"设备 {device_name} 可以正常使用",
-                    "compatible": True
-                }, ensure_ascii=False)
-                
-            except Exception as e:
-                p.terminate()
-                self.logger.warning(f"❌ 设备 {device_name} 兼容性测试失败: {e}")
-                return json.dumps({
-                    "success": False, 
-                    "error": f"设备不兼容: {str(e)}",
-                    "compatible": False
-                }, ensure_ascii=False)
-                
+            practice_dir = "practice_sessions"
+            filename = f"practice_{practice_id}.json"
+            filepath = os.path.join(practice_dir, filename)
+            
+            if not os.path.exists(filepath):
+                return json.dumps({"success": False, "error": "练习记录不存在"}, ensure_ascii=False)
+            
+            with open(filepath, 'r', encoding='utf-8') as f:
+                practice_data = json.load(f)
+            
+            return json.dumps({"success": True, "practice": practice_data}, ensure_ascii=False)
+            
         except Exception as e:
-            self.logger.error(f"兼容性测试异常: {e}")
-            return json.dumps({"success": False, "error": f"测试失败: {str(e)}"}, ensure_ascii=False)
+            self.logger.error(f"加载练习历史失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
-    @Slot(int, str, result=str)
-    def testDeviceCompatibilityDetailed(self, device_index, device_name):
+    @Slot(str, result=str)
+    def savePracticeEvaluation(self, evaluation_data):
+        """保存练习评估结果"""
+        self.logger.info("保存练习评估结果")
+        
+        try:
+            import os
+            import json
+            from datetime import datetime
+            
+            data = json.loads(evaluation_data)
+            practice_id = data.get('practice_id')
+            
+            if not practice_id:
+                # 生成新的练习ID
+                practice_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # 创建练习目录
+            practice_dir = "practice_sessions"
+            os.makedirs(practice_dir, exist_ok=True)
+            
+            # 保存练习数据
+            practice_data = {
+                "practice_id": practice_id,
+                "timestamp": datetime.now().isoformat(),
+                "selected_text": data.get('selected_text', ''),
+                "questions": data.get('questions', ''),
+                "user_answers": data.get('user_answers', ''),
+                "evaluation_result": data.get('evaluation_result', ''),
+                "status": "evaluated"
+            }
+            
+            filename = f"practice_{practice_id}.json"
+            filepath = os.path.join(practice_dir, filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(practice_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"练习评估结果已保存: {filepath}")
+            
+            return json.dumps({
+                "success": True, 
+                "message": "评估结果已保存",
+                "practice_id": practice_id
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"保存练习评估失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def importPracticeErrors(self, error_data):
+        """错题入库功能"""
+        self.logger.info("开始错题入库")
+        
+        try:
+            import json
+            
+            data = json.loads(error_data)
+            practice_content = data.get('practice_content', '')
+            evaluation_result = data.get('evaluation_result', '')
+            selected_text = data.get('selected_text', '')
+            
+            # 直接使用错题入库功能
+            if not evaluation_result:
+                return json.dumps({"success": False, "error": "没有评估结果可以入库"}, ensure_ascii=False)
+            
+            # 这里可以直接调用错题入库的逻辑，或者返回数据给前端处理
+            return json.dumps({
+                "success": True, 
+                "message": "错题入库功能需要在Qt界面中操作",
+                "action": "open_error_import_dialog",
+                "data": {
+                    "practice_content": practice_content,
+                    "evaluation_result": evaluation_result,
+                    "selected_text": selected_text
+                }
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"错题入库失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
         """详细的设备兼容性测试，包含崩溃日志"""
         crash_log_file = "audio_device_crash.log"
         
@@ -2497,34 +2742,74 @@ class CorgiWebBridge(QObject):
     
     @Slot(result=str)
     def getDeviceLevels(self):
-        """获取所有设备的实时电平 - 优化版本，避免卡死"""
+        """获取当前选择设备的实时电平"""
         try:
-            # 简化版本：只返回模拟电平，避免同时打开多个音频流
-            levels = {}
+            if self.selected_device_index is None:
+                return json.dumps({
+                    "success": False,
+                    "error": "未选择设备"
+                }, ensure_ascii=False)
             
             import pyaudio
-            p = pyaudio.PyAudio()
+            import numpy as np
             
-            # 只检测有效的输入设备数量，不实际打开音频流
-            for i in range(p.get_device_count()):
+            # 音频参数
+            CHUNK = 1024
+            FORMAT = pyaudio.paInt16
+            RATE = 44100
+            CHANNELS = 1
+            
+            peak = 0.0
+            stream = None
+            
+            try:
+                p = pyaudio.PyAudio()
+                
+                # 获取选择设备的信息
+                info = p.get_device_info_by_index(self.selected_device_index)
+                use_rate = int(info.get("defaultSampleRate", RATE)) or RATE
+                use_channels = min(max(1, int(info.get("maxInputChannels", 1))), CHANNELS) or 1
+                
+                # 打开音频流
+                stream = p.open(
+                    format=FORMAT,
+                    channels=use_channels,
+                    rate=use_rate,
+                    input=True,
+                    frames_per_buffer=CHUNK,
+                    input_device_index=self.selected_device_index
+                )
+                
+                # 读取音频数据
+                data = stream.read(CHUNK, exception_on_overflow=False)
+                
+                # 转换为numpy数组并计算峰值
+                audio_np = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                if audio_np.size > 0:
+                    peak = float(np.max(np.abs(audio_np)))
+                
+            except Exception as e:
+                self.logger.warning(f"获取设备{self.selected_device_index}电平失败: {e}")
+                peak = 0.0
+            finally:
                 try:
-                    info = p.get_device_info_by_index(i)
-                    if info.get("maxInputChannels", 0) > 0:
-                        # 返回随机模拟电平（实际项目中可以用真实的设备监控）
-                        import random
-                        levels[i] = random.random() * 0.3  # 模拟低电平
+                    if stream:
+                        stream.stop_stream()
+                        stream.close()
+                    if 'p' in locals():
+                        p.terminate()
                 except Exception:
-                    levels[i] = 0.0
-                    continue
-            
-            p.terminate()
+                    pass
             
             return json.dumps({
                 "success": True,
-                "levels": levels
+                "level": peak,
+                "device_index": self.selected_device_index,
+                "device_name": self.selected_device_name or f"设备{self.selected_device_index}"
             }, ensure_ascii=False)
             
         except Exception as e:
+            self.logger.error(f"获取设备电平失败: {e}")
             return json.dumps({
                 "success": False,
                 "error": str(e)
@@ -2533,6 +2818,14 @@ class CorgiWebBridge(QObject):
     @Slot(int, result=str)
     def getSingleDeviceLevel(self, device_index):
         """获取单个设备的实时电平"""
+        # 如果不在录音状态，直接返回0电平，避免设备访问错误
+        if not self.is_recording:
+            return json.dumps({
+                "success": True,
+                "level": 0.0,
+                "message": "录音已停止"
+            }, ensure_ascii=False)
+        
         try:
             import pyaudio
             p = pyaudio.PyAudio()
@@ -2569,9 +2862,12 @@ class CorgiWebBridge(QObject):
             }, ensure_ascii=False)
             
         except Exception as e:
+            # 记录警告但不让错误影响程序运行
+            self.logger.warning(f"获取设备{device_index}电平失败: {e}")
             return json.dumps({
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "level": 0.0
             }, ensure_ascii=False)
     
     def _on_test_recording_finished(self, audio_file, device_name):
@@ -2652,18 +2948,33 @@ class CorgiWebBridge(QObject):
         try:
             # 停止录音和转写Worker
             if self._rec_worker:
+                self.logger.info("停止录音Worker...")
                 self._rec_worker.stop()
             if self._tr_worker:
+                self.logger.info("停止转写Worker...")
                 self._tr_worker.stop()
             
             self.is_recording = False
             self.logger.info("✅ 录音已停止")
+            
+            # 停止设备电平监控（重要！）
+            self._stop_device_monitoring()
             
             return json.dumps({"success": True, "message": "录音已停止"}, ensure_ascii=False)
             
         except Exception as e:
             self.logger.error(f"停止录音失败: {e}")
             return json.dumps({"success": False, "error": f"停止录音失败: {str(e)}"}, ensure_ascii=False)
+    
+    def _stop_device_monitoring(self):
+        """停止设备电平监控"""
+        try:
+            # 清除设备索引，停止电平监控
+            if hasattr(self, '_monitoring_device_index'):
+                self.logger.info(f"停止设备{self._monitoring_device_index}的电平监控")
+                delattr(self, '_monitoring_device_index')
+        except Exception as e:
+            self.logger.warning(f"停止设备监控时出错: {e}")
     
     @Slot(result=str)
     def saveNotes(self):
@@ -2777,6 +3088,293 @@ class CorgiWebBridge(QObject):
             "summary": self.summary_text,
             "is_recording": self.is_recording
         }, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def testRecordingWithTranscription(self):
+        """测试录音功能 - 直接使用正常录音，只是界面显示为测试"""
+        self.logger.info("🧪 开始测试录音（使用正常录音方法）")
+        
+        # 直接调用正常的开始录音方法
+        return self.startRecording()
+    
+    @Slot(result=str)
+    def testRecordingFlow(self):
+        """测试录音转写流程 - 同步版本，不依赖定时器"""
+        self.test_logger.info("=" * 80)
+        self.test_logger.info("🧪 开始测试录音转写流程（同步版本）")
+        self.test_logger.info("=" * 80)
+        
+        try:
+            # 步骤1: 检查设备选择
+            self.test_logger.info("📋 步骤1: 检查设备选择")
+            if self.selected_device_index is None:
+                self.test_logger.error("❌ 未选择音频设备")
+                return json.dumps({
+                    "success": False, 
+                    "error": "请先选择音频设备",
+                    "step": "device_selection"
+                }, ensure_ascii=False)
+            
+            self.test_logger.info(f"✅ 设备已选择: {self.selected_device_index} - {self.selected_device_name}")
+            
+            # 步骤2: 记录当前状态
+            self.test_logger.info("📋 步骤2: 记录当前状态")
+            self.test_logger.info(f"当前录音状态: {self.is_recording}")
+            self.test_logger.info(f"当前转写文本长度: {len(self.transcription_text)}")
+            self.test_logger.info(f"录音线程状态: {self._rec_thread is not None}")
+            self.test_logger.info(f"转写线程状态: {self._tr_thread is not None}")
+            
+            # 备份原始转写文本
+            original_text = self.transcription_text
+            self.transcription_text = ""
+            self.test_logger.info("🧹 已备份并清空转写文本缓存")
+            
+            # 步骤3: 开始录音
+            self.test_logger.info("📋 步骤3: 开始录音（调用startRecording方法）")
+            self.test_logger.info("🔍 这里调用的是与正常录音完全相同的startRecording方法")
+            
+            start_result = self.startRecording()
+            self.test_logger.info(f"📊 录音开始结果: {start_result}")
+            
+            # 解析结果
+            try:
+                start_data = json.loads(start_result)
+                if not start_data.get('success'):
+                    self.test_logger.error(f"❌ 录音启动失败: {start_data.get('error')}")
+                    self.transcription_text = original_text
+                    return json.dumps({
+                        "success": False,
+                        "error": f"录音启动失败: {start_data.get('error')}",
+                        "step": "start_recording"
+                    }, ensure_ascii=False)
+                else:
+                    self.test_logger.info("✅ 录音启动成功")
+            except json.JSONDecodeError:
+                self.test_logger.warning("⚠️ 无法解析JSON结果，检查字符串内容")
+                if "success" not in start_result.lower():
+                    self.test_logger.error(f"❌ 录音启动失败: {start_result}")
+                    self.transcription_text = original_text
+                    return json.dumps({
+                        "success": False,
+                        "error": f"录音启动失败: {start_result}",
+                        "step": "start_recording"
+                    }, ensure_ascii=False)
+                else:
+                    self.test_logger.info("✅ 录音启动成功（根据字符串判断）")
+            
+            # 步骤4: 记录录音后的状态
+            self.test_logger.info("📋 步骤4: 记录录音启动后的状态")
+            self.test_logger.info(f"录音状态: {self.is_recording}")
+            self.test_logger.info(f"录音线程: {self._rec_thread}")
+            self.test_logger.info(f"录音Worker: {self._rec_worker}")
+            self.test_logger.info(f"转写线程: {self._tr_thread}")
+            self.test_logger.info(f"转写Worker: {self._tr_worker}")
+            
+            # 步骤5: 同步等待10秒
+            self.test_logger.info("📋 步骤5: 开始10秒录音，请播放音频或说话...")
+            import time
+            for i in range(10):
+                time.sleep(1)
+                self.test_logger.info(f"⏰ 录音中... {i+1}/10 秒")
+                
+                # 处理Qt事件，保持程序响应
+                QApplication.processEvents()
+            
+            # 步骤6: 停止录音
+            self.test_logger.info("📋 步骤6: 10秒录音完成，停止录音...")
+            stop_result = self.stopRecording()
+            self.test_logger.info(f"📊 停止录音结果: {stop_result}")
+            
+            # 步骤7: 等待转写完成
+            self.test_logger.info("📋 步骤7: 等待转写完成...")
+            max_wait = 15  # 最多等待15秒
+            for wait_count in range(max_wait):
+                time.sleep(1)
+                QApplication.processEvents()  # 处理Qt事件
+                
+                transcription_text = self.transcription_text.strip()
+                pure_text = self._extract_pure_text_for_test(transcription_text)
+                
+                self.test_logger.info(f"⏳ 等待转写完成 {wait_count+1}/{max_wait} 秒 - 当前文本长度: {len(pure_text)}")
+                
+                if pure_text:
+                    self.test_logger.info("🎉 检测到转写结果！")
+                    break
+            
+            # 步骤8: 分析最终结果
+            self.test_logger.info("📋 步骤8: 分析最终转写结果...")
+            final_transcription = self.transcription_text.strip()
+            final_pure_text = self._extract_pure_text_for_test(final_transcription)
+            
+            self.test_logger.info(f"📊 最终原始转写文本: '{final_transcription}'")
+            self.test_logger.info(f"📊 最终纯文本: '{final_pure_text}'")
+            self.test_logger.info(f"📊 纯文本长度: {len(final_pure_text)}")
+            
+            # 恢复原始转写文本
+            self.transcription_text = original_text
+            
+            if final_pure_text:
+                self.test_logger.info("🎉 测试成功！录音转写功能正常工作")
+                self.test_logger.info(f"✅ 转写结果: {final_pure_text}")
+                result_message = f"测试成功！转写结果: {final_pure_text}"
+            else:
+                self.test_logger.warning("⚠️ 测试部分成功！录音功能正常，但转写结果为空")
+                self.test_logger.warning("💡 可能的原因:")
+                self.test_logger.warning("   • 录音期间没有声音输入")
+                self.test_logger.warning("   • 音频设备选择不正确") 
+                self.test_logger.warning("   • 音量太小无法识别")
+                result_message = "录音功能正常，但转写结果为空"
+            
+            self.test_logger.info("=" * 80)
+            self.test_logger.info("🏁 测试录音转写流程完成")
+            self.test_logger.info("=" * 80)
+            
+            return json.dumps({
+                "success": True,
+                "message": result_message,
+                "transcription": final_pure_text,
+                "step": "completed"
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            import traceback
+            self.test_logger.error(f"❌ 测试录音流程失败: {e}")
+            self.test_logger.error(f"📋 异常详情: {traceback.format_exc()}")
+            
+            # 确保恢复原始文本
+            try:
+                if 'original_text' in locals():
+                    self.transcription_text = original_text
+            except:
+                pass
+                
+            return json.dumps({
+                "success": False,
+                "error": f"测试录音流程失败: {str(e)}",
+                "step": "exception"
+            }, ensure_ascii=False)
+    
+    def _finish_test_recording(self):
+        """完成测试录音"""
+        self.test_logger.info("📋 步骤6: 10秒测试时间到，停止录音...")
+        
+        try:
+            # 记录停止前的状态
+            self.test_logger.info(f"停止前录音状态: {self.is_recording}")
+            self.test_logger.info(f"停止前转写文本长度: {len(self.transcription_text)}")
+            self.test_logger.info(f"停止前线程状态 - 录音Worker: {self._rec_worker is not None}, 转写Worker: {self._tr_worker is not None}")
+            
+            # 停止录音
+            stop_result = self.stopRecording()
+            self.test_logger.info(f"📊 停止录音结果: {stop_result}")
+            
+            # 记录停止后的状态
+            self.test_logger.info(f"停止后录音状态: {self.is_recording}")
+            self.test_logger.info(f"停止后线程状态 - 录音: {self._rec_thread}, 转写: {self._tr_thread}")
+            
+            # 立即开始检查转写结果，然后每秒检查一次，最多检查10次
+            self.test_check_count = 0
+            self.test_max_checks = 10
+            
+            def check_transcription_result():
+                self.test_check_count += 1
+                self.test_logger.info(f"📋 步骤7: 检查转写结果 (第{self.test_check_count}次)...")
+                
+                transcription_text = self.transcription_text.strip()
+                self.test_logger.info(f"📊 原始转写文本: '{transcription_text}'")
+                self.test_logger.info(f"📊 转写文本长度: {len(transcription_text)}")
+                
+                # 检查转写线程状态
+                self.test_logger.info(f"📊 转写Worker状态: {self._tr_worker}")
+                if self._tr_worker:
+                    self.test_logger.info("⚠️ 转写Worker仍在运行，可能转写还未完成")
+                
+                # 提取纯文本（去除时间戳）
+                pure_text = self._extract_pure_text_for_test(transcription_text)
+                self.test_logger.info(f"📊 提取的纯文本: '{pure_text}'")
+                self.test_logger.info(f"📊 纯文本长度: {len(pure_text)}")
+                
+                # 如果有转写结果或达到最大检查次数，结束测试
+                if pure_text or self.test_check_count >= self.test_max_checks:
+                    # 分析结果
+                    if pure_text:
+                        self.test_logger.info("🎉 测试成功！录音转写功能正常工作")
+                        self.test_logger.info(f"✅ 转写结果: {pure_text}")
+                    else:
+                        self.test_logger.warning("⚠️ 测试部分成功！录音功能正常，但转写结果为空")
+                        self.test_logger.warning("💡 可能的原因:")
+                        self.test_logger.warning("   • 录音期间没有声音输入")
+                        self.test_logger.warning("   • 音频设备选择不正确") 
+                        self.test_logger.warning("   • 音量太小无法识别")
+                        self.test_logger.warning("   • 转写模型加载问题")
+                        self.test_logger.warning("   • 音频文件生成问题")
+                        self.test_logger.warning("   • 转写线程被过早停止")
+                    
+                    # 恢复原始转写文本
+                    if hasattr(self, 'original_text'):
+                        self.test_logger.info("🔄 恢复原始转写文本")
+                        self.transcription_text = self.original_text
+                        delattr(self, 'original_text')
+                    
+                    self.test_logger.info("=" * 80)
+                    self.test_logger.info("🏁 测试录音转写流程完成")
+                    self.test_logger.info("=" * 80)
+                    
+                    # 停止定时器
+                    if hasattr(self, 'test_check_timer'):
+                        self.test_check_timer.stop()
+                        delattr(self, 'test_check_timer')
+                else:
+                    # 继续等待，1秒后再检查
+                    self.test_logger.info(f"⏳ 转写还未完成，1秒后再检查 ({self.test_check_count}/{self.test_max_checks})")
+            
+            # 立即执行第一次检查
+            check_transcription_result()
+            
+            # 如果第一次检查没有结果，设置定时器继续检查
+            if self.test_check_count < self.test_max_checks and not self._extract_pure_text_for_test(self.transcription_text):
+                self.test_check_timer = QTimer()
+                self.test_check_timer.timeout.connect(check_transcription_result)
+                self.test_check_timer.start(1000)  # 每秒检查一次
+            
+        except Exception as e:
+            import traceback
+            self.test_logger.error(f"❌ 完成测试录音失败: {e}")
+            self.test_logger.error(f"📋 异常详情: {traceback.format_exc()}")
+            
+            # 确保程序不会因为测试异常而退出
+            try:
+                if hasattr(self, 'original_text'):
+                    self.transcription_text = self.original_text
+                    delattr(self, 'original_text')
+            except:
+                pass
+    
+    def _extract_pure_text_for_test(self, transcription_text):
+        """从转写文本中提取纯文本内容，去除时间戳"""
+        if not transcription_text:
+            return ""
+        
+        import re
+        
+        # 转写文本格式通常是: [HH:MM:SS] 文本内容
+        lines = transcription_text.strip().split('\n')
+        pure_text_parts = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # 使用正则表达式匹配时间戳格式 [HH:MM:SS]
+            timestamp_pattern = r'^\[\d{2}:\d{2}:\d{2}\]\s*'
+            text_without_timestamp = re.sub(timestamp_pattern, '', line)
+            
+            if text_without_timestamp.strip():
+                pure_text_parts.append(text_without_timestamp.strip())
+        
+        result = ' '.join(pure_text_parts)
+        return result
     
     @Slot(str, result=str)
     def summarizeText(self, text):
@@ -6702,10 +7300,21 @@ class TranscriberWorker(QObject):
             
             # 优先使用faster-whisper
             if faster_whisper is not None:
-                self.status.emit(f"正在加载 Faster-Whisper 模型: {self._model_size} ({device}) ...")
-                self._model = faster_whisper(self._model_size, device=device)
-                self.status.emit("Faster-Whisper模型加载完成。等待音频...")
-                self._use_faster_whisper = True
+                try:
+                    self.status.emit(f"正在加载 Faster-Whisper 模型: {self._model_size} ({device}) ...")
+                    self._model = faster_whisper(self._model_size, device=device)
+                    self.status.emit("Faster-Whisper模型加载完成。等待音频...")
+                    self._use_faster_whisper = True
+                except Exception as e:
+                    self.status.emit(f"Faster-Whisper加载失败: {e}")
+                    # 回退到标准whisper
+                    if whisper is not None:
+                        self.status.emit(f"回退到 OpenAI Whisper 模型: {self._model_size} ({device}) ...")
+                        self._model = whisper.load_model(self._model_size, device=device)
+                        self.status.emit("OpenAI Whisper模型加载完成。等待音频...")
+                        self._use_faster_whisper = False
+                    else:
+                        raise e
             else:
                 self.status.emit(f"正在加载 OpenAI Whisper 模型: {self._model_size} ({device}) ...")
                 self._model = whisper.load_model(self._model_size, device=device)
@@ -6722,6 +7331,11 @@ class TranscriberWorker(QObject):
                 try:
                     self.status.emit(f"开始转写: {os.path.basename(filepath)}")
                     language = None if self._language_setting == "auto" else self._language_setting
+                    
+                    # 检查文件是否存在
+                    if not os.path.exists(filepath):
+                        self.status.emit(f"音频文件不存在: {filepath}")
+                        continue
                     
                     if self._use_faster_whisper:
                         # 使用faster-whisper
@@ -6746,8 +7360,14 @@ class TranscriberWorker(QObject):
                         self.status.emit(f"完成转写: {len(text)} 字符")
                     else:
                         self.status.emit("转写结果为空")
+                        
                 except Exception as e:
-                    self.status.emit(f"转写错误: {e}")
+                    import traceback
+                    error_msg = f"转写错误: {e}"
+                    traceback_msg = traceback.format_exc()
+                    self.status.emit(error_msg)
+                    print(f"转写异常详情:\n{traceback_msg}")
+                    # 继续处理下一个文件，不要让异常中断整个转写线程
         except Exception as e:
             self.status.emit(f"模型加载失败: {e}")
         finally:

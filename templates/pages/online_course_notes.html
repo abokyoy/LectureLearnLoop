@@ -490,9 +490,7 @@
         <!-- 右侧知识点/实时语音面板 -->
         <div class="w-1/4 bg-white p-4 flex flex-col">
             <!-- 🎯 网课笔记功能标识 -->
-            <div class="mb-3 p-2 bg-blue-100 border border-blue-300 rounded-lg text-center">
-                <span class="text-blue-800 font-bold text-sm">🎓 网课笔记 - 完整功能已集成</span>
-            </div>
+            
             
             <!-- 面板切换标签 -->
             <div class="flex mb-4 bg-gray-100 rounded-lg p-1">
@@ -508,51 +506,69 @@
             
             <!-- 实时语音面板 -->
             <div id="voice-panel" class="flex-1 flex flex-col">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-semibold text-text-dark-brown">实时语音转写</h2>
-                    <div class="flex gap-2">
-                        <button class="text-text-gray hover:text-primary" onclick="testAudioSource()" title="选择音频输入源" id="audio-test-btn">
-                            <span class="material-icons-outlined">settings_voice</span>
-                        </button>
-                        <button class="text-text-gray hover:text-primary" onclick="takeScreenshot()" title="截图笔记" id="screenshot-btn">
-                            <span class="material-icons-outlined">screenshot</span>
-                        </button>
-                    </div>
-                </div>
+                
                 
                 <!-- 录音控制区域 -->
                 <div class="mb-4 p-3 bg-gray-50 rounded-lg">
-                    <!-- 设备选择区域 -->
+                    <!-- 音频电平指示器 -->
                     <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
-                        <div id="selected-device-info" class="flex items-center text-sm text-gray-600">
-                            <span class="material-icons-outlined mr-1 text-sm">settings_input_component</span>
-                            <span id="device-name">未选择设备</span>
+                        <div class="flex items-center text-sm text-gray-600">
+                            <span class="material-icons-outlined mr-1 text-sm">graphic_eq</span>
+                            <span>音频电平</span>
                         </div>
-                        <button id="choose-device-btn" class="px-3 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600" onclick="chooseInputDevice()">
-                            <span class="material-icons-outlined mr-1 text-xs">mic</span>
-                            选择设备
+                        <button class="px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600" onclick="testAudioSource()" title="选择音频设备">
+                            <span class="material-icons-outlined text-xs">settings</span>
                         </button>
                     </div>
                     
-                    <div class="flex items-center justify-between mb-3">
-                        <div id="recording-status" class="flex items-center text-sm text-gray-500">
-                            <span class="material-icons-outlined mr-1 text-sm">mic_off</span>
-                            未录音
+                    <!-- 音频电平条 -->
+                    <div class="mb-3">
+                        <div class="flex items-center space-x-2">
+                            <span class="material-icons-outlined text-gray-400 text-sm">volume_up</span>
+                            <div class="flex-1 bg-gray-200 rounded-full h-3 relative overflow-hidden">
+                                <!-- 背景网格线 -->
+                                <div class="absolute inset-0 flex">
+                                    <div class="flex-1 border-r border-gray-300"></div>
+                                    <div class="flex-1 border-r border-gray-300"></div>
+                                    <div class="flex-1 border-r border-gray-300"></div>
+                                    <div class="flex-1"></div>
+                                </div>
+                                <!-- 电平指示条 -->
+                                <div id="audio-level-bar" class="h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-500 rounded-full transition-all duration-100 ease-out" style="width: 0%"></div>
+                            </div>
+                            <span id="audio-level-text" class="text-xs text-gray-500 w-8">0%</span>
                         </div>
-                        <div class="flex gap-2">
-                            <button id="test-recording-btn" class="px-3 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600" onclick="testRecording()">
-                                测试录音
-                            </button>
-                            <button id="start-recording-btn" class="px-3 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600" onclick="startRecording()">
-                                开始录音
-                            </button>
-                            <button id="pause-recording-btn" class="px-3 py-1 text-xs bg-yellow-500 text-white rounded hover:bg-yellow-600 hidden" onclick="pauseRecording()">
-                                暂停录音
-                            </button>
-                            <button id="stop-recording-btn" class="px-3 py-1 text-xs bg-gray-500 text-white rounded hover:bg-gray-600 hidden" onclick="stopRecording()">
-                                停止录音
-                            </button>
+                        <div class="flex justify-between text-xs text-gray-400 mt-1">
+                            <span>静音</span>
+                            <span>低</span>
+                            <span>中</span>
+                            <span>高</span>
                         </div>
+                    </div>
+                    
+                    <!-- 设备名称显示 -->
+                    <div class="text-center mb-3">
+                        <div id="current-device-name" class="text-sm font-medium text-gray-700 bg-blue-50 px-3 py-1 rounded-full inline-block">
+                            未选择设备
+                        </div>
+                    </div>
+                    
+                    <!-- 录音控制按钮 -->
+                    <div class="flex justify-center gap-3 mb-3">
+                        <!-- 测试按钮 -->
+                        <button id="test-recording-btn" class="w-12 h-12 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center shadow-md transition-all" onclick="startRecordingTest()" title="测试录音">
+                            <span class="material-icons-outlined text-lg">science</span>
+                        </button>
+                        
+                        <!-- 录音/暂停按钮 -->
+                        <button id="record-pause-btn" class="w-12 h-12 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center justify-center shadow-md transition-all" onclick="toggleRecording()" title="开始录音">
+                            <span id="record-pause-icon" class="material-icons-outlined text-lg">fiber_manual_record</span>
+                        </button>
+                        
+                        <!-- 停止按钮 -->
+                        <button id="stop-recording-btn" class="w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all opacity-50 cursor-not-allowed" onclick="stopRecording()" title="停止录音" disabled>
+                            <span class="material-icons-outlined text-lg">stop</span>
+                        </button>
                     </div>
                 </div>
                 
@@ -927,6 +943,87 @@
         console.log(message);
     }
     
+    // 音频电平监控相关变量
+    let audioLevelInterval = null;
+    let isMonitoringAudio = false;
+    
+    // 开始音频电平监控
+    function startAudioLevelMonitoring() {
+        if (audioLevelInterval) {
+            clearInterval(audioLevelInterval);
+        }
+        
+        isMonitoringAudio = true;
+        debugLog('开始音频电平监控');
+        
+        // 每200ms更新一次电平显示（降低频率避免性能问题）
+        audioLevelInterval = setInterval(() => {
+            if (window.bridge && window.bridge.getDeviceLevels) {
+                // 获取真实的音频电平
+                window.bridge.getDeviceLevels(function(result) {
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.success && typeof data.level === 'number') {
+                            // 使用真实的电平数据
+                            updateAudioLevelDisplay(data.level);
+                        } else {
+                            // 没有选择设备或获取失败时保持静音
+                            updateAudioLevelDisplay(0);
+                        }
+                    } catch (e) {
+                        // 解析失败时保持静音
+                        debugError('解析电平数据失败: ' + e.message);
+                        updateAudioLevelDisplay(0);
+                    }
+                });
+            } else {
+                // 当bridge不可用时保持静音
+                updateAudioLevelDisplay(0);
+            }
+        }, 200);
+    }
+    
+    // 停止音频电平监控
+    function stopAudioLevelMonitoring() {
+        if (audioLevelInterval) {
+            clearInterval(audioLevelInterval);
+            audioLevelInterval = null;
+        }
+        isMonitoringAudio = false;
+        debugLog('停止音频电平监控');
+        
+        // 重置电平显示
+        updateAudioLevelDisplay(0);
+    }
+    
+    // 更新音频电平显示
+    function updateAudioLevelDisplay(level) {
+        const levelBar = document.getElementById('audio-level-bar');
+        const levelText = document.getElementById('audio-level-text');
+        
+        if (levelBar && levelText) {
+            // 将电平值转换为百分比
+            const percentage = Math.round(level * 100);
+            
+            // 更新电平条宽度
+            levelBar.style.width = `${percentage}%`;
+            
+            // 更新文字显示
+            levelText.textContent = `${percentage}%`;
+            
+            // 根据电平调整颜色强度
+            if (percentage < 25) {
+                levelBar.className = 'h-full bg-green-400 rounded-full transition-all duration-100 ease-out';
+            } else if (percentage < 50) {
+                levelBar.className = 'h-full bg-gradient-to-r from-green-400 to-yellow-400 rounded-full transition-all duration-100 ease-out';
+            } else if (percentage < 75) {
+                levelBar.className = 'h-full bg-gradient-to-r from-green-400 via-yellow-400 to-orange-400 rounded-full transition-all duration-100 ease-out';
+            } else {
+                levelBar.className = 'h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-500 rounded-full transition-all duration-100 ease-out';
+            }
+        }
+    }
+    
     // 扫描音频设备
     function scanAudioDevices() {
         debugLog('开始扫描音频设备');
@@ -1229,17 +1326,269 @@
         }, 3000);
     }
     
-    window.testRecording = function() {
-        debugLog('测试录音');
-        if (window.bridge && window.bridge.testRecording) {
-            window.bridge.testRecording(function(result) {
-                debugLog('录音测试结果: ' + result);
-                alert('录音测试结果: ' + result);
+    // 开始录音测试
+    window.startRecordingTest = function() {
+        debugLog('开始录音测试');
+        
+        // 检查是否已选择设备
+        if (window.bridge && window.bridge.getSelectedDevice) {
+            window.bridge.getSelectedDevice(function(deviceResult) {
+                try {
+                    const deviceData = JSON.parse(deviceResult);
+                    if (deviceData.success) {
+                        // 设备已选择，开始测试
+                        performRecordingTest();
+                    } else {
+                        showMessage('请先选择音频输入设备', 'warning');
+                        testAudioSource(); // 打开设备选择界面
+                    }
+                } catch (e) {
+                    showMessage('请先选择音频输入设备', 'warning');
+                    testAudioSource();
+                }
             });
         } else {
-            alert('录音测试功能不可用');
+            showMessage('请先选择音频输入设备', 'warning');
+            testAudioSource();
         }
     };
+    
+    // 执行录音测试
+    function performRecordingTest() {
+        createTestRecordingModal();
+        
+        let countdown = 10;
+        const countdownElement = document.getElementById('countdown-number');
+        const progressElement = document.getElementById('countdown-progress');
+        
+        // 开始录音
+        if (window.bridge && window.bridge.startRecording) {
+            window.bridge.startRecording(function(result) {
+                debugLog('测试录音开始: ' + result);
+            });
+        }
+        
+        // 倒计时
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            if (countdownElement) countdownElement.textContent = countdown;
+            if (progressElement) {
+                const progress = (countdown / 10) * 100;
+                progressElement.style.width = progress + '%';
+            }
+            
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                finishRecordingTest();
+            }
+        }, 1000);
+    }
+    
+    // 完成录音测试
+    function finishRecordingTest() {
+        // 停止录音并获取转写结果
+        if (window.bridge && window.bridge.stopRecording) {
+            window.bridge.stopRecording(function(result) {
+                debugLog('测试录音停止: ' + result);
+                
+                // 更新界面显示录制完成
+                updateTestRecordingUI('录制完成', '文字转换中...', 'hourglass_empty');
+                
+                // 等待一段时间让转写完成，然后获取转写结果
+                setTimeout(() => {
+                    getTestTranscriptionResult();
+                }, 2000);
+            });
+        } else {
+            // 如果没有bridge，显示错误
+            updateTestRecordingUI('录制失败', '无法连接到录音服务', 'error');
+        }
+    }
+    
+    // 获取测试转写结果
+    function getTestTranscriptionResult() {
+        // 尝试获取转写内容
+        if (window.bridge && window.bridge.getTranscriptionText) {
+            window.bridge.getTranscriptionText(function(transcriptionResult) {
+                debugLog('获取测试转写结果: ' + transcriptionResult);
+                
+                try {
+                    const result = JSON.parse(transcriptionResult);
+                    if (result.success && result.transcription && result.transcription.trim()) {
+                        // 显示真实的转写结果
+                        displayTestTranscriptionResult(result.transcription.trim());
+                    } else {
+                        // 转写结果为空
+                        displayTestTranscriptionResult('');
+                    }
+                } catch (e) {
+                    debugError('解析转写结果失败: ' + e.message);
+                    // 解析失败，可能是直接返回的文本
+                    if (transcriptionResult && transcriptionResult.trim()) {
+                        displayTestTranscriptionResult(transcriptionResult.trim());
+                    } else {
+                        displayTestTranscriptionResult('');
+                    }
+                }
+            });
+        } else {
+            // 没有获取转写结果的方法，检查转写区域的内容
+            const transcriptContent = document.getElementById('transcript-content');
+            if (transcriptContent) {
+                const textContent = transcriptContent.textContent || transcriptContent.innerText || '';
+                const cleanText = textContent.replace('转写内容将在这里实时显示...', '').trim();
+                displayTestTranscriptionResult(cleanText);
+            } else {
+                displayTestTranscriptionResult('');
+            }
+        }
+    }
+    
+    // 显示测试转写结果
+    function displayTestTranscriptionResult(transcriptionText) {
+        updateTestRecordingUI('测试完成', '转写结果如下：', 'check_circle');
+        
+        const transcriptionResult = document.getElementById('transcription-result');
+        const testButtons = document.getElementById('test-buttons');
+        
+        // 显示转写结果
+        if (transcriptionResult) {
+            transcriptionResult.classList.remove('hidden');
+            const transcriptionTextElement = document.getElementById('transcription-text');
+            if (transcriptionTextElement) {
+                if (transcriptionText && transcriptionText.length > 0) {
+                    transcriptionTextElement.textContent = transcriptionText;
+                    transcriptionTextElement.className = 'text-sm text-gray-700 min-h-[60px] max-h-32 overflow-y-auto';
+                } else {
+                    transcriptionTextElement.innerHTML = `
+                        <div class="text-center py-4">
+                            <span class="text-red-500">⚠️ 未检测到语音内容</span>
+                            <p class="text-xs text-gray-500 mt-2">可能的原因：</p>
+                            <ul class="text-xs text-gray-500 mt-1 text-left">
+                                <li>• 录音期间没有声音输入</li>
+                                <li>• 音频设备选择不正确</li>
+                                <li>• 音量太小无法识别</li>
+                            </ul>
+                        </div>
+                    `;
+                    transcriptionTextElement.className = 'text-sm min-h-[60px] max-h-32 overflow-y-auto';
+                }
+            }
+        }
+        
+        // 添加操作按钮
+        if (testButtons) {
+            const hasContent = transcriptionText && transcriptionText.length > 0;
+            testButtons.innerHTML = `
+                <button class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600" onclick="closeTestRecordingModal(); testAudioSource();">
+                    ${hasContent ? '重新选择设备' : '选择其他设备'}
+                </button>
+                <button class="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50" onclick="closeTestRecordingModal()">
+                    ${hasContent ? '测试通过' : '完成'}
+                </button>
+            `;
+        }
+    }
+    
+    // 更新测试录音界面
+    function updateTestRecordingUI(title, message, icon) {
+        const testIcon = document.getElementById('test-icon');
+        const testTitle = document.getElementById('test-title');
+        const testMessage = document.getElementById('test-message');
+        const countdownContainer = document.getElementById('countdown-container');
+        
+        if (testIcon) testIcon.textContent = icon;
+        if (testTitle) testTitle.textContent = title;
+        if (testMessage) testMessage.textContent = message;
+        if (countdownContainer) countdownContainer.style.display = 'none';
+    }
+    
+    // 关闭测试录音弹出层
+    window.closeTestRecordingModal = function() {
+        const modal = document.getElementById('test-recording-modal');
+        if (modal) {
+            modal.remove();
+        }
+    };
+    
+    // 更新当前设备名称显示
+    function updateCurrentDeviceName(deviceName) {
+        const deviceNameElement = document.getElementById('current-device-name');
+        if (deviceNameElement) {
+            deviceNameElement.textContent = deviceName || '未选择设备';
+            deviceNameElement.className = deviceName 
+                ? 'text-sm font-medium text-green-700 bg-green-50 px-3 py-1 rounded-full inline-block'
+                : 'text-sm font-medium text-gray-700 bg-blue-50 px-3 py-1 rounded-full inline-block';
+        }
+    }
+    
+    // 切换录音状态（录音/暂停）
+    window.toggleRecording = function() {
+        if (isRecording && !isPaused) {
+            // 当前正在录音，切换到暂停
+            pauseRecording();
+        } else if (isRecording && isPaused) {
+            // 当前暂停，恢复录音
+            resumeRecording();
+        } else {
+            // 当前未录音，开始录音
+            startRecording();
+        }
+    };
+    
+    // 恢复录音
+    function resumeRecording() {
+        isPaused = false;
+        updateRecordingButtons();
+        
+        if (window.bridge && window.bridge.resumeRecording) {
+            window.bridge.resumeRecording(function(result) {
+                debugLog('恢复录音结果: ' + result);
+            });
+        }
+    }
+    
+    // 更新录音按钮状态
+    function updateRecordingButtons() {
+        const recordPauseBtn = document.getElementById('record-pause-btn');
+        const recordPauseIcon = document.getElementById('record-pause-icon');
+        const stopBtn = document.getElementById('stop-recording-btn');
+        
+        if (isRecording && !isPaused) {
+            // 录音中 - 显示暂停图标
+            if (recordPauseBtn) {
+                recordPauseBtn.className = 'w-12 h-12 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 flex items-center justify-center shadow-md transition-all';
+                recordPauseBtn.title = '暂停录音';
+            }
+            if (recordPauseIcon) recordPauseIcon.textContent = 'pause';
+            if (stopBtn) {
+                stopBtn.className = 'w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all';
+                stopBtn.disabled = false;
+            }
+        } else if (isRecording && isPaused) {
+            // 暂停中 - 显示录音图标
+            if (recordPauseBtn) {
+                recordPauseBtn.className = 'w-12 h-12 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center justify-center shadow-md transition-all';
+                recordPauseBtn.title = '继续录音';
+            }
+            if (recordPauseIcon) recordPauseIcon.textContent = 'fiber_manual_record';
+            if (stopBtn) {
+                stopBtn.className = 'w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all';
+                stopBtn.disabled = false;
+            }
+        } else {
+            // 未录音 - 显示录音图标
+            if (recordPauseBtn) {
+                recordPauseBtn.className = 'w-12 h-12 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center justify-center shadow-md transition-all';
+                recordPauseBtn.title = '开始录音';
+            }
+            if (recordPauseIcon) recordPauseIcon.textContent = 'fiber_manual_record';
+            if (stopBtn) {
+                stopBtn.className = 'w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all opacity-50 cursor-not-allowed';
+                stopBtn.disabled = true;
+            }
+        }
+    }
     
     window.startRecording = function() {
         debugLog('开始录音');
@@ -1276,8 +1625,11 @@
         isRecording = true;
         isPaused = false;
         
-        // 更新UI状态
-        updateRecordingUI();
+        // 更新按钮状态
+        updateRecordingButtons();
+        
+        // 开始音频电平监控
+        startAudioLevelMonitoring();
         
         // 调用后端开始录音
         if (window.bridge && window.bridge.startRecording) {
@@ -1288,35 +1640,42 @@
                     
                     if (!res.success) {
                         isRecording = false;
-                        updateRecordingUI();
-                        alert('录音启动失败: ' + (res.error || '未知错误'));
+                        updateRecordingButtons();
+                        stopAudioLevelMonitoring();
+                        showMessage('录音启动失败: ' + (res.error || '未知错误'), 'error');
+                    } else {
+                        showMessage('录音已开始', 'success');
                     }
                 } catch (e) {
                     debugLog('录音开始结果: ' + result);
                     if (!result || result.includes('false') || result.includes('error')) {
                         isRecording = false;
-                        updateRecordingUI();
-                        alert('录音启动失败');
+                        updateRecordingButtons();
+                        stopAudioLevelMonitoring();
+                        showMessage('录音启动失败', 'error');
+                    } else {
+                        showMessage('录音已开始', 'success');
                     }
                 }
             });
         } else {
-            alert('录音功能不可用');
+            showMessage('录音功能不可用', 'error');
             isRecording = false;
-            updateRecordingUI();
+            updateRecordingButtons();
         }
     }
     
     window.pauseRecording = function() {
         debugLog('暂停录音');
-        if (!isRecording) return;
+        if (!isRecording || isPaused) return;
         
-        isPaused = !isPaused;
-        updateRecordingUI();
+        isPaused = true;
+        updateRecordingButtons();
         
         if (window.bridge && window.bridge.pauseRecording) {
-            window.bridge.pauseRecording(isPaused, function(result) {
+            window.bridge.pauseRecording(function(result) {
                 debugLog('暂停录音结果: ' + result);
+                showMessage('录音已暂停', 'info');
             });
         }
     };
@@ -1327,11 +1686,15 @@
         
         isRecording = false;
         isPaused = false;
-        updateRecordingUI();
+        updateRecordingButtons();
+        
+        // 停止音频电平监控
+        stopAudioLevelMonitoring();
         
         if (window.bridge && window.bridge.stopRecording) {
             window.bridge.stopRecording(function(result) {
                 debugLog('停止录音结果: ' + result);
+                showMessage('录音已停止', 'info');
             });
         }
     };
@@ -1697,6 +2060,54 @@
         document.body.insertAdjacentHTML('beforeend', modalHTML);
     }
     
+    // 创建测试录音弹出层
+    function createTestRecordingModal() {
+        // 移除已存在的模态框
+        const existingModal = document.getElementById('test-recording-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        const modalHTML = `
+            <div id="test-recording-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <div class="bg-white rounded-lg w-full max-w-md p-6 text-center">
+                    <div class="mb-4">
+                        <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <span id="test-icon" class="material-icons-outlined text-3xl text-blue-600">science</span>
+                        </div>
+                        <h3 id="test-title" class="text-lg font-semibold text-gray-800 mb-2">录制测试中</h3>
+                        <p id="test-message" class="text-sm text-gray-600">请保持课堂声音打开</p>
+                    </div>
+                    
+                    <!-- 倒计时显示 -->
+                    <div id="countdown-container" class="mb-4">
+                        <div class="text-4xl font-bold text-blue-600 mb-2">
+                            <span id="countdown-number">10</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div id="countdown-progress" class="bg-blue-600 h-2 rounded-full transition-all duration-1000" style="width: 100%"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- 转写结果显示 -->
+                    <div id="transcription-result" class="hidden mb-4 p-3 bg-gray-50 rounded-lg text-left">
+                        <h4 class="font-medium text-gray-800 mb-2">转写结果：</h4>
+                        <div id="transcription-text" class="text-sm text-gray-700 min-h-[60px] max-h-32 overflow-y-auto"></div>
+                    </div>
+                    
+                    <!-- 按钮区域 -->
+                    <div id="test-buttons" class="flex justify-center gap-3">
+                        <button id="cancel-test-btn" class="px-4 py-2 text-gray-600 border border-gray-300 rounded hover:bg-gray-50" onclick="closeTestRecordingModal()">
+                            取消
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+    
     // 关闭设备选择器
     window.closeDeviceSelector = function() {
         const modal = document.getElementById('device-selector-modal');
@@ -1943,14 +2354,34 @@
                 try {
                     const res = JSON.parse(result);
                     if (res.success) {
-                        alert(`设备选择成功: ${deviceName}\\n类型: ${deviceType === 'system_audio' ? '系统音频录制' : '麦克风录制'}`);
+                        showMessage(`设备选择成功: ${deviceName}`, 'success');
+                        
+                        // 更新设备名称显示
+                        updateCurrentDeviceName(deviceName);
+                        
+                        // 启动电平监控
+                        if (!isMonitoringAudio) {
+                            startAudioLevelMonitoring();
+                            debugLog('设备选择成功，开始电平监控');
+                        }
+                        
                         closeDeviceSelector();
                     } else {
                         alert('设备选择失败: ' + (res.error || '未知错误'));
                     }
                 } catch (e) {
                     debugLog('设备选择结果: ' + result);
-                    alert('设备选择成功: ' + deviceName);
+                    showMessage(`设备选择成功: ${deviceName}`, 'success');
+                    
+                    // 更新设备名称显示
+                    updateCurrentDeviceName(deviceName);
+                    
+                    // 启动电平监控
+                    if (!isMonitoringAudio) {
+                        startAudioLevelMonitoring();
+                        debugLog('设备选择成功（异常处理），开始电平监控');
+                    }
+                    
                     closeDeviceSelector();
                 }
             });
@@ -2039,6 +2470,9 @@
         
         // 初始化面板状态（默认显示实时语音面板）
         window.switchToVoicePanel();
+        
+        // 初始化电平显示为静音状态，等待用户选择设备
+        updateAudioLevelDisplay(0);
         
         // 添加转写文本选择事件监听器
         const transcriptDiv = document.getElementById('transcript-content');
