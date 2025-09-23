@@ -2262,7 +2262,6 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             self.logger.error(f"获取练习历史失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
-
     
     @Slot(str, result=str)
     def loadPracticeHistory(self, practice_id):
@@ -2288,7 +2287,6 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             self.logger.error(f"加载练习历史失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
-
     
     @Slot(str, result=str)
     def savePracticeEvaluation(self, evaluation_data):
@@ -3882,9 +3880,10 @@ class OverlayDragCorgiApp(QMainWindow):
     def generate_content_html(self, content_id):
         """根据内容ID生成对应的HTML内容"""
         try:
-            # 获取模板上下文数据
+            # 准备模板数据
+            context = self.get_template_context(content_id)
             # 首先尝试使用模板系统
-            html_content = self.template_manager.render_page_content(content_id)
+            html_content = self.template_manager.render_page_content(content_id, **context)
             print(f"✅ 使用模板渲染页面内容: {content_id}")
             return html_content
         except Exception as e:
