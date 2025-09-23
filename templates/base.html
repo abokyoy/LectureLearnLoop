@@ -2054,34 +2054,164 @@
                 
                 try {
                     globalDebugLog('🔄 开始获取练习历史...');
-                    const response = window.bridge.getPracticeHistory();
-                    globalDebugLog('📝 后端返回练习历史数据类型: ' + (typeof response));
-                    globalDebugLog('📝 后端返回练习历史数据内容: ' + (response ? (typeof response === 'string' ? response.substring(0, 200) : JSON.stringify(response).substring(0, 200)) : 'null'));
+                    globalDebugLog('🎯 检查bridge对象: ' + (window.bridge ? '存在' : '不存在'));
+                    globalDebugLog('🎯 检查getPracticeHistory方法: ' + (window.bridge && window.bridge.getPracticeHistory ? '存在' : '不存在'));
                     
-                    let result;
-                    if (typeof response === 'string') {
-                        result = JSON.parse(response);
-                    } else if (typeof response === 'object' && response !== null) {
-                        result = response; // 已经是对象，直接使用
-                    } else {
-                        throw new Error('无效的响应类型: ' + typeof response);
-                    }
-                    
-                    if (result.success) {
-                        if (result.practices && result.practices.length > 0) {
-                            globalDebugLog('✅ 成功获取到 ' + result.practices.length + ' 个练习历史');
-                            showPracticeHistoryModal(result.practices);
-                        } else {
-                            globalDebugLog('ℹ️ 没有找到任何练习历史');
-                            alert('暂无练习历史记录。您可以先生成一个练习试试！');
+                    // 处理Qt WebChannel可能返回Promise的情况
+                    function handlePracticeHistoryResponse(response) {
+                        globalDebugLog('📝 收到响应类型: ' + typeof response);
+                        globalDebugLog('📝 响应是否为Promise: ' + (response && typeof response.then === 'function'));
+                        
+                        // 检查响应有效性
+                        if (response === null || response === undefined) {
+                            globalDebugError('❌ 响应为null或undefined');
+                            alert('获取练习历史失败: 服务器无响应');
+                            return;
                         }
-                    } else {
-                        globalDebugError('获取练习历史失败: ' + (result.error || '未知错误'));
-                        alert('获取练习历史失败: ' + (result.error || '未知错误'));
+                        
+                        // 如果是Promise对象，说明WebChannel异步问题
+                        if (response && typeof response.then === 'function') {
+                            globalDebugError('❌ 检测到Promise对象，WebChannel异步问题');
+                            alert('获取练习历史失败: 数据传输异常，请重试');
+                            return;
+                        }
+                        
+                        // 检查是否为有效字符串或对象
+                        let isValidData = false;
+                        if (typeof response === 'string' && response.trim().length > 0) {
+                            isValidData = true;
+                            globalDebugLog('✅ 收到有效字符串数据，长度: ' + response.length);
+                        } else if (typeof response === 'object' && Object.keys(response).length > 0) {
+                            isValidData = true;
+                            globalDebugLog('✅ 收到有效对象数据，键数: ' + Object.keys(response).length);
+                        }
+                        
+                        if (!isValidData) {
+                            globalDebugError('❌ 数据无效');
+                            globalDebugError('❌ 响应类型: ' + typeof response);
+                            globalDebugError('❌ 响应值: ' + response);
+                            alert('获取练习历史失败: 数据格式异常');
+                            return;
+                        }
+                        
+                        // 解析数据
+                        let result;
+                        try {
+                            if (typeof response === 'string') {
+                                globalDebugLog('🔄 解析字符串响应...');
+                                if (response.substring(0, 500)) {
+                                    globalDebugLog('📝 响应前500字符: ' + response.substring(0, 500));
+                                }
+                                result = JSON.parse(response);
+                                globalDebugLog('✅ JSON解析成功');
+                            } else if (typeof response === 'object') {
+                                globalDebugLog('🔄 直接使用对象响应...');
+                                result = response;
+                            }
+                        } catch (parseError) {
+                            globalDebugError('❌ JSON解析失败: ' + parseError.message);
+                            globalDebugError('❌ 解析失败的数据前200字符: ' + (response ? response.toString().substring(0, 200) : 'null'));
+                            alert('获取练习历史失败: 数据解析错误');
+                            return;
+                        }
+                        
+                        globalDebugLog('📊 解析后的结果类型: ' + typeof result);
+                        if (result && typeof result === 'object') {
+                            globalDebugLog('📊 结果对象键: ' + Object.keys(result).join(', '));
+                        }
+                        
+                        // 检查结果结构
+                        if (!result || typeof result !== 'object') {
+                            globalDebugError('❌ 解析结果无效');
+                            alert('获取练习历史失败: 数据结构异常');
+                            return;
+                        }
+                        
+                        if (!result.hasOwnProperty('success')) {
+                            globalDebugError('❌ 响应缺少success字段');
+                            globalDebugError('❌ 实际响应结构: ' + JSON.stringify(result));
+                            alert('获取练习历史失败: 响应格式错误');
+                            return;
+                        }
+                        
+                        globalDebugLog('✅ success字段值: ' + result.success);
+                        
+                        if (result.success) {
+                            const practices = result.practices || [];
+                            globalDebugLog('✅ 成功获取到 ' + practices.length + ' 个练习历史');
+                            
+                            if (practices.length > 0) {
+                                // 显示前3个练习的ID用于调试
+                                const first3Ids = practices.slice(0, 3).map(p => p.id || 'N/A');
+                                globalDebugLog('📋 前3个练习ID: ' + first3Ids.join(', '));
+                                
+                                showPracticeHistoryModal(practices);
+                            } else {
+                                globalDebugLog('ℹ️ 练习列表为空');
+                                alert('暂无练习历史记录。您可以先生成一个练习试试！');
+                            }
+                        } else {
+                            const errorMsg = result.error || '未知错误';
+                            globalDebugError('❌ 后端返回失败状态: ' + errorMsg);
+                            alert('获取练习历史失败: ' + errorMsg);
+                        }
                     }
+                    
+                    // 添加延迟，确保WebChannel准备就绪，并尝试多次调用
+                    setTimeout(() => {
+                        try {
+                            globalDebugLog('🚀 第一次尝试调用getPracticeHistory...');
+                            const response = window.bridge.getPracticeHistory();
+                            
+                            // 立即检查是否为Promise
+                            if (response && typeof response.then === 'function') {
+                                globalDebugLog('⚠️ 第一次调用返回Promise，尝试Promise处理...');
+                                
+                                response.then(function(actualResponse) {
+                                    globalDebugLog('✅ Promise resolved，处理实际响应');
+                                    handlePracticeHistoryResponse(actualResponse);
+                                }).catch(function(error) {
+                                    globalDebugError('❌ Promise rejected: ' + error.message);
+                                    
+                                    // Promise失败，尝试第二次同步调用
+                                    globalDebugLog('🔄 Promise失败，延迟后重试同步调用...');
+                                    setTimeout(() => {
+                                        try {
+                                            const retryResponse = window.bridge.getPracticeHistory();
+                                            handlePracticeHistoryResponse(retryResponse);
+                                        } catch (retryError) {
+                                            globalDebugError('❌ 重试调用失败: ' + retryError.message);
+                                            alert('获取练习历史失败: 多次尝试均失败');
+                                        }
+                                    }, 200);
+                                });
+                            } else {
+                                // 直接处理同步响应
+                                globalDebugLog('✅ 第一次调用返回同步结果');
+                                handlePracticeHistoryResponse(response);
+                            }
+                            
+                        } catch (callError) {
+                            globalDebugError('❌ 调用getPracticeHistory异常: ' + callError.message);
+                            
+                            // 第一次调用异常，尝试第二次
+                            globalDebugLog('🔄 第一次调用异常，延迟后重试...');
+                            setTimeout(() => {
+                                try {
+                                    const retryResponse = window.bridge.getPracticeHistory();
+                                    handlePracticeHistoryResponse(retryResponse);
+                                } catch (retryError) {
+                                    globalDebugError('❌ 重试调用也失败: ' + retryError.message);
+                                    alert('获取练习历史失败: 连接异常');
+                                }
+                            }, 300);
+                        }
+                    }, 100);
+                    
                 } catch (error) {
-                    globalDebugError('获取练习历史异常: ' + error.message);
-                    alert('获取练习历史失败，请检查控制台错误信息');
+                    globalDebugError('❌ 外部异常: ' + error.message);
+                    globalDebugError('❌ 外部异常堆栈: ' + (error.stack || 'No stack'));
+                    alert('获取练习历史失败: 系统异常');
                 }
             }
             
@@ -3087,7 +3217,7 @@
                     return;
                 }
                 
-                globalDebugLog('📁 加载练习历史: ' + selectedHistoryId);
+                globalDebugLog('📁 === 开始加载练习历史 ===' + selectedHistoryId);
                 
                 if (!window.bridge || !window.bridge.loadPracticeHistory) {
                     alert('加载练习历史功能暂时不可用');
@@ -3096,51 +3226,120 @@
                 
                 try {
                     globalDebugLog('🔄 开始加载练习历史: ' + selectedHistoryId);
-                    const response = window.bridge.loadPracticeHistory(selectedHistoryId);
-                    globalDebugLog('📝 后端返回练习数据类型: ' + (typeof response));
-                    globalDebugLog('📝 后端返回练习数据内容: ' + (response ? (typeof response === 'string' ? response.substring(0, 200) : JSON.stringify(response).substring(0, 200)) : 'null'));
                     
-                    let result;
-                    if (typeof response === 'string') {
-                        result = JSON.parse(response);
-                    } else if (typeof response === 'object' && response !== null) {
-                        result = response; // 已经是对象，直接使用
-                    } else {
-                        throw new Error('无效的响应类型: ' + typeof response);
+                    // 清理practice_id，去除可能的practice_前缀避免重复
+                    let cleanPracticeId = selectedHistoryId;
+                    if (cleanPracticeId.startsWith('practice_')) {
+                        cleanPracticeId = cleanPracticeId.substring(9); // 去除'practice_'前缀
+                        globalDebugLog('🧹 清理后的ID: ' + cleanPracticeId);
                     }
                     
-                    if (result.success) {
-                        globalDebugLog('✅ 成功加载练习数据');
-                        loadPracticeData(result.practice);
+                    // 处理可能的Promise返回
+                    function handleLoadResponse(response) {
+                        globalDebugLog('📝 加载响应类型: ' + typeof response);
                         
-                        // 关闭弹窗
-                        if (historyModal) {
-                            historyModal.classList.remove('show');
+                        // 检查是否为Promise
+                        if (response && typeof response.then === 'function') {
+                            globalDebugError('❌ 检测到Promise对象，数据传输异常');
+                            alert('加载练习失败: 数据传输异常，请重试');
+                            return;
                         }
                         
-                        // 自动最大化并切换到练习Tab
-                        if (!isMaximized) {
-                            toggleMaximizeChat();
+                        let result;
+                        try {
+                            if (typeof response === 'string') {
+                                globalDebugLog('🔄 解析字符串响应，长度: ' + response.length);
+                                if (response.length > 0) {
+                                    globalDebugLog('📝 响应前200字符: ' + response.substring(0, 200));
+                                }
+                                result = JSON.parse(response);
+                                globalDebugLog('✅ JSON解析成功');
+                            } else if (typeof response === 'object' && response !== null) {
+                                result = response;
+                                globalDebugLog('✅ 直接使用对象响应');
+                            } else {
+                                throw new Error('无效的响应类型: ' + typeof response);
+                            }
+                        } catch (parseError) {
+                            globalDebugError('❌ JSON解析失败: ' + parseError.message);
+                            alert('加载练习失败: 数据解析错误');
+                            return;
                         }
-                        setTimeout(() => {
-                            switchTab('practice');
-                            if (practiceContainer) {
-                                practiceContainer.style.display = 'flex';
-                            }
-                            if (aiPracticeMessages) {
-                                aiPracticeMessages.style.display = 'none';
-                            }
-                        }, 300);
                         
-                        alert('练习历史加载成功！');
-                    } else {
-                        globalDebugError('加载练习历史失败: ' + (result.error || '未知错误'));
-                        alert('加载练习历史失败: ' + (result.error || '未知错误'));
+                        globalDebugLog('📊 解析后的结果类型: ' + typeof result);
+                        globalDebugLog('📊 结果包含的键: ' + (result ? Object.keys(result).join(', ') : 'N/A'));
+                        
+                        if (result && result.success) {
+                            globalDebugLog('✅ 成功加载练习数据');
+                            
+                            // 数据库方式返回的数据结构为 { success: true, practice: {...} }
+                            const practiceData = result.practice;
+                            
+                            if (!practiceData) {
+                                globalDebugError('❌ 练习数据为空');
+                                alert('加载练习失败: 数据为空');
+                                return;
+                            }
+                            
+                            globalDebugLog('📊 练习数据键: ' + Object.keys(practiceData).join(', '));
+                            
+                            loadPracticeData(practiceData);
+                            
+                            // 关闭弹窗
+                            if (historyModal) {
+                                historyModal.classList.remove('show');
+                            }
+                            
+                            // 自动最大化并切换到练习Tab
+                            if (!isMaximized) {
+                                toggleMaximizeChat();
+                            }
+                            setTimeout(() => {
+                                switchTab('practice');
+                                if (practiceContainer) {
+                                    practiceContainer.style.display = 'flex';
+                                }
+                                if (aiPracticeMessages) {
+                                    aiPracticeMessages.style.display = 'none';
+                                }
+                            }, 300);
+                            
+                            alert('练习历史加载成功！');
+                        } else {
+                            const errorMsg = result ? result.error : '未知错误';
+                            globalDebugError('❌ 加载练习失败: ' + errorMsg);
+                            alert('加载练习失败: ' + errorMsg);
+                        }
                     }
+                    
+                    // 添加延迟调用，并支持Promise处理
+                    setTimeout(() => {
+                        try {
+                            const response = window.bridge.loadPracticeHistory(cleanPracticeId);
+                            
+                            // 检查是否为Promise
+                            if (response && typeof response.then === 'function') {
+                                globalDebugLog('⚠️ 检测到Promise，使用Promise处理');
+                                response.then(handleLoadResponse).catch(function(error) {
+                                    globalDebugError('❌ Promise rejected: ' + error.message);
+                                    alert('加载练习失败: ' + error.message);
+                                });
+                            } else {
+                                // 直接处理同步结果
+                                handleLoadResponse(response);
+                            }
+                        } catch (callError) {
+                            globalDebugError('❌ 调用loadPracticeHistory异常: ' + callError.message);
+                            alert('加载练习失败: ' + callError.message);
+                        }
+                    }, 100);
+                    
                 } catch (error) {
-                    globalDebugError('加载练习历史异常: ' + error.message);
-                    alert('加载练习历史失败');
+                    globalDebugError('❌ 加载练习历史异常: ' + error.message);
+                    alert('加载练习历史失败: ' + error.message);
                 }
+                
+                globalDebugLog('🏁 === 练习历史加载流程结束 ===');
             }
             
             // 全局练习功能接口

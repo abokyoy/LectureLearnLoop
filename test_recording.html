@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>录音测试</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button { 
+            padding: 12px 24px; 
+            margin: 10px; 
+            font-size: 16px; 
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .success { background-color: #4CAF50; color: white; }
+        .success:hover { background-color: #45a049; }
+        .error { background-color: #f44336; color: white; }
+        .info { background-color: #2196F3; color: white; }
+        .info:hover { background-color: #1976D2; }
+        .warning { background-color: #ff9800; color: white; }
+        #log { 
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            height: 400px; 
+            overflow-y: scroll; 
+            margin-top: 20px;
+            background-color: #fafafa;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        #devices {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .device-item {
+            margin: 8px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 3px;
+            border: 1px solid #eee;
+        }
+        .step {
+            background-color: #e3f2fd;
+            padding: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #2196F3;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 录音转写功能测试</h1>
+        
+        <div class="step">
+            <h3>测试步骤:</h3>
+            <p>1. 点击"获取音频设备"按钮</p>
+            <p>2. 选择CABLE Output设备</p>
+            <p>3. 点击"选择设备"按钮</p>
+            <p>4. 点击"开始测试录音"按钮</p>
+            <p>5. 在10秒内播放音频或说话</p>
+        </div>
+        
+        <div>
+            <button class="info" onclick="getDevices()">1. 获取音频设备</button>
+            <button class="warning" onclick="selectDevice()">2. 选择设备</button>
+            <button class="success" onclick="startTest()">3. 开始测试录音</button>
+        </div>
+        
+        <div id="devices"></div>
+        <div id="log"></div>
+    </div>
+    
+    <script>
+        let selectedDeviceIndex = null;
+        let selectedDeviceName = null;
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'color: red' : type === 'success' ? 'color: green' : type === 'warning' ? 'color: orange' : 'color: blue';
+            logDiv.innerHTML += `<div style="${className}; margin: 5px 0;"><strong>[${timestamp}]</strong> ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function getDevices() {
+            log('🎤 获取音频设备列表...');
+            if (window.bridge && window.bridge.getAudioDevices) {
+                window.bridge.getAudioDevices(function(result) {
+                    log('📋 设备列表结果: ' + result.substring(0, 100) + '...');
+                    
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.success && data.devices) {
+                            const devicesDiv = document.getElementById('devices');
+                            let html = '<h3>🎧 可用音频设备:</h3>';
+                            
+                            data.devices.forEach((device, index) => {
+                                const isCABLE = device.displayName.includes('CABLE');
+                                const highlight = isCABLE ? 'background-color: #e8f5e8; border: 2px solid #4CAF50;' : '';
+                                
+                                html += `<div class="device-item" style="${highlight}">
+                                    <input type="radio" name="device" value="${device.index}" 
+                                           onchange="selectDeviceIndex(${device.index}, '${device.name}', '${device.displayName}')">
+                                    <strong>${device.displayName}</strong> (索引: ${device.index})
+                                    ${isCABLE ? ' <span style="color: green;">← 推荐选择</span>' : ''}
+                                </div>`;
+                            });
+                            
+                            devicesDiv.innerHTML = html;
+                            log('✅ 找到 ' + data.devices.length + ' 个设备', 'success');
+                            log('💡 请选择CABLE Output设备进行测试', 'warning');
+                        } else {
+                            log('❌ 获取设备失败: ' + (data.error || '未知错误'), 'error');
+                        }
+                    } catch (e) {
+                        log('❌ 解析设备列表失败: ' + e.message, 'error');
+                    }
+                });
+            } else {
+                log('❌ bridge.getAudioDevices 不可用', 'error');
+            }
+        }
+        
+        function selectDeviceIndex(index, name, displayName) {
+            selectedDeviceIndex = index;
+            selectedDeviceName = name;
+            log(`🎯 选择设备: ${displayName} (索引: ${index})`, 'info');
+        }
+        
+        function selectDevice() {
+            if (selectedDeviceIndex === null) {
+                log('⚠️ 请先选择一个设备', 'error');
+                return;
+            }
+            
+            log(`🔧 选择音频设备: ${selectedDeviceIndex} - ${selectedDeviceName}`);
+            if (window.bridge && window.bridge.selectAudioDevice) {
+                window.bridge.selectAudioDevice(selectedDeviceIndex, selectedDeviceName, function(result) {
+                    log('📋 设备选择结果: ' + result);
+                    
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.success) {
+                            log('✅ 设备选择成功', 'success');
+                        } else {
+                            log('❌ 设备选择失败: ' + (data.error || '未知错误'), 'error');
+                        }
+                    } catch (e) {
+                        if (result.toLowerCase().includes('success')) {
+                            log('✅ 设备选择成功', 'success');
+                        } else {
+                            log('❌ 设备选择失败: ' + result, 'error');
+                        }
+                    }
+                });
+            } else {
+                log('❌ bridge.selectAudioDevice 不可用', 'error');
+            }
+        }
+        
+        function startTest() {
+            log('🚀 开始录音测试...');
+            log('⚠️ 请在接下来的10秒内播放音频或说话！', 'warning');
+            
+            if (window.bridge && window.bridge.testRecordingFlow) {
+                window.bridge.testRecordingFlow(function(result) {
+                    log('📋 测试结果: ' + result);
+                    
+                    try {
+                        const data = JSON.parse(result);
+                        if (data.success) {
+                            log('✅ 测试开始成功，等待10秒...', 'success');
+                            log('📢 请现在开始播放音频或说话！', 'warning');
+                            log('📊 观察控制台日志查看详细过程...', 'info');
+                        } else {
+                            log('❌ 测试开始失败: ' + (data.error || '未知错误'), 'error');
+                            log('💡 失败步骤: ' + (data.step || '未知'), 'error');
+                        }
+                    } catch (e) {
+                        log('❌ 解析测试结果失败: ' + e.message, 'error');
+                    }
+                });
+            } else {
+                log('❌ bridge.testRecordingFlow 不可用', 'error');
+                log('💡 请确保主程序已启动并加载了测试方法', 'warning');
+            }
+        }
+        
+        // 页面加载完成后的初始化
+        window.addEventListener('load', function() {
+            log('🌟 测试页面加载完成');
+            log('📋 请按顺序点击按钮进行测试');
+            log('🔍 测试将验证录音功能在真实程序环境中的工作情况');
+        });
+    </script>
+</body>
+</html>
