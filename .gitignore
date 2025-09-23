@@ -4,6 +4,8 @@ __pycache__/
 attachments/
 conversations/
 vault/
+logs/
+recorded_audio_segments/
 # 忽略录音片段目录
 recorded_audio_segments/
 transcription_results.txt
@@ -33,3 +35,7 @@ conversations/conversation_20250914_195617.json
 test_*.py
 audio_test_standalone.py
 quick_audio_test.py
+activate_and_run.bat
+start_app_cmd.bat
+测试1.md
+第7講大型語言模型修練史 第二階段名師指點，發揮潛力.md

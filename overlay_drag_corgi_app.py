@@ -2048,65 +2048,6 @@ class CorgiWebBridge(QObject):
         self.logger.info("切换到录音室页面，重定向到网课笔记")
         self.loadContent("online_course_notes")
     
-    @Slot(result=str)
-    def getAudioDevices(self):
-        """获取音频设备列表（包括输入设备和输出设备用于系统音频录制）"""
-        self.logger.info("获取音频设备列表")
-        
-        try:
-            import pyaudio
-            p = pyaudio.PyAudio()
-            input_devices = []
-            output_devices = []
-            
-            for i in range(p.get_device_count()):
-                info = p.get_device_info_by_index(i)
-                device_name = info.get("name", f"设备{i}")
-                
-                # 输入设备（麦克风等）
-                if info.get("maxInputChannels", 0) > 0:
-                    device_info = {
-                        "index": i,
-                        "name": device_name,
-                        "type": "input",
-                        "channels": info.get("maxInputChannels", 0),
-                        "sampleRate": int(info.get("defaultSampleRate", 44100)),
-                        "displayName": f"🎤 [麦克风] {device_name}",
-                        "description": "录制麦克风输入（适用于线下听课）"
-                    }
-                    input_devices.append(device_info)
-                
-                # 检查是否为系统音频录制设备
-                if ("立体声混音" in device_name or "Stereo Mix" in device_name or 
-                    "What U Hear" in device_name or "混音" in device_name or
-                    "WASAPI" in device_name or "loopback" in device_name.lower()):
-                    device_info = {
-                        "index": i,
-                        "name": device_name,
-                        "type": "system_audio",
-                        "channels": max(info.get("maxInputChannels", 0), info.get("maxOutputChannels", 0)),
-                        "sampleRate": int(info.get("defaultSampleRate", 44100)),
-                        "displayName": f"🔊 [系统音频] {device_name}",
-                        "description": "录制电脑播放的声音（适用于网课学习）"
-                    }
-                    output_devices.append(device_info)
-            
-            p.terminate()
-            
-            # 合并设备列表，优先显示系统音频设备
-            all_devices = output_devices + input_devices
-            
-            self.logger.info(f"找到 {len(input_devices)} 个输入设备, {len(output_devices)} 个系统音频设备")
-            return json.dumps({
-                "success": True, 
-                "devices": all_devices,
-                "inputDevices": input_devices,
-                "systemAudioDevices": output_devices
-            }, ensure_ascii=False)
-            
-        except Exception as e:
-            self.logger.error(f"获取音频设备失败: {e}")
-            return json.dumps({"success": False, "error": f"获取音频设备失败: {str(e)}"}, ensure_ascii=False)
     
     
     @Slot(int, str, result=str)
@@ -2442,14 +2383,17 @@ class CorgiWebBridge(QObject):
     
     @Slot(result=str)
     def getAudioDevices(self):
-        """获取所有音频输入设备列表"""
+        """获取所有音频输入设备列表（分类返回）"""
         self.logger.info("获取音频设备列表")
         
         try:
             import pyaudio
             p = pyaudio.PyAudio()
             
-            devices = []
+            input_devices = []
+            system_audio_devices = []
+            all_devices = []
+            
             for i in range(p.get_device_count()):
                 try:
                     info = p.get_device_info_by_index(i)
@@ -2458,18 +2402,48 @@ class CorgiWebBridge(QObject):
                         rate = int(info.get("defaultSampleRate", 44100))
                         channels = info.get("maxInputChannels", 1)
                         
-                        # 创建显示名称
-                        display_name = f"[{i}] {name}"
-                        if "CABLE Output" in name:
-                            display_name += " 🎵"  # 添加音乐图标标识虚拟设备
-                        
-                        devices.append({
+                        # 基础设备信息
+                        device_info = {
                             "index": i,
                             "name": name,
-                            "displayName": display_name,
                             "sampleRate": rate,
                             "channels": channels
-                        })
+                        }
+                        
+                        # 检查是否为系统音频录制设备
+                        is_system_audio = (
+                            "立体声混音" in name or "Stereo Mix" in name or 
+                            "What U Hear" in name or "混音" in name or
+                            "WASAPI" in name or "loopback" in name.lower() or
+                            "CABLE Output" in name  # VB-Audio Cable 也算系统音频
+                        )
+                        
+                        if is_system_audio:
+                            # 系统音频设备
+                            device_info.update({
+                                "type": "system_audio",
+                                "displayName": f"🔊 [系统音频] {name}",
+                                "description": "录制电脑播放的声音（适用于网课学习）"
+                            })
+                            system_audio_devices.append(device_info)
+                        else:
+                            # 普通输入设备（麦克风等）
+                            device_info.update({
+                                "type": "input",
+                                "displayName": f"🎤 [麦克风] {name}",
+                                "description": "录制麦克风输入（适用于线下听课）"
+                            })
+                            input_devices.append(device_info)
+                        
+                        # 添加到总列表（用于简单的设备选择界面）
+                        simple_device = {
+                            "index": i,
+                            "name": name,
+                            "displayName": f"[{i}] {name}" + (" 🎵" if "CABLE Output" in name else ""),
+                            "sampleRate": rate,
+                            "channels": channels
+                        }
+                        all_devices.append(simple_device)
                         
                 except Exception as e:
                     self.logger.warning(f"获取设备{i}信息失败: {e}")
@@ -2477,10 +2451,13 @@ class CorgiWebBridge(QObject):
             
             p.terminate()
             
-            self.logger.info(f"找到 {len(devices)} 个音频输入设备")
+            self.logger.info(f"找到 {len(input_devices)} 个输入设备, {len(system_audio_devices)} 个系统音频设备")
+            
             return json.dumps({
                 "success": True,
-                "devices": devices
+                "devices": all_devices,  # 兼容简单界面
+                "inputDevices": input_devices,  # 麦克风设备
+                "systemAudioDevices": system_audio_devices  # 系统音频设备
             }, ensure_ascii=False)
             
         except Exception as e:
