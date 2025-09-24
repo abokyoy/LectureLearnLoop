@@ -171,7 +171,7 @@ class PracticeService:
                 # 查询练习详情
                 cursor.execute('''
                     SELECT practice_id, timestamp, selected_text, questions,
-                           user_answers, evaluation_result, answer_history, status
+                           user_answers, evaluation_result, status
                     FROM practice_sessions
                     WHERE practice_id = ? OR practice_id = ?
                 ''', (practice_id, clean_practice_id))
@@ -179,7 +179,7 @@ class PracticeService:
                 row = cursor.fetchone()
                 
                 if row:
-                    practice_id, timestamp, selected_text, questions, user_answers, evaluation_result, answer_history, status = row
+                    practice_id, timestamp, selected_text, questions, user_answers, evaluation_result, status = row
                     
                     practice_detail = {
                         "practice_id": practice_id,
@@ -188,7 +188,6 @@ class PracticeService:
                         "questions": questions or "",
                         "user_answers": user_answers or "",
                         "evaluation_result": evaluation_result or "",
-                        "answer_history": answer_history or "",
                         "status": status or "unknown"
                     }
                     
@@ -244,14 +243,13 @@ class PracticeService:
                     cursor.execute('''
                         UPDATE practice_sessions
                         SET selected_text = ?, questions = ?, user_answers = ?,
-                            evaluation_result = ?, answer_history = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+                            evaluation_result = ?, status = ?, updated_at = CURRENT_TIMESTAMP
                         WHERE practice_id = ?
                     ''', (
                         data.get('selected_text', ''),
                         data.get('questions', ''),
                         data.get('user_answers', ''),
                         data.get('evaluation_result', ''),
-                        data.get('answer_history', ''),
                         'evaluated',
                         practice_id
                     ))
@@ -260,8 +258,8 @@ class PracticeService:
                     # 插入新记录
                     cursor.execute('''
                         INSERT INTO practice_sessions 
-                        (practice_id, timestamp, selected_text, questions, user_answers, evaluation_result, answer_history, status)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (practice_id, timestamp, selected_text, questions, user_answers, evaluation_result, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         practice_id,
                         datetime.now().isoformat(),
@@ -269,7 +267,6 @@ class PracticeService:
                         data.get('questions', ''),
                         data.get('user_answers', ''),
                         data.get('evaluation_result', ''),
-                        data.get('answer_history', ''),
                         'evaluated'
                     ))
                     self.logger.info(f"✅ 插入新练习记录: {practice_id}")

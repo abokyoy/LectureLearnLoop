@@ -2260,11 +2260,14 @@
                 }
                 
                 try {
+                    // 构建完整的练习状态数据
                     const evaluationData = {
                         practice_id: currentPracticeId,
-                        question: currentPracticeQuestions,
-                        answer: currentPracticeAnswer,
-                        evaluation: currentEvaluationResult,
+                        questions: currentPracticeQuestions,              // 题目
+                        user_answers: currentPracticeAnswer,              // 当前最终答案
+                        evaluation_result: JSON.stringify(currentEvaluationResult), // 最终评估结果
+                        answer_history: JSON.stringify(practiceAnswerHistory),      // 完整的答案历史
+                        selected_text: '',                               // 选中文本（如果有的话）
                         timestamp: new Date().toISOString()
                     };
                     
@@ -3439,9 +3442,20 @@
                     }
                     
                     // 更新题目显示
-                    const questionContent = document.getElementById('questionContent');
-                    if (questionContent) {
-                        questionContent.innerHTML = currentPracticeQuestions || '题目加载中...';
+                    const questionDisplayArea = document.getElementById('questionDisplayArea');
+                    if (questionDisplayArea && currentPracticeQuestions) {
+                        questionDisplayArea.innerHTML = `
+                            <p class="text-text-dark-brown leading-relaxed">
+                                <strong>题目：</strong> 
+                                <div class="markdown-content mt-2">${formatMarkdownContent(currentPracticeQuestions)}</div>
+                            </p>
+                        `;
+                    } else if (questionDisplayArea) {
+                        questionDisplayArea.innerHTML = `
+                            <p class="text-text-dark-brown leading-relaxed">
+                                <strong>题目：</strong> <span id="questionContent">题目加载中...</span>
+                            </p>
+                        `;
                     }
                     
                     // 更新答案输入框
@@ -3452,7 +3466,22 @@
                     
                     // 重置答案历史（从加载的数据中恢复）
                     practiceAnswerHistory = [];
-                    if (currentPracticeAnswer) {
+                    
+                    // 尝试从保存的answer_history恢复完整的答案历史
+                    if (practiceData.answer_history) {
+                        try {
+                            const savedHistory = JSON.parse(practiceData.answer_history);
+                            if (Array.isArray(savedHistory) && savedHistory.length > 0) {
+                                practiceAnswerHistory = savedHistory;
+                                globalDebugLog('✅ 成功恢复答案历史，共 ' + savedHistory.length + ' 条记录');
+                            }
+                        } catch (e) {
+                            globalDebugError('❌ 解析答案历史失败: ' + e.message);
+                        }
+                    }
+                    
+                    // 如果没有保存的历史，但有当前答案，则创建一条记录
+                    if (practiceAnswerHistory.length === 0 && currentPracticeAnswer) {
                         const submissionId = 'loaded_' + Date.now();
                         let evaluationScore = null;
                         if (currentEvaluationResult) {
@@ -3474,6 +3503,7 @@
                             evaluation: currentEvaluationResult,
                             score: evaluationScore
                         });
+                        globalDebugLog('ℹ️ 创建了一条默认答案历史记录');
                     }
                     
                     // 更新答案历史显示
