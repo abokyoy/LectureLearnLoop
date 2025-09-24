@@ -3111,7 +3111,9 @@
                     
                     if (result.success) {
                         globalDebugLog('✅ 成功加载练习数据');
-                        loadPracticeData(result.practice);
+                        // 注意：数据库返回的数据结构是 {success: true, practice: {...}}
+                        // 而不是 {success: true, practice_data: {...}}
+                        loadPracticeData(result.practice || result.practice_data || {});
                         
                         // 关闭弹窗
                         if (historyModal) {
@@ -3139,7 +3141,7 @@
                     }
                 } catch (error) {
                     globalDebugError('加载练习历史异常: ' + error.message);
-                    alert('加载练习历史失败');
+                    alert('加载练习历史失败: ' + error.message);
                 }
             }
             
@@ -3228,53 +3230,69 @@
             function loadPracticeData(practiceData) {
                 globalDebugLog('📊 开始加载练习数据: ' + JSON.stringify(practiceData).substring(0, 100));
                 
-                // 设置全局练习状态
-                currentPracticeId = practiceData.practice_id;
-                currentPracticeQuestions = practiceData.questions;
-                currentPracticeAnswer = practiceData.user_answers || '';
-                currentEvaluationResult = practiceData.evaluation_result;
-                
-                // 更新练习ID显示
-                const practiceIdDisplay = document.getElementById('practiceIdDisplay');
-                if (practiceIdDisplay) {
-                    practiceIdDisplay.textContent = currentPracticeId;
+                try {
+                    // 设置全局练习状态
+                    currentPracticeId = practiceData.practice_id || practiceData.id || '';
+                    currentPracticeQuestions = practiceData.questions || '';
+                    currentPracticeAnswer = practiceData.user_answers || practiceData.answer || '';
+                    currentEvaluationResult = practiceData.evaluation_result || practiceData.evaluation || null;
+                    
+                    // 更新练习ID显示
+                    const practiceIdDisplay = document.getElementById('practiceIdDisplay');
+                    if (practiceIdDisplay) {
+                        practiceIdDisplay.textContent = currentPracticeId;
+                    }
+                    
+                    // 更新题目显示
+                    const questionContent = document.getElementById('questionContent');
+                    if (questionContent) {
+                        questionContent.innerHTML = currentPracticeQuestions || '题目加载中...';
+                    }
+                    
+                    // 更新答案输入框
+                    const answerInput = document.getElementById('practiceAnswerInput');
+                    if (answerInput) {
+                        answerInput.value = currentPracticeAnswer;
+                    }
+                    
+                    // 重置答案历史（从加载的数据中恢复）
+                    practiceAnswerHistory = [];
+                    if (currentPracticeAnswer) {
+                        const submissionId = 'loaded_' + Date.now();
+                        let evaluationScore = null;
+                        if (currentEvaluationResult) {
+                            if (typeof currentEvaluationResult === 'object') {
+                                evaluationScore = currentEvaluationResult.score || null;
+                            } else if (typeof currentEvaluationResult === 'string') {
+                                // 尝试从字符串中提取分数
+                                const scoreMatch = currentEvaluationResult.match(/(\d+)分/);
+                                if (scoreMatch) {
+                                    evaluationScore = parseInt(scoreMatch[1]);
+                                }
+                            }
+                        }
+                        practiceAnswerHistory.push({
+                            id: submissionId,
+                            answer: currentPracticeAnswer,
+                            timestamp: practiceData.timestamp ? new Date(practiceData.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
+                            status: currentEvaluationResult ? '已评估' : '已提交',
+                            evaluation: currentEvaluationResult,
+                            score: evaluationScore
+                        });
+                    }
+                    
+                    // 更新答案历史显示
+                    updateAnswerHistory();
+                    
+                    globalDebugLog('✅ 练习数据加载完成');
+                    globalDebugLog('🎯 练习ID: ' + currentPracticeId);
+                    globalDebugLog('❓ 题目长度: ' + (currentPracticeQuestions || '').length);
+                    globalDebugLog('✅ 答案长度: ' + (currentPracticeAnswer || '').length);
+                    globalDebugLog('📊 评估结果: ' + (currentEvaluationResult ? '有' : '无'));
+                } catch (error) {
+                    globalDebugError('❌ 加载练习数据时出错: ' + error.message);
+                    alert('加载练习数据时出错: ' + error.message);
                 }
-                
-                // 更新题目显示
-                const questionContent = document.getElementById('questionContent');
-                if (questionContent) {
-                    questionContent.innerHTML = currentPracticeQuestions || '题目加载中...';
-                }
-                
-                // 更新答案输入框
-                const answerInput = document.getElementById('practiceAnswerInput');
-                if (answerInput) {
-                    answerInput.value = currentPracticeAnswer;
-                }
-                
-                // 重置答案历史（从加载的数据中恢复）
-                practiceAnswerHistory = [];
-                if (currentPracticeAnswer) {
-                    const submissionId = 'loaded_' + Date.now();
-                    const evaluationScore = currentEvaluationResult && typeof currentEvaluationResult === 'object' && currentEvaluationResult.score ? currentEvaluationResult.score : 85;
-                    practiceAnswerHistory.push({
-                        id: submissionId,
-                        answer: currentPracticeAnswer,
-                        timestamp: practiceData.timestamp ? new Date(practiceData.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
-                        status: currentEvaluationResult ? '已评估' : '已提交',
-                        evaluation: currentEvaluationResult,
-                        score: currentEvaluationResult ? evaluationScore : null
-                    });
-                }
-                
-                // 更新答案历史显示
-                updateAnswerHistory();
-                
-                globalDebugLog('✅ 练习数据加载完成');
-                globalDebugLog('🎯 练习ID: ' + currentPracticeId);
-                globalDebugLog('❓ 题目长度: ' + (currentPracticeQuestions || '').length);
-                globalDebugLog('✅ 答案长度: ' + (currentPracticeAnswer || '').length);
-                globalDebugLog('📊 评估结果: ' + (currentEvaluationResult ? '有' : '无'));
             }
             
             // 加载对话内容
