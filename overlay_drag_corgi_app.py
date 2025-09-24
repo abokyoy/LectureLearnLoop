@@ -2266,50 +2266,183 @@ class CorgiWebBridge(QObject):
     @Slot(str, result=str)
     def loadPracticeHistory(self, practice_id):
         """加载指定的练习历史"""
-        self.logger.info(f"加载练习历史: {practice_id}")
+        self.logger.info(f"=== 开始加载练习历史: {practice_id} ===")
+        
+        try:
+            # 导入练习服务
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+            
+            from services.practice_service import PracticeService
+            
+            # 初始化服务
+            practice_service = PracticeService()
+            
+            # 加载练习详情
+            self.logger.info(f"📊 从数据库加载练习详情: {practice_id}")
+            result = practice_service.load_practice_detail(practice_id)
+            
+            if result["success"]:
+                practice_detail = result["practice"]
+                self.logger.info(f"✅ 成功加载练习详情: {practice_id}")
+                self.logger.info(f"📄 practice_id: {practice_detail.get('practice_id')}")
+                self.logger.info(f"📄 timestamp: {practice_detail.get('timestamp')}")
+                self.logger.info(f"📄 questions长度: {len(practice_detail.get('questions', ''))}")
+                self.logger.info(f"📄 user_answers长度: {len(practice_detail.get('user_answers', ''))}")
+                self.logger.info(f"📄 evaluation_result长度: {len(practice_detail.get('evaluation_result', ''))}")
+                
+                result_str = json.dumps(result, ensure_ascii=False)
+                self.logger.info("=== 练习历史加载完成 ===")
+                return result_str
+            else:
+                error_msg = result.get("error", "未知错误")
+                self.logger.error(f"❌ 加载练习详情失败: {error_msg}")
+                return json.dumps(result, ensure_ascii=False)
+            
+        except ImportError as import_error:
+            self.logger.error(f"❌ 导入模块失败: {import_error}")
+            # 回退到原有的JSON文件读取方式
+            self.logger.info("🔄 回退到JSON文件读取方式...")
+            return self._load_practice_history_from_json(practice_id)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 加载练习历史异常: {e}")
+            self.logger.error(f"❌ 错误类型: {type(e).__name__}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            
+            # 尝试回退到JSON文件读取
+            self.logger.info("🔄 尝试回退到JSON文件读取...")
+            try:
+                return self._load_practice_history_from_json(practice_id)
+            except Exception as fallback_error:
+                self.logger.error(f"❌ JSON文件读取也失败: {fallback_error}")
+                return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    def _load_practice_history_from_json(self, practice_id):
+        """从 JSON 文件加载练习历史（备用方法）"""
+        self.logger.info(f"🔄 使用JSON文件加载方式: {practice_id}")
         
         try:
             import os
             import json
             
-            practice_dir = "practice_sessions"
-            filename = f"practice_{practice_id}.json"
-            filepath = os.path.join(practice_dir, filename)
+            current_dir = os.getcwd()
+            practice_dir = os.path.join(current_dir, "practice_sessions")
             
-            if not os.path.exists(filepath):
-                return json.dumps({"success": False, "error": "练习记录不存在"}, ensure_ascii=False)
+            # 清理practice_id
+            clean_practice_id = practice_id
+            if practice_id.startswith('practice_'):
+                clean_practice_id = practice_id[9:]
             
-            with open(filepath, 'r', encoding='utf-8') as f:
-                practice_data = json.load(f)
+            # 尝试多种文件名格式
+            possible_filenames = [
+                f"practice_{clean_practice_id}.json",
+                f"practice_practice_{clean_practice_id}.json",
+                f"{practice_id}.json"
+            ]
             
-            return json.dumps({"success": True, "practice": practice_data}, ensure_ascii=False)
+            for filename in possible_filenames:
+                filepath = os.path.join(practice_dir, filename)
+                if os.path.exists(filepath):
+                    try:
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            practice_data = json.load(f)
+                        
+                        result = {"success": True, "practice": practice_data}
+                        return json.dumps(result, ensure_ascii=False)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 读取文件失败 {filename}: {e}")
+                        continue
+            
+            # 所有尝试都失败
+            error_msg = f"练习记录不存在: {practice_id}"
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"加载练习历史失败: {e}")
+            self.logger.error(f"❌ JSON文件加载失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
     @Slot(str, result=str)
     def savePracticeEvaluation(self, evaluation_data):
         """保存练习评估结果"""
-        self.logger.info("保存练习评估结果")
+        self.logger.info("=== 开始保存练习评估结果 ===")
+        
+        try:
+            import json
+            
+            self.logger.info(f"📥 接收到评估数据长度: {len(evaluation_data)} 字符")
+            data = json.loads(evaluation_data)
+            
+            # 尝试使用数据库方式
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                from services.practice_service import PracticeService
+                
+                # 初始化服务
+                practice_service = PracticeService()
+                
+                # 保存完整的练习数据
+                self.logger.info("💾 使用数据库方式保存...")
+                result = practice_service.save_complete_practice_data(data)
+                
+                if result["success"]:
+                    self.logger.info(f"✅ 数据库保存成功: {result.get('practice_id')}")
+                    return json.dumps(result, ensure_ascii=False)
+                else:
+                    raise Exception(result.get("error", "数据库保存失败"))
+                    
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入模块失败: {import_error}")
+                # 回退到JSON文件保存方式
+                self.logger.info("🔄 回退到JSON文件保存方式...")
+                return self._save_practice_evaluation_to_json(data)
+                
+            except Exception as db_error:
+                self.logger.error(f"❌ 数据库保存失败: {db_error}")
+                # 回退到JSON文件保存方式
+                self.logger.info("🔄 回退到JSON文件保存方式...")
+                return self._save_practice_evaluation_to_json(data)
+            
+        except json.JSONDecodeError as json_error:
+            error_msg = f"JSON解析错误: {json_error}"
+            self.logger.error(f"❌ {error_msg}")
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存练习评估发生严重错误: {e}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    def _save_practice_evaluation_to_json(self, data):
+        """保存练习评估到JSON文件（备用方法）"""
+        self.logger.info("🔄 使用JSON文件保存方式...")
         
         try:
             import os
             import json
             from datetime import datetime
             
-            data = json.loads(evaluation_data)
             practice_id = data.get('practice_id')
             
+            # 清理practice_id
+            if practice_id and practice_id.startswith('practice_'):
+                practice_id = practice_id[9:]
+            
             if not practice_id:
-                # 生成新的练习ID
                 practice_id = datetime.now().strftime('%Y%m%d_%H%M%S')
             
-            # 创建练习目录
-            practice_dir = "practice_sessions"
+            # 创建目录
+            current_dir = os.getcwd()
+            practice_dir = os.path.join(current_dir, "practice_sessions")
             os.makedirs(practice_dir, exist_ok=True)
             
-            # 保存练习数据
+            # 保存数据
             practice_data = {
                 "practice_id": practice_id,
                 "timestamp": datetime.now().isoformat(),
@@ -2326,16 +2459,17 @@ class CorgiWebBridge(QObject):
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(practice_data, f, ensure_ascii=False, indent=2)
             
-            self.logger.info(f"练习评估结果已保存: {filepath}")
-            
-            return json.dumps({
-                "success": True, 
+            result = {
+                "success": True,
                 "message": "评估结果已保存",
-                "practice_id": practice_id
-            }, ensure_ascii=False)
+                "practice_id": practice_id,
+                "filepath": filepath
+            }
+            
+            return json.dumps(result, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"保存练习评估失败: {e}")
+            self.logger.error(f"❌ JSON文件保存失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
     @Slot(str, result=str)
