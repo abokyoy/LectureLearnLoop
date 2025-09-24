@@ -2329,21 +2329,24 @@
             function addToErrorBankWithPromiseHandling() {
                 globalDebugLog('📁 错题入库');
                 
-                if (!window.bridge || !window.bridge.importPracticeErrors) {
+                if (!window.bridge || !window.bridge.addToErrorBank) {
                     alert('错题入库功能暂时不可用');
                     return;
                 }
                 
                 try {
+                    // 构建与原版practice_panel.py一致的错题数据
                     const errorData = {
-                        question: currentPracticeQuestions,
-                        user_answer: currentPracticeAnswer,
-                        evaluation: currentEvaluationResult,
+                        practice_content: '', // 将在后端组装
+                        evaluation_result: currentEvaluationResult?.evaluation_text || currentEvaluationResult?.feedback || '',
+                        selected_text: '', // 如果有选中文本的话
+                        questions: currentPracticeQuestions,
+                        answers: currentPracticeAnswer,
                         practice_id: currentPracticeId,
                         timestamp: new Date().toISOString()
                     };
                     
-                    let response = window.bridge.importPracticeErrors(JSON.stringify(errorData));
+                    let response = window.bridge.addToErrorBank(JSON.stringify(errorData));
                     
                     // 处理可能的Promise对象
                     if (response && typeof response.then === 'function') {
@@ -2376,14 +2379,485 @@
                     const result = JSON.parse(response);
                     
                     if (result.success) {
-                        alert('错题已入库');
-                        closeEvaluationDetailsModal();
+                        // 如果有错题数据，显示错题入库弹窗
+                        if (result.data && result.data.error_questions && result.data.error_questions.length > 0) {
+                            showErrorImportDialog(result.data);
+                        } else {
+                            alert('没有找到错题');
+                        }
                     } else {
                         alert('错题入库失败: ' + (result.error || '未知错误'));
                     }
                 } catch (error) {
                     globalDebugError('错题入库响应处理失败: ' + error.message);
                     alert('错题入库失败: 响应处理错误');
+                }
+            }
+            
+            // 显示错题入库弹窗 - 与原版ErrorImportDialog保持一致
+            function showErrorImportDialog(errorData) {
+                const { error_questions, available_subjects } = errorData;
+                
+                // 先显示学科选择界面
+                const modalHtml = `
+                    <div id="errorImportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                        <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
+                            <div class="px-6 py-4 border-b border-gray-200">
+                                <h2 class="text-xl font-semibold text-gray-900">错题入库</h2>
+                                <p class="text-sm text-gray-600 mt-1">请先选择学科，然后系统将为错题匹配该学科下的知识点</p>
+                            </div>
+                            
+                            <div id="subjectSelectionStep" class="flex-1 px-6 py-8">
+                                <div class="text-center">
+                                    <div class="mb-6">
+                                        <h3 class="text-lg font-medium text-gray-900 mb-4">选择学科</h3>
+                                        <p class="text-sm text-gray-600 mb-6">找到 ${error_questions.length} 道错题，请选择要归类的学科：</p>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                                        ${available_subjects.map((subject, index) => `
+                                            <button data-subject-name="${subject.name}" data-subject-index="${index}"
+                                                    class="subject-select-btn p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                                                <div class="text-lg font-medium text-gray-900">${subject.name}</div>
+                                                <div class="text-sm text-gray-500">${subject.point_count} 个知识点</div>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                    
+                                    ${available_subjects.length === 0 ? `
+                                        <div class="text-center py-8">
+                                            <p class="text-gray-500">暂无可用学科，请先在知识管理中添加学科和知识点</p>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            
+                            <div id="errorMatchingStep" class="flex-1 overflow-auto px-6 py-4" style="display: none;">
+                                <div class="mb-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <span class="text-sm text-gray-600">已选择学科：</span>
+                                            <span id="selectedSubjectName" class="font-medium text-blue-600"></span>
+                                        </div>
+                                        <button onclick="backToSubjectSelection()" class="text-sm text-blue-600 hover:text-blue-800">
+                                            重新选择学科
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="overflow-x-auto">
+                                    <table class="w-full border-collapse border border-gray-300">
+                                        <thead>
+                                            <tr class="bg-gray-50">
+                                                <th class="border border-gray-300 px-4 py-2 text-left">
+                                                    <input type="checkbox" id="selectAllErrors" class="mr-2">
+                                                    序号
+                                                </th>
+                                                <th class="border border-gray-300 px-4 py-2 text-left">题目片段</th>
+                                                <th class="border border-gray-300 px-4 py-2 text-left">用户答案</th>
+                                                <th class="border border-gray-300 px-4 py-2 text-left">匹配知识点</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="errorTableBody">
+                                            <!-- 动态填充 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="border-t border-gray-200 px-6 py-4">
+                                <div class="flex justify-between">
+                                    <div id="importButtons" class="space-x-3" style="display: none;">
+                                        <button onclick="window.importSelectedErrors()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                            入库选中
+                                        </button>
+                                        <button onclick="window.importAllErrors()" class="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+                                            全部入库
+                                        </button>
+                                    </div>
+                                    <button onclick="window.closeErrorImportModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                                        关闭
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 移除旧弹窗
+                const existingModal = document.getElementById('errorImportModal');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+                
+                // 添加新弹窗
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                
+                // 绑定全选事件
+                const selectAllCheckbox = document.getElementById('selectAllErrors');
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.addEventListener('change', function() {
+                        const checkboxes = document.querySelectorAll('.error-checkbox');
+                        checkboxes.forEach(cb => cb.checked = this.checked);
+                    });
+                }
+                
+                // 绑定学科选择按钮事件
+                const subjectButtons = document.querySelectorAll('.subject-select-btn');
+                subjectButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const subjectName = this.dataset.subjectName;
+                        selectSubjectForErrors(subjectName);
+                    });
+                });
+                
+                // 存储错题数据供后续使用
+                window.currentErrorData = errorData;
+                
+                globalDebugLog('✅ 错题入库弹窗已显示');
+            }
+            
+            // 选择学科并匹配知识点
+            function selectSubjectForErrors(subjectName) {
+                if (!window.currentErrorData) {
+                    alert('错题数据丢失，请重新操作');
+                    return;
+                }
+                
+                globalDebugLog('🎯 用户选择学科: ' + subjectName);
+                
+                // 显示加载状态
+                const subjectStep = document.getElementById('subjectSelectionStep');
+                if (subjectStep) {
+                    subjectStep.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <p class="mt-4 text-gray-600">正在为学科 "${subjectName}" 匹配知识点...</p>
+                        </div>
+                    `;
+                }
+                
+                // 调用后端API匹配知识点
+                if (!window.bridge || !window.bridge.matchKnowledgePointsForSubject) {
+                    alert('知识点匹配功能暂时不可用');
+                    return;
+                }
+                
+                try {
+                    const matchData = {
+                        selected_subject: subjectName,
+                        error_questions: window.currentErrorData.error_questions,
+                        evaluation_result: window.currentErrorData.evaluation_result || ""
+                    };
+                    
+                    let response = window.bridge.matchKnowledgePointsForSubject(JSON.stringify(matchData));
+                    
+                    // 处理可能的Promise对象
+                    if (response && typeof response.then === 'function') {
+                        globalDebugLog('🔄 检测到Promise对象，等待知识点匹配结果...');
+                        response.then(function(actualResponse) {
+                            handleKnowledgePointMatchResponse(actualResponse, subjectName);
+                        }).catch(function(error) {
+                            globalDebugError('🚒 知识点匹配Promise解析失败: ' + error.message);
+                            alert('知识点匹配失败: Promise解析错误');
+                            backToSubjectSelection();
+                        });
+                        return;
+                    }
+                    
+                    // 如果不是Promise，直接处理
+                    handleKnowledgePointMatchResponse(response, subjectName);
+                    
+                } catch (error) {
+                    globalDebugError('知识点匹配失败: ' + error.message);
+                    alert('知识点匹配失败: ' + error.message);
+                    backToSubjectSelection();
+                }
+            }
+            
+            // 处理知识点匹配响应
+            function handleKnowledgePointMatchResponse(response, subjectName) {
+                try {
+                    if (typeof response !== 'string') {
+                        throw new Error('后端返回的不是字符串: ' + typeof response);
+                    }
+                    
+                    const result = JSON.parse(response);
+                    
+                    if (result.success) {
+                        // 更新错题数据
+                        window.currentErrorData.error_questions = result.data.matched_errors;
+                        window.currentErrorData.selected_subject = subjectName;
+                        
+                        // 显示错题匹配界面
+                        showErrorMatchingInterface(result.data.matched_errors, subjectName);
+                        
+                        globalDebugLog('✅ 知识点匹配完成，学科: ' + subjectName);
+                    } else {
+                        alert('知识点匹配失败: ' + (result.error || '未知错误'));
+                        backToSubjectSelection();
+                    }
+                } catch (error) {
+                    globalDebugError('知识点匹配响应处理失败: ' + error.message);
+                    alert('知识点匹配失败: 响应处理错误');
+                    backToSubjectSelection();
+                }
+            }
+            
+            // 显示错题匹配界面
+            function showErrorMatchingInterface(matchedErrors, subjectName) {
+                // 隐藏学科选择界面
+                const subjectStep = document.getElementById('subjectSelectionStep');
+                if (subjectStep) {
+                    subjectStep.style.display = 'none';
+                }
+                
+                // 显示错题匹配界面
+                const matchingStep = document.getElementById('errorMatchingStep');
+                if (matchingStep) {
+                    matchingStep.style.display = 'block';
+                }
+                
+                // 更新学科名称
+                const subjectNameSpan = document.getElementById('selectedSubjectName');
+                if (subjectNameSpan) {
+                    subjectNameSpan.textContent = subjectName;
+                }
+                
+                // 填充错题表格
+                const tableBody = document.getElementById('errorTableBody');
+                if (tableBody) {
+                    tableBody.innerHTML = matchedErrors.map((error, index) => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="border border-gray-300 px-4 py-2">
+                                <input type="checkbox" class="error-checkbox mr-2" data-index="${index}">
+                                ${error.question_index + 1}
+                            </td>
+                            <td class="border border-gray-300 px-4 py-2">
+                                <div class="max-w-md overflow-hidden">
+                                    <div class="text-sm whitespace-pre-wrap">${error.question_content || ''}</div>
+                                </div>
+                            </td>
+                            <td class="border border-gray-300 px-4 py-2">
+                                <div class="max-w-xs overflow-hidden">
+                                    <div class="text-sm">${error.user_answer || ''}</div>
+                                </div>
+                            </td>
+                            <td class="border border-gray-300 px-4 py-2">
+                                <select class="knowledge-point-select w-full p-2 border border-gray-300 rounded text-sm" data-index="${index}">
+                                    ${error.knowledge_options.map(option => `
+                                        <option value="${option.id}" data-subject="${option.subject}" data-point-name="${option.point_name}">
+                                            ${option.display}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+                
+                // 绑定全选事件
+                const selectAllCheckbox = document.getElementById('selectAllErrors');
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.addEventListener('change', function() {
+                        const checkboxes = document.querySelectorAll('.error-checkbox');
+                        checkboxes.forEach(cb => cb.checked = this.checked);
+                    });
+                }
+                
+                // 显示入库按钮
+                const importButtons = document.getElementById('importButtons');
+                if (importButtons) {
+                    importButtons.style.display = 'block';
+                }
+                
+                globalDebugLog('✅ 错题匹配界面已显示');
+            }
+            
+            // 返回学科选择界面
+            function backToSubjectSelection() {
+                const subjectStep = document.getElementById('subjectSelectionStep');
+                const matchingStep = document.getElementById('errorMatchingStep');
+                const importButtons = document.getElementById('importButtons');
+                
+                if (subjectStep) subjectStep.style.display = 'block';
+                if (matchingStep) matchingStep.style.display = 'none';
+                if (importButtons) importButtons.style.display = 'none';
+                
+                // 恢复学科选择界面的原始内容
+                if (window.currentErrorData && window.currentErrorData.available_subjects) {
+                    const { error_questions, available_subjects } = window.currentErrorData;
+                    subjectStep.innerHTML = `
+                        <div class="text-center">
+                            <div class="mb-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">选择学科</h3>
+                                <p class="text-sm text-gray-600 mb-6">找到 ${error_questions.length} 道错题，请选择要归类的学科：</p>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                                ${available_subjects.map((subject, index) => `
+                                    <button data-subject-name="${subject.name}" data-subject-index="${index}"
+                                            class="subject-select-btn p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                                        <div class="text-lg font-medium text-gray-900">${subject.name}</div>
+                                        <div class="text-sm text-gray-500">${subject.point_count} 个知识点</div>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // 重新绑定学科选择按钮事件
+                    const subjectButtons = document.querySelectorAll('.subject-select-btn');
+                    subjectButtons.forEach(button => {
+                        button.addEventListener('click', function() {
+                            const subjectName = this.dataset.subjectName;
+                            selectSubjectForErrors(subjectName);
+                        });
+                    });
+                }
+            }
+            
+            // 关闭错题入库弹窗
+            window.closeErrorImportModal = function() {
+                const modal = document.getElementById('errorImportModal');
+                if (modal) {
+                    modal.remove();
+                }
+                window.currentErrorData = null;
+            }
+            
+            // 入库选中的错题
+            window.importSelectedErrors = function() {
+                const selectedErrors = collectSelectedErrors();
+                if (selectedErrors.length === 0) {
+                    alert('请先选择需要入库的错题');
+                    return;
+                }
+                saveErrorsToKnowledgeBase(selectedErrors);
+            }
+            
+            // 入库所有错题
+            window.importAllErrors = function() {
+                const allErrors = collectAllErrors();
+                if (allErrors.length === 0) {
+                    alert('没有可入库的错题');
+                    return;
+                }
+                saveErrorsToKnowledgeBase(allErrors);
+            }
+            
+            // 收集选中的错题
+            window.collectSelectedErrors = function() {
+                if (!window.currentErrorData) return [];
+                
+                const selectedErrors = [];
+                const checkboxes = document.querySelectorAll('.error-checkbox:checked');
+                
+                checkboxes.forEach(checkbox => {
+                    const index = parseInt(checkbox.dataset.index);
+                    const error = window.currentErrorData.error_questions[index];
+                    const select = document.querySelector(`.knowledge-point-select[data-index="${index}"]`);
+                    
+                    if (error && select) {
+                        const selectedOption = select.options[select.selectedIndex];
+                        selectedErrors.push({
+                            ...error,
+                            selected_knowledge_point: {
+                                id: parseInt(selectedOption.value),
+                                subject: selectedOption.dataset.subject,
+                                point_name: selectedOption.dataset.pointName,
+                                display: selectedOption.text
+                            }
+                        });
+                    }
+                });
+                
+                return selectedErrors;
+            }
+            
+            // 收集所有错题
+            window.collectAllErrors = function() {
+                if (!window.currentErrorData) return [];
+                
+                const allErrors = [];
+                const selects = document.querySelectorAll('.knowledge-point-select');
+                
+                selects.forEach(select => {
+                    const index = parseInt(select.dataset.index);
+                    const error = window.currentErrorData.error_questions[index];
+                    
+                    if (error) {
+                        const selectedOption = select.options[select.selectedIndex];
+                        allErrors.push({
+                            ...error,
+                            selected_knowledge_point: {
+                                id: parseInt(selectedOption.value),
+                                subject: selectedOption.dataset.subject,
+                                point_name: selectedOption.dataset.pointName,
+                                display: selectedOption.text
+                            }
+                        });
+                    }
+                });
+                
+                return allErrors;
+            }
+            
+            // 保存错题到知识库
+            window.saveErrorsToKnowledgeBase = function(selectedErrors) {
+                if (!window.bridge || !window.bridge.saveErrorsToKnowledgeBase) {
+                    alert('保存功能暂时不可用');
+                    return;
+                }
+                
+                try {
+                    const saveData = {
+                        selected_errors: selectedErrors
+                    };
+                    
+                    let response = window.bridge.saveErrorsToKnowledgeBase(JSON.stringify(saveData));
+                    
+                    // 处理可能的Promise对象
+                    if (response && typeof response.then === 'function') {
+                        globalDebugLog('🔄 检测到Promise对象，等待保存结果...');
+                        response.then(function(actualResponse) {
+                            handleSaveErrorsResponse(actualResponse);
+                        }).catch(function(error) {
+                            globalDebugError('🚒 保存错题Promise解析失败: ' + error.message);
+                            alert('保存失败: Promise解析错误');
+                        });
+                        return;
+                    }
+                    
+                    // 如果不是Promise，直接处理
+                    handleSaveErrorsResponse(response);
+                    
+                } catch (error) {
+                    globalDebugError('保存错题失败: ' + error.message);
+                    alert('保存错题失败: ' + error.message);
+                }
+            }
+            
+            // 处理保存错题响应
+            function handleSaveErrorsResponse(response) {
+                try {
+                    if (typeof response !== 'string') {
+                        throw new Error('后端返回的不是字符串: ' + typeof response);
+                    }
+                    
+                    const result = JSON.parse(response);
+                    
+                    if (result.success) {
+                        alert(result.message || '错题保存成功');
+                        closeErrorImportModal();
+                        // 如果评估详情弹窗还在，也关闭它
+                        closeEvaluationDetailsModal();
+                    } else {
+                        alert('保存失败: ' + (result.error || '未知错误'));
+                    }
+                } catch (error) {
+                    globalDebugError('保存错题响应处理失败: ' + error.message);
+                    alert('保存失败: 响应处理错误');
                 }
             }
             
@@ -3013,14 +3487,9 @@
                                     <button onclick="window.closeEvaluationDetailsModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
                                         关闭
                                     </button>
-                                    <button onclick="window.saveCurrentEvaluation()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                        保存评估结果
-                                    </button>
-                                    ${score < 80 ? `
                                     <button onclick="window.addCurrentToErrorBank()" class="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">
-                                        加入错题库
+                                        错题入库
                                     </button>
-                                    ` : ''}
                                 </div>
                             </div>
                         </div>

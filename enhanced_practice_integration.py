@@ -54,10 +54,20 @@ class ErrorQuestionSlicer:
             for idx, info in error_analysis.items():
                 if not info.get("is_correct", False):
                     q_data = all_questions[idx] if 0 <= idx < len(all_questions) else {"question": f"问题{idx+1}", "user_answer": "", "full_block": f"问题{idx+1}"}
+                    # 优先使用从评估结果中解析的完整题块，如果没有则使用题目内容
+                    question_content = q_data.get("full_block", "")
+                    if not question_content or question_content == f"问题{idx+1}":
+                        question_content = q_data.get("question", f"问题{idx+1}")
+                    
+                    print(f"[DEBUG] 错题 {idx+1} 索引: {idx}, all_questions长度: {len(all_questions)}")
+                    print(f"[DEBUG] 错题 {idx+1} q_data keys: {list(q_data.keys()) if q_data else 'None'}")
+                    print(f"[DEBUG] 错题 {idx+1} q_data.full_block: {q_data.get('full_block', 'NO_FULL_BLOCK')[:100] if q_data else 'None'}...")
+                    print(f"[DEBUG] 错题 {idx+1} 最终内容: {question_content[:200]}...")
+                    
                     error_questions.append({
                         "question_index": idx,
-                        # 使用完整题块作为题目内容，包含选项/用户答案/判定/分析与要点
-                        "question_content": q_data.get("full_block") or q_data.get("question", f"问题{idx+1}"),
+                        # 使用完整题块作为题目内容，包含从"原题："到分隔线的所有内容
+                        "question_content": question_content,
                         "user_answer": q_data.get("user_answer", ""),
                         "correct_answer": info.get("correct_answer", ""),
                         "explanation": info.get("explanation", ""),
@@ -118,33 +128,57 @@ class ErrorQuestionSlicer:
         """
         try:
             blocks: List[Dict] = []
-            # 使用 finditer 拿到整段 span 实现完整切片
-            pattern = r"(?ms)^\s*(\d+)\.[ \t]*原题[：:][ \t]*\n?(.*?)(?=(?:\n----\s*$|\n\d+\.[ \t]*原题[：:]|\n整体评价|\Z))"
-            for m in re.finditer(pattern, evaluation_result):
+            print(f"[DEBUG] 开始解析评估结果，长度: {len(evaluation_result)}")
+            print(f"[DEBUG] 评估结果前500字符: {evaluation_result[:500]}")
+            
+            # 修正的正则表达式，匹配实际的评估格式（没有"原题："标识符）
+            pattern = r"(\d+)\.[ \t]+(.*?)(?=(?:\n----|\n\d+\.[ \t]+|\n整体评价|\Z))"
+            
+            matches = list(re.finditer(pattern, evaluation_result, re.MULTILINE | re.DOTALL))
+            print(f"[DEBUG] 找到 {len(matches)} 个题目匹配")
+            
+            for m in matches:
                 try:
                     idx = int(m.group(1)) - 1
-                except Exception:
+                    full_content = m.group(0).strip()  # 完整的题目块
+                    inner_content = m.group(2) or ""   # 原题后的内容
+                    
+                    print(f"[DEBUG] 题目 {idx+1} 完整块长度: {len(full_content)}")
+                    print(f"[DEBUG] 题目 {idx+1} 内容预览: {full_content[:200]}...")
+                    
+                    # 提取用户答案
+                    ua_match = re.search(r"用户答案[：:][ \t]*([^\n]*)", full_content)
+                    user_answer = ua_match.group(1).strip() if ua_match else ""
+                    
+                    # 提取题目内容（从数字.后到"用户答案："前的内容）
+                    question_match = re.search(r"(.*?)(?=\n用户答案[：:]|$)", inner_content, re.DOTALL)
+                    if question_match:
+                        question_text = question_match.group(1).strip()
+                    else:
+                        # 如果没有找到，使用inner_content的第一部分
+                        lines = inner_content.split('\n')
+                        question_lines = []
+                        for line in lines:
+                            if re.match(r"用户答案[：:]|判定[：:]|分析与要点[：:]", line):
+                                break
+                            question_lines.append(line)
+                        question_text = '\n'.join(question_lines).strip()
+                    
+                    print(f"[DEBUG] 题目 {idx+1} 提取的题目内容: {question_text[:100]}...")
+                    
+                    print(f"[DEBUG] 添加题目块 - 索引: {idx}, 题目: {question_text[:50]}...")
+                    
+                    blocks.append({
+                        "index": idx,
+                        "full_block": full_content,  # 完整的题目块，用于显示
+                        "question": question_text,   # 仅题目内容，用于知识点匹配
+                        "user_answer": user_answer,
+                    })
+                    
+                except Exception as e:
+                    print(f"[DEBUG] 解析题目失败: {e}")
                     continue
-                full_block = m.group(0).strip()
-                inner = m.group(2) or ""
-                # 提取用户答案
-                ua_match = re.search(r"用户答案[：:][ \t]*(.*)", full_block)
-                user_answer = ua_match.group(1).strip() if ua_match else ""
-                # 提取题干（尽量取到“选项/用户答案”之前）
-                q_text = inner
-                cut_points = []
-                for tag in [r"\n选项[：:]", r"\n用户答案[：:]", r"\n判定[：:]", r"\n分析与要点[：:]"]:
-                    mm = re.search(tag, inner)
-                    if mm:
-                        cut_points.append(mm.start())
-                if cut_points:
-                    q_text = inner[:min(cut_points)].strip()
-                blocks.append({
-                    "index": idx,
-                    "full_block": full_block,
-                    "question": q_text,
-                    "user_answer": user_answer,
-                })
+                    print(f"[DEBUG] 成功解析 {len(blocks)} 个题目块")
             # 按索引排序，组装成顺序列表（缺失位置以空占位）
             if not blocks:
                 return []

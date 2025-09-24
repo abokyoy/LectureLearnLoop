@@ -569,34 +569,28 @@ class CorgiWebBridge(QObject):
             self.logger.info(f"答案长度: {len(answer)}")
             self.logger.info(f"练习ID: {practice_id}")
             
-            # 构建评估提示词 - 使用不会与内容中的花括号冲突的方式
-            prompt_template = """请对以下练习答案进行专业评估：
+            # 构建评估提示词 - 与原版practice_panel.py保持一致
+            prompt_template = """请作为专业技术面试官，对以下"技术练习答卷"进行严格的逐题评估，并务必按规定的结构化纯文本格式输出。
 
-**练习题目：**
+【试卷原题（严格按原文逐条列出）】
 {question}
 
-**学生答案：**
+【用户作答（按题号或题目前缀对应）】
 {answer}
 
-**评估要求：**
-1. 对答案的准确性、完整性和深度进行评估
-2. 给出具体的改进建议
-3. 评估学生对知识点的掌握程度
-4. 给出0-100分的数值评分
-5. 提供鼓励性的反馈和学习建议
+【重要的输出要求——务必完全遵守】
+1) 全部输出使用纯文本，不要使用任何HTML或Markdown标记。
+2) 严格按"逐题报告"结构列出每一道题，且每题包含以下小节，并使用这些准确的小节标题：
+   - 原题：
+   - 用户答案：
+   - 判定：（只能是"正确"/"错误"/"无法判断"三选一）
+   - 分析与要点：
+3) 每题之间使用一行仅包含"----"的分隔线。
+4) 在所有题目之后，给出"整体评价"与"知识点掌握程度评估"，掌握程度评估需包含：
+   基础概念理解、实际应用能力、深度思考能力、综合运用能力 四项，各用1-5分表示，并给出一句简要说明。
 
-**评估维度：**
-- 概念理解：对基本概念的理解程度
-- 应用能力：将知识应用到实际情况的能力
-- 分析深度：分析问题的深度和广度
-- 表达清晰：答案表达的清晰度和逻辑性
-
-请生成详细的评估结果，并以JSON格式返回：
-{{
-  "score": 85,
-  "feedback": "详细的反馈内容",
-  "suggestions": ["建议1", "建议2"]
-}}"""
+【请输出】
+先输出逐题报告（每题按照"原题/用户答案/判定/分析与要点"的顺序完整展示原题文本），然后输出整体评价与知识点掌握程度评估。"""
             
             # 使用.format()方法来避免花括号冲突
             prompt = prompt_template.format(question=question, answer=answer)
@@ -605,40 +599,30 @@ class CorgiWebBridge(QObject):
             response = call_llm(prompt, "评估练习答案")
             
             if response:
-                try:
-                    # 尝试解析JSON格式的回答
-                    import re
-                    json_match = re.search(r'\{[^}]*"score"[^}]*\}', response, re.DOTALL)
-                    if json_match:
-                        evaluation_result = json.loads(json_match.group())
-                        self.logger.info(f"✅ 评估结果解析成功: {evaluation_result}")
-                    else:
-                        # 如果不是JSON格式，创建默认的评估结果
-                        evaluation_result = {
-                            "score": 75,
-                            "feedback": response,
-                            "suggestions": ["继续加油，加深理解", "多练习相关问题"]
-                        }
-                        
-                    result = {
-                        "success": True,
-                        "data": evaluation_result
+                # 与原版保持一致，返回纯文本评估结果
+                # 尝试从评估结果中提取分数
+                import re
+                score = 75  # 默认分数
+                score_match = re.search(r'基础概念理解[：:]\s*(\d+)', response)
+                if score_match:
+                    try:
+                        concept_score = int(score_match.group(1))
+                        # 基于基础概念理解分数计算总分
+                        score = min(100, concept_score * 20)  # 1-5分转换为20-100分
+                    except:
+                        pass
+                
+                result = {
+                    "success": True,
+                    "data": {
+                        "score": score,
+                        "feedback": response,
+                        "evaluation_text": response,  # 保存完整的评估文本用于错题入库
+                        "suggestions": ["根据评估结果进行针对性学习", "重点关注错误题目的知识点"]
                     }
-                    self.logger.info(f"✅ 答案评估完成，得分: {evaluation_result.get('score', 'N/A')}")
-                    return json.dumps(result, ensure_ascii=False)
-                    
-                except Exception as parse_error:
-                    self.logger.error(f"❗ 解析评估结果失败: {parse_error}")
-                    # 使用原始回答作为反馈
-                    result = {
-                        "success": True,
-                        "data": {
-                            "score": 75,
-                            "feedback": response,
-                            "suggestions": ["继续加油，加深理解", "多练习相关问题"]
-                        }
-                    }
-                    return json.dumps(result, ensure_ascii=False)
+                }
+                self.logger.info(f"✅ 答案评估完成，得分: {score}")
+                return json.dumps(result, ensure_ascii=False)
             else:
                 self.logger.error("❌ LLM API返回空结果")
                 result = {
@@ -652,6 +636,326 @@ class CorgiWebBridge(QObject):
             result = {
                 "success": False,
                 "error": str(e)
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def addToErrorBank(self, error_data_json):
+        """错题入库 - 与原版practice_panel.py的错题入库逻辑保持一致"""
+        self.logger.info("=" * 60)
+        self.logger.info("【错题入库】addToErrorBank 开始")
+        
+        try:
+            import json
+            error_data = json.loads(error_data_json)
+            
+            practice_content = error_data.get('practice_content', '')
+            evaluation_result = error_data.get('evaluation_result', '')
+            selected_text = error_data.get('selected_text', '')
+            questions = error_data.get('questions', '')
+            answers = error_data.get('answers', '')
+            
+            self.logger.info(f"练习内容长度: {len(practice_content)}")
+            self.logger.info(f"评估结果长度: {len(evaluation_result)}")
+            self.logger.info(f"选中文本长度: {len(selected_text)}")
+            
+            # 组装用于切片的 practice_content：包含学习内容与用户答案
+            if not practice_content:
+                practice_content = (
+                    f"学习内容: {selected_text}\n\n"
+                    f"题目:\n{questions}\n\n"
+                    f"题目和答案:\n{answers}"
+                )
+            
+            # 完全复制原版的错题切片和入库逻辑
+            try:
+                # 导入原版的错题处理模块
+                try:
+                    from enhanced_practice_integration import ErrorQuestionSlicer, KnowledgePointMatcher
+                    from knowledge_management import KnowledgeManagementSystem
+                    from similarity_matcher import rank_matches
+                    
+                    # 初始化处理器
+                    km_system = KnowledgeManagementSystem(self.config)
+                    slicer = ErrorQuestionSlicer(self.config)
+                    matcher = KnowledgePointMatcher(self.config)
+                    
+                    # 1. 错题切片
+                    error_questions = slicer.slice_error_questions(practice_content, evaluation_result)
+                    self.logger.info(f"✅ 错题切片完成，共找到 {len(error_questions)} 道错题")
+                    
+                    # 2. 获取所有学科列表
+                    available_subjects = []
+                    try:
+                        subjects = km_system.get_subjects()
+                        for subject in subjects:
+                            points = km_system.get_knowledge_points_by_subject(subject)
+                            if points:  # 只显示有知识点的学科
+                                available_subjects.append({
+                                    "name": subject,
+                                    "point_count": len(points)
+                                })
+                    except Exception as e:
+                        self.logger.error(f"❌ 加载学科列表失败: {e}")
+                    
+                    # 3. 预处理错题，但不进行知识点匹配（等用户选择学科后再匹配）
+                    processed_errors = []
+                    for i, err in enumerate(error_questions):
+                        processed_errors.append({
+                            "question_index": err.get("question_index", i),
+                            "question_content": err.get("question_content", ""),
+                            "user_answer": err.get("user_answer", ""),
+                            "correct_answer": err.get("correct_answer", ""),
+                            "explanation": err.get("explanation", ""),
+                            "knowledge_point_hint": err.get("knowledge_point_hint", ""),
+                            "knowledge_options": [],  # 暂时为空，等用户选择学科后填充
+                            "default_knowledge_point": None
+                        })
+                    
+                    result = {
+                        "success": True,
+                        "message": "错题切片完成",
+                        "data": {
+                            "error_questions": processed_errors,
+                            "available_subjects": available_subjects,
+                            "practice_content": practice_content,
+                            "evaluation_result": evaluation_result,
+                            "selected_text": selected_text
+                        }
+                    }
+                    
+                    self.logger.info("✅ 错题切片和知识点匹配完成")
+                    return json.dumps(result, ensure_ascii=False)
+                    
+                except ImportError as import_error:
+                    self.logger.error(f"❌ 导入错题处理模块失败: {import_error}")
+                    result = {
+                        "success": False,
+                        "error": f"错题处理模块不可用: {import_error}"
+                    }
+                    return json.dumps(result, ensure_ascii=False)
+                
+            except Exception as process_error:
+                self.logger.error(f"❌ 错题处理失败: {process_error}")
+                result = {
+                    "success": False,
+                    "error": f"错题处理失败: {process_error}"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 错题入库异常: {e}")
+            result = {
+                "success": False,
+                "error": f"错题入库失败: {e}"
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def matchKnowledgePointsForSubject(self, match_data_json):
+        """为选定学科的错题匹配知识点 - 使用原版相似度计算方法"""
+        self.logger.info("=" * 60)
+        self.logger.info("【知识点匹配】matchKnowledgePointsForSubject 开始")
+        
+        try:
+            import json
+            match_data = json.loads(match_data_json)
+            
+            selected_subject = match_data.get('selected_subject', '')
+            error_questions = match_data.get('error_questions', [])
+            evaluation_result = match_data.get('evaluation_result', '')
+            
+            self.logger.info(f"选定学科: {selected_subject}")
+            self.logger.info(f"错题数量: {len(error_questions)}")
+            
+            # 导入原版的知识点匹配模块
+            try:
+                from knowledge_management import KnowledgeManagementSystem
+                from similarity_matcher import rank_matches
+                
+                # 初始化知识管理系统
+                km_system = KnowledgeManagementSystem(self.config)
+                
+                # 获取选定学科的所有知识点
+                subject_points = km_system.get_knowledge_points_by_subject(selected_subject)
+                self.logger.info(f"学科 {selected_subject} 共有 {len(subject_points)} 个知识点")
+                
+                # 为每道错题匹配知识点
+                matched_errors = []
+                for err in error_questions:
+                    # 直接从评估结果中重新提取完整的题目内容
+                    question_index = err.get("question_index", 0)
+                    
+                    # 尝试从evaluation_result中直接提取题目内容
+                    question_content = self._extract_question_from_evaluation(evaluation_result, question_index + 1)
+                    if not question_content:
+                        question_content = err.get("question_content", f"题目{question_index + 1}")
+                    
+                    # 使用原版的相似度计算方法
+                    try:
+                        ranked = rank_matches(question_content, subject_points, cfg=self.config, min_score=0.0)
+                        self.logger.info(f"题目 {err.get('question_index', 0)+1} 匹配到 {len(ranked)} 个知识点")
+                    except Exception as rank_error:
+                        self.logger.error(f"❌ 相似度计算失败: {rank_error}")
+                        ranked = []
+                    
+                    # 构建知识点选项（按相似度排序）
+                    score_map = {r["id"]: r["score"] for r in ranked}
+                    ordered_points = sorted(subject_points, key=lambda p: score_map.get(p["id"], -1.0), reverse=True)
+                    
+                    knowledge_options = []
+                    for kp in ordered_points:
+                        pid = kp["id"]
+                        score = score_map.get(pid, 0.0)
+                        display_name = f"{selected_subject} - {kp['point_name']} ({score:.3f})"
+                        knowledge_options.append({
+                            "id": pid,
+                            "display": display_name,
+                            "subject": selected_subject,
+                            "point_name": kp["point_name"],
+                            "score": score,
+                            "core_description": kp.get("core_description", "")
+                        })
+                    
+                    # 更新错题信息，使用提取的完整题目内容
+                    matched_error = err.copy()
+                    matched_error.update({
+                        "question_content": question_content,  # 使用重新提取的完整题目内容
+                        "knowledge_options": knowledge_options,
+                        "default_knowledge_point": knowledge_options[0] if knowledge_options else None
+                    })
+                    matched_errors.append(matched_error)
+                
+                result = {
+                    "success": True,
+                    "message": f"已为学科 {selected_subject} 匹配知识点",
+                    "data": {
+                        "matched_errors": matched_errors,
+                        "selected_subject": selected_subject
+                    }
+                }
+                
+                self.logger.info(f"✅ 知识点匹配完成，学科: {selected_subject}")
+                return json.dumps(result, ensure_ascii=False)
+                
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入知识点匹配模块失败: {import_error}")
+                result = {
+                    "success": False,
+                    "error": f"知识点匹配模块不可用: {import_error}"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 知识点匹配异常: {e}")
+            result = {
+                "success": False,
+                "error": f"知识点匹配失败: {e}"
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    def _extract_question_from_evaluation(self, evaluation_result: str, question_number: int) -> str:
+        """从评估结果中直接提取指定题目的完整内容"""
+        try:
+            import re
+            
+            # 多种正则表达式模式来匹配题目
+            patterns = [
+                # 标准格式：数字. 原题：...到下一题或分隔线
+                rf"(?ms){question_number}\.[ \t]*原题[：:][ \t]*\n?(.*?)(?=(?:\n----|\n{question_number+1}\.[ \t]*原题[：:]|\n整体评价|\Z))",
+                # 备用格式
+                rf"(?ms){question_number}\.[ \t]*原题[：:][ \t]*(.*?)(?=(?:\n{question_number+1}\.[ \t]*原题[：:]|\n整体评价|\Z))",
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, evaluation_result)
+                if match:
+                    content = match.group(1).strip()
+                    # 提取原题内容（到"用户答案："之前）
+                    question_match = re.search(r"(.*?)(?=\n用户答案[：:]|$)", content, re.DOTALL)
+                    if question_match:
+                        question_text = question_match.group(1).strip()
+                        self.logger.info(f"✅ 成功提取题目 {question_number} 内容，长度: {len(question_text)}")
+                        return question_text
+                    else:
+                        # 如果没有找到"用户答案："，返回全部内容
+                        self.logger.info(f"✅ 提取题目 {question_number} 全部内容，长度: {len(content)}")
+                        return content
+            
+            self.logger.warning(f"❌ 未能提取题目 {question_number} 的内容")
+            return ""
+            
+        except Exception as e:
+            self.logger.error(f"❌ 提取题目内容失败: {e}")
+            return ""
+    
+    @Slot(str, result=str)
+    def saveErrorsToKnowledgeBase(self, save_data_json):
+        """保存选中的错题到知识库 - 与原版ErrorImportDialog._import_rows保持一致"""
+        self.logger.info("=" * 60)
+        self.logger.info("【错题保存】saveErrorsToKnowledgeBase 开始")
+        
+        try:
+            import json
+            save_data = json.loads(save_data_json)
+            
+            selected_errors = save_data.get('selected_errors', [])
+            self.logger.info(f"准备保存 {len(selected_errors)} 道错题")
+            
+            # 导入知识管理系统
+            try:
+                from knowledge_management import KnowledgeManagementSystem
+                km_system = KnowledgeManagementSystem(self.config)
+                
+                # 构建保存记录
+                records = []
+                for error in selected_errors:
+                    knowledge_point = error.get('selected_knowledge_point', {})
+                    if not knowledge_point.get('id'):
+                        continue
+                    
+                    records.append({
+                        "subject_name": knowledge_point.get('subject', '通用学科'),
+                        "knowledge_point_id": knowledge_point.get('id'),
+                        "question_content": error.get('question_content', ''),
+                        "user_answer": error.get('user_answer', ''),
+                        "is_correct": False,
+                        "correct_answer": error.get('correct_answer'),
+                        "explanation": error.get('explanation'),
+                    })
+                
+                if not records:
+                    result = {
+                        "success": False,
+                        "error": "无有效记录可入库"
+                    }
+                    return json.dumps(result, ensure_ascii=False)
+                
+                # 保存到知识库
+                saved_ids = km_system.save_practice_results(records)
+                
+                result = {
+                    "success": True,
+                    "message": f"已保存 {len(saved_ids) if saved_ids else 0} 条错题到知识库",
+                    "saved_count": len(saved_ids) if saved_ids else 0
+                }
+                
+                self.logger.info(f"✅ 错题保存完成，保存了 {len(saved_ids) if saved_ids else 0} 条记录")
+                return json.dumps(result, ensure_ascii=False)
+                
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入知识管理模块失败: {import_error}")
+                result = {
+                    "success": False,
+                    "error": f"知识管理模块不可用: {import_error}"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 保存错题异常: {e}")
+            result = {
+                "success": False,
+                "error": f"保存错题失败: {e}"
             }
             return json.dumps(result, ensure_ascii=False)
     
