@@ -2240,33 +2240,22 @@ class CorgiWebBridge(QObject):
             # 初始化服务
             practice_service = PracticeService()
             
-            # 检查是否需要从 JSON 文件迁移数据（只迁移一次）
+            # 检查是否需要从 JSON 文件迁移数据
             current_dir = os.getcwd()
             practice_dir = os.path.join(current_dir, "practice_sessions")
             
             self.logger.info(f"📁 检查JSON文件目录: {practice_dir}")
             
             if os.path.exists(practice_dir):
-                # 检查是否已经迁移过（通过检查标记文件）
-                migration_marker = os.path.join(practice_dir, ".migration_completed")
-                if not os.path.exists(migration_marker):
-                    json_files = [f for f in os.listdir(practice_dir) if f.endswith('.json')]
-                    self.logger.info(f"📁 找到JSON文件: {len(json_files)} 个")
-                    
-                    if json_files:
-                        self.logger.info("🔄 开始数据迁移...")
-                        migration_result = practice_service.migrate_from_json_files(practice_dir)
-                        self.logger.info(f"📦 数据迁移结果: {migration_result}")
-                        
-                        # 创建标记文件，表示已经迁移完成
-                        if migration_result.get("success", False):
-                            with open(migration_marker, 'w') as f:
-                                f.write("Migration completed on " + datetime.now().isoformat())
-                            self.logger.info("✅ 创建迁移完成标记文件")
-                else:
-                    self.logger.info("✅ 数据已迁移，跳过重复迁移")
+                json_files = [f for f in os.listdir(practice_dir) if f.endswith('.json')]
+                self.logger.info(f"📁 找到JSON文件: {len(json_files)} 个")
+                
+                if json_files:
+                    self.logger.info("🔄 开始数据迁移...")
+                    migration_result = practice_service.migrate_from_json_files(practice_dir)
+                    self.logger.info(f"📦 数据迁移结果: {migration_result}")
             
-            # 从数据库获取练习历史列表
+            # 获取练习历史列表
             self.logger.info("📊 从数据库获取练习历史...")
             result = practice_service.get_practice_history_list(limit=50)
             
@@ -2274,17 +2263,31 @@ class CorgiWebBridge(QObject):
                 practices = result["practices"]
                 self.logger.info(f"🎯 成功获取练习历史: {len(practices)} 条")
                 
-                # 记录前几个练习ID用于调试
+                # 记录前3个练习ID
                 if practices:
-                    practice_ids = [p["id"] for p in practices[:3]]
-                    self.logger.info(f"📋 前3个练习ID: {practice_ids}")
+                    first3_ids = [p.get('id', 'N/A') for p in practices[:3]]
+                    self.logger.info(f"📋 前3个练习ID: {first3_ids}")
                 
-                # 截断返回数据用于日志记录
-                result_str = json.dumps(result, ensure_ascii=False)
-                self.logger.info(f"📤 返回数据(截断): {result_str[:500]}{'...' if len(result_str) > 500 else ''}")
-            
-            self.logger.info("=== 练习历史获取完成 ===")
-            return json.dumps(result, ensure_ascii=False)
+                # 统一返回格式
+                response_data = {
+                    "success": True,
+                    "practices": practices
+                }
+                
+                result_str = json.dumps(response_data, ensure_ascii=False)
+                
+                # 记录返回数据的概要
+                if len(result_str) > 1000:
+                    self.logger.info(f"📤 返回数据(截断): {result_str[:300]}...{result_str[-200:]}")
+                else:
+                    self.logger.info(f"📤 返回数据: {result_str}")
+                
+                self.logger.info("=== 练习历史获取完成 ===")
+                return result_str
+            else:
+                error_msg = result.get("error", "未知错误")
+                self.logger.error(f"❌ 获取练习历史失败: {error_msg}")
+                return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
             
         except ImportError as import_error:
             self.logger.error(f"❌ 导入模块失败: {import_error}")
