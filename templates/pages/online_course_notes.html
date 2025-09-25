@@ -623,6 +623,11 @@
                         <button id="stop-recording-btn" class="w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all opacity-50 cursor-not-allowed" onclick="stopRecording()" title="停止录音" disabled>
                             <span class="material-icons-outlined text-lg">stop</span>
                         </button>
+                        
+                        <!-- 载入历史记录按钮 -->
+                        <button id="load-transcript-btn" class="w-12 h-12 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center justify-center shadow-md transition-all" onclick="loadTranscriptHistory()" title="载入历史记录">
+                            <span class="material-icons-outlined text-lg">folder_open</span>
+                        </button>
                     </div>
                 </div>
                 <!-- 手动总结按钮 -->
@@ -802,6 +807,14 @@
     let isPaused = false;
     let selectedTranscriptTexts = []; // 改为数组支持多选
     let recordingWorker = null;
+    
+    // 转写历史记录管理
+    let currentTranscriptSession = {
+        sessionId: null,
+        startTime: null,
+        transcripts: [],
+        filePath: null
+    };
 
     // 调试函数
     function debugLog(message) {
@@ -1665,6 +1678,16 @@
             return;
         }
         
+        // 只有在没有载入文件的情况下才开始新的转写会话
+        if (!currentTranscriptSession.sessionId) {
+            startNewTranscriptSession();
+            debugLog('创建新的转写会话并立即保存文件');
+            // 创建新会话时立即保存空文件
+            saveTranscriptSession();
+        } else {
+            debugLog('继续使用当前会话: ' + currentTranscriptSession.sessionId);
+        }
+        
         // 检查是否已选择设备
         if (window.bridge && window.bridge.getSelectedDevice) {
             window.bridge.getSelectedDevice(function(deviceResult) {
@@ -1762,6 +1785,9 @@
             window.bridge.stopRecording(function(result) {
                 debugLog('停止录音结果: ' + result);
                 showMessage('录音已停止', 'info');
+                
+                // 录音结束，文件已在转写过程中实时保存
+                debugLog('录音结束，转写内容已在过程中实时保存');
             });
         }
     };
@@ -1970,7 +1996,18 @@
                 checkMark.title = '已总结';
                 timestamp.appendChild(checkMark);
             }
+            
+            // 更新会话数据中的总结状态
+            const transcriptRecord = currentTranscriptSession.transcripts.find(record => 
+                record.text === item.text && record.timestamp === item.timestamp
+            );
+            if (transcriptRecord) {
+                transcriptRecord.summarized = true;
+            }
         });
+        
+        // 保存更新后的会话数据
+        saveTranscriptSession();
     }
     
     // 清空转写文本选中状态
@@ -1985,6 +2022,169 @@
             }
         });
         selectedTranscriptTexts = [];
+    }
+    
+    // 开始新的转写会话
+    function startNewTranscriptSession() {
+        const now = new Date();
+        currentTranscriptSession = {
+            sessionId: 'transcript_' + now.getTime(),
+            startTime: now.toISOString(),
+            transcripts: [],
+            filePath: null
+        };
+        debugLog('开始新的转写会话: ' + currentTranscriptSession.sessionId);
+    }
+    
+    // 保存转写会话到文件
+    function saveTranscriptSession() {
+        if (window.bridge && window.bridge.saveTranscriptSession) {
+            const sessionData = {
+                sessionId: currentTranscriptSession.sessionId,
+                startTime: currentTranscriptSession.startTime,
+                transcripts: currentTranscriptSession.transcripts,
+                saveTime: new Date().toISOString(),
+                isLoadedFromFile: currentTranscriptSession.isLoadedFromFile || false,
+                originalFilePath: currentTranscriptSession.filePath || null
+            };
+            
+            window.bridge.saveTranscriptSession(JSON.stringify(sessionData), function(filePath) {
+                if (filePath) {
+                    currentTranscriptSession.filePath = filePath;
+                    debugLog('转写会话已保存到: ' + filePath);
+                }
+            });
+        }
+    }
+    
+    // 载入历史转写记录
+    window.loadTranscriptHistory = function() {
+        debugLog('载入历史转写记录');
+        
+        if (window.bridge && window.bridge.loadTranscriptHistory) {
+            // 调用后端方法（无参数，使用回调机制）
+            window.bridge.loadTranscriptHistory();
+        } else {
+            alert('载入功能不可用');
+        }
+    };
+    
+    // 后端载入完成的回调函数
+    window.onTranscriptHistoryLoaded = function(result) {
+        debugLog('收到后端载入结果: ' + (result ? '有数据' : '无数据'));
+        
+        if (result && result.trim()) {
+            try {
+                const sessionData = JSON.parse(result);
+                loadTranscriptSessionData(sessionData);
+                debugLog('历史记录载入成功');
+                alert('历史记录载入成功！');
+            } catch (error) {
+                debugError('解析历史记录失败: ' + error.message);
+                alert('载入历史记录失败：文件格式错误');
+            }
+        } else {
+            debugLog('用户取消载入或没有选择文件');
+        }
+    };
+    
+    // 载入转写会话数据到界面
+    function loadTranscriptSessionData(sessionData) {
+        // 清空当前转写内容
+        const transcriptDiv = document.getElementById('transcript-content');
+        if (!transcriptDiv) return;
+        
+        transcriptDiv.innerHTML = '';
+        
+        // 更新当前会话信息，保持原有的sessionId以便继续录音
+        currentTranscriptSession = {
+            sessionId: sessionData.sessionId,
+            startTime: sessionData.startTime,
+            transcripts: sessionData.transcripts || [],
+            filePath: sessionData.originalFilePath || null,
+            isLoadedFromFile: true,  // 标记为从文件载入的会话
+            originalFileName: sessionData.originalFileName || null   // 记录原始文件名，用于后续保存
+        };
+        
+        // 重新显示所有转写内容
+        sessionData.transcripts.forEach(record => {
+            addTranscriptItemToUI(record.timestamp, record.text, record.summarized);
+        });
+        
+        debugLog('载入了 ' + sessionData.transcripts.length + ' 条转写记录');
+    }
+    
+    // 添加转写条目到UI（不触发保存）
+    function addTranscriptItemToUI(timeString, text, isSummarized = false) {
+        const transcriptDiv = document.getElementById('transcript-content');
+        if (!transcriptDiv) return;
+        
+        // 创建转写条目容器
+        const transcriptItem = document.createElement('div');
+        transcriptItem.className = 'flex cursor-pointer hover:bg-blue-50 p-2 rounded-lg transition-colors';
+        
+        // 添加多选功能
+        transcriptItem.addEventListener('click', function() {
+            const isSelected = this.classList.contains('bg-bg-light-green');
+            const textP = this.querySelector('p');
+            
+            if (isSelected) {
+                // 取消选中
+                this.classList.remove('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-dark-brown');
+                    textP.classList.add('text-text-medium-brown');
+                }
+                // 从选中列表中移除
+                const index = selectedTranscriptTexts.findIndex(item => item.text === text);
+                if (index > -1) {
+                    selectedTranscriptTexts.splice(index, 1);
+                }
+                debugLog('取消选中转写文本: ' + text);
+            } else {
+                // 选中
+                this.classList.add('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-medium-brown');
+                    textP.classList.add('text-text-dark-brown');
+                }
+                // 添加到选中列表
+                selectedTranscriptTexts.push({
+                    text: text,
+                    element: this,
+                    timestamp: timeString
+                });
+                debugLog('选中转写文本: ' + text);
+            }
+            
+            updateManualSummarizeButton();
+        });
+        
+        // 创建时间戳
+        const timestamp = document.createElement('span');
+        timestamp.className = 'text-sm font-semibold text-primary mr-3 flex-shrink-0';
+        timestamp.textContent = timeString;
+        
+        // 如果已总结，添加标记
+        if (isSummarized) {
+            const checkMark = document.createElement('span');
+            checkMark.className = 'summarized-mark text-green-500 ml-1';
+            checkMark.innerHTML = '✓';
+            checkMark.title = '已总结';
+            timestamp.appendChild(checkMark);
+        }
+        
+        // 创建文本内容
+        const textContent = document.createElement('p');
+        textContent.className = 'text-text-medium-brown flex-1 leading-relaxed';
+        textContent.textContent = text;
+        
+        // 组装转写条目
+        transcriptItem.appendChild(timestamp);
+        transcriptItem.appendChild(textContent);
+        
+        // 添加到容器
+        transcriptDiv.appendChild(transcriptItem);
     }
     
     // 添加转写文本到显示区域
@@ -2059,6 +2259,18 @@
         
         // 添加到容器
         transcriptDiv.appendChild(transcriptItem);
+        
+        // 添加到当前会话记录
+        const transcriptRecord = {
+            timestamp: timeString,
+            text: text,
+            time: new Date().toISOString(),
+            summarized: false
+        };
+        currentTranscriptSession.transcripts.push(transcriptRecord);
+        
+        // 每次转写都保存文件（追加内容）
+        saveTranscriptSession();
         
         // 自动滚动到底部
         const container = transcriptDiv.parentElement;

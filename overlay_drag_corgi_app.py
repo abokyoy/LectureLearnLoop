@@ -4056,6 +4056,147 @@ class CorgiWebBridge(QObject):
         """清理转写线程"""
         self._tr_thread = None
         self._tr_worker = None
+    
+    # ==================== 转写历史记录功能 ====================
+    
+    @Slot(str, result=str)
+    def saveTranscriptSession(self, session_data_json):
+        """保存转写会话到文件"""
+        self.logger.info("=" * 60)
+        self.logger.info("【转写会话保存】开始")
+        
+        try:
+            # 解析会话数据
+            session_data = json.loads(session_data_json)
+            session_id = session_data.get('sessionId', 'unknown')
+            
+            # 创建audio_text文件夹
+            audio_text_dir = os.path.join(os.getcwd(), 'audio_text')
+            os.makedirs(audio_text_dir, exist_ok=True)
+            self.logger.info(f"音频文本目录: {audio_text_dir}")
+            
+            # 确定文件路径：载入文件使用原路径，新会话使用sessionId生成固定路径
+            if 'originalFilePath' in session_data and session_data['originalFilePath']:
+                # 如果有原始文件路径，直接使用（载入的文件）
+                file_path = session_data['originalFilePath']
+                self.logger.info(f"使用原始文件路径: {file_path}")
+            else:
+                # 新会话或没有原始路径，从sessionId生成固定文件名
+                session_id = session_data.get('sessionId', 'unknown')
+                if session_id.startswith('transcript_'):
+                    timestamp_str = session_id.replace('transcript_', '')
+                    try:
+                        # 尝试解析时间戳
+                        timestamp = int(timestamp_str)
+                        dt = datetime.fromtimestamp(timestamp / 1000)  # JavaScript时间戳是毫秒
+                        filename = f"transcript_{dt.strftime('%Y%m%d_%H%M%S')}.json"
+                        self.logger.info(f"从sessionId生成文件名: {filename}")
+                    except Exception as e:
+                        # 如果解析失败，使用当前时间
+                        self.logger.warning(f"解析sessionId失败: {e}，使用当前时间")
+                        now = datetime.now()
+                        filename = f"transcript_{now.strftime('%Y%m%d_%H%M%S')}.json"
+                else:
+                    # 如果sessionId格式不对，使用当前时间
+                    self.logger.warning(f"sessionId格式不正确: {session_id}，使用当前时间")
+                    now = datetime.now()
+                    filename = f"transcript_{now.strftime('%Y%m%d_%H%M%S')}.json"
+                file_path = os.path.join(audio_text_dir, filename)
+            
+            # 保存到文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"✅ 转写会话已保存: {file_path}")
+            self.logger.info(f"会话ID: {session_id}")
+            self.logger.info(f"转写条目数: {len(session_data.get('transcripts', []))}")
+            
+            return file_path
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存转写会话失败: {e}")
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            return ""
+    
+    @Slot()
+    def loadTranscriptHistory(self):
+        """载入历史转写记录"""
+        self.logger.info("=" * 60)
+        self.logger.info("【转写历史载入】开始")
+        
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            from PySide6.QtCore import QTimer
+            
+            # 创建audio_text文件夹（如果不存在）
+            audio_text_dir = os.path.join(os.getcwd(), 'audio_text')
+            os.makedirs(audio_text_dir, exist_ok=True)
+            
+            def on_file_selected():
+                # 打开文件选择对话框
+                file_path, _ = QFileDialog.getOpenFileName(
+                    self.main_window,
+                    "选择转写历史记录",
+                    audio_text_dir,
+                    "JSON文件 (*.json);;所有文件 (*.*)"
+                )
+                
+                result = ""
+                if file_path:
+                    try:
+                        # 读取文件内容
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            session_data = json.load(f)
+                        
+                        self.logger.info(f"✅ 历史记录载入成功: {file_path}")
+                        self.logger.info(f"会话ID: {session_data.get('sessionId', 'unknown')}")
+                        self.logger.info(f"转写条目数: {len(session_data.get('transcripts', []))}")
+                        
+                        # 添加原始文件路径信息
+                        session_data['originalFilePath'] = file_path
+                        session_data['originalFileName'] = os.path.basename(file_path)
+                        
+                        result = json.dumps(session_data, ensure_ascii=False)
+                        
+                    except Exception as e:
+                        self.logger.error(f"❌ 读取文件失败: {e}")
+                        result = ""
+                else:
+                    self.logger.info("用户取消文件选择")
+                    result = ""
+                
+                # 通知前端结果
+                if self.main_window and self.main_window.web_view:
+                    js_code = f"""
+                    try {{
+                        if (typeof window.onTranscriptHistoryLoaded === 'function') {{
+                            window.onTranscriptHistoryLoaded({json.dumps(result, ensure_ascii=False)});
+                        }}
+                    }} catch(e) {{
+                        console.error('载入历史记录回调出错:', e);
+                    }}
+                    """
+                    self.main_window.web_view.page().runJavaScript(js_code)
+            
+            # 使用QTimer延迟执行，避免阻塞UI
+            QTimer.singleShot(100, on_file_selected)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 载入历史记录失败: {e}")
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            
+            # 通知前端失败
+            if self.main_window and self.main_window.web_view:
+                js_code = """
+                try {
+                    if (typeof window.onTranscriptHistoryLoaded === 'function') {
+                        window.onTranscriptHistoryLoaded("");
+                    }
+                } catch(e) {
+                    console.error('载入历史记录失败回调出错:', e);
+                }
+                """
+                self.main_window.web_view.page().runJavaScript(js_code)
 
 
 class DragOverlay(QWidget):
