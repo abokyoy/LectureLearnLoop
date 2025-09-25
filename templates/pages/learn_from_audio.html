@@ -23,6 +23,84 @@
         justify-content: center;
     }
     
+    /* 文件结构面板收缩样式 */
+    #file-structure {
+        transition: all 0.3s ease;
+        overflow: hidden;
+    }
+    
+    #file-structure.collapsed {
+        width: 0 !important;
+        min-width: 0 !important;
+        padding: 0 !important;
+        border-right: none !important;
+    }
+    
+    /* 可拖拽分割线样式 */
+    .resizer {
+        width: 4px;
+        background: #e5e7eb;
+        cursor: col-resize;
+        position: relative;
+        transition: background-color 0.2s ease;
+    }
+    
+    .resizer:hover {
+        background: #9ca3af;
+    }
+    
+    .resizer:active {
+        background: #6b7280;
+    }
+    
+    .resizer::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 2px;
+        height: 20px;
+        background: #d1d5db;
+        border-radius: 1px;
+    }
+    
+    /* 收缩按钮样式 */
+    .collapse-btn {
+        position: absolute;
+        top: 50%;
+        right: -12px;
+        transform: translateY(-50%);
+        width: 24px;
+        height: 24px;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 10;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .collapse-btn:hover {
+        background: #f9fafb;
+        border-color: #d1d5db;
+        transform: translateY(-50%) scale(1.1);
+    }
+    
+    .collapse-btn .material-icons-outlined {
+        font-size: 16px;
+        color: #6b7280;
+        transition: transform 0.2s ease;
+    }
+    
+    #file-structure.collapsed + .collapse-btn .material-icons-outlined {
+        transform: rotate(180deg);
+    }
+    
     /* 知识点高亮样式 */
     .knowledge-highlight {
         background-color: #fff3cd;
@@ -373,7 +451,7 @@
     <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
         
         <!-- 左侧文件结构面板 -->
-        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
                 <div class="space-x-2">
@@ -383,8 +461,8 @@
                     <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
                         <span class="material-icons-outlined">note_add</span>
                     </button>
-                    <button class="text-red-600 hover:text-red-800" onclick="validateBackendFunctions()" title="验证后端功能">
-                        <span class="material-icons-outlined">bug_report</span>
+                    <button class="text-text-gray hover:text-primary" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
+                        <span class="material-icons-outlined">chevron_left</span>
                     </button>
                 </div>
             </div>
@@ -400,9 +478,17 @@
                 <div id="file-tree-container"></div>
             </div>
         </div>
+        
+        <!-- 收缩按钮 -->
+        <div class="collapse-btn" onclick="toggleFileStructurePanel()" id="collapse-btn" title="收缩/展开文件面板">
+            <span class="material-icons-outlined">chevron_left</span>
+        </div>
+        
+        <!-- 可拖拽分割线 -->
+        <div class="resizer" id="resizer"></div>
 
         <!-- 中间文档预览/编辑区域 -->
-        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col">
+        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col" id="document-area">
             <!-- 顶部工具栏 -->
             <div class="border-b border-gray-200 p-4 flex justify-between items-center">
                 <div class="flex items-center space-x-2">
@@ -432,7 +518,7 @@
         </div>
 
         <!-- 右侧知识点/实时语音面板 -->
-        <div class="w-1/4 bg-white p-4 flex flex-col">
+        <div class="w-1/4 bg-white p-4 flex flex-col" id="right-panel">
             <!-- 🎯 新界面标识 - 确认模板渲染生效 -->
             <div class="mb-2 p-2 bg-green-100 border border-green-300 rounded-lg text-center">
                 <span class="text-green-800 font-bold text-sm">✅ 网课笔记新界面 - 模板渲染成功</span>
@@ -594,6 +680,13 @@
     
     // 面板切换变量
     let currentPanel = 'voice'; // 默认显示实时语音面板
+    
+    // 面板收缩和拖拽变量
+    let isFileStructureCollapsed = false;
+    let isResizing = false;
+    let startX = 0;
+    let startDocumentWidth = 0;
+    let startRightWidth = 0;
     
     // 录音相关变量
     let isRecording = false;
@@ -5013,11 +5106,102 @@
         }
     }
     
+    // 文件结构面板收缩/展开功能
+    function toggleFileStructurePanel() {
+        const fileStructure = document.getElementById('file-structure');
+        const collapseBtn = document.getElementById('collapse-btn');
+        const collapseBtnIcon = collapseBtn.querySelector('.material-icons-outlined');
+        const collapseToggleBtn = document.getElementById('collapse-toggle-btn');
+        const collapseToggleIcon = collapseToggleBtn.querySelector('.material-icons-outlined');
+        
+        isFileStructureCollapsed = !isFileStructureCollapsed;
+        
+        if (isFileStructureCollapsed) {
+            fileStructure.classList.add('collapsed');
+            collapseBtnIcon.textContent = 'chevron_right';
+            collapseToggleIcon.textContent = 'chevron_right';
+            debugLog('文件结构面板已收缩');
+        } else {
+            fileStructure.classList.remove('collapsed');
+            collapseBtnIcon.textContent = 'chevron_left';
+            collapseToggleIcon.textContent = 'chevron_left';
+            debugLog('文件结构面板已展开');
+        }
+    }
+    
+    // 初始化拖拽调整功能
+    function initResizer() {
+        const resizer = document.getElementById('resizer');
+        const documentArea = document.getElementById('document-area');
+        const rightPanel = document.getElementById('right-panel');
+        
+        if (!resizer || !documentArea || !rightPanel) {
+            console.warn('拖拽调整功能初始化失败：找不到必要的元素');
+            return;
+        }
+        
+        resizer.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startX = e.clientX;
+            
+            // 获取当前宽度
+            const documentRect = documentArea.getBoundingClientRect();
+            const rightRect = rightPanel.getBoundingClientRect();
+            startDocumentWidth = documentRect.width;
+            startRightWidth = rightRect.width;
+            
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            
+            debugLog('开始拖拽调整面板宽度');
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - startX;
+            const containerWidth = document.getElementById('main-content').getBoundingClientRect().width;
+            
+            // 计算新的宽度百分比
+            const newDocumentWidth = startDocumentWidth + deltaX;
+            const newRightWidth = startRightWidth - deltaX;
+            
+            // 设置最小和最大宽度限制
+            const minWidth = 200;
+            const maxDocumentWidth = containerWidth - minWidth - 4; // 4px for resizer
+            const maxRightWidth = containerWidth - minWidth - 4;
+            
+            if (newDocumentWidth >= minWidth && newDocumentWidth <= maxDocumentWidth &&
+                newRightWidth >= minWidth && newRightWidth <= maxRightWidth) {
+                
+                const documentPercent = (newDocumentWidth / containerWidth) * 100;
+                const rightPercent = (newRightWidth / containerWidth) * 100;
+                
+                documentArea.style.width = documentPercent + '%';
+                rightPanel.style.width = rightPercent + '%';
+            }
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                debugLog('拖拽调整完成');
+            }
+        });
+    }
+    
     // 页面初始化
     function initAll() {
         console.log('开始初始化页面...');
         initializePage();
         initMarkdownEnhancements();
+        initResizer(); // 初始化拖拽调整功能
         
         // 延迟初始化右键菜单，确保DOM完全加载
         setTimeout(() => {

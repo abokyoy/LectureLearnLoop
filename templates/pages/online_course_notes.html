@@ -23,6 +23,57 @@
         justify-content: center;
     }
     
+    /* 文件结构面板收缩样式 - 类似主菜单的折叠效果 */
+    #file-structure {
+        transition: all 0.3s ease;
+        overflow: hidden;
+    }
+    
+    #file-structure.collapsed {
+        width: 60px !important;
+        min-width: 60px !important;
+    }
+    
+    #file-structure.collapsed .file-structure-text,
+    #file-structure.collapsed .file-tree-container,
+    #file-structure.collapsed .space-x-2 button:not(#collapse-toggle-btn) {
+        display: none;
+    }
+    
+    #file-structure.collapsed #collapse-toggle-btn {
+        margin: 0 auto;
+    }
+    
+    /* 可拖拽分割线样式 */
+    .resizer {
+        width: 4px;
+        background: #e5e7eb;
+        cursor: col-resize;
+        position: relative;
+        transition: background-color 0.2s ease;
+    }
+    
+    .resizer:hover {
+        background: #9ca3af;
+    }
+    
+    .resizer:active {
+        background: #6b7280;
+    }
+    
+    .resizer::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 2px;
+        height: 20px;
+        background: #d1d5db;
+        border-radius: 1px;
+    }
+    
+    
     /* 知识点高亮样式 */
     .knowledge-highlight {
         background-color: #fff3cd;
@@ -429,9 +480,9 @@
     <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
         
         <!-- 左侧文件结构面板 -->
-        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+                <h2 class="text-lg font-semibold text-text-dark-brown file-structure-text">文件结构</h2>
                 <div class="space-x-2">
                     <button class="text-text-gray hover:text-primary" onclick="createNewFolder()" title="新建文件夹">
                         <span class="material-icons-outlined">create_new_folder</span>
@@ -439,14 +490,14 @@
                     <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
                         <span class="material-icons-outlined">note_add</span>
                     </button>
-                    <button class="text-red-600 hover:text-red-800" onclick="validateBackendFunctions()" title="验证后端功能">
-                        <span class="material-icons-outlined">bug_report</span>
+                    <button class="text-text-gray hover:text-primary" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
+                        <span class="material-icons-outlined">chevron_left</span>
                     </button>
                 </div>
             </div>
             
             <!-- 文件树容器 -->
-            <div class="flex-1 overflow-y-auto pr-2">
+            <div class="flex-1 overflow-y-auto pr-2 file-tree-container">
                 <div id="loading-indicator" class="flex items-center justify-center py-8">
                     <div class="animate-spin">
                         <span class="material-icons-outlined text-primary">refresh</span>
@@ -456,9 +507,9 @@
                 <div id="file-tree-container"></div>
             </div>
         </div>
-
+        
         <!-- 中间文档预览/编辑区域 -->
-        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col">
+        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col" id="document-area">
             <!-- 顶部工具栏 -->
             <div class="border-b border-gray-200 p-4 flex justify-between items-center">
                 <div class="flex items-center space-x-2">
@@ -486,9 +537,12 @@
                 <textarea id="edit-content" class="w-full h-full border border-gray-300 rounded-lg p-4 font-mono text-sm resize-none hidden" placeholder="在此编辑Markdown内容..."></textarea>
             </div>
         </div>
+        
+        <!-- 可拖拽分割线 -->
+        <div class="resizer" id="resizer"></div>
 
         <!-- 右侧知识点/实时语音面板 -->
-        <div class="w-1/4 bg-white p-4 flex flex-col">
+        <div class="w-1/4 bg-white p-4 flex flex-col" id="right-panel">
             <!-- 🎯 网课笔记功能标识 -->
             
             
@@ -571,16 +625,6 @@
                         </button>
                     </div>
                 </div>
-                
-                <!-- 转写内容区域 -->
-                <div class="flex-1 mb-4">
-                    <div class="h-full bg-gray-50 rounded-lg p-3 overflow-y-auto">
-                        <div id="transcript-content" class="text-sm leading-relaxed">
-                            <p class="text-gray-500">转写内容将在这里实时显示...</p>
-                        </div>
-                    </div>
-                </div>
-                
                 <!-- 手动总结按钮 -->
                 <div class="mb-4">
                     <button id="manual-summarize-btn" class="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed" disabled onclick="manualSummarize()">
@@ -589,6 +633,22 @@
                     </button>
                     <p class="text-xs text-gray-500 mt-1 text-center">选择转写文本后点击按钮进行AI总结</p>
                 </div>
+                <!-- 转写内容区域 -->
+                <div class="flex-1 mb-4">
+                    <div class="border border-gray-200 rounded-lg p-4 overflow-y-auto" style="height: 500px;">
+                        <div id="transcript-content" class="space-y-3">
+                            <!-- 占位符内容 -->
+                            <div class="flex items-center justify-center py-8 text-gray-400">
+                                <div class="text-center">
+                                    <span class="material-icons-outlined text-4xl mb-2 opacity-50">mic</span>
+                                    <p class="text-sm">转写内容将在这里实时显示...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                
             </div>
             
             <!-- 知识点面板 -->
@@ -730,10 +790,17 @@
     // 面板切换变量
     let currentPanel = 'voice'; // 默认显示实时语音面板
     
+    // 面板收缩和拖拽变量
+    let isFileStructureCollapsed = false;
+    let isResizing = false;
+    let startX = 0;
+    let startDocumentWidth = 0;
+    let startRightWidth = 0;
+    
     // 录音相关变量
     let isRecording = false;
     let isPaused = false;
-    let selectedTranscriptText = '';
+    let selectedTranscriptTexts = []; // 改为数组支持多选
     let recordingWorker = null;
 
     // 调试函数
@@ -1731,7 +1798,7 @@
     
     window.manualSummarize = function() {
         debugLog('手动总结选中内容');
-        if (!selectedTranscriptText.trim()) {
+        if (selectedTranscriptTexts.length === 0) {
             alert('请先选择转写文本');
             return;
         }
@@ -1740,21 +1807,53 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm animate-spin">refresh</span>AI总结中...';
         
+        // 合并选中的转写文本
+        const combinedText = selectedTranscriptTexts.map(item => 
+            `${item.timestamp} ${item.text}`
+        ).join('\n\n');
+        
+        debugLog('合并的转写文本: ' + combinedText);
+        
         if (window.bridge && window.bridge.summarizeText) {
-            window.bridge.summarizeText(selectedTranscriptText, function(summary) {
-                debugLog('总结完成: ' + summary);
+            window.bridge.summarizeText(combinedText, function(response) {
+                debugLog('AI响应: ' + response);
+                
+                let summaryContent = '';
+                try {
+                    // 尝试解析JSON响应
+                    const jsonResponse = JSON.parse(response);
+                    if (jsonResponse.summary) {
+                        summaryContent = jsonResponse.summary;
+                    } else if (jsonResponse.content) {
+                        summaryContent = jsonResponse.content;
+                    } else {
+                        // 如果没有找到预期字段，使用整个响应
+                        summaryContent = response;
+                    }
+                } catch (error) {
+                    // 如果不是JSON格式，直接使用原始响应
+                    debugLog('响应不是JSON格式，使用原始内容: ' + error.message);
+                    summaryContent = response;
+                }
+                
+                debugLog('提取的总结内容: ' + summaryContent);
                 
                 // 将总结插入到当前编辑的文档中
-                insertSummaryToDocument(summary);
+                insertSummaryToDocument(summaryContent);
                 
-                // 重置按钮状态
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>手动总结选中内容';
+                // 标记已总结的转写条目
+                markTranscriptItemsAsSummarized();
+                
+                // 清空选中状态
+                clearTranscriptSelection();
+                
+                // 恢复按钮状态
+                updateManualSummarizeButton();
             });
         } else {
             alert('总结功能不可用');
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>手动总结选中内容';
+            updateManualSummarizeButton();
         }
     };
     
@@ -1765,10 +1864,16 @@
         if (isEditMode) {
             const editContent = document.getElementById('edit-content');
             if (editContent) {
-                const cursorPos = editContent.selectionStart;
+                let cursorPos = editContent.selectionStart;
+                
+                // 如果光标位置为0或者编辑器没有焦点，插入到文档末尾
+                if (cursorPos === 0 && editContent !== document.activeElement) {
+                    cursorPos = editContent.value.length;
+                }
+                
                 const textBefore = editContent.value.substring(0, cursorPos);
                 const textAfter = editContent.value.substring(cursorPos);
-                const summaryText = '\n\n## AI总结\n\n' + summary + '\n\n';
+                const summaryText = '\n\n## 🤖 AI总结\n\n' + summary + '\n\n';
                 
                 editContent.value = textBefore + summaryText + textAfter;
                 editContent.setSelectionRange(cursorPos + summaryText.length, cursorPos + summaryText.length);
@@ -1776,9 +1881,18 @@
                 
                 // 标记为有未保存的更改
                 handleContentChange();
+                
+                debugLog('总结已插入到文档，位置: ' + cursorPos);
             }
         } else {
-            alert('请先切换到编辑模式以插入总结');
+            // 如果在预览模式，提示用户切换到编辑模式
+            if (confirm('需要切换到编辑模式才能插入总结，是否切换？')) {
+                switchToEdit();
+                // 延迟插入，等待编辑模式加载完成
+                setTimeout(() => {
+                    insertSummaryToDocument(summary);
+                }, 100);
+            }
         }
     }
     
@@ -1821,19 +1935,56 @@
         }
     }
     
-    // 转写文本选择处理
-    function handleTranscriptTextSelection() {
-        const selection = window.getSelection();
-        selectedTranscriptText = selection.toString().trim();
-        
+    // 更新手动总结按钮状态
+    function updateManualSummarizeButton() {
         const btn = document.getElementById('manual-summarize-btn');
-        if (selectedTranscriptText) {
+        if (!btn) return;
+        
+        if (selectedTranscriptTexts.length > 0) {
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>总结选中内容 (' + selectedTranscriptText.length + '字)';
+            const totalChars = selectedTranscriptTexts.reduce((sum, item) => sum + item.text.length, 0);
+            btn.innerHTML = `<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>总结选中内容 (${selectedTranscriptTexts.length}条, ${totalChars}字)`;
         } else {
             btn.disabled = true;
             btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>手动总结选中内容';
         }
+    }
+    
+    // 转写文本选择处理（保留用于兼容性）
+    function handleTranscriptTextSelection() {
+        updateManualSummarizeButton();
+    }
+    
+    // 标记转写条目为已总结
+    function markTranscriptItemsAsSummarized() {
+        selectedTranscriptTexts.forEach(item => {
+            const element = item.element;
+            const timestamp = element.querySelector('span');
+            
+            // 检查是否已经有标记
+            if (!timestamp.querySelector('.summarized-mark')) {
+                // 添加小√图标
+                const checkMark = document.createElement('span');
+                checkMark.className = 'summarized-mark text-green-500 ml-1';
+                checkMark.innerHTML = '✓';
+                checkMark.title = '已总结';
+                timestamp.appendChild(checkMark);
+            }
+        });
+    }
+    
+    // 清空转写文本选中状态
+    function clearTranscriptSelection() {
+        selectedTranscriptTexts.forEach(item => {
+            const element = item.element;
+            element.classList.remove('bg-bg-light-green');
+            const textP = element.querySelector('p');
+            if (textP) {
+                textP.classList.remove('text-text-dark-brown');
+                textP.classList.add('text-text-medium-brown');
+            }
+        });
+        selectedTranscriptTexts = [];
     }
     
     // 添加转写文本到显示区域
@@ -1844,17 +1995,74 @@
         if (!transcriptDiv) return;
         
         // 如果是第一次添加文本，清空占位符
-        if (transcriptDiv.innerHTML.includes('转写内容将在这里实时显示')) {
+        if (transcriptDiv.innerHTML.includes('转写内容将在这里实时显示') || 
+            transcriptDiv.innerHTML.includes('占位符内容')) {
             transcriptDiv.innerHTML = '';
         }
         
-        const textElement = document.createElement('p');
-        textElement.className = 'mb-2 cursor-pointer hover:bg-blue-50 p-1 rounded';
-        textElement.textContent = text;
-        transcriptDiv.appendChild(textElement);
+        // 创建转写条目容器，参考录音室UI样式
+        const transcriptItem = document.createElement('div');
+        transcriptItem.className = 'flex cursor-pointer hover:bg-blue-50 p-2 rounded-lg transition-colors';
+        
+        // 添加多选功能
+        transcriptItem.addEventListener('click', function() {
+            const isSelected = this.classList.contains('bg-bg-light-green');
+            const textP = this.querySelector('p');
+            
+            if (isSelected) {
+                // 取消选中
+                this.classList.remove('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-dark-brown');
+                    textP.classList.add('text-text-medium-brown');
+                }
+                // 从选中列表中移除
+                const index = selectedTranscriptTexts.findIndex(item => item.text === text);
+                if (index > -1) {
+                    selectedTranscriptTexts.splice(index, 1);
+                }
+                debugLog('取消选中转写文本: ' + text);
+            } else {
+                // 选中
+                this.classList.add('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-medium-brown');
+                    textP.classList.add('text-text-dark-brown');
+                }
+                // 添加到选中列表
+                selectedTranscriptTexts.push({
+                    text: text,
+                    element: this,
+                    timestamp: timestamp.textContent
+                });
+                debugLog('选中转写文本: ' + text);
+            }
+            
+            updateManualSummarizeButton();
+        });
+        
+        // 创建时间戳
+        const timestamp = document.createElement('span');
+        timestamp.className = 'text-sm font-semibold text-primary mr-3 flex-shrink-0';
+        const currentTime = new Date();
+        const timeString = `[${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}:${currentTime.getSeconds().toString().padStart(2, '0')}]`;
+        timestamp.textContent = timeString;
+        
+        // 创建文本内容
+        const textContent = document.createElement('p');
+        textContent.className = 'text-text-medium-brown flex-1 leading-relaxed';
+        textContent.textContent = text;
+        
+        // 组装转写条目
+        transcriptItem.appendChild(timestamp);
+        transcriptItem.appendChild(textContent);
+        
+        // 添加到容器
+        transcriptDiv.appendChild(transcriptItem);
         
         // 自动滚动到底部
-        transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+        const container = transcriptDiv.parentElement;
+        container.scrollTop = container.scrollHeight;
     }
     
     // 后端调用的转写文本更新函数 - 必须定义为全局函数
@@ -6467,11 +6675,98 @@
         }
     }
     
+    // 文件结构面板收缩/展开功能 - 定义为全局函数
+    window.toggleFileStructurePanel = function() {
+        const fileStructure = document.getElementById('file-structure');
+        const collapseToggleBtn = document.getElementById('collapse-toggle-btn');
+        const collapseToggleIcon = collapseToggleBtn.querySelector('.material-icons-outlined');
+        
+        isFileStructureCollapsed = !isFileStructureCollapsed;
+        
+        if (isFileStructureCollapsed) {
+            fileStructure.classList.add('collapsed');
+            collapseToggleIcon.textContent = 'chevron_right';
+            debugLog('文件结构面板已折叠');
+        } else {
+            fileStructure.classList.remove('collapsed');
+            collapseToggleIcon.textContent = 'chevron_left';
+            debugLog('文件结构面板已展开');
+        }
+    };
+    
+    // 初始化拖拽调整功能
+    function initResizer() {
+        const resizer = document.getElementById('resizer');
+        const documentArea = document.getElementById('document-area');
+        const rightPanel = document.getElementById('right-panel');
+        
+        if (!resizer || !documentArea || !rightPanel) {
+            console.warn('拖拽调整功能初始化失败：找不到必要的元素');
+            return;
+        }
+        
+        resizer.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startX = e.clientX;
+            
+            // 获取当前宽度
+            const documentRect = documentArea.getBoundingClientRect();
+            const rightRect = rightPanel.getBoundingClientRect();
+            startDocumentWidth = documentRect.width;
+            startRightWidth = rightRect.width;
+            
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            
+            debugLog('开始拖拽调整面板宽度');
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - startX;
+            const containerWidth = document.getElementById('main-content').getBoundingClientRect().width;
+            
+            // 计算新的宽度百分比
+            const newDocumentWidth = startDocumentWidth + deltaX;
+            const newRightWidth = startRightWidth - deltaX;
+            
+            // 设置最小和最大宽度限制
+            const minWidth = 200;
+            const maxDocumentWidth = containerWidth - minWidth - 4; // 4px for resizer
+            const maxRightWidth = containerWidth - minWidth - 4;
+            
+            if (newDocumentWidth >= minWidth && newDocumentWidth <= maxDocumentWidth &&
+                newRightWidth >= minWidth && newRightWidth <= maxRightWidth) {
+                
+                const documentPercent = (newDocumentWidth / containerWidth) * 100;
+                const rightPercent = (newRightWidth / containerWidth) * 100;
+                
+                documentArea.style.width = documentPercent + '%';
+                rightPanel.style.width = rightPercent + '%';
+            }
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                debugLog('拖拽调整完成');
+            }
+        });
+    }
+    
     // 页面初始化
     function initAll() {
         console.log('开始初始化页面...');
         initializePage();
         initMarkdownEnhancements();
+        initResizer(); // 初始化拖拽调整功能
         
         // 延迟更新设备信息，等待bridge连接
         setTimeout(function() {
