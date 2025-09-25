@@ -102,7 +102,7 @@ class CorgiWebBridge(QObject):
         self.menu_state = {
             "dashboard": {"expanded": False, "children": []},
             "learn": {"expanded": False, "children": ["learn_from_materials", "online_course_notes"]},
-            "practice": {"expanded": False, "children": ["practice_materials", "practice_knowledge", "practice_errors"]},
+            "practice": {"expanded": False, "children": ["practice_materials", "practice_knowledge", "practice_errors", "api_test"]},
             "memory": {"expanded": False, "children": ["memory_knowledge", "memory_errors"]},
             "knowledge_base": {"expanded": False, "children": []},
             "settings": {"expanded": False, "children": []}
@@ -188,8 +188,28 @@ class CorgiWebBridge(QObject):
     @Slot(str)
     def logFrontendMessage(self, message):
         """记录前端发送的日志消息"""
-        # 直接写入日志，因为前端已经包含了时间戳和级别
-        self.logger.handlers[0].stream.write(message + '\n')
+        # 创建专门的前端日志文件
+        import os
+        from datetime import datetime
+        
+        # 确保logs目录存在
+        if not os.path.exists('logs'):
+            os.makedirs('logs')
+            
+        # 创建前端日志文件名
+        today = datetime.now().strftime('%Y%m%d')
+        frontend_log_file = f'logs/frontend_debug_{today}.log'
+        
+        # 写入前端日志文件
+        with open(frontend_log_file, 'a', encoding='utf-8') as f:
+            f.write(message + '\n')
+            f.flush()
+        
+        # 同时输出到控制台
+        print(f"[FRONTEND] {message}")
+        
+        # 也写入主日志
+        self.logger.info(f"[FRONTEND] {message}")
         self.logger.handlers[0].stream.flush()
 
     @Slot()
@@ -303,8 +323,9 @@ class CorgiWebBridge(QObject):
                 "practice_errors": "基于错题练习",
                 "memory_knowledge": "基于知识点记忆",
                 "memory_errors": "基于错题记忆",
+                "api_test": "API测试",
                 "knowledge_base": "知识库管理",
-                "settings": "设置"
+                "settings": "系统设置"
             }
             page_title = title_map.get(content_id, "柯基学习小助手")
             self.main_window.web_view.page().runJavaScript(f"""
@@ -1360,6 +1381,163 @@ class CorgiWebBridge(QObject):
             import traceback
             self.logger.error(f"详细错误信息: {traceback.format_exc()}")
             return {"success": False, "error": str(e)}
+    
+    # ==================== 知识脑图功能 ====================
+    
+    @Slot(result=str)
+    def getSubjectsWithKnowledgeCount(self):
+        """获取学科列表及其知识点数量"""
+        self.logger.info("=" * 60)
+        self.logger.info("【知识脑图】getSubjectsWithKnowledgeCount 开始")
+        
+        try:
+            self.logger.info("正在导入知识管理系统...")
+            from knowledge_management import KnowledgeManagementSystem
+            
+            self.logger.info("正在初始化知识管理系统...")
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            self.logger.info("正在调用get_subject_stats()...")
+            # 使用 get_subject_stats 方法获取学科统计信息
+            subject_stats = km_system.get_subject_stats()
+            self.logger.info(f"get_subject_stats()返回: {subject_stats}")
+            
+            subjects_with_count = []
+            
+            for stat in subject_stats:
+                self.logger.info(f"处理学科: {stat}")
+                # 只显示有知识点的学科
+                if stat["kp_count"] > 0:
+                    subject_data = {
+                        "name": stat["subject_name"],
+                        "knowledge_count": stat["kp_count"]
+                    }
+                    subjects_with_count.append(subject_data)
+                    self.logger.info(f"添加学科: {subject_data}")
+            
+            self.logger.info(f"✅ 获取到 {len(subjects_with_count)} 个学科")
+            for subject in subjects_with_count:
+                self.logger.info(f"  - {subject['name']}: {subject['knowledge_count']} 个知识点")
+            
+            result_json = json.dumps(subjects_with_count, ensure_ascii=False)
+            self.logger.info(f"返回JSON: {result_json}")
+            
+            return result_json
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取学科列表失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps([], ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getOrGenerateMindmap(self, subject_name):
+        """获取或生成学科的知识脑图"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】getOrGenerateMindmap 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            mindmap = km_system.generate_or_get_mindmap(subject_name)
+            
+            if mindmap:
+                self.logger.info(f"✅ 成功获取/生成脑图 - 版本: {mindmap.get('version', 1)}")
+                return json.dumps({
+                    "success": True,
+                    "mindmap": mindmap
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 无法生成脑图 - 可能没有知识点数据")
+                return json.dumps({
+                    "success": False,
+                    "error": "该学科暂无知识点数据，无法生成脑图"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 获取/生成脑图失败: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, str, result=bool)
+    def saveMindmap(self, subject_name, mindmap_data_json):
+        """保存知识脑图"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】saveMindmap 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            mindmap_data = json.loads(mindmap_data_json)
+            success = km_system.save_mindmap(subject_name, mindmap_data)
+            
+            if success:
+                self.logger.info("✅ 脑图保存成功")
+            else:
+                self.logger.error("❌ 脑图保存失败")
+                
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存脑图异常: {e}")
+            return False
+    
+    @Slot(str, result=str)
+    def getKnowledgePointDetail(self, knowledge_point_id):
+        """获取知识点详情"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】getKnowledgePointDetail 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 查询知识点详情
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """SELECT id, point_name, core_description, mastery_score, subject_name, created_time
+                   FROM knowledge_points WHERE id = ?""",
+                (knowledge_point_id,)
+            )
+            result = cursor.fetchone()
+            conn.close()
+            
+            if result:
+                detail = {
+                    "id": result[0],
+                    "name": result[1],
+                    "description": result[2],
+                    "mastery_score": result[3],
+                    "subject_name": result[4],
+                    "created_time": result[5]
+                }
+                
+                self.logger.info(f"✅ 获取知识点详情成功: {detail['name']}")
+                return json.dumps({
+                    "success": True,
+                    "detail": detail
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 未找到知识点: {knowledge_point_id}")
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该知识点"
+                }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取知识点详情失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
     
     @Slot(str, result=bool)
     def createNewNote(self, folder_path="vault"):
@@ -4450,6 +4628,29 @@ class OverlayDragCorgiApp(QMainWindow):
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
         
+        # 启用开发者工具 - 允许用户按F12打开调试面板
+        try:
+            # 尝试不同的开发者工具属性名
+            if hasattr(QWebEngineSettings.WebAttribute, 'DeveloperExtrasEnabled'):
+                settings.setAttribute(QWebEngineSettings.WebAttribute.DeveloperExtrasEnabled, True)
+            elif hasattr(QWebEngineSettings.WebAttribute, 'WebAttribute_DeveloperExtrasEnabled'):
+                settings.setAttribute(QWebEngineSettings.WebAttribute.WebAttribute_DeveloperExtrasEnabled, True)
+            else:
+                print("⚠️ 开发者工具属性不可用，跳过设置")
+        except Exception as e:
+            print(f"⚠️ 设置开发者工具失败: {e}")
+        
+        # 启用其他有用的调试功能
+        try:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        except:
+            pass
+        
+        try:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        except:
+            pass
+        
         # 添加WebView到布局
         layout.addWidget(self.web_view)
         
@@ -4604,6 +4805,7 @@ class OverlayDragCorgiApp(QMainWindow):
                 "practice_errors": self.generate_practice_errors_content,
                 "memory_knowledge": self.generate_memory_knowledge_content,
                 "memory_errors": self.generate_memory_errors_content,
+                "api_test": self.generate_api_test_content,
                 "knowledge_base": self.generate_knowledge_base_content,
                 "settings": self.generate_settings_content
             }
@@ -4894,17 +5096,217 @@ class OverlayDragCorgiApp(QMainWindow):
     
     def generate_practice_materials_content(self):
         """生成基于学习资料练习内容"""
+        try:
+            # 使用重新创建的简化页面
+            self.logger.info("🔄 使用重新创建的简化页面: practice_materials")
+            return self.template_manager.render_page_content('practice_materials')
+        except Exception as e:
+            self.logger.error(f"渲染练习资料页面失败: {e}")
+            return f'''
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div class="text-center py-16">
+                    <span class="material-icons-outlined text-6xl text-red-400 mb-4">error</span>
+                    <h3 class="text-xl font-semibold text-text-dark-brown mb-2">页面加载失败</h3>
+                    <p class="text-text-gray mb-6">模板文件可能不存在或有错误</p>
+                    <p class="text-sm text-red-500">错误信息: {str(e)}</p>
+                    <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded">重新加载</button>
+                </div>
+            </div>
+            '''
+    
+    def generate_api_test_content(self):
+        """生成API测试页面内容"""
         return '''
         <div class="bg-white rounded-xl shadow-sm p-6">
-            <div class="text-center py-16">
-                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">quiz</span>
-                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于学习资料练习</h3>
-                <p class="text-text-gray mb-6">根据你的学习资料自动生成练习题目</p>
-                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
-                    开始练习
-                </button>
+            <h1 class="text-2xl font-bold text-text-dark-brown mb-6">知识脑图API测试</h1>
+            
+            <div class="space-y-6">
+                <!-- API可用性检查 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">1. 检查API可用性</h2>
+                    <button onclick="checkAPI()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mr-2">检查API</button>
+                    <div id="apiResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
+                
+                <!-- 获取学科列表 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">2. 获取学科列表</h2>
+                    <button onclick="testGetSubjects()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mr-2">获取学科列表</button>
+                    <div id="subjectsResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
+                
+                <!-- 生成脑图 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">3. 生成脑图</h2>
+                    <div class="flex items-center space-x-2 mb-3">
+                        <input type="text" id="subjectInput" placeholder="输入学科名称" class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="testGenerateMindmap()" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">生成脑图</button>
+                    </div>
+                    <div id="mindmapResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
+                
+                <!-- 获取知识点详情 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">4. 获取知识点详情</h2>
+                    <div class="flex items-center space-x-2 mb-3">
+                        <input type="text" id="kpIdInput" placeholder="输入知识点ID" class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="testGetKnowledgePoint()" class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">获取详情</button>
+                    </div>
+                    <div id="kpResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
             </div>
         </div>
+
+        <script>
+            function log(elementId, message, isError = false) {
+                const element = document.getElementById(elementId);
+                const timestamp = new Date().toLocaleTimeString();
+                element.textContent = `[${timestamp}] ${message}`;
+                element.className = `mt-3 p-3 rounded text-sm font-mono ${isError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`;
+            }
+
+            function checkAPI() {
+                console.log('检查API可用性...');
+                
+                if (!window.pywebview) {
+                    log('apiResult', 'ERROR: window.pywebview 不存在', true);
+                    return;
+                }
+                
+                if (!window.pywebview.api) {
+                    log('apiResult', 'ERROR: window.pywebview.api 不存在', true);
+                    return;
+                }
+                
+                // 列出可用的API方法
+                const methods = Object.keys(window.pywebview.api);
+                console.log('可用的API方法:', methods);
+                
+                const mindmapMethods = methods.filter(m => 
+                    m.toLowerCase().includes('subject') || 
+                    m.toLowerCase().includes('mindmap') || 
+                    m.toLowerCase().includes('knowledge')
+                );
+                
+                log('apiResult', `SUCCESS: pywebview API 可用\\n脑图相关方法: ${mindmapMethods.join(', ')}`);
+            }
+
+            async function testGetSubjects() {
+                console.log('测试获取学科列表...');
+                
+                try {
+                    if (!window.pywebview || !window.pywebview.api) {
+                        throw new Error('pywebview API 不可用');
+                    }
+                    
+                    if (!window.pywebview.api.getSubjectsWithKnowledgeCount) {
+                        throw new Error('getSubjectsWithKnowledgeCount 方法不存在');
+                    }
+                    
+                    log('subjectsResult', '正在调用 getSubjectsWithKnowledgeCount...');
+                    
+                    const result = await window.pywebview.api.getSubjectsWithKnowledgeCount();
+                    console.log('API返回结果:', result);
+                    
+                    const subjects = JSON.parse(result);
+                    console.log('解析后的数据:', subjects);
+                    
+                    if (subjects.length === 0) {
+                        log('subjectsResult', 'SUCCESS: API调用成功，但没有学科数据\\n返回: []');
+                    } else {
+                        log('subjectsResult', `SUCCESS: 获取到 ${subjects.length} 个学科\\n${JSON.stringify(subjects, null, 2)}`);
+                    }
+                    
+                } catch (error) {
+                    console.error('获取学科列表失败:', error);
+                    log('subjectsResult', `ERROR: ${error.message}`, true);
+                }
+            }
+
+            async function testGenerateMindmap() {
+                const subjectName = document.getElementById('subjectInput').value.trim();
+                
+                if (!subjectName) {
+                    log('mindmapResult', 'ERROR: 请输入学科名称', true);
+                    return;
+                }
+                
+                console.log('测试生成脑图...', subjectName);
+                
+                try {
+                    if (!window.pywebview || !window.pywebview.api) {
+                        throw new Error('pywebview API 不可用');
+                    }
+                    
+                    if (!window.pywebview.api.getOrGenerateMindmap) {
+                        throw new Error('getOrGenerateMindmap 方法不存在');
+                    }
+                    
+                    log('mindmapResult', `正在为学科 "${subjectName}" 生成脑图...`);
+                    
+                    const result = await window.pywebview.api.getOrGenerateMindmap(subjectName);
+                    console.log('脑图生成结果:', result);
+                    
+                    const data = JSON.parse(result);
+                    
+                    if (data.success) {
+                        log('mindmapResult', `SUCCESS: 脑图生成成功\\n节点数: ${data.mindmap.data.nodes?.length || 0}\\n边数: ${data.mindmap.data.edges?.length || 0}\\n版本: ${data.mindmap.version}`);
+                    } else {
+                        log('mindmapResult', `ERROR: 脑图生成失败\\n${data.error}`, true);
+                    }
+                    
+                } catch (error) {
+                    console.error('生成脑图失败:', error);
+                    log('mindmapResult', `ERROR: ${error.message}`, true);
+                }
+            }
+
+            async function testGetKnowledgePoint() {
+                const kpId = document.getElementById('kpIdInput').value.trim();
+                
+                if (!kpId) {
+                    log('kpResult', 'ERROR: 请输入知识点ID', true);
+                    return;
+                }
+                
+                console.log('测试获取知识点详情...', kpId);
+                
+                try {
+                    if (!window.pywebview || !window.pywebview.api) {
+                        throw new Error('pywebview API 不可用');
+                    }
+                    
+                    if (!window.pywebview.api.getKnowledgePointDetail) {
+                        throw new Error('getKnowledgePointDetail 方法不存在');
+                    }
+                    
+                    log('kpResult', `正在获取知识点 "${kpId}" 的详情...`);
+                    
+                    const result = await window.pywebview.api.getKnowledgePointDetail(kpId);
+                    console.log('知识点详情结果:', result);
+                    
+                    const data = JSON.parse(result);
+                    
+                    if (data.success) {
+                        log('kpResult', `SUCCESS: 获取知识点详情成功\\n${JSON.stringify(data.detail, null, 2)}`);
+                    } else {
+                        log('kpResult', `ERROR: 获取知识点详情失败\\n${data.error}`, true);
+                    }
+                    
+                } catch (error) {
+                    console.error('获取知识点详情失败:', error);
+                    log('kpResult', `ERROR: ${error.message}`, true);
+                }
+            }
+
+            // 页面加载完成后自动检查API
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('API测试页面加载完成');
+                setTimeout(() => {
+                    checkAPI();
+                }, 1000);
+            });
+        </script>
         '''
     
     def generate_practice_knowledge_content(self):
@@ -4983,34 +5385,78 @@ class OverlayDragCorgiApp(QMainWindow):
         '''
     
     def generate_settings_content(self):
-        """生成设置内容 - 备用方案，实际使用模板系统"""
+        """生成设置内容"""
         return '''
         <div class="bg-white rounded-xl shadow-sm p-6">
-            <h3 class="text-xl font-semibold text-text-dark-brown mb-6">设置</h3>
-            <div class="space-y-6">
-                <div>
-                    <label class="block text-sm font-medium text-text-dark-brown mb-2">LLM模型选择</label>
-                    <select class="w-full p-3 border border-gray-300 rounded-lg">
-                        <option>Gemini Pro</option>
-                        <option>Ollama</option>
-                        <option>通义千问</option>
-                        <option>规则匹配</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-text-dark-brown mb-2">API Key</label>
-                    <input type="password" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="输入你的API Key">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-text-dark-brown mb-2">学习提醒</label>
-                    <div class="flex items-center">
-                        <input type="checkbox" class="mr-2">
-                        <span class="text-sm text-text-gray">启用每日学习提醒</span>
+            <h1 class="text-2xl font-bold text-text-dark-brown mb-6">系统设置</h1>
+            
+            <div class="space-y-8">
+                <!-- LLM配置 -->
+                <div class="border border-gray-200 rounded-lg p-6">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-4 flex items-center">
+                        <span class="material-icons-outlined mr-2">smart_toy</span>
+                        LLM模型配置
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">当前模型</label>
+                            <select class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option>Ollama (本地)</option>
+                                <option>OpenAI GPT-4</option>
+                                <option>Google Gemini</option>
+                                <option>DeepSeek</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">API密钥</label>
+                            <input type="password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" placeholder="输入API密钥">
+                        </div>
                     </div>
                 </div>
-                <button class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-600">
-                    保存设置
-                </button>
+
+                <!-- 语音设置 -->
+                <div class="border border-gray-200 rounded-lg p-6">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-4 flex items-center">
+                        <span class="material-icons-outlined mr-2">mic</span>
+                        语音识别设置
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">识别精度</label>
+                            <div class="flex space-x-6">
+                                <label class="flex items-center">
+                                    <input type="radio" name="accuracy" class="mr-2">
+                                    <span class="text-sm">快速</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="accuracy" class="mr-2" checked>
+                                    <span class="text-sm">平衡</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="accuracy" class="mr-2">
+                                    <span class="text-sm">精确</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">音频设备</label>
+                            <select class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option>默认设备</option>
+                                <option>Microsoft 声音映射器</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 保存按钮 -->
+                <div class="flex justify-end space-x-4">
+                    <button class="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        重置默认
+                    </button>
+                    <button class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-green-600">
+                        保存设置
+                    </button>
+                </div>
             </div>
         </div>
         '''
@@ -5117,6 +5563,10 @@ class OverlayDragCorgiApp(QMainWindow):
                         <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_errors')">
                             <span class="material-icons-outlined mr-2 text-sm">error_outline</span>
                             <span class="menu-text">基于错题练习</span>
+                        </a>
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('api_test')">
+                            <span class="material-icons-outlined mr-2 text-sm">bug_report</span>
+                            <span class="menu-text">API测试</span>
                         </a>
                     </div>
                 </div>
@@ -5276,6 +5726,19 @@ class OverlayDragCorgiApp(QMainWindow):
                 return;
             }
             
+            if (bridge && bridge.loadContent) {
+                bridge.loadContent(menuId);
+            }
+        }
+        
+        // 处理菜单展开/收缩
+        function toggleMenu(menuId) {
+            if (sidebarCollapsed) {
+                // 如果侧边栏收缩，先展开
+                toggleSidebar();
+                return;
+            }
+            
             if (bridge && bridge.toggleMenu) {
                 bridge.toggleMenu(menuId).then(function(menuStateJson) {
                     const menuState = JSON.parse(menuStateJson);
@@ -5287,7 +5750,12 @@ class OverlayDragCorgiApp(QMainWindow):
         // 更新菜单显示状态
         function updateMenuDisplay(menuState) {
             Object.keys(menuState).forEach(menuId => {
-                const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+                // 尝试两种选择器：handleMenuClick 和 toggleMenu
+                let menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+                if (!menuItem) {
+                    menuItem = document.querySelector(`[onclick="toggleMenu('${menuId}')"]`);
+                }
+                
                 if (menuItem) {
                     const submenu = menuItem.parentElement.querySelector('.submenu');
                     const expandIcon = menuItem.querySelector('.expand-icon');

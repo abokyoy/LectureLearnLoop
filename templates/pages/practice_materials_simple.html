@@ -6,8 +6,6 @@
     <title>知识脑图练习</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
-    <!-- D3.js for mindmap visualization -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body class="bg-gray-100">
 
@@ -134,32 +132,11 @@
         </div>
 
         <!-- 脑图容器 -->
-        <div class="bg-white rounded-lg shadow-lg p-4 min-h-96 relative">
-            <!-- 脑图工具栏 -->
-            <div class="flex items-center justify-between mb-4 pb-2 border-b">
-                <div class="flex items-center space-x-4">
-                    <input type="text" id="searchInput" placeholder="搜索知识点..." 
-                           class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <button onclick="searchNodes()" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">搜索</button>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <button onclick="zoomIn()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">放大</button>
-                    <button onclick="zoomOut()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">缩小</button>
-                    <button onclick="resetView()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">重置</button>
-                </div>
-            </div>
-            
-            <!-- 脑图SVG -->
-            <div id="mindmapContainer" class="w-full" style="height: 500px;">
-                <svg id="mindmapSvg" width="100%" height="100%"></svg>
-            </div>
-            
-            <!-- 加载状态 -->
-            <div id="loadingState" class="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center hidden">
-                <div class="text-center">
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p class="text-gray-600">正在生成知识脑图...</p>
-                </div>
+        <div class="bg-white rounded-lg shadow-lg p-8 min-h-96">
+            <div class="text-center text-gray-500">
+                <span class="material-icons-outlined text-6xl mb-4">account_tree</span>
+                <h3 class="text-xl font-semibold mb-2">知识脑图</h3>
+                <p>脑图功能正在开发中...</p>
             </div>
         </div>
     </div>
@@ -234,259 +211,25 @@ function backToSubjects() {
     log('✅ 已返回学科选择页面');
 }
 
-// 全局变量
-let currentMindmapData = null;
-let svg = null;
-let g = null;
-let zoom = null;
-let simulation = null;
-
 // 生成脑图
 async function generateMindmap(subjectName) {
     log(`🧠 开始生成 ${subjectName} 的知识脑图`);
-    showLoading();
     
     try {
         if (window.bridge && window.bridge.getOrGenerateMindmap) {
             const response = await window.bridge.getOrGenerateMindmap(subjectName);
             const result = JSON.parse(response);
             
-            if (result.success && result.mindmap && result.mindmap.data) {
+            if (result.success) {
                 log(`✅ 脑图生成成功，节点数: ${result.mindmap.data.nodes?.length || 0}`);
-                currentMindmapData = result.mindmap.data;
-                renderMindmap();
             } else {
-                log(`❌ 脑图生成失败: ${result.error || '数据格式错误'}`);
-                showMockMindmap(subjectName);
+                log(`❌ 脑图生成失败: ${result.error}`, 'ERROR');
             }
         } else {
             log('⚠️ 后端API不可用，显示模拟脑图');
-            showMockMindmap(subjectName);
         }
     } catch (error) {
-        log(`❌ 生成脑图时出错: ${error.message}`);
-        showMockMindmap(subjectName);
-    }
-    
-    hideLoading();
-}
-
-// 显示模拟脑图
-function showMockMindmap(subjectName) {
-    log('📊 显示模拟脑图数据');
-    
-    // 创建模拟数据
-    const mockData = {
-        nodes: [
-            { id: 'center', name: subjectName, type: 'center', x: 400, y: 250 },
-            { id: 'node1', name: '基础概念', type: 'category', x: 200, y: 150 },
-            { id: 'node2', name: '核心算法', type: 'category', x: 600, y: 150 },
-            { id: 'node3', name: '实践应用', type: 'category', x: 200, y: 350 },
-            { id: 'node4', name: '高级技巧', type: 'category', x: 600, y: 350 },
-            { id: 'kp1', name: '数据类型', type: 'knowledge_point', x: 100, y: 100 },
-            { id: 'kp2', name: '变量作用域', type: 'knowledge_point', x: 300, y: 100 },
-            { id: 'kp3', name: '排序算法', type: 'knowledge_point', x: 500, y: 100 },
-            { id: 'kp4', name: '搜索算法', type: 'knowledge_point', x: 700, y: 100 }
-        ],
-        edges: [
-            { source: 'center', target: 'node1' },
-            { source: 'center', target: 'node2' },
-            { source: 'center', target: 'node3' },
-            { source: 'center', target: 'node4' },
-            { source: 'node1', target: 'kp1' },
-            { source: 'node1', target: 'kp2' },
-            { source: 'node2', target: 'kp3' },
-            { source: 'node2', target: 'kp4' }
-        ]
-    };
-    
-    currentMindmapData = mockData;
-    renderMindmap();
-}
-
-// 渲染脑图
-function renderMindmap() {
-    if (!currentMindmapData || !currentMindmapData.nodes) {
-        log('❌ 脑图数据无效');
-        return;
-    }
-    
-    log(`📊 开始渲染脑图，节点数: ${currentMindmapData.nodes.length}`);
-    
-    // 初始化SVG
-    initSvg();
-    
-    const nodes = currentMindmapData.nodes.map(d => ({...d}));
-    const edges = currentMindmapData.edges || [];
-    
-    // 清空之前的内容
-    g.selectAll('*').remove();
-    
-    // 创建力导向图
-    simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-300))
-        .force('center', d3.forceCenter(400, 250))
-        .force('collision', d3.forceCollide().radius(40));
-    
-    // 绘制连线
-    const links = g.append('g')
-        .selectAll('line')
-        .data(edges)
-        .enter().append('line')
-        .attr('stroke', '#999')
-        .attr('stroke-opacity', 0.6)
-        .attr('stroke-width', 2);
-    
-    // 绘制节点组
-    const nodeGroups = g.append('g')
-        .selectAll('g')
-        .data(nodes)
-        .enter().append('g')
-        .attr('class', 'node-group')
-        .style('cursor', 'pointer')
-        .call(d3.drag()
-            .on('start', dragstarted)
-            .on('drag', dragged)
-            .on('end', dragended));
-    
-    // 节点圆圈
-    nodeGroups.append('circle')
-        .attr('r', d => d.type === 'center' ? 30 : d.type === 'category' ? 25 : 20)
-        .attr('fill', d => {
-            if (d.type === 'center') return '#3B82F6';
-            if (d.type === 'category') return '#10B981';
-            return '#F59E0B';
-        })
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2);
-    
-    // 节点文本
-    nodeGroups.append('text')
-        .attr('dy', '.35em')
-        .attr('text-anchor', 'middle')
-        .style('fill', 'white')
-        .style('font-size', d => d.type === 'center' ? '14px' : '12px')
-        .style('font-weight', 'bold')
-        .text(d => d.name.length > 6 ? d.name.substring(0, 6) + '...' : d.name);
-    
-    // 节点点击事件
-    nodeGroups.on('click', (event, d) => {
-        log(`🔍 点击了节点: ${d.name} (${d.type})`);
-        if (d.type === 'knowledge_point') {
-            showKnowledgePointDetail(d);
-        }
-    });
-    
-    // 更新位置
-    simulation.on('tick', () => {
-        links
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
-        
-        nodeGroups
-            .attr('transform', d => `translate(${d.x},${d.y})`);
-    });
-    
-    log('✅ 脑图渲染完成');
-}
-
-// 初始化SVG
-function initSvg() {
-    if (svg) return;
-    
-    svg = d3.select('#mindmapSvg');
-    g = svg.append('g');
-    
-    // 初始化缩放
-    zoom = d3.zoom()
-        .scaleExtent([0.1, 3])
-        .on('zoom', (event) => {
-            g.attr('transform', event.transform);
-        });
-    
-    svg.call(zoom);
-}
-
-// 拖拽函数
-function dragstarted(event, d) {
-    if (!event.active) simulation.alphaTarget(0.3).restart();
-    d.fx = d.x;
-    d.fy = d.y;
-}
-
-function dragged(event, d) {
-    d.fx = event.x;
-    d.fy = event.y;
-}
-
-function dragended(event, d) {
-    if (!event.active) simulation.alphaTarget(0);
-    d.fx = null;
-    d.fy = null;
-}
-
-// 显示知识点详情
-function showKnowledgePointDetail(node) {
-    alert(`知识点详情：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}`);
-}
-
-// 脑图工具函数
-function showLoading() {
-    document.getElementById('loadingState').classList.remove('hidden');
-}
-
-function hideLoading() {
-    document.getElementById('loadingState').classList.add('hidden');
-}
-
-function zoomIn() {
-    if (svg && zoom) {
-        svg.transition().call(zoom.scaleBy, 1.5);
-        log('🔍 放大脑图');
-    }
-}
-
-function zoomOut() {
-    if (svg && zoom) {
-        svg.transition().call(zoom.scaleBy, 1 / 1.5);
-        log('🔍 缩小脑图');
-    }
-}
-
-function resetView() {
-    if (svg && zoom) {
-        svg.transition().call(zoom.transform, d3.zoomIdentity);
-        log('🔍 重置脑图视图');
-    }
-}
-
-function searchNodes() {
-    const query = document.getElementById('searchInput').value.trim();
-    if (!query) {
-        log('⚠️ 请输入搜索关键词');
-        return;
-    }
-    
-    log(`🔍 搜索节点: ${query}`);
-    
-    if (g) {
-        // 重置所有节点样式
-        g.selectAll('.node-group circle')
-            .attr('stroke', '#fff')
-            .attr('stroke-width', 2);
-        
-        // 高亮匹配的节点
-        g.selectAll('.node-group')
-            .each(function(d) {
-                const circle = d3.select(this).select('circle');
-                if (d.name.toLowerCase().includes(query.toLowerCase())) {
-                    circle.attr('stroke', '#F59E0B').attr('stroke-width', 4);
-                    log(`✅ 找到匹配节点: ${d.name}`);
-                }
-            });
+        log(`❌ 生成脑图时出错: ${error.message}`, 'ERROR');
     }
 }
 

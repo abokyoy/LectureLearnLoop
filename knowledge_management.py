@@ -151,6 +151,20 @@ class DatabaseManager:
                 FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id)
             )
         ''')
+
+        # 知识脑图表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_mindmaps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                subject_name TEXT NOT NULL,
+                mindmap_data TEXT NOT NULL,
+                version INTEGER DEFAULT 1,
+                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, subject_name)
+            )
+        ''')
         
         conn.commit()
         conn.close()
@@ -1539,6 +1553,7 @@ class KnowledgeManagementSystem:
         self.practice_manager = PracticeRecordManager(self.db_manager)
         self.error_manager = ErrorQuestionManager(self.db_manager, config)
         self.favorite_manager = FavoriteQuestionManager(self.db_manager)
+        self.mindmap_manager = MindmapManager(self.db_manager, config)
 
     def update_config(self, new_config: dict):
         """更新配置并下发至子管理器（用于动态切换LLM提供商等）"""
@@ -1986,3 +2001,174 @@ class KnowledgeManagementSystem:
         return self.error_manager.generate_targeted_questions(
             subject_name, knowledge_point_id, count, reference_text=reference_text
         )
+    
+    # ---- 知识脑图相关方法 ----
+    def get_mindmap(self, subject_name: str) -> Optional[Dict]:
+        """获取学科的知识脑图"""
+        return self.mindmap_manager.get_mindmap(subject_name)
+    
+    def generate_or_get_mindmap(self, subject_name: str) -> Optional[Dict]:
+        """生成或获取学科的知识脑图"""
+        # 首先尝试获取现有脑图
+        existing_mindmap = self.mindmap_manager.get_mindmap(subject_name)
+        if existing_mindmap:
+            return existing_mindmap
+        
+        # 如果没有现有脑图，则生成新的
+        knowledge_points = self.get_knowledge_points_by_subject(subject_name)
+        if not knowledge_points:
+            return None
+        
+        mindmap_data = self.mindmap_manager.generate_mindmap_with_llm(subject_name, knowledge_points)
+        if mindmap_data:
+            # 保存生成的脑图
+            self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+            return {
+                "data": mindmap_data,
+                "version": 1,
+                "updated_time": datetime.now().isoformat()
+            }
+        
+        return None
+    
+    def save_mindmap(self, subject_name: str, mindmap_data: Dict) -> bool:
+        """保存知识脑图"""
+        return self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+
+
+class MindmapManager:
+    """知识脑图管理器"""
+    
+    def __init__(self, db_manager: DatabaseManager, config: Dict):
+        self.db_manager = db_manager
+        self.config = config
+    
+    def get_mindmap(self, subject_name: str, user_id: str = "0001") -> Optional[Dict]:
+        """获取学科的知识脑图"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT mindmap_data, version, updated_time FROM knowledge_mindmaps WHERE user_id = ? AND subject_name = ?",
+            (user_id, subject_name)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            try:
+                return {
+                    "data": json.loads(result[0]),
+                    "version": result[1],
+                    "updated_time": result[2]
+                }
+            except json.JSONDecodeError:
+                return None
+        return None
+    
+    def save_mindmap(self, subject_name: str, mindmap_data: Dict, user_id: str = "0001") -> bool:
+        """保存知识脑图"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            mindmap_json = json.dumps(mindmap_data, ensure_ascii=False)
+            
+            # 尝试更新现有记录
+            cursor.execute(
+                """UPDATE knowledge_mindmaps 
+                   SET mindmap_data = ?, version = version + 1, updated_time = CURRENT_TIMESTAMP 
+                   WHERE user_id = ? AND subject_name = ?""",
+                (mindmap_json, user_id, subject_name)
+            )
+            
+            # 如果没有更新任何记录，则插入新记录
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    "INSERT INTO knowledge_mindmaps (user_id, subject_name, mindmap_data) VALUES (?, ?, ?)",
+                    (user_id, subject_name, mindmap_json)
+                )
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"保存脑图失败: {e}")
+            conn.close()
+            return False
+    
+    def generate_mindmap_with_llm(self, subject_name: str, knowledge_points: List[Dict]) -> Optional[Dict]:
+        """使用LLM生成知识脑图"""
+        if not knowledge_points:
+            return None
+        
+        # 准备知识点信息，包含ID和名称
+        point_info = []
+        for point in knowledge_points:
+            point_info.append(f"- ID:{point.get('id', 'unknown')} {point.get('point_name', '')}")
+        
+        # 构建LLM提示词
+        prompt = f"""请分析以下{subject_name}学科的知识点，生成一个知识关系脑图。
+
+知识点列表：
+{chr(10).join(point_info)}
+
+请按照以下JSON格式返回脑图数据：
+{{
+    "nodes": [
+        {{
+            "id": "kp_1",
+            "name": "知识点名称",
+            "type": "knowledge_point",
+            "level": 1,
+            "x": 100,
+            "y": 100
+        }},
+        {{
+            "id": "category_1", 
+            "name": "分类名称",
+            "type": "category",
+            "level": 0,
+            "x": 200,
+            "y": 200
+        }}
+    ],
+    "edges": [
+        {{
+            "source": "category_1",
+            "target": "kp_1",
+            "relation": "包含"
+        }}
+    ]
+}}
+
+要求：
+1. 知识点节点的id必须使用"kp_"前缀加上实际的知识点ID（如kp_1, kp_2等）
+2. 分类节点的id使用"category_"前缀
+3. 分析知识点之间的关系，可以创建新的分类节点作为归类
+4. 设置合理的坐标位置，避免节点重叠
+5. 关系类型可以是：包含、依赖、相关、前置等
+6. 只返回JSON数据，不要其他说明文字"""
+
+        try:
+            # 调用LLM生成脑图
+            from llm_provider_factory import LLMProviderFactory
+            
+            factory = LLMProviderFactory(self.config)
+            llm_provider = factory.get_provider()
+            
+            response = llm_provider.generate_response(prompt)
+            
+            # 解析JSON响应
+            import re
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                mindmap_data = json.loads(json_match.group())
+                return mindmap_data
+            else:
+                print("LLM响应中未找到有效的JSON数据")
+                return None
+                
+        except Exception as e:
+            print(f"生成脑图失败: {e}")
+            return None

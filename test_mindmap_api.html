@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识脑图API测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+            white-space: pre-wrap;
+        }
+        .error {
+            background: #ffe6e6;
+            color: #d00;
+        }
+        .success {
+            background: #e6ffe6;
+            color: #060;
+        }
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #005a87;
+        }
+    </style>
+</head>
+<body>
+    <h1>知识脑图API测试页面</h1>
+    
+    <div class="test-section">
+        <h2>1. 检查API可用性</h2>
+        <button onclick="checkAPI()">检查API</button>
+        <div id="apiResult" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>2. 获取学科列表</h2>
+        <button onclick="testGetSubjects()">获取学科列表</button>
+        <div id="subjectsResult" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>3. 生成脑图</h2>
+        <input type="text" id="subjectInput" placeholder="输入学科名称" style="padding: 5px; margin: 5px;">
+        <button onclick="testGenerateMindmap()">生成脑图</button>
+        <div id="mindmapResult" class="result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>4. 获取知识点详情</h2>
+        <input type="text" id="kpIdInput" placeholder="输入知识点ID" style="padding: 5px; margin: 5px;">
+        <button onclick="testGetKnowledgePoint()">获取详情</button>
+        <div id="kpResult" class="result"></div>
+    </div>
+
+    <script>
+        function log(elementId, message, isError = false) {
+            const element = document.getElementById(elementId);
+            const timestamp = new Date().toLocaleTimeString();
+            element.textContent = `[${timestamp}] ${message}`;
+            element.className = `result ${isError ? 'error' : 'success'}`;
+        }
+
+        function checkAPI() {
+            console.log('检查API可用性...');
+            
+            if (!window.pywebview) {
+                log('apiResult', 'ERROR: window.pywebview 不存在', true);
+                return;
+            }
+            
+            if (!window.pywebview.api) {
+                log('apiResult', 'ERROR: window.pywebview.api 不存在', true);
+                return;
+            }
+            
+            log('apiResult', 'SUCCESS: pywebview API 可用');
+            
+            // 列出可用的API方法
+            const methods = Object.keys(window.pywebview.api);
+            console.log('可用的API方法:', methods);
+            
+            const mindmapMethods = methods.filter(m => m.toLowerCase().includes('subject') || m.toLowerCase().includes('mindmap') || m.toLowerCase().includes('knowledge'));
+            log('apiResult', `SUCCESS: pywebview API 可用\n脑图相关方法: ${mindmapMethods.join(', ')}`);
+        }
+
+        async function testGetSubjects() {
+            console.log('测试获取学科列表...');
+            
+            try {
+                if (!window.pywebview || !window.pywebview.api) {
+                    throw new Error('pywebview API 不可用');
+                }
+                
+                if (!window.pywebview.api.getSubjectsWithKnowledgeCount) {
+                    throw new Error('getSubjectsWithKnowledgeCount 方法不存在');
+                }
+                
+                log('subjectsResult', '正在调用 getSubjectsWithKnowledgeCount...');
+                
+                const result = await window.pywebview.api.getSubjectsWithKnowledgeCount();
+                console.log('API返回结果:', result);
+                
+                const subjects = JSON.parse(result);
+                console.log('解析后的数据:', subjects);
+                
+                if (subjects.length === 0) {
+                    log('subjectsResult', 'SUCCESS: API调用成功，但没有学科数据\n返回: []');
+                } else {
+                    log('subjectsResult', `SUCCESS: 获取到 ${subjects.length} 个学科\n${JSON.stringify(subjects, null, 2)}`);
+                }
+                
+            } catch (error) {
+                console.error('获取学科列表失败:', error);
+                log('subjectsResult', `ERROR: ${error.message}\n${error.stack || ''}`, true);
+            }
+        }
+
+        async function testGenerateMindmap() {
+            const subjectName = document.getElementById('subjectInput').value.trim();
+            
+            if (!subjectName) {
+                log('mindmapResult', 'ERROR: 请输入学科名称', true);
+                return;
+            }
+            
+            console.log('测试生成脑图...', subjectName);
+            
+            try {
+                if (!window.pywebview || !window.pywebview.api) {
+                    throw new Error('pywebview API 不可用');
+                }
+                
+                if (!window.pywebview.api.getOrGenerateMindmap) {
+                    throw new Error('getOrGenerateMindmap 方法不存在');
+                }
+                
+                log('mindmapResult', `正在为学科 "${subjectName}" 生成脑图...`);
+                
+                const result = await window.pywebview.api.getOrGenerateMindmap(subjectName);
+                console.log('脑图生成结果:', result);
+                
+                const data = JSON.parse(result);
+                
+                if (data.success) {
+                    log('mindmapResult', `SUCCESS: 脑图生成成功\n节点数: ${data.mindmap.data.nodes?.length || 0}\n边数: ${data.mindmap.data.edges?.length || 0}\n版本: ${data.mindmap.version}`);
+                } else {
+                    log('mindmapResult', `ERROR: 脑图生成失败\n${data.error}`, true);
+                }
+                
+            } catch (error) {
+                console.error('生成脑图失败:', error);
+                log('mindmapResult', `ERROR: ${error.message}\n${error.stack || ''}`, true);
+            }
+        }
+
+        async function testGetKnowledgePoint() {
+            const kpId = document.getElementById('kpIdInput').value.trim();
+            
+            if (!kpId) {
+                log('kpResult', 'ERROR: 请输入知识点ID', true);
+                return;
+            }
+            
+            console.log('测试获取知识点详情...', kpId);
+            
+            try {
+                if (!window.pywebview || !window.pywebview.api) {
+                    throw new Error('pywebview API 不可用');
+                }
+                
+                if (!window.pywebview.api.getKnowledgePointDetail) {
+                    throw new Error('getKnowledgePointDetail 方法不存在');
+                }
+                
+                log('kpResult', `正在获取知识点 "${kpId}" 的详情...`);
+                
+                const result = await window.pywebview.api.getKnowledgePointDetail(kpId);
+                console.log('知识点详情结果:', result);
+                
+                const data = JSON.parse(result);
+                
+                if (data.success) {
+                    log('kpResult', `SUCCESS: 获取知识点详情成功\n${JSON.stringify(data.detail, null, 2)}`);
+                } else {
+                    log('kpResult', `ERROR: 获取知识点详情失败\n${data.error}`, true);
+                }
+                
+            } catch (error) {
+                console.error('获取知识点详情失败:', error);
+                log('kpResult', `ERROR: ${error.message}\n${error.stack || ''}`, true);
+            }
+        }
+
+        // 页面加载完成后自动检查API
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('测试页面加载完成');
+            
+            // 等待一下再检查API
+            setTimeout(() => {
+                checkAPI();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

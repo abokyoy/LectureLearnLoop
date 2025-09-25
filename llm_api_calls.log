@@ -598,3 +598,5 @@
 2025-09-24 20:58:27 - LLM_API - INFO - API调用 [gemini] generate_practice_questions - 成功 (耗时: 4.74s)
 2025-09-24 20:59:54 - LLM_API - INFO - API调用 [gemini] evaluate_practice_answers - 成功 (耗时: 9.46s)
 2025-09-24 22:47:40 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 成功 (耗时: 53.80s)
+2025-09-25 16:22:19 - LLM_API - INFO - API调用 [ollama] extract_knowledge_points - 失败: Ollama API调用失败: 500 (耗时: 7.99s)
+2025-09-25 16:22:30 - LLM_API - INFO - API调用 [gemini] extract_knowledge_points - 成功 (耗时: 11.12s)
