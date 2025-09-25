@@ -2397,10 +2397,10 @@
             // 显示错题入库弹窗 - 与原版ErrorImportDialog保持一致
             function showErrorImportDialog(errorData) {
                 const { error_questions, available_subjects } = errorData;
-                
+                closeEvaluationDetailsModal();
                 // 先显示学科选择界面
                 const modalHtml = `
-                    <div id="errorImportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div id="errorImportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style="z-index: 10100;">
                         <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
                             <div class="px-6 py-4 border-b border-gray-200">
                                 <h2 class="text-xl font-semibold text-gray-900">错题入库</h2>
