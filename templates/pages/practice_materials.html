@@ -233,6 +233,9 @@
                         </div>
                     </div>
                     <div class="flex space-x-2">
+                        <button id="masteryAssessmentBtn" onclick="startMasteryAssessment()" class="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors">
+                            熟练度评估
+                        </button>
                         <button class="px-6 py-2.5 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">
                             专项练习
                         </button>
@@ -911,6 +914,9 @@ async function showKnowledgePointDetail(node) {
     const detailLayer = document.getElementById('knowledgePointDetailLayer');
     detailLayer.classList.remove('hidden');
     
+    // 保存节点ID到dataset，供熟练度评估使用
+    detailLayer.dataset.nodeId = node.id;
+    
     // 更新面包屑
     document.getElementById('detailBreadcrumb').textContent = node.name;
     
@@ -965,17 +971,45 @@ async function showKnowledgePointDetail(node) {
 // 更新知识点详情内容
 function updateKnowledgePointDetail(detail, node) {
     // 更新掌握情况
-    const masteryScore = detail.mastery_score || 0;
+    const masteryScore = detail.mastery_score;
     const masteryElement = document.getElementById('detailMastery');
-    if (masteryScore >= 80) {
-        masteryElement.textContent = '已掌握';
+    const masteryBtn = document.getElementById('masteryAssessmentBtn');
+    
+    if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
+        masteryElement.textContent = '未评估';
+        masteryElement.className = 'text-gray-600 font-semibold';
+        if (masteryBtn) {
+            masteryBtn.style.display = 'inline-block';
+            masteryBtn.textContent = '熟练度评估';
+        }
+    } else if (masteryScore >= 90) {
+        masteryElement.textContent = `精通 (${masteryScore}分)`;
         masteryElement.className = 'text-green-600 font-semibold';
-    } else if (masteryScore >= 60) {
-        masteryElement.textContent = '基本掌握';
+        if (masteryBtn) {
+            masteryBtn.style.display = 'inline-block';
+            masteryBtn.textContent = '重新评估';
+        }
+    } else if (masteryScore >= 70) {
+        masteryElement.textContent = `熟练 (${masteryScore}分)`;
+        masteryElement.className = 'text-blue-600 font-semibold';
+        if (masteryBtn) {
+            masteryBtn.style.display = 'inline-block';
+            masteryBtn.textContent = '重新评估';
+        }
+    } else if (masteryScore >= 50) {
+        masteryElement.textContent = `一般 (${masteryScore}分)`;
         masteryElement.className = 'text-yellow-600 font-semibold';
+        if (masteryBtn) {
+            masteryBtn.style.display = 'inline-block';
+            masteryBtn.textContent = '重新评估';
+        }
     } else {
-        masteryElement.textContent = '需加强';
+        masteryElement.textContent = `待提高 (${masteryScore}分)`;
         masteryElement.className = 'text-red-600 font-semibold';
+        if (masteryBtn) {
+            masteryBtn.style.display = 'inline-block';
+            masteryBtn.textContent = '重新评估';
+        }
     }
     
     // 更新创建时间
@@ -1848,7 +1882,306 @@ document.addEventListener('mouseover', function(e) {
         log(`🖱️ 鼠标悬停: ${subjectName}`);
     }
 });
+
+// 熟练度评估相关变量
+let currentKnowledgePointId = null;
+let currentQuestionIndex = 0;
+let assessmentQuestions = [];
+let userAnswers = [];
+
+// 开始熟练度评估
+async function startMasteryAssessment() {
+    const detailLayer = document.getElementById('knowledgePointDetailLayer');
+    const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
+    
+    log(`🔍 调试信息 - 详情层: ${detailLayer ? '存在' : '不存在'}`);
+    log(`🔍 调试信息 - 节点ID: ${nodeId || '未找到'}`);
+    
+    if (!nodeId) {
+        alert('无法获取知识点信息，请先点击知识点节点');
+        return;
+    }
+    
+    currentKnowledgePointId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+    log(`🎯 开始熟练度评估 - 知识点ID: ${currentKnowledgePointId}`);
+    
+    // 显示加载状态
+    document.getElementById('masteryAssessmentBtn').innerHTML = '生成中...';
+    document.getElementById('masteryAssessmentBtn').disabled = true;
+    
+    try {
+        if (window.bridge && window.bridge.generateAssessmentQuestions) {
+            const response = await window.bridge.generateAssessmentQuestions(currentKnowledgePointId);
+            const result = JSON.parse(response);
+            
+            if (result.success && result.questions) {
+                assessmentQuestions = result.questions;
+                userAnswers = [];
+                currentQuestionIndex = 0;
+                
+                showAssessmentModal();
+                displayCurrentQuestion();
+            } else {
+                alert('生成评估题目失败: ' + (result.error || '未知错误'));
+            }
+        } else {
+            alert('评估功能暂不可用');
+        }
+    } catch (error) {
+        log(`❌ 生成评估题目失败: ${error.message}`);
+        alert('生成评估题目失败: ' + error.message);
+    } finally {
+        // 恢复按钮状态
+        document.getElementById('masteryAssessmentBtn').innerHTML = '熟练度评估';
+        document.getElementById('masteryAssessmentBtn').disabled = false;
+    }
+}
+
+// 显示评估模态框
+function showAssessmentModal() {
+    document.getElementById('masteryAssessmentModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+// 关闭评估模态框
+function closeAssessmentModal() {
+    document.getElementById('masteryAssessmentModal').classList.add('hidden');
+    document.body.style.overflow = '';
+    
+    // 重置状态
+    currentKnowledgePointId = null;
+    currentQuestionIndex = 0;
+    assessmentQuestions = [];
+    userAnswers = [];
+}
+
+// 显示当前题目
+function displayCurrentQuestion() {
+    if (currentQuestionIndex >= assessmentQuestions.length) {
+        submitAssessment();
+        return;
+    }
+    
+    const question = assessmentQuestions[currentQuestionIndex];
+    const progress = ((currentQuestionIndex + 1) / assessmentQuestions.length) * 100;
+    
+    // 更新进度条
+    document.getElementById('assessmentProgress').style.width = progress + '%';
+    document.getElementById('assessmentProgressText').textContent = `${currentQuestionIndex + 1}/${assessmentQuestions.length}`;
+    
+    // 显示题目
+    document.getElementById('assessmentQuestionContent').innerHTML = `
+        <div class="mb-4">
+            <div class="flex items-center mb-2">
+                <span class="bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full mr-2">题目 ${currentQuestionIndex + 1}</span>
+                <span class="text-sm text-gray-600">难度: ${question.difficulty}</span>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">${question.question}</h3>
+        </div>
+        
+        <div class="space-y-3">
+            ${question.options.map((option, index) => `
+                <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                    <input type="radio" name="assessmentAnswer" value="${String.fromCharCode(65 + index)}" class="mr-3">
+                    <span><strong>${String.fromCharCode(65 + index)}.</strong> ${option}</span>
+                </label>
+            `).join('')}
+        </div>
+    `;
+    
+    // 更新按钮状态
+    document.getElementById('assessmentPrevBtn').style.display = currentQuestionIndex > 0 ? 'block' : 'none';
+    document.getElementById('assessmentNextBtn').textContent = currentQuestionIndex === assessmentQuestions.length - 1 ? '提交评估' : '下一题';
+}
+
+// 上一题
+function previousQuestion() {
+    if (currentQuestionIndex > 0) {
+        currentQuestionIndex--;
+        displayCurrentQuestion();
+        
+        // 恢复之前的答案
+        if (userAnswers[currentQuestionIndex]) {
+            const radio = document.querySelector(`input[name="assessmentAnswer"][value="${userAnswers[currentQuestionIndex]}"]`);
+            if (radio) radio.checked = true;
+        }
+    }
+}
+
+// 下一题
+function nextQuestion() {
+    // 获取当前答案
+    const selectedAnswer = document.querySelector('input[name="assessmentAnswer"]:checked');
+    if (!selectedAnswer) {
+        alert('请选择一个答案');
+        return;
+    }
+    
+    // 保存答案
+    userAnswers[currentQuestionIndex] = selectedAnswer.value;
+    
+    // 下一题
+    currentQuestionIndex++;
+    displayCurrentQuestion();
+}
+
+// 提交评估
+async function submitAssessment() {
+    log(`📝 提交熟练度评估 - 知识点ID: ${currentKnowledgePointId}, 答案: ${JSON.stringify(userAnswers)}`);
+    
+    // 显示提交状态
+    document.getElementById('assessmentQuestionContent').innerHTML = `
+        <div class="text-center py-8">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p class="text-gray-600">正在评估您的答题情况...</p>
+        </div>
+    `;
+    
+    try {
+        if (window.bridge && window.bridge.submitMasteryAssessment) {
+            const response = await window.bridge.submitMasteryAssessment(
+                currentKnowledgePointId,
+                JSON.stringify(assessmentQuestions),
+                JSON.stringify(userAnswers)
+            );
+            const result = JSON.parse(response);
+            
+            if (result.success) {
+                showAssessmentResult(result);
+            } else {
+                alert('评估提交失败: ' + (result.error || '未知错误'));
+                closeAssessmentModal();
+            }
+        } else {
+            alert('评估功能暂不可用');
+            closeAssessmentModal();
+        }
+    } catch (error) {
+        log(`❌ 提交评估失败: ${error.message}`);
+        alert('提交评估失败: ' + error.message);
+        closeAssessmentModal();
+    }
+}
+
+// 显示评估结果
+function showAssessmentResult(result) {
+    const masteryScore = result.mastery_score;
+    const correctCount = result.correct_count;
+    const totalCount = assessmentQuestions.length;
+    const percentage = Math.round((correctCount / totalCount) * 100);
+    
+    // 根据分数确定等级和颜色
+    let level, color, description;
+    if (masteryScore >= 90) {
+        level = '精通';
+        color = 'text-green-600';
+        description = '您对这个知识点掌握得非常好！';
+    } else if (masteryScore >= 70) {
+        level = '熟练';
+        color = 'text-blue-600';
+        description = '您对这个知识点有较好的理解。';
+    } else if (masteryScore >= 50) {
+        level = '一般';
+        color = 'text-yellow-600';
+        description = '您对这个知识点有基本了解，建议加强练习。';
+    } else {
+        level = '待提高';
+        color = 'text-red-600';
+        description = '建议重新学习相关内容并多加练习。';
+    }
+    
+    document.getElementById('assessmentQuestionContent').innerHTML = `
+        <div class="text-center py-8">
+            <div class="mb-6">
+                <div class="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                    <span class="text-3xl font-bold text-white">${masteryScore}</span>
+                </div>
+                <h3 class="text-2xl font-bold ${color} mb-2">熟练度: ${level}</h3>
+                <p class="text-gray-600 mb-4">${description}</p>
+            </div>
+            
+            <div class="bg-gray-50 rounded-lg p-6 mb-6">
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                        <div class="text-2xl font-bold text-gray-800">${correctCount}</div>
+                        <div class="text-sm text-gray-600">答对题数</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold text-gray-800">${totalCount}</div>
+                        <div class="text-sm text-gray-600">总题数</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold text-gray-800">${percentage}%</div>
+                        <div class="text-sm text-gray-600">正确率</div>
+                    </div>
+                </div>
+            </div>
+            
+            <button onclick="closeAssessmentModal(); refreshKnowledgePointDetail();" class="px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors">
+                完成评估
+            </button>
+        </div>
+    `;
+    
+    // 隐藏导航按钮
+    document.getElementById('assessmentNavButtons').style.display = 'none';
+}
+
+// 刷新知识点详情（更新熟练度显示）
+function refreshKnowledgePointDetail() {
+    const nodeId = document.getElementById('knowledgePointDetailLayer').dataset.nodeId;
+    if (nodeId) {
+        // 重新加载知识点详情
+        loadKnowledgePointDetail(nodeId);
+    }
+}
 </script>
+
+<!-- 熟练度评估模态框 -->
+<div id="masteryAssessmentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+        <!-- 模态框头部 -->
+        <div class="flex items-center justify-between p-6 border-b">
+            <div>
+                <h3 class="text-xl font-bold text-gray-800">熟练度评估</h3>
+                <p class="text-sm text-gray-600 mt-1">通过10道题目评估您对该知识点的掌握程度</p>
+            </div>
+            <button onclick="closeAssessmentModal()" class="text-gray-500 hover:text-gray-700">
+                <span class="material-icons-outlined">close</span>
+            </button>
+        </div>
+        
+        <!-- 进度条 -->
+        <div class="px-6 py-4 border-b">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-sm font-medium text-gray-700">评估进度</span>
+                <span id="assessmentProgressText" class="text-sm text-gray-600">0/10</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+                <div id="assessmentProgress" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+            </div>
+        </div>
+        
+        <!-- 题目内容 -->
+        <div class="flex-1 overflow-y-auto p-6">
+            <div id="assessmentQuestionContent">
+                <!-- 题目内容将在这里动态生成 -->
+            </div>
+        </div>
+        
+        <!-- 导航按钮 -->
+        <div id="assessmentNavButtons" class="flex justify-between p-6 border-t bg-gray-50">
+            <button id="assessmentPrevBtn" onclick="previousQuestion()" class="px-4 py-2 text-gray-600 hover:text-gray-800 hidden">
+                <span class="material-icons-outlined mr-1">arrow_back</span>
+                上一题
+            </button>
+            <div class="flex-1"></div>
+            <button id="assessmentNextBtn" onclick="nextQuestion()" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                下一题
+            </button>
+        </div>
+    </div>
+</div>
 
 </body>
 </html>

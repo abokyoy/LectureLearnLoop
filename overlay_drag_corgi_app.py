@@ -2618,7 +2618,7 @@ class CorgiWebBridge(QObject):
             knowledge_point_data = {
                 "point_name": point['name'],
                 "core_description": point['description'],
-                "mastery_score": 50  # 默认掌握度
+                "mastery_score": -1  # 默认掌握度：-1表示未评估
             }
             
             # 保存到数据库
@@ -4863,6 +4863,231 @@ class CorgiWebBridge(QObject):
                 }
                 """
                 self.main_window.web_view.page().runJavaScript(js_code)
+
+    # ====== 熟练度评估功能 ======
+    
+    @Slot(str, result=str)
+    def generateAssessmentQuestions(self, knowledge_point_id):
+        """为知识点生成评估题目"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【熟练度评估】generateAssessmentQuestions 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取知识点信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT point_name, core_description, subject_name
+                FROM knowledge_points 
+                WHERE id = ?
+            """, (knowledge_point_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                conn.close()
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该知识点"
+                }, ensure_ascii=False)
+            
+            point_name, core_description, subject_name = result
+            conn.close()
+            
+            # 构建生成题目的提示词
+            prompt = f"""请为以下知识点生成10道选择题，用于评估学生的掌握程度。
+
+知识点信息：
+- 名称：{point_name}
+- 描述：{core_description}
+- 学科：{subject_name}
+
+要求：
+1. 生成10道选择题，难度从容易到困难递增
+2. 每道题有4个选项（A、B、C、D）
+3. 题目要准确测试对该知识点的理解
+4. 包含不同层次的认知要求：记忆、理解、应用、分析
+5. 返回JSON格式，包含以下字段：
+   - question: 题目内容
+   - options: 选项数组（4个选项）
+   - correct_answer: 正确答案（A/B/C/D）
+   - difficulty: 难度等级（容易/中等/困难）
+   - explanation: 答案解释
+
+请直接返回JSON数组格式，不要包含其他文字：
+[
+  {{
+    "question": "题目内容",
+    "options": ["选项A", "选项B", "选项C", "选项D"],
+    "correct_answer": "A",
+    "difficulty": "容易",
+    "explanation": "答案解释"
+  }}
+]"""
+
+            # 调用LLM生成题目
+            from llm_provider_factory import call_llm
+            response = call_llm(prompt, "熟练度评估题目生成")
+            
+            if not response:
+                return json.dumps({
+                    "success": False,
+                    "error": "LLM调用失败"
+                }, ensure_ascii=False)
+            
+            # 解析JSON响应
+            try:
+                # 清理响应内容
+                response = response.strip()
+                if response.startswith('```json'):
+                    response = response[7:]
+                if response.endswith('```'):
+                    response = response[:-3]
+                response = response.strip()
+                
+                questions = json.loads(response)
+                
+                # 验证题目格式
+                if not isinstance(questions, list) or len(questions) != 10:
+                    raise ValueError("题目数量不正确")
+                
+                for i, q in enumerate(questions):
+                    if not all(key in q for key in ['question', 'options', 'correct_answer', 'difficulty']):
+                        raise ValueError(f"题目{i+1}格式不完整")
+                    if len(q['options']) != 4:
+                        raise ValueError(f"题目{i+1}选项数量不正确")
+                
+                self.logger.info(f"✅ 成功生成 {len(questions)} 道评估题目")
+                
+                return json.dumps({
+                    "success": True,
+                    "questions": questions
+                }, ensure_ascii=False)
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ JSON解析失败: {e}")
+                self.logger.error(f"原始响应: {response[:500]}...")
+                return json.dumps({
+                    "success": False,
+                    "error": "题目格式解析失败"
+                }, ensure_ascii=False)
+            except ValueError as e:
+                self.logger.error(f"❌ 题目验证失败: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 生成评估题目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, str, str, result=str)
+    def submitMasteryAssessment(self, knowledge_point_id, questions_json, answers_json):
+        """提交熟练度评估结果"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【熟练度评估】submitMasteryAssessment 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            questions = json.loads(questions_json)
+            answers = json.loads(answers_json)
+            
+            if len(questions) != len(answers):
+                return json.dumps({
+                    "success": False,
+                    "error": "题目和答案数量不匹配"
+                }, ensure_ascii=False)
+            
+            # 计算正确答案数量
+            correct_count = 0
+            detailed_results = []
+            
+            for i, (question, user_answer) in enumerate(zip(questions, answers)):
+                correct_answer = question['correct_answer']
+                is_correct = user_answer == correct_answer
+                if is_correct:
+                    correct_count += 1
+                
+                detailed_results.append({
+                    "question_index": i,
+                    "question": question['question'],
+                    "user_answer": user_answer,
+                    "correct_answer": correct_answer,
+                    "is_correct": is_correct,
+                    "difficulty": question['difficulty'],
+                    "explanation": question.get('explanation', '')
+                })
+            
+            # 计算熟练度分数
+            total_questions = len(questions)
+            accuracy = correct_count / total_questions
+            
+            # 根据正确率和题目难度计算最终分数
+            difficulty_weights = {"容易": 1.0, "中等": 1.2, "困难": 1.5}
+            weighted_score = 0
+            total_weight = 0
+            
+            for result in detailed_results:
+                weight = difficulty_weights.get(result['difficulty'], 1.0)
+                if result['is_correct']:
+                    weighted_score += weight
+                total_weight += weight
+            
+            # 计算最终熟练度分数 (0-100)
+            if total_weight > 0:
+                mastery_score = int((weighted_score / total_weight) * 100)
+            else:
+                mastery_score = int(accuracy * 100)
+            
+            # 确保分数在合理范围内
+            mastery_score = max(0, min(100, mastery_score))
+            
+            # 更新数据库中的熟练度
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE knowledge_points 
+                SET mastery_score = ?, updated_time = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (mastery_score, knowledge_point_id))
+            
+            conn.commit()
+            conn.close()
+            
+            self.logger.info(f"✅ 熟练度评估完成")
+            self.logger.info(f"   - 正确题数: {correct_count}/{total_questions}")
+            self.logger.info(f"   - 正确率: {accuracy:.1%}")
+            self.logger.info(f"   - 熟练度分数: {mastery_score}")
+            
+            return json.dumps({
+                "success": True,
+                "mastery_score": mastery_score,
+                "correct_count": correct_count,
+                "total_count": total_questions,
+                "accuracy": accuracy,
+                "detailed_results": detailed_results
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 提交熟练度评估失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
 
 
 class DragOverlay(QWidget):

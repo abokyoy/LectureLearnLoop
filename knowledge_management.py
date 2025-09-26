@@ -792,9 +792,9 @@ class KnowledgePointManager:
         
         cursor.execute(
             """INSERT INTO knowledge_points 
-               (user_id, subject_name, point_name, core_description) 
-               VALUES (?, ?, ?, ?)""",
-            (user_id, subject_name, point_name, core_description)
+               (user_id, subject_name, point_name, core_description, mastery_score) 
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, subject_name, point_name, core_description, -1)
         )
         
         point_id = cursor.lastrowid
