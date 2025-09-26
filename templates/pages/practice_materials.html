@@ -201,6 +201,124 @@
     </div>
 </div>
 
+<!-- 知识点详情层 -->
+<div id="knowledgePointDetailLayer" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
+    <div class="absolute inset-y-0 right-0 w-full bg-gray-100 overflow-y-auto">
+        <div class="p-8">
+            <!-- 关闭按钮 -->
+            <div class="flex justify-between items-center mb-6">
+                <div class="flex items-center text-sm text-gray-600">
+                    <a class="hover:text-blue-600" href="#" onclick="closeKnowledgePointDetail()">知识库</a>
+                    <span class="mx-2 material-icons-outlined text-base">chevron_right</span>
+                    <a class="hover:text-blue-600" href="#" onclick="closeKnowledgePointDetail()">脑图</a>
+                    <span class="mx-2 material-icons-outlined text-base">chevron_right</span>
+                    <span id="detailBreadcrumb" class="text-gray-800 font-semibold">知识点详情</span>
+                </div>
+                <button onclick="closeKnowledgePointDetail()" 
+                        class="p-2 rounded-full hover:bg-gray-200 text-gray-600">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+
+            <!-- 知识点详情内容 -->
+            <div class="bg-white p-8 rounded-xl shadow-sm mb-6">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h2 id="detailTitle" class="text-3xl font-bold text-gray-800 mb-2">知识点名称</h2>
+                        <div class="flex items-center space-x-6 text-sm text-gray-600">
+                            <span>掌握情况: <span id="detailMastery" class="text-green-600 font-semibold">未知</span></span>
+                            <span>建立时间: <span id="detailCreatedTime">未知</span></span>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button class="px-6 py-2.5 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">
+                            专项练习
+                        </button>
+                        <button class="px-6 py-2.5 bg-orange-400 text-white rounded-lg font-semibold hover:bg-orange-500 transition-colors">
+                            错题练习
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 统计信息 -->
+                <div class="grid grid-cols-3 gap-6 my-6 border-y py-6">
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-lg bg-red-100 mr-4">
+                            <span class="material-icons-outlined text-red-600">close</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">错题数量</p>
+                            <p id="detailErrorCount" class="text-xl font-bold text-gray-800">0 <span class="text-base font-normal">道</span></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-lg bg-blue-100 mr-4">
+                            <span class="material-icons-outlined text-blue-500">star_border</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">收藏题目数</p>
+                            <p id="detailFavoriteCount" class="text-xl font-bold text-gray-800">0 <span class="text-base font-normal">道</span></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="p-3 rounded-lg bg-green-100 mr-4">
+                            <span class="material-icons-outlined text-green-600">bookmark_border</span>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">关联笔记本</p>
+                            <p id="detailNotesCount" class="text-xl font-bold text-gray-800">0 <span class="text-base font-normal">篇</span></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 知识点描述 -->
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">知识点描述</h3>
+                    <p id="detailDescription" class="text-gray-600 leading-relaxed">
+                        正在加载知识点详情...
+                    </p>
+                </div>
+            </div>
+
+            <!-- 关联笔记本 -->
+            <div class="bg-white p-8 rounded-xl shadow-sm mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">关联笔记本</h3>
+                <div id="detailNotes" class="grid grid-cols-2 gap-4">
+                    <div class="text-gray-600 text-center py-8">暂无关联笔记</div>
+                </div>
+            </div>
+
+            <!-- 关联题目 -->
+            <div class="bg-white p-8 rounded-xl shadow-sm">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800">关联题目</h3>
+                    <div class="flex items-center space-x-4">
+                        <div class="relative">
+                            <input class="w-48 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" 
+                                   placeholder="搜索题目..." type="text"/>
+                            <span class="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">search</span>
+                        </div>
+                        <select class="py-2 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                            <option>所有类型</option>
+                            <option>选择题</option>
+                            <option>填空题</option>
+                            <option>简答题</option>
+                        </select>
+                        <select class="py-2 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
+                            <option>默认排序</option>
+                            <option>按熟练度</option>
+                            <option>按时间</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="detailQuestions" class="space-y-4">
+                    <div class="text-gray-600 text-center py-8">正在加载关联题目...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 全屏模式样式 -->
 <style>
 .fullscreen-mode {
@@ -787,6 +905,16 @@ function dragended(event, d) {
 async function showKnowledgePointDetail(node) {
     log(`🔍 获取知识点详情: ${node.name} (ID: ${node.id})`);
     
+    // 显示详情层
+    const detailLayer = document.getElementById('knowledgePointDetailLayer');
+    detailLayer.classList.remove('hidden');
+    
+    // 更新面包屑
+    document.getElementById('detailBreadcrumb').textContent = node.name;
+    
+    // 更新标题
+    document.getElementById('detailTitle').textContent = node.name;
+    
     try {
         if (window.bridge && window.bridge.getKnowledgePointDetail && node.type === 'knowledge_point') {
             // 提取真实的知识点ID（去掉kp_前缀）
@@ -797,21 +925,356 @@ async function showKnowledgePointDetail(node) {
             
             if (result.success && result.detail) {
                 const detail = result.detail;
-                alert(`知识点详情：\n名称：${detail.name || node.name}\n描述：${detail.description || '暂无描述'}\n掌握度：${detail.mastery_score || 0}%\n来源：${detail.source || '未知'}`);
+                
+                // 更新详情内容
+                updateKnowledgePointDetail(detail, node);
                 log(`✅ 成功获取知识点详情`);
             } else {
-                alert(`知识点详情：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}\n\n⚠️ 无法获取详细信息: ${result.error || '数据不存在'}`);
+                // 显示基本信息
+                updateKnowledgePointDetail({
+                    name: node.name,
+                    description: `无法获取详细信息: ${result.error || '数据不存在'}`,
+                    mastery_score: 0,
+                    created_time: '未知'
+                }, node);
                 log(`⚠️ 获取详情失败: ${result.error}`);
             }
         } else {
             // 显示基本信息
-            alert(`节点信息：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}`);
+            updateKnowledgePointDetail({
+                name: node.name,
+                description: `节点类型：${node.type}\n节点ID：${node.id}\n\n这是一个基本的节点信息显示。`,
+                mastery_score: 0,
+                created_time: '未知'
+            }, node);
             log(`ℹ️ 显示基本节点信息`);
         }
     } catch (error) {
         log(`❌ 获取知识点详情失败: ${error.message}`);
-        alert(`知识点详情：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}\n\n❌ 获取详情时出错: ${error.message}`);
+        updateKnowledgePointDetail({
+            name: node.name,
+            description: `获取详情时出错: ${error.message}`,
+            mastery_score: 0,
+            created_time: '未知'
+        }, node);
     }
+}
+
+// 更新知识点详情内容
+function updateKnowledgePointDetail(detail, node) {
+    // 更新掌握情况
+    const masteryScore = detail.mastery_score || 0;
+    const masteryElement = document.getElementById('detailMastery');
+    if (masteryScore >= 80) {
+        masteryElement.textContent = '已掌握';
+        masteryElement.className = 'text-green-600 font-semibold';
+    } else if (masteryScore >= 60) {
+        masteryElement.textContent = '基本掌握';
+        masteryElement.className = 'text-yellow-600 font-semibold';
+    } else {
+        masteryElement.textContent = '需加强';
+        masteryElement.className = 'text-red-600 font-semibold';
+    }
+    
+    // 更新创建时间
+    document.getElementById('detailCreatedTime').textContent = detail.created_time || '未知';
+    
+    // 更新描述
+    document.getElementById('detailDescription').textContent = detail.description || detail.core_description || '暂无详细描述';
+    
+    // 更新统计信息（使用真实数据）
+    document.getElementById('detailErrorCount').innerHTML = `${detail.error_count || 0} <span class="text-base font-normal">道</span>`;
+    document.getElementById('detailFavoriteCount').innerHTML = `${detail.favorite_count || 0} <span class="text-base font-normal">道</span>`;
+    document.getElementById('detailNotesCount').innerHTML = `${detail.notes_count || 0} <span class="text-base font-normal">篇</span>`;
+    
+    // 异步加载关联笔记
+    loadKnowledgePointNotes(node.id);
+    
+    // 异步加载关联题目
+    loadKnowledgePointQuestions(node.id);
+}
+
+// 加载知识点关联笔记
+async function loadKnowledgePointNotes(nodeId) {
+    const notesContainer = document.getElementById('detailNotes');
+    notesContainer.innerHTML = '<div class="text-gray-600 text-center py-8">正在加载关联笔记...</div>';
+    
+    try {
+        // 提取真实的知识点ID
+        const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+        
+        if (window.bridge && window.bridge.getKnowledgePointNotes) {
+            const response = await window.bridge.getKnowledgePointNotes(realId);
+            const result = JSON.parse(response);
+            
+            if (result.success && result.notes && result.notes.length > 0) {
+                const notesHtml = result.notes.map(note => `
+                    <a class="block p-4 bg-gray-50 rounded-lg hover:shadow-md transition-shadow cursor-pointer" onclick="openNote('${note.id}')">
+                        <div class="flex items-start">
+                            <span class="material-icons-outlined text-green-600 mr-3 mt-1">edit_note</span>
+                            <div class="flex-1">
+                                <p class="font-semibold text-gray-800">${note.title}</p>
+                                <p class="text-sm text-gray-600 mt-1">${note.content}</p>
+                                <div class="flex justify-between items-center mt-2">
+                                    <p class="text-xs text-gray-500">更新时间: ${note.updated_time}</p>
+                                    ${note.extraction_time ? `<p class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">关联时间: ${note.extraction_time}</p>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                `).join('');
+                
+                notesContainer.innerHTML = notesHtml;
+                log(`✅ 加载了 ${result.notes.length} 篇关联笔记`);
+            } else {
+                notesContainer.innerHTML = '<div class="text-gray-600 text-center py-8">暂无关联笔记</div>';
+                log(`ℹ️ 该知识点暂无关联笔记`);
+            }
+        } else {
+            notesContainer.innerHTML = '<div class="text-gray-600 text-center py-8">无法加载笔记数据</div>';
+        }
+    } catch (error) {
+        log(`❌ 加载关联笔记失败: ${error.message}`);
+        notesContainer.innerHTML = '<div class="text-red-600 text-center py-8">加载笔记失败</div>';
+    }
+}
+
+// 加载知识点关联题目
+async function loadKnowledgePointQuestions(nodeId) {
+    const questionsContainer = document.getElementById('detailQuestions');
+    questionsContainer.innerHTML = '<div class="text-gray-600 text-center py-8">正在加载关联题目...</div>';
+    
+    try {
+        // 提取真实的知识点ID
+        const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+        
+        if (window.bridge && window.bridge.getKnowledgePointQuestions) {
+            const response = await window.bridge.getKnowledgePointQuestions(realId);
+            const result = JSON.parse(response);
+            
+            if (result.success && result.questions && result.questions.length > 0) {
+                const questionsHtml = result.questions.map((question, index) => {
+                    // 生成星级显示
+                    const stars = '★'.repeat(question.mastery_stars) + '☆'.repeat(5 - question.mastery_stars);
+                    
+                    // 题目类型颜色
+                    const typeColors = {
+                        '选择题': 'bg-blue-100 text-blue-800',
+                        '填空题': 'bg-purple-100 text-purple-800',
+                        '简答题': 'bg-green-100 text-green-800'
+                    };
+                    
+                    // 最后答题结果
+                    const resultText = question.last_result ? '正确' : '错误';
+                    const resultColor = question.last_result ? 'text-green-600' : 'text-red-600';
+                    
+                    // 收藏图标
+                    const favoriteIcon = question.is_favorite ? 'star' : 'star_border';
+                    const favoriteColor = question.is_favorite ? 'text-yellow-500' : 'text-gray-600';
+                    
+                    return `
+                        <div class="p-4 border border-gray-200 rounded-lg flex items-center justify-between hover:border-green-500 transition-colors">
+                            <div>
+                                <p class="font-semibold text-gray-800">${index + 1}. ${question.content}</p>
+                                <div class="flex items-center space-x-4 text-sm mt-2 text-gray-600">
+                                    <span>类型: <span class="${typeColors[question.type] || 'bg-gray-100 text-gray-800'} px-2 py-0.5 rounded">${question.type}</span></span>
+                                    <span>熟练度: <span class="text-yellow-500">${stars}</span></span>
+                                    <span>上次答题: <span class="${resultColor}">${resultText}</span> (${question.last_practice_time})</span>
+                                    <span>练习次数: ${question.practice_count}次</span>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button class="p-2 rounded-full hover:bg-gray-100 text-gray-600" onclick="viewQuestion('${realId}', '${question.content}')">
+                                    <span class="material-icons-outlined">visibility</span>
+                                </button>
+                                <button class="p-2 rounded-full hover:bg-gray-100 text-gray-600" onclick="editQuestion('${realId}', '${question.content}')">
+                                    <span class="material-icons-outlined">edit</span>
+                                </button>
+                                <button class="p-2 rounded-full hover:bg-gray-100 ${favoriteColor}" onclick="toggleFavorite('${realId}', '${question.content}')">
+                                    <span class="material-icons-outlined">${favoriteIcon}</span>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                questionsContainer.innerHTML = questionsHtml;
+                log(`✅ 加载了 ${result.questions.length} 道关联题目`);
+            } else {
+                questionsContainer.innerHTML = '<div class="text-gray-600 text-center py-8">暂无关联题目</div>';
+                log(`ℹ️ 该知识点暂无关联题目`);
+            }
+        } else {
+            questionsContainer.innerHTML = '<div class="text-gray-600 text-center py-8">无法加载题目数据</div>';
+        }
+    } catch (error) {
+        log(`❌ 加载关联题目失败: ${error.message}`);
+        questionsContainer.innerHTML = '<div class="text-red-600 text-center py-8">加载题目失败</div>';
+    }
+}
+
+// 笔记相关操作函数
+async function openNote(noteId) {
+    log(`📝 打开笔记: ${noteId}`);
+    
+    try {
+        if (window.bridge && window.bridge.getNoteContent) {
+            const response = await window.bridge.getNoteContent(noteId);
+            const result = JSON.parse(response);
+            
+            if (result.success && result.note) {
+                showNoteDetailModal(result.note);
+            } else {
+                alert('无法加载笔记内容: ' + (result.error || '未知错误'));
+            }
+        } else {
+            alert('笔记功能暂不可用');
+        }
+    } catch (error) {
+        log(`❌ 打开笔记失败: ${error.message}`);
+        alert('打开笔记失败: ' + error.message);
+    }
+}
+
+// 显示笔记详情模态框
+function showNoteDetailModal(note) {
+    // 创建模态框HTML
+    const modalHtml = `
+        <div id="noteDetailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="closeNoteDetailModal(event)">
+            <div class="bg-white rounded-lg max-w-4xl max-h-[90vh] w-full mx-4 flex flex-col" onclick="event.stopPropagation()">
+                <!-- 模态框头部 -->
+                <div class="flex items-center justify-between p-6 border-b">
+                    <div class="flex items-center">
+                        <span class="material-icons-outlined text-green-600 mr-3">edit_note</span>
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800">${note.title}</h3>
+                            <p class="text-sm text-gray-600">文件: ${note.file_name || '未知'}</p>
+                        </div>
+                    </div>
+                    <button onclick="closeNoteDetailModal()" class="text-gray-500 hover:text-gray-700">
+                        <span class="material-icons-outlined">close</span>
+                    </button>
+                </div>
+                
+                <!-- 模态框内容 -->
+                <div class="flex-1 overflow-hidden flex">
+                    <!-- 笔记内容区域 -->
+                    <div class="flex-1 p-6 overflow-y-auto">
+                        <div class="prose max-w-none">
+                            <pre class="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">${note.content}</pre>
+                        </div>
+                        
+                        <!-- 笔记信息 -->
+                        <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                            <div class="bg-blue-50 p-3 rounded-lg">
+                                <p class="font-semibold text-blue-800">创建时间</p>
+                                <p class="text-blue-600">${note.created_time}</p>
+                            </div>
+                            <div class="bg-green-50 p-3 rounded-lg">
+                                <p class="font-semibold text-green-800">更新时间</p>
+                                <p class="text-green-600">${note.updated_time}</p>
+                            </div>
+                            <div class="bg-purple-50 p-3 rounded-lg">
+                                <p class="font-semibold text-purple-800">内容长度</p>
+                                <p class="text-purple-600">${note.content_length} 字符</p>
+                            </div>
+                            <div class="bg-orange-50 p-3 rounded-lg">
+                                <p class="font-semibold text-orange-800">关联知识点</p>
+                                <p class="text-orange-600">${note.related_knowledge_points.length} 个</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 关联知识点侧边栏 -->
+                    <div class="w-80 border-l bg-gray-50 p-6 overflow-y-auto">
+                        <h4 class="font-bold text-gray-800 mb-4 flex items-center">
+                            <span class="material-icons-outlined mr-2">psychology</span>
+                            关联知识点
+                        </h4>
+                        
+                        ${note.related_knowledge_points.length > 0 ? 
+                            note.related_knowledge_points.map(kp => `
+                                <div class="mb-3 p-3 bg-white rounded-lg border border-gray-200 hover:shadow-sm transition-shadow cursor-pointer" onclick="viewKnowledgePoint('${kp.id}')">
+                                    <p class="font-semibold text-gray-800 text-sm">${kp.name}</p>
+                                    <p class="text-xs text-gray-500 mt-1">关联时间: ${kp.extraction_time}</p>
+                                </div>
+                            `).join('') 
+                            : '<p class="text-gray-500 text-sm">暂无关联知识点</p>'
+                        }
+                    </div>
+                </div>
+                
+                <!-- 模态框底部 -->
+                <div class="flex justify-end p-6 border-t bg-gray-50">
+                    <button onclick="openNoteFile('${note.file_path}')" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mr-3">
+                        <span class="material-icons-outlined mr-2 text-sm">open_in_new</span>
+                        打开文件
+                    </button>
+                    <button onclick="closeNoteDetailModal()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">
+                        关闭
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 添加到页面
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    
+    // 防止背景滚动
+    document.body.style.overflow = 'hidden';
+}
+
+// 关闭笔记详情模态框
+function closeNoteDetailModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    
+    const modal = document.getElementById('noteDetailModal');
+    if (modal) {
+        modal.remove();
+        document.body.style.overflow = '';
+    }
+}
+
+// 查看知识点详情
+function viewKnowledgePoint(knowledgePointId) {
+    log(`🔍 查看知识点: ${knowledgePointId}`);
+    closeNoteDetailModal();
+    // 这里可以跳转到知识点详情或者在当前页面显示
+    // 暂时先关闭笔记模态框，让用户可以在脑图中找到该知识点
+}
+
+// 打开笔记文件
+function openNoteFile(filePath) {
+    log(`📂 打开笔记文件: ${filePath}`);
+    if (filePath && filePath !== 'null') {
+        // 这里可以调用后端API来打开文件
+        alert('打开文件功能待实现: ' + filePath);
+    } else {
+        alert('文件路径无效');
+    }
+}
+
+function viewQuestion(knowledgePointId, questionContent) {
+    log(`👁️ 查看题目: ${questionContent}`);
+    // TODO: 实现查看题目详情功能
+}
+
+function editQuestion(knowledgePointId, questionContent) {
+    log(`✏️ 编辑题目: ${questionContent}`);
+    // TODO: 实现编辑题目功能
+}
+
+function toggleFavorite(knowledgePointId, questionContent) {
+    log(`⭐ 切换收藏状态: ${questionContent}`);
+    // TODO: 实现收藏/取消收藏功能
+}
+
+// 关闭知识点详情层
+function closeKnowledgePointDetail() {
+    const detailLayer = document.getElementById('knowledgePointDetailLayer');
+    detailLayer.classList.add('hidden');
+    log(`🔒 关闭知识点详情层`);
 }
 
 // 脑图工具函数

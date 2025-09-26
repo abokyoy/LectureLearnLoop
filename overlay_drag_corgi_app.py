@@ -1544,40 +1544,359 @@ class CorgiWebBridge(QObject):
             conn = km_system.db_manager.get_connection()
             cursor = conn.cursor()
             
+            # 先检查表结构
+            cursor.execute("PRAGMA table_info(knowledge_points)")
+            columns = [col[1] for col in cursor.fetchall()]
+            self.logger.info(f"knowledge_points表字段: {columns}")
+            
             cursor.execute(
                 """SELECT id, point_name, core_description, mastery_score, subject_name, created_time
                    FROM knowledge_points WHERE id = ?""",
                 (knowledge_point_id,)
             )
             result = cursor.fetchone()
-            conn.close()
             
-            if result:
-                detail = {
-                    "id": result[0],
-                    "name": result[1],
-                    "description": result[2],
-                    "mastery_score": result[3],
-                    "subject_name": result[4],
-                    "created_time": result[5]
-                }
-                
-                self.logger.info(f"✅ 获取知识点详情成功: {detail['name']}")
-                return json.dumps({
-                    "success": True,
-                    "detail": detail
-                }, ensure_ascii=False)
-            else:
+            if not result:
+                conn.close()
                 self.logger.warning(f"⚠️ 未找到知识点: {knowledge_point_id}")
                 return json.dumps({
                     "success": False,
                     "error": "未找到该知识点"
                 }, ensure_ascii=False)
             
+            detail = {
+                "id": result[0],
+                "name": result[1],
+                "description": result[2],
+                "mastery_score": result[3],
+                "subject_name": result[4],
+                "created_time": result[5]
+            }
+            
+            # 获取统计信息 - 使用现有连接
+            # 获取错题数量（所有练习记录数）
+            cursor.execute(
+                """SELECT COUNT(*) FROM practice_records 
+                   WHERE knowledge_point_id = ?""",
+                (knowledge_point_id,)
+            )
+            error_count = cursor.fetchone()[0]
+            
+            # 获取收藏题目数量
+            try:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM favorite_questions 
+                       WHERE knowledge_point_id = ?""",
+                    (knowledge_point_id,)
+                )
+                favorite_count = cursor.fetchone()[0]
+            except Exception as favorite_error:
+                self.logger.warning(f"获取收藏题目数量失败: {favorite_error}")
+                favorite_count = 0
+            
+            # 获取关联笔记数量（使用knowledge_point_sources表）
+            try:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM knowledge_point_sources kps
+                       JOIN notes n ON kps.note_id = n.id
+                       WHERE kps.knowledge_point_id = ?""",
+                    (knowledge_point_id,)
+                )
+                notes_count = cursor.fetchone()[0]
+            except Exception as notes_error:
+                self.logger.warning(f"获取关联笔记数量失败: {notes_error}")
+                notes_count = 0
+            
+            # 获取最近的练习记录
+            cursor.execute(
+                """SELECT question_content, user_answer, is_correct, practice_time
+                   FROM practice_records 
+                   WHERE knowledge_point_id = ? 
+                   ORDER BY practice_time DESC LIMIT 5""",
+                (knowledge_point_id,)
+            )
+            recent_practices = cursor.fetchall()
+            
+            conn.close()
+            
+            # 添加统计信息到详情中
+            detail.update({
+                "error_count": error_count,
+                "favorite_count": favorite_count,
+                "notes_count": notes_count,
+                "recent_practices": [
+                    {
+                        "question": practice[0],
+                        "answer": practice[1],
+                        "is_correct": practice[2],
+                        "time": practice[3]
+                    } for practice in recent_practices
+                ]
+            })
+            
+            self.logger.info(f"✅ 获取知识点详情成功: {detail['name']}")
+            self.logger.info(f"   - 练习记录数: {error_count}")
+            self.logger.info(f"   - 收藏题目: {favorite_count}")
+            self.logger.info(f"   - 关联笔记: {notes_count}")
+            
+            return json.dumps({
+                "success": True,
+                "detail": detail
+            }, ensure_ascii=False)
+            
         except Exception as e:
             self.logger.error(f"❌ 获取知识点详情失败: {e}")
             import traceback
             self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getKnowledgePointNotes(self, knowledge_point_id):
+        """获取知识点关联笔记"""
+        self.logger.info(f"【知识脑图】getKnowledgePointNotes 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 先获取知识点信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """SELECT point_name, subject_name FROM knowledge_points WHERE id = ?""",
+                (knowledge_point_id,)
+            )
+            kp_result = cursor.fetchone()
+            
+            if not kp_result:
+                conn.close()
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该知识点"
+                }, ensure_ascii=False)
+            
+            point_name, subject_name = kp_result
+            
+            # 获取关联笔记（使用knowledge_point_sources表）
+            try:
+                cursor.execute(
+                    """SELECT n.id, n.title, n.file_name, n.created_time, n.updated_time, kps.extraction_time
+                       FROM knowledge_point_sources kps
+                       JOIN notes n ON kps.note_id = n.id
+                       WHERE kps.knowledge_point_id = ?
+                       ORDER BY kps.extraction_time DESC""",
+                    (knowledge_point_id,)
+                )
+            except Exception as e:
+                self.logger.warning(f"查询关联笔记失败: {e}")
+                # 如果关联表查询失败，尝试回退到名称匹配
+                cursor.execute(
+                    """SELECT id, title, file_name, created_time, updated_time, created_time as extraction_time
+                       FROM notes 
+                       WHERE title LIKE ?
+                       ORDER BY updated_time DESC LIMIT 5""",
+                    (f'%{point_name}%',)
+                )
+            notes_results = cursor.fetchall()
+            
+            conn.close()
+            
+            notes = [
+                {
+                    "id": note[0],
+                    "title": note[1],
+                    "content": f"文件: {note[2]}" if note[2] else "笔记内容",
+                    "created_time": note[3],
+                    "updated_time": note[4],
+                    "extraction_time": note[5]  # 关联到知识点的时间
+                } for note in notes_results
+            ]
+            
+            self.logger.info(f"✅ 获取关联笔记成功: 找到 {len(notes)} 篇笔记")
+            
+            return json.dumps({
+                "success": True,
+                "notes": notes
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取关联笔记失败: {str(e)}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getNoteContent(self, note_id):
+        """获取笔记的详细内容"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】getNoteContent 开始 - 笔记ID: {note_id}")
+        
+        try:
+            import os
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 查询笔记信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """SELECT id, title, file_name, file_path, created_time, updated_time
+                   FROM notes WHERE id = ?""",
+                (note_id,)
+            )
+            note_result = cursor.fetchone()
+            
+            if not note_result:
+                conn.close()
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该笔记"
+                }, ensure_ascii=False)
+            
+            note_id, title, file_name, file_path, created_time, updated_time = note_result
+            
+            # 尝试读取笔记文件内容
+            content = ""
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    self.logger.info(f"✅ 成功读取笔记文件: {file_path}")
+                except Exception as read_error:
+                    self.logger.warning(f"⚠️ 读取笔记文件失败: {read_error}")
+                    content = f"无法读取文件内容: {str(read_error)}"
+            else:
+                content = "笔记文件不存在或路径无效"
+                self.logger.warning(f"⚠️ 笔记文件不存在: {file_path}")
+            
+            # 获取关联的知识点
+            cursor.execute(
+                """SELECT kp.id, kp.point_name, kps.extraction_time
+                   FROM knowledge_point_sources kps
+                   JOIN knowledge_points kp ON kps.knowledge_point_id = kp.id
+                   WHERE kps.note_id = ?
+                   ORDER BY kps.extraction_time DESC""",
+                (note_id,)
+            )
+            related_knowledge_points = cursor.fetchall()
+            
+            conn.close()
+            
+            note_detail = {
+                "id": note_id,
+                "title": title,
+                "file_name": file_name,
+                "file_path": file_path,
+                "content": content[:1000] + "..." if len(content) > 1000 else content,  # 限制内容长度
+                "content_length": len(content),
+                "created_time": created_time,
+                "updated_time": updated_time,
+                "related_knowledge_points": [
+                    {
+                        "id": kp[0],
+                        "name": kp[1],
+                        "extraction_time": kp[2]
+                    } for kp in related_knowledge_points
+                ]
+            }
+            
+            self.logger.info(f"✅ 获取笔记详情成功: {title}")
+            self.logger.info(f"   - 关联知识点数: {len(related_knowledge_points)}")
+            self.logger.info(f"   - 内容长度: {len(content)} 字符")
+            
+            return json.dumps({
+                "success": True,
+                "note": note_detail
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取笔记详情失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getKnowledgePointQuestions(self, knowledge_point_id):
+        """获取知识点关联题目"""
+        self.logger.info(f"【知识脑图】getKnowledgePointQuestions 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 获取练习记录中的题目
+            cursor.execute(
+                """SELECT DISTINCT question_content, 
+                          COUNT(*) as practice_count,
+                          SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct_count,
+                          MAX(practice_time) as last_practice_time,
+                          MAX(is_correct) as last_result
+                   FROM practice_records 
+                   WHERE knowledge_point_id = ? 
+                   GROUP BY question_content
+                   ORDER BY last_practice_time DESC""",
+                (knowledge_point_id,)
+            )
+            questions_results = cursor.fetchall()
+            
+            # 检查收藏状态
+            questions = []
+            for question in questions_results:
+                try:
+                    cursor.execute(
+                        """SELECT COUNT(*) FROM favorite_questions 
+                           WHERE knowledge_point_id = ? AND question_content = ?""",
+                        (knowledge_point_id, question[0])
+                    )
+                    is_favorite = cursor.fetchone()[0] > 0
+                except Exception:
+                    is_favorite = False
+                
+                # 计算熟练度（正确率转换为星级）
+                correct_rate = question[2] / question[1] if question[1] > 0 else 0
+                mastery_stars = min(5, max(1, int(correct_rate * 5) + 1))
+                
+                # 判断题目类型
+                question_type = "选择题"
+                if "填空" in question[0] or "____" in question[0]:
+                    question_type = "填空题"
+                elif "简述" in question[0] or "说明" in question[0] or "解释" in question[0]:
+                    question_type = "简答题"
+                
+                questions.append({
+                    "content": question[0],
+                    "type": question_type,
+                    "practice_count": question[1],
+                    "correct_count": question[2],
+                    "mastery_stars": mastery_stars,
+                    "last_practice_time": question[3],
+                    "last_result": question[4],
+                    "is_favorite": is_favorite
+                })
+            
+            conn.close()
+            
+            self.logger.info(f"✅ 获取关联题目成功: 找到 {len(questions)} 道题目")
+            
+            return json.dumps({
+                "success": True,
+                "questions": questions
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取关联题目失败: {str(e)}")
             return json.dumps({
                 "success": False,
                 "error": str(e)
