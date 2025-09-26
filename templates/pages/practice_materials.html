@@ -156,8 +156,19 @@
                     <input type="text" id="searchInput" placeholder="搜索知识点..." 
                            class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <button onclick="searchNodes()" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">搜索</button>
+                    <div class="text-xs text-gray-500 flex items-center space-x-1">
+                        <span>💡</span>
+                        <span>点击</span>
+                        <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span>筛选子节点</span>
+                    </div>
                 </div>
                 <div class="flex items-center space-x-2">
+                    <button id="clearFilterBtn" onclick="restoreAllNodes()" 
+                            class="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600 hidden">
+                        清除筛选
+                    </button>
                     <button onclick="zoomIn()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">放大</button>
                     <button onclick="zoomOut()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">缩小</button>
                     <button onclick="resetView()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">重置</button>
@@ -225,6 +236,8 @@ marker path {
 <script>
 // 全局变量
 let currentSubjectName = '';
+let filteredNodeId = null; // 当前筛选的节点ID
+let originalNodesVisibility = new Map(); // 保存原始节点可见性状态
 
 // 简单直接的日志函数
 function log(message) {
@@ -485,6 +498,9 @@ function renderMindmap() {
         return;
     }
     
+    // 重置筛选状态
+    filteredNodeId = null;
+    
     log(`📊 开始渲染脑图，节点数: ${currentMindmapData.nodes.length}`);
     
     // 初始化SVG
@@ -661,7 +677,13 @@ function renderMindmap() {
     // 节点点击事件
     nodeGroups.on('click', (event, d) => {
         log(`🔍 点击了节点: ${d.name} (${d.type})`);
-        if (d.type === 'knowledge_point') {
+        
+        // 处理筛选逻辑（绿色和蓝色圆圈）
+        if (d.type === 'center' || d.type === 'category') {
+            handleNodeFilter(d);
+        }
+        // 处理知识点详情（橙色圆圈）
+        else if (d.type === 'knowledge_point') {
             showKnowledgePointDetail(d);
         }
     });
@@ -974,6 +996,107 @@ async function refreshMindmapCache() {
         refreshBtn.innerHTML = originalText;
         refreshBtn.disabled = false;
     }
+}
+
+// 处理节点筛选
+function handleNodeFilter(clickedNode) {
+    const nodeGroups = d3.selectAll('.node-group');
+    const links = d3.selectAll('line');
+    const linkLabels = d3.selectAll('.link-label');
+    
+    // 如果点击的是当前筛选的节点，则还原显示
+    if (filteredNodeId === clickedNode.id) {
+        log(`🔄 还原显示所有节点`);
+        restoreAllNodes();
+        return;
+    }
+    
+    // 保存当前筛选的节点ID
+    filteredNodeId = clickedNode.id;
+    log(`🎯 筛选显示 "${clickedNode.name}" 的子节点`);
+    
+    // 获取所有边数据来找出子节点
+    const edges = currentMindmapData.edges || [];
+    const childNodeIds = new Set();
+    
+    // 找出所有以当前节点为源的边的目标节点
+    edges.forEach(edge => {
+        if (edge.source === clickedNode.id || (typeof edge.source === 'object' && edge.source.id === clickedNode.id)) {
+            const targetId = typeof edge.target === 'object' ? edge.target.id : edge.target;
+            childNodeIds.add(targetId);
+        }
+    });
+    
+    // 添加点击的节点本身
+    childNodeIds.add(clickedNode.id);
+    
+    log(`📊 找到 ${childNodeIds.size - 1} 个子节点`);
+    
+    // 显示清除筛选按钮
+    document.getElementById('clearFilterBtn').classList.remove('hidden');
+    
+    // 隐藏不相关的节点
+    nodeGroups.each(function(d) {
+        const nodeGroup = d3.select(this);
+        if (childNodeIds.has(d.id)) {
+            // 显示相关节点，添加高亮效果
+            nodeGroup.style('opacity', 1)
+                     .style('filter', d.id === clickedNode.id ? 'drop-shadow(0 0 10px rgba(59, 130, 246, 0.8))' : 'none');
+        } else {
+            // 隐藏不相关节点
+            nodeGroup.style('opacity', 0.1);
+        }
+    });
+    
+    // 只显示相关的连线
+    links.each(function(d) {
+        const link = d3.select(this);
+        const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+        const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+        
+        if (childNodeIds.has(sourceId) && childNodeIds.has(targetId)) {
+            link.style('opacity', 1);
+        } else {
+            link.style('opacity', 0.1);
+        }
+    });
+    
+    // 只显示相关的连线标签
+    linkLabels.each(function(d) {
+        const label = d3.select(this);
+        const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+        const targetId = typeof d.target === 'object' ? d.target.id : d.target;
+        
+        if (childNodeIds.has(sourceId) && childNodeIds.has(targetId)) {
+            label.style('opacity', 1);
+        } else {
+            label.style('opacity', 0.1);
+        }
+    });
+}
+
+// 还原所有节点显示
+function restoreAllNodes() {
+    filteredNodeId = null;
+    
+    // 隐藏清除筛选按钮
+    document.getElementById('clearFilterBtn').classList.add('hidden');
+    
+    const nodeGroups = d3.selectAll('.node-group');
+    const links = d3.selectAll('line');
+    const linkLabels = d3.selectAll('.link-label');
+    
+    // 还原所有节点
+    nodeGroups.style('opacity', 1)
+              .style('filter', 'none');
+    
+    // 还原所有连线
+    links.style('opacity', 0.9);
+    
+    // 还原所有连线标签
+    linkLabels.style('opacity', 1);
+    
+    log(`✅ 已还原显示所有节点`);
 }
 
 // 页面加载完成
