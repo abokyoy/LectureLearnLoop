@@ -248,15 +248,30 @@ async function generateMindmap(subjectName) {
     
     try {
         if (window.bridge && window.bridge.getOrGenerateMindmap) {
+            log(`📡 调用后端API获取脑图数据...`);
             const response = await window.bridge.getOrGenerateMindmap(subjectName);
+            log(`📡 API响应: ${response.substring(0, 200)}...`);
+            
             const result = JSON.parse(response);
             
             if (result.success && result.mindmap && result.mindmap.data) {
-                log(`✅ 脑图生成成功，节点数: ${result.mindmap.data.nodes?.length || 0}`);
+                log(`✅ 使用真实LLM生成的脑图数据`);
+                log(`📊 节点数: ${result.mindmap.data.nodes?.length || 0}`);
+                log(`🔗 连线数: ${result.mindmap.data.edges?.length || 0}`);
+                
                 currentMindmapData = result.mindmap.data;
-                renderMindmap();
+                
+                // 验证数据格式
+                if (validateMindmapData(currentMindmapData)) {
+                    renderMindmap();
+                } else {
+                    log(`⚠️ 真实数据格式有问题，使用修复后的数据`);
+                    currentMindmapData = fixMindmapData(currentMindmapData, subjectName);
+                    renderMindmap();
+                }
             } else {
                 log(`❌ 脑图生成失败: ${result.error || '数据格式错误'}`);
+                log(`🔄 回退到模拟数据`);
                 showMockMindmap(subjectName);
             }
         } else {
@@ -265,10 +280,89 @@ async function generateMindmap(subjectName) {
         }
     } catch (error) {
         log(`❌ 生成脑图时出错: ${error.message}`);
+        log(`🔄 回退到模拟数据`);
         showMockMindmap(subjectName);
     }
     
     hideLoading();
+}
+
+// 验证脑图数据格式
+function validateMindmapData(data) {
+    if (!data || !data.nodes || !Array.isArray(data.nodes)) {
+        log('❌ 缺少nodes数组');
+        return false;
+    }
+    
+    if (data.nodes.length === 0) {
+        log('❌ nodes数组为空');
+        return false;
+    }
+    
+    // 检查节点格式
+    for (let node of data.nodes) {
+        if (!node.id || !node.name) {
+            log(`❌ 节点缺少必要字段: ${JSON.stringify(node)}`);
+            return false;
+        }
+    }
+    
+    log('✅ 脑图数据格式验证通过');
+    return true;
+}
+
+// 修复脑图数据
+function fixMindmapData(data, subjectName) {
+    log('🔧 开始修复脑图数据');
+    
+    const fixedData = {
+        nodes: [],
+        edges: []
+    };
+    
+    // 添加中心节点
+    fixedData.nodes.push({
+        id: 'center',
+        name: subjectName,
+        type: 'center',
+        x: 400,
+        y: 250
+    });
+    
+    // 处理原始节点
+    if (data.nodes && Array.isArray(data.nodes)) {
+        data.nodes.forEach((node, index) => {
+            const fixedNode = {
+                id: node.id || `node_${index}`,
+                name: node.name || `节点${index + 1}`,
+                type: node.type || 'knowledge_point',
+                x: node.x || Math.random() * 600 + 100,
+                y: node.y || Math.random() * 400 + 100
+            };
+            fixedData.nodes.push(fixedNode);
+            
+            // 连接到中心节点
+            fixedData.edges.push({
+                source: 'center',
+                target: fixedNode.id
+            });
+        });
+    }
+    
+    // 处理原始连线
+    if (data.edges && Array.isArray(data.edges)) {
+        data.edges.forEach(edge => {
+            if (edge.source && edge.target) {
+                fixedData.edges.push({
+                    source: edge.source,
+                    target: edge.target
+                });
+            }
+        });
+    }
+    
+    log(`🔧 修复完成: ${fixedData.nodes.length}个节点, ${fixedData.edges.length}条连线`);
+    return fixedData;
 }
 
 // 显示模拟脑图
@@ -429,8 +523,34 @@ function dragended(event, d) {
 }
 
 // 显示知识点详情
-function showKnowledgePointDetail(node) {
-    alert(`知识点详情：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}`);
+async function showKnowledgePointDetail(node) {
+    log(`🔍 获取知识点详情: ${node.name} (ID: ${node.id})`);
+    
+    try {
+        if (window.bridge && window.bridge.getKnowledgePointDetail && node.type === 'knowledge_point') {
+            // 提取真实的知识点ID（去掉kp_前缀）
+            const realId = node.id.startsWith('kp_') ? node.id.substring(3) : node.id;
+            
+            const response = await window.bridge.getKnowledgePointDetail(realId);
+            const result = JSON.parse(response);
+            
+            if (result.success && result.detail) {
+                const detail = result.detail;
+                alert(`知识点详情：\n名称：${detail.name || node.name}\n描述：${detail.description || '暂无描述'}\n掌握度：${detail.mastery_score || 0}%\n来源：${detail.source || '未知'}`);
+                log(`✅ 成功获取知识点详情`);
+            } else {
+                alert(`知识点详情：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}\n\n⚠️ 无法获取详细信息: ${result.error || '数据不存在'}`);
+                log(`⚠️ 获取详情失败: ${result.error}`);
+            }
+        } else {
+            // 显示基本信息
+            alert(`节点信息：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}`);
+            log(`ℹ️ 显示基本节点信息`);
+        }
+    } catch (error) {
+        log(`❌ 获取知识点详情失败: ${error.message}`);
+        alert(`知识点详情：\n名称：${node.name}\n类型：${node.type}\nID：${node.id}\n\n❌ 获取详情时出错: ${error.message}`);
+    }
 }
 
 // 脑图工具函数
