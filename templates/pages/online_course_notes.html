@@ -628,6 +628,11 @@
                         <button id="load-transcript-btn" class="w-12 h-12 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center justify-center shadow-md transition-all" onclick="loadTranscriptHistory()" title="载入历史记录">
                             <span class="material-icons-outlined text-lg">folder_open</span>
                         </button>
+                        
+                        <!-- 截图按钮 -->
+                        <button id="screenshot-btn" class="w-12 h-12 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center justify-center shadow-md transition-all" onclick="takeScreenshot()" title="截图笔记">
+                            <span class="material-icons-outlined text-lg">camera_alt</span>
+                        </button>
                     </div>
                 </div>
                 <!-- 手动总结按钮 -->
@@ -1925,15 +1930,36 @@
     window.takeScreenshot = function() {
         debugLog('截图笔记');
         if (window.bridge && window.bridge.takeScreenshot) {
-            window.bridge.takeScreenshot(function(result) {
-                debugLog('截图结果: ' + result);
-                if (result) {
-                    // 将截图插入到文档中
-                    insertScreenshotToDocument(result);
+            try {
+                // 直接调用，因为后端使用@Slot(result=str)
+                debugLog('调用截图功能...');
+                const result = window.bridge.takeScreenshot();
+                debugLog('截图方法返回类型: ' + typeof result);
+                debugLog('截图方法返回值: ' + result);
+                
+                // 检查返回值类型
+                if (typeof result === 'string') {
+                    try {
+                        const response = JSON.parse(result);
+                        if (response.success) {
+                            debugLog('截图工具已打开: ' + response.message);
+                            // 截图完成后会通过_on_screenshot_captured自动插入到编辑器
+                        } else {
+                            alert('截图失败: ' + response.error);
+                        }
+                    } catch (parseError) {
+                        debugError('解析截图响应失败: ' + parseError.message);
+                        debugError('原始返回值: ' + result);
+                        // 如果不是JSON格式，可能是直接的成功消息
+                        debugLog('截图请求已发送，等待用户操作');
+                    }
                 } else {
-                    alert('截图失败');
+                    debugLog('截图请求已发送，返回类型: ' + typeof result);
                 }
-            });
+            } catch (error) {
+                debugError('截图请求失败: ' + error.message);
+                alert('截图功能出错: ' + error.message);
+            }
         } else {
             alert('截图功能不可用');
         }
@@ -1948,7 +1974,10 @@
                 const cursorPos = editContent.selectionStart;
                 const textBefore = editContent.value.substring(0, cursorPos);
                 const textAfter = editContent.value.substring(cursorPos);
-                const imageText = '\n\n![截图](' + imagePath + ')\n\n';
+                
+                // 使用Obsidian兼容的图片格式，只使用文件名，不包含路径
+                const fileName = imagePath.split('/').pop(); // 提取文件名
+                const imageText = '\n\n![[' + fileName + ']]\n\n';
                 
                 editContent.value = textBefore + imageText + textAfter;
                 editContent.setSelectionRange(cursorPos + imageText.length, cursorPos + imageText.length);
@@ -5653,6 +5682,7 @@
     window.clearDebugLog = clearDebugLog;
     window.extractKnowledgePoints = extractKnowledgePoints;
     window.loadContent = loadContent;
+    window.insertScreenshotToDocument = insertScreenshotToDocument;
     
     // 插入文本到当前笔记的全局函数
     window.insertTextToCurrentNote = function(content) {
@@ -6837,12 +6867,69 @@
                 return `<div class="mermaid" id="${id}">${code}</div>`;
             });
             
+            // 预处理：支持Obsidian格式的图片 ![[filename]]
+            content = content.replace(/!\[\[([^\]]+)\]\]/g, function(match, filename) {
+                console.log('发现Obsidian格式图片:', filename);
+                // 构建图片路径：假设图片在attachments目录中
+                const imagePath = 'attachments/' + filename;
+                const converted = `![${filename}](${imagePath})`;
+                console.log('转换为标准格式:', converted);
+                return converted;
+            });
+            
             // 使用marked渲染
             let html = marked.parse(content);
             
             // 后处理：修复任务列表
             html = html.replace(/<li class="task-list-item"><input[^>]*>/g, function(match) {
                 return match.replace('<li class="task-list-item">', '<li class="task-list-item">');
+            });
+            
+            // 后处理：处理图片路径，使用Base64数据URL
+            html = html.replace(/<img([^>]*?)src="([^"]*?)"([^>]*?)>/g, function(match, beforeSrc, src, afterSrc) {
+                console.log('处理图片路径:', src);
+                console.log('当前文件路径:', currentFilePath);
+                
+                // 如果是相对路径且指向attachments目录，通过后端获取Base64数据
+                if (src.startsWith('attachments/') && currentFilePath) {
+                    console.log('检测到attachments图片，准备转换为Base64');
+                    
+                    // 创建一个唯一的ID用于异步更新
+                    const imageId = 'img_' + Math.random().toString(36).substr(2, 9);
+                    
+                    // 先返回占位符图片
+                    const placeholderImg = `<img${beforeSrc}id="${imageId}" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWKoOi9veS4rS4uLjwvdGV4dD48L3N2Zz4=" alt="加载中..." style="max-width: 100%; height: auto;"${afterSrc}>`;
+                    
+                    // 异步获取真实图片数据
+                    setTimeout(() => {
+                        if (window.bridge && window.bridge.getImageAsBase64) {
+                            window.bridge.getImageAsBase64(src, function(result) {
+                                try {
+                                    const response = JSON.parse(result);
+                                    const imgElement = document.getElementById(imageId);
+                                    if (response.success && imgElement) {
+                                        console.log('图片Base64转换成功，更新显示');
+                                        imgElement.src = response.dataUrl;
+                                        imgElement.alt = src;
+                                    } else {
+                                        console.error('图片Base64转换失败:', response.error);
+                                        if (imgElement) {
+                                            imgElement.alt = '图片加载失败: ' + src;
+                                            imgElement.title = response.error || '未知错误';
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('解析图片Base64响应失败:', e);
+                                }
+                            });
+                        } else {
+                            console.error('getImageAsBase64方法不可用');
+                        }
+                    }, 100);
+                    
+                    return placeholderImg;
+                }
+                return match;
             });
             
             return html;

@@ -2151,24 +2151,42 @@ class MindmapManager:
 6. 只返回JSON数据，不要其他说明文字"""
 
         try:
-            # 调用LLM生成脑图
+            # 使用与学习资料相同的方式调用LLM
             from llm_provider_factory import LLMProviderFactory
             
-            factory = LLMProviderFactory(self.config)
+            factory = LLMProviderFactory()
             llm_provider = factory.get_provider()
             
-            response = llm_provider.generate_response(prompt)
+            print(f"📡 调用LLM生成脑图，提示词长度: {len(prompt)}")
+            response = llm_provider.call(prompt)
+            print(f"📝 LLM原始响应: {response[:200]}...")
             
             # 解析JSON响应
             import re
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
-                mindmap_data = json.loads(json_match.group())
-                return mindmap_data
+                json_str = json_match.group()
+                print(f"🔍 提取的JSON: {json_str[:200]}...")
+                mindmap_data = json.loads(json_str)
+                
+                # 验证数据结构
+                if 'nodes' in mindmap_data and 'edges' in mindmap_data:
+                    print(f"✅ 脑图数据解析成功: {len(mindmap_data['nodes'])}个节点, {len(mindmap_data['edges'])}条边")
+                    return mindmap_data
+                else:
+                    print("❌ 脑图数据缺少必要字段")
+                    return None
             else:
-                print("LLM响应中未找到有效的JSON数据")
+                print("❌ LLM响应中未找到有效的JSON数据")
+                print(f"完整响应: {response}")
                 return None
                 
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON解析失败: {e}")
+            print(f"尝试解析的内容: {json_match.group() if 'json_match' in locals() else 'N/A'}")
+            return None
         except Exception as e:
-            print(f"生成脑图失败: {e}")
+            print(f"❌ 生成脑图失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None

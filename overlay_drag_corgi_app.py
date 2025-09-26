@@ -81,7 +81,10 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint, QByteArray, QRegularExpression
-from PySide6.QtGui import QFont, QMouseEvent, QCursor, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QFont, QMouseEvent, QCursor, QIcon, QKeySequence, QShortcut,
+    QImage, QPainter, QPen, QBrush, QColor, QPixmap
+)
 
 class CorgiWebBridge(QObject):
     """Python与JavaScript通信桥梁"""
@@ -492,6 +495,10 @@ class CorgiWebBridge(QObject):
         self.logger.info("=" * 60)
         self.logger.info("【文件加载】loadMarkdownRaw 开始")
         self.logger.info(f"文件路径: {file_path}")
+        
+        # 保存当前文件路径，用于截图等功能
+        self.current_file_path = file_path
+        self.logger.info(f"已保存当前文件路径: {self.current_file_path}")
         
         try:
             path = Path(file_path)
@@ -1120,6 +1127,10 @@ class CorgiWebBridge(QObject):
         self.logger.info("【文件保存】saveMarkdownFile 开始")
         self.logger.info(f"文件路径: {file_path}")
         self.logger.info(f"内容长度: {len(content)} 字符")
+        
+        # 保存当前文件路径，用于截图等功能
+        self.current_file_path = file_path
+        self.logger.info(f"已更新当前文件路径: {self.current_file_path}")
         
         try:
             path = Path(file_path)
@@ -3790,13 +3801,138 @@ class CorgiWebBridge(QObject):
         self.logger.info("截图笔记请求")
         
         try:
-            # 这里可以实现截图功能
-            # 暂时返回占位符
-            return json.dumps({"success": True, "message": "截图功能开发中..."}, ensure_ascii=False)
+            # 获取主屏幕
+            screen = QApplication.primaryScreen()
+            if not screen:
+                raise RuntimeError("无法获取屏幕来进行截图")
+            
+            # 创建截图覆盖层
+            self._shot_overlay = ScreenshotOverlay(screen)
+            self._shot_overlay.captured.connect(self._on_screenshot_captured)
+            self._shot_overlay.showFullScreen()
+            
+            # 返回成功状态，实际的截图结果会通过信号处理
+            return json.dumps({"success": True, "message": "截图工具已打开，请选择截图区域"}, ensure_ascii=False)
             
         except Exception as e:
             self.logger.error(f"截图笔记失败: {e}")
             return json.dumps({"success": False, "error": f"截图笔记失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getImageAsBase64(self, image_path):
+        """将图片转换为Base64格式供前端显示"""
+        try:
+            self.logger.info(f"请求图片Base64: {image_path}")
+            
+            # 如果是相对路径，转换为绝对路径
+            if not os.path.isabs(image_path) and hasattr(self, 'current_file_path') and self.current_file_path:
+                doc_dir = os.path.dirname(self.current_file_path)
+                full_path = os.path.join(doc_dir, image_path)
+            else:
+                full_path = image_path
+            
+            self.logger.info(f"完整图片路径: {full_path}")
+            
+            if not os.path.exists(full_path):
+                self.logger.error(f"图片文件不存在: {full_path}")
+                return json.dumps({"success": False, "error": "图片文件不存在"}, ensure_ascii=False)
+            
+            # 读取图片并转换为Base64
+            import base64
+            with open(full_path, 'rb') as f:
+                image_data = f.read()
+            
+            # 获取文件扩展名以确定MIME类型
+            _, ext = os.path.splitext(full_path)
+            mime_type = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif',
+                '.bmp': 'image/bmp',
+                '.webp': 'image/webp'
+            }.get(ext.lower(), 'image/png')
+            
+            base64_data = base64.b64encode(image_data).decode('utf-8')
+            data_url = f"data:{mime_type};base64,{base64_data}"
+            
+            self.logger.info(f"图片转换成功，Base64长度: {len(base64_data)}")
+            
+            return json.dumps({
+                "success": True,
+                "dataUrl": data_url,
+                "mimeType": mime_type,
+                "size": len(image_data)
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"图片Base64转换失败: {e}")
+            return json.dumps({"success": False, "error": f"图片转换失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(QImage)
+    def _on_screenshot_captured(self, img: QImage):
+        """截图完成回调：保存图片并返回路径"""
+        try:
+            if img and not img.isNull():
+                # 获取当前文档路径，确定attachments目录
+                current_file_path = getattr(self, 'current_file_path', None)
+                self.logger.info(f"当前文件路径: {current_file_path}")
+                
+                if current_file_path:
+                    # 获取文档所在目录
+                    doc_dir = os.path.dirname(current_file_path)
+                    attachments_dir = os.path.join(doc_dir, 'attachments')
+                    self.logger.info(f"文档目录: {doc_dir}")
+                    self.logger.info(f"attachments目录: {attachments_dir}")
+                else:
+                    # 如果没有当前文档，使用默认的course_notes目录
+                    course_notes_dir = os.path.join(os.getcwd(), 'course_notes')
+                    if not os.path.exists(course_notes_dir):
+                        os.makedirs(course_notes_dir)
+                    attachments_dir = os.path.join(course_notes_dir, 'attachments')
+                    self.logger.warning(f"没有当前文件路径，使用默认目录: {attachments_dir}")
+                
+                # 创建attachments目录
+                if not os.path.exists(attachments_dir):
+                    os.makedirs(attachments_dir)
+                    self.logger.info(f"创建attachments目录: {attachments_dir}")
+                
+                # 生成唯一的文件名
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"screenshot_{timestamp}.png"
+                image_path = os.path.join(attachments_dir, filename)
+                
+                # 保存图片
+                if img.save(image_path, "PNG"):
+                    self.logger.info(f"截图保存成功: {image_path}")
+                    
+                    # 生成相对路径用于Markdown
+                    relative_path = f"attachments/{filename}"
+                    
+                    # 通过JavaScript插入到编辑器
+                    js_code = f"""
+                    if (typeof insertScreenshotToDocument === 'function') {{
+                        insertScreenshotToDocument('{relative_path}');
+                    }} else {{
+                        console.error('insertScreenshotToDocument function not found');
+                    }}
+                    """
+                    if self.main_window and self.main_window.web_view:
+                        self.main_window.web_view.page().runJavaScript(js_code)
+                    
+                else:
+                    self.logger.error(f"截图保存失败: {image_path}")
+                    
+        except Exception as e:
+            self.logger.error(f"截图处理失败: {e}")
+        finally:
+            # 清理截图覆盖层
+            try:
+                if hasattr(self, '_shot_overlay'):
+                    self._shot_overlay.close()
+                    delattr(self, '_shot_overlay')
+            except Exception:
+                pass
     
     @Slot(result=str)
     def getTranscriptionText(self):
@@ -8533,6 +8669,101 @@ class TranscriberWorker(QObject):
 
     def stop(self):
         self._stop = True
+
+
+class ScreenshotOverlay(QWidget):
+    """截图覆盖层 - 基于app_qt.py的实现"""
+    captured = Signal(QImage)
+
+    def __init__(self, screen):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self._screen = screen
+        self._screen_geo = screen.geometry()
+        self._pixmap: QPixmap = screen.grabWindow(0)
+        # HiDPI awareness
+        self._dpr = float(self._pixmap.devicePixelRatio()) if hasattr(self._pixmap, 'devicePixelRatio') else 1.0
+        self._origin: QPoint | None = None
+        self._current: QPoint | None = None
+        self._selection: QRect | None = None
+        self._double_clicked = False
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        # Draw the captured screen scaled to the widget's rect to match logical coordinates
+        painter.drawPixmap(self.rect(), self._pixmap)
+        # Dim the whole screen
+        painter.fillRect(self.rect(), QBrush(QColor(0, 0, 0, 100)))
+        # Draw selection area: undim + border
+        if self._selection and not self._selection.isNull():
+            sel = self._selection.normalized()
+            # Re-draw original content inside selection to undim
+            # Map logical selection rect to device pixels when copying from pixmap
+            dev_sel = QRect(int(sel.x() * self._dpr), int(sel.y() * self._dpr), int(sel.width() * self._dpr), int(sel.height() * self._dpr))
+            crop = self._pixmap.copy(dev_sel)
+            painter.drawPixmap(sel, crop.scaled(sel.size()))
+            # Border
+            pen = QPen(QColor(0, 153, 255), 2, Qt.PenStyle.SolidLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(sel)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._origin = e.position().toPoint()
+            self._current = self._origin
+            self._update_selection()
+            self.update()
+
+    def mouseMoveEvent(self, e):
+        if self._origin is not None:
+            self._current = e.position().toPoint()
+            self._update_selection()
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self._origin is not None:
+            self._current = e.position().toPoint()
+            self._update_selection()
+            self.update()
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._double_clicked = True
+            self._confirm_capture()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._confirm_capture()
+        elif e.key() == Qt.Key.Key_Escape:
+            self.close()
+
+    def resizeEvent(self, e):
+        # Ensure overlay covers the target screen
+        self.setGeometry(self._screen_geo)
+        super().resizeEvent(e)
+
+    def showEvent(self, e):
+        # Fit overlay to screen geometry
+        self.setGeometry(self._screen_geo)
+        super().showEvent(e)
+
+    def _update_selection(self):
+        if self._origin is None or self._current is None:
+            self._selection = None
+            return
+        x1, y1 = self._origin.x(), self._origin.y()
+        x2, y2 = self._current.x(), self._current.y()
+        self._selection = QRect(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
+
+    def _confirm_capture(self):
+        if self._selection and not self._selection.isNull():
+            sel = self._selection.normalized()
+            dev_sel = QRect(int(sel.x() * self._dpr), int(sel.y() * self._dpr), int(sel.width() * self._dpr), int(sel.height() * self._dpr))
+            img = self._pixmap.copy(dev_sel).toImage()
+            self.captured.emit(img)
+        self.close()
 
 
 if __name__ == "__main__":
