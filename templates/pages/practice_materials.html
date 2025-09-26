@@ -8,6 +8,8 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <!-- D3.js for mindmap visualization -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- Markdown parser for note content -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/marked.min.js"></script>
 </head>
 <body class="bg-gray-100">
 
@@ -1072,27 +1074,57 @@ async function loadKnowledgePointQuestions(nodeId) {
                     const favoriteIcon = question.is_favorite ? 'star' : 'star_border';
                     const favoriteColor = question.is_favorite ? 'text-yellow-500' : 'text-gray-600';
                     
+                    // 格式化题目内容（安全调用）
+                    const formattedContent = (typeof formatQuestionContent === 'function') 
+                        ? formatQuestionContent(question.content) 
+                        : question.content.replace(/\n/g, '<br>');
+                    
                     return `
-                        <div class="p-4 border border-gray-200 rounded-lg flex items-center justify-between hover:border-green-500 transition-colors">
-                            <div>
-                                <p class="font-semibold text-gray-800">${index + 1}. ${question.content}</p>
-                                <div class="flex items-center space-x-4 text-sm mt-2 text-gray-600">
-                                    <span>类型: <span class="${typeColors[question.type] || 'bg-gray-100 text-gray-800'} px-2 py-0.5 rounded">${question.type}</span></span>
-                                    <span>熟练度: <span class="text-yellow-500">${stars}</span></span>
-                                    <span>上次答题: <span class="${resultColor}">${resultText}</span> (${question.last_practice_time})</span>
-                                    <span>练习次数: ${question.practice_count}次</span>
+                        <div class="p-4 border border-gray-200 rounded-lg hover:border-green-500 transition-colors">
+                            <!-- 题目头部 -->
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex-1 mr-4">
+                                    <div class="flex items-center mb-2">
+                                        <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded-full mr-2">题目 ${index + 1}</span>
+                                        <span class="${typeColors[question.type] || 'bg-gray-100 text-gray-800'} text-xs px-2 py-1 rounded">${question.type}</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-1">
+                                    <button class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600" onclick="viewQuestion('${realId}', '${question.content.replace(/'/g, "\\'")}');" title="查看题目">
+                                        <span class="material-icons-outlined text-sm">visibility</span>
+                                    </button>
+                                    <button class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600" onclick="editQuestion('${realId}', '${question.content.replace(/'/g, "\\'")}');" title="编辑题目">
+                                        <span class="material-icons-outlined text-sm">edit</span>
+                                    </button>
+                                    <button class="p-1.5 rounded-full hover:bg-gray-100 ${favoriteColor}" onclick="toggleFavorite('${realId}', '${question.content.replace(/'/g, "\\'")}');" title="${question.is_favorite ? '取消收藏' : '收藏题目'}">
+                                        <span class="material-icons-outlined text-sm">${favoriteIcon}</span>
+                                    </button>
                                 </div>
                             </div>
-                            <div class="flex items-center space-x-2">
-                                <button class="p-2 rounded-full hover:bg-gray-100 text-gray-600" onclick="viewQuestion('${realId}', '${question.content}')">
-                                    <span class="material-icons-outlined">visibility</span>
-                                </button>
-                                <button class="p-2 rounded-full hover:bg-gray-100 text-gray-600" onclick="editQuestion('${realId}', '${question.content}')">
-                                    <span class="material-icons-outlined">edit</span>
-                                </button>
-                                <button class="p-2 rounded-full hover:bg-gray-100 ${favoriteColor}" onclick="toggleFavorite('${realId}', '${question.content}')">
-                                    <span class="material-icons-outlined">${favoriteIcon}</span>
-                                </button>
+                            
+                            <!-- 题目内容 -->
+                            <div class="mb-3">
+                                <div class="text-gray-800 leading-relaxed">${formattedContent}</div>
+                            </div>
+                            
+                            <!-- 题目统计信息 -->
+                            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600 pt-3 border-t border-gray-100">
+                                <div class="flex items-center">
+                                    <span class="material-icons-outlined text-sm mr-1">grade</span>
+                                    <span>熟练度: <span class="text-yellow-500">${stars}</span></span>
+                                </div>
+                                <div class="flex items-center">
+                                    <span class="material-icons-outlined text-sm mr-1">history</span>
+                                    <span>上次: <span class="${resultColor}">${resultText}</span></span>
+                                </div>
+                                <div class="flex items-center">
+                                    <span class="material-icons-outlined text-sm mr-1">repeat</span>
+                                    <span>练习: ${question.practice_count}次</span>
+                                </div>
+                                <div class="flex items-center">
+                                    <span class="material-icons-outlined text-sm mr-1">schedule</span>
+                                    <span>${question.last_practice_time}</span>
+                                </div>
                             </div>
                         </div>
                     `;
@@ -1160,8 +1192,8 @@ function showNoteDetailModal(note) {
                 <div class="flex-1 overflow-hidden flex">
                     <!-- 笔记内容区域 -->
                     <div class="flex-1 p-6 overflow-y-auto">
-                        <div class="prose max-w-none">
-                            <pre class="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">${note.content}</pre>
+                        <div id="noteContentArea" class="prose max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-strong:text-gray-800 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-50 prose-blockquote:border-l-blue-500">
+                            <!-- Markdown内容将在这里渲染 -->
                         </div>
                         
                         <!-- 笔记信息 -->
@@ -1221,8 +1253,153 @@ function showNoteDetailModal(note) {
     // 添加到页面
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     
+    // 渲染Markdown内容
+    renderNoteContent(note.content);
+    
     // 防止背景滚动
     document.body.style.overflow = 'hidden';
+}
+
+// 渲染笔记Markdown内容
+function renderNoteContent(markdownContent) {
+    const contentArea = document.getElementById('noteContentArea');
+    if (!contentArea) {
+        console.error('找不到笔记内容区域');
+        return;
+    }
+    
+    try {
+        // 配置marked选项
+        marked.setOptions({
+            breaks: true,        // 支持换行
+            gfm: true,          // 支持GitHub风格Markdown
+            sanitize: false,    // 不过度清理HTML（注意安全性）
+            smartLists: true,   // 智能列表
+            smartypants: true   // 智能标点
+        });
+        
+        // 渲染Markdown为HTML
+        const htmlContent = marked.parse(markdownContent);
+        contentArea.innerHTML = htmlContent;
+        
+        // 添加代码高亮（如果需要）
+        highlightCodeBlocks();
+        
+        log(`✅ Markdown内容渲染完成，长度: ${markdownContent.length} 字符`);
+    } catch (error) {
+        console.error('Markdown渲染失败:', error);
+        // 降级到纯文本显示
+        contentArea.innerHTML = `
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <p class="text-yellow-800 font-semibold">⚠️ Markdown渲染失败，显示原始内容</p>
+            </div>
+            <pre class="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">${escapeHtml(markdownContent)}</pre>
+        `;
+    }
+}
+
+// 简单的代码块高亮
+function highlightCodeBlocks() {
+    const codeBlocks = document.querySelectorAll('#noteContentArea pre code');
+    codeBlocks.forEach(block => {
+        // 添加代码块样式
+        block.classList.add('text-sm', 'bg-gray-800', 'text-gray-100', 'p-4', 'rounded-lg', 'overflow-x-auto');
+        block.parentElement.classList.add('bg-gray-800', 'rounded-lg');
+    });
+    
+    // 为内联代码添加样式
+    const inlineCodes = document.querySelectorAll('#noteContentArea p code, #noteContentArea li code');
+    inlineCodes.forEach(code => {
+        code.classList.add('bg-gray-100', 'text-gray-800', 'px-1', 'py-0.5', 'rounded', 'text-sm', 'font-mono');
+    });
+}
+
+// HTML转义函数
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// JavaScript字符串转义函数
+function escapeForJs(text) {
+    if (!text) return '';
+    return text.replace(/\\/g, '\\\\')
+               .replace(/`/g, '\\`')
+               .replace(/\$/g, '\\$')
+               .replace(/'/g, "\\'")
+               .replace(/"/g, '\\"')
+               .replace(/\n/g, '\\n')
+               .replace(/\r/g, '\\r');
+}
+
+// 格式化题目内容
+function formatQuestionContent(content) {
+    if (!content) return '题目内容为空';
+    
+    // 处理换行和格式
+    let formatted = content
+        .replace(/\n/g, '<br>')  // 换行转为<br>
+        .replace(/\r/g, '')      // 移除回车符
+        .trim();
+    
+    // 检测并格式化选择题
+    if (formatted.includes('选项：') || formatted.includes('A)') || formatted.includes('A.')) {
+        formatted = formatMultipleChoice(formatted);
+    }
+    
+    // 检测并格式化填空题
+    if (formatted.includes('____') || formatted.includes('___')) {
+        formatted = formatFillInBlank(formatted);
+    }
+    
+    // 检测并格式化判断题
+    if (formatted.includes('判断：') || formatted.includes('对错：')) {
+        formatted = formatTrueFalse(formatted);
+    }
+    
+    return formatted;
+}
+
+// 格式化选择题
+function formatMultipleChoice(content) {
+    // 分离题目和选项
+    let parts = content.split(/选项：|选项:/);
+    if (parts.length < 2) {
+        // 尝试其他分割方式
+        parts = content.split(/(?=A[\.\)])/);
+    }
+    
+    if (parts.length >= 2) {
+        const question = parts[0].trim();
+        const options = parts.slice(1).join('').trim();
+        
+        // 格式化选项
+        const formattedOptions = options
+            .replace(/([A-D][\.\)])/g, '<br><strong>$1</strong>')
+            .replace(/^<br>/, ''); // 移除开头的<br>
+        
+        return `
+            <div class="mb-3">
+                <div class="font-medium text-gray-900 mb-2">${question}</div>
+                <div class="ml-4 text-gray-700 leading-relaxed">${formattedOptions}</div>
+            </div>
+        `;
+    }
+    
+    return content;
+}
+
+// 格式化填空题
+function formatFillInBlank(content) {
+    return content.replace(/_{3,}/g, '<span class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded mx-1 min-w-[60px] text-center">____</span>');
+}
+
+// 格式化判断题
+function formatTrueFalse(content) {
+    return content
+        .replace(/(判断：|对错：)/g, '<strong class="text-purple-600">$1</strong>')
+        .replace(/（\s*）/g, '<span class="inline-block bg-purple-100 text-purple-800 px-3 py-1 rounded mx-1">（　）</span>');
 }
 
 // 关闭笔记详情模态框
