@@ -154,8 +154,13 @@
             <div class="flex items-center justify-between mb-4 pb-2 border-b">
                 <div class="flex items-center space-x-4">
                     <input type="text" id="searchInput" placeholder="搜索知识点..." 
-                           class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                           class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           onkeypress="if(event.key==='Enter') searchNodes()">
                     <button onclick="searchNodes()" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">搜索</button>
+                    <button id="clearSearchBtn" onclick="clearSearch()" 
+                            class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 hidden">
+                        清除搜索
+                    </button>
                     <div class="text-xs text-gray-500 flex items-center space-x-1">
                         <span>💡</span>
                         <span>点击</span>
@@ -238,6 +243,8 @@ marker path {
 let currentSubjectName = '';
 let filteredNodeId = null; // 当前筛选的节点ID
 let originalNodesVisibility = new Map(); // 保存原始节点可见性状态
+let searchResults = new Set(); // 搜索结果节点ID集合
+let isSearchActive = false; // 搜索状态标记
 
 // 简单直接的日志函数
 function log(message) {
@@ -498,8 +505,10 @@ function renderMindmap() {
         return;
     }
     
-    // 重置筛选状态
+    // 重置筛选和搜索状态
     filteredNodeId = null;
+    searchResults.clear();
+    isSearchActive = false;
     
     log(`📊 开始渲染脑图，节点数: ${currentMindmapData.nodes.length}`);
     
@@ -842,24 +851,103 @@ function searchNodes() {
         return;
     }
     
-    log(`🔍 搜索节点: ${query}`);
-    
-    if (g) {
-        // 重置所有节点样式
-        g.selectAll('.node-group circle')
-            .attr('stroke', '#fff')
-            .attr('stroke-width', 2);
-        
-        // 高亮匹配的节点
-        g.selectAll('.node-group')
-            .each(function(d) {
-                const circle = d3.select(this).select('circle');
-                if (d.name.toLowerCase().includes(query.toLowerCase())) {
-                    circle.attr('stroke', '#F59E0B').attr('stroke-width', 4);
-                    log(`✅ 找到匹配节点: ${d.name}`);
-                }
-            });
+    // 如果有筛选状态，先清除筛选
+    if (filteredNodeId) {
+        restoreAllNodes();
     }
+    
+    log(`🔍 搜索节点: "${query}"`);
+    
+    // 清空之前的搜索结果
+    searchResults.clear();
+    
+    const nodeGroups = d3.selectAll('.node-group');
+    const links = d3.selectAll('line');
+    const linkLabels = d3.selectAll('.link-label');
+    
+    // 查找匹配的节点
+    let matchCount = 0;
+    nodeGroups.each(function(d) {
+        if (d.name.toLowerCase().includes(query.toLowerCase())) {
+            searchResults.add(d.id);
+            matchCount++;
+            log(`✅ 找到匹配节点: ${d.name}`);
+        }
+    });
+    
+    if (matchCount === 0) {
+        log(`❌ 未找到包含 "${query}" 的节点`);
+        clearSearch(); // 清除搜索状态
+        return;
+    }
+    
+    log(`📊 找到 ${matchCount} 个匹配节点`);
+    isSearchActive = true;
+    
+    // 显示清除搜索按钮
+    document.getElementById('clearSearchBtn').classList.remove('hidden');
+    
+    // 高亮匹配节点，淡化其他节点
+    nodeGroups.each(function(d) {
+        const nodeGroup = d3.select(this);
+        if (searchResults.has(d.id)) {
+            // 高亮匹配节点
+            nodeGroup.style('opacity', 1)
+                     .style('filter', 'drop-shadow(0 0 15px rgba(245, 158, 11, 0.8))');
+            // 添加高亮边框
+            nodeGroup.select('circle')
+                     .attr('stroke', '#F59E0B')
+                     .attr('stroke-width', 4);
+        } else {
+            // 淡化不匹配节点
+            nodeGroup.style('opacity', 0.2)
+                     .style('filter', 'none');
+            // 恢复普通边框
+            nodeGroup.select('circle')
+                     .attr('stroke', '#fff')
+                     .attr('stroke-width', 2);
+        }
+    });
+    
+    // 淡化所有连线和标签
+    links.style('opacity', 0.2);
+    linkLabels.style('opacity', 0.2);
+}
+
+// 清除搜索
+function clearSearch() {
+    if (!isSearchActive) return;
+    
+    log(`🔄 清除搜索结果`);
+    
+    // 重置搜索状态
+    searchResults.clear();
+    isSearchActive = false;
+    
+    // 隐藏清除搜索按钮
+    document.getElementById('clearSearchBtn').classList.add('hidden');
+    
+    // 清空搜索输入框
+    document.getElementById('searchInput').value = '';
+    
+    const nodeGroups = d3.selectAll('.node-group');
+    const links = d3.selectAll('line');
+    const linkLabels = d3.selectAll('.link-label');
+    
+    // 还原所有节点样式
+    nodeGroups.style('opacity', 1)
+              .style('filter', 'none');
+    
+    // 还原所有节点边框
+    nodeGroups.select('circle')
+              .attr('stroke', '#fff')
+              .attr('stroke-width', 2);
+    
+    // 还原所有连线和标签
+    links.style('opacity', 0.9);
+    linkLabels.style('opacity', 1);
+    
+    log(`✅ 已清除搜索状态`);
 }
 
 // 全屏功能
@@ -1000,6 +1088,11 @@ async function refreshMindmapCache() {
 
 // 处理节点筛选
 function handleNodeFilter(clickedNode) {
+    // 如果有搜索状态，先清除搜索
+    if (isSearchActive) {
+        clearSearch();
+    }
+    
     const nodeGroups = d3.selectAll('.node-group');
     const links = d3.selectAll('line');
     const linkLabels = d3.selectAll('.link-label');
