@@ -1498,6 +1498,39 @@ class CorgiWebBridge(QObject):
             return False
     
     @Slot(str, result=str)
+    def clearMindmapCache(self, subject_name):
+        """清除学科的脑图缓存"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】clearMindmapCache 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 清除缓存
+            success = km_system.clear_mindmap_cache(subject_name)
+            
+            if success:
+                self.logger.info(f"✅ 成功清除脑图缓存")
+                return json.dumps({
+                    "success": True,
+                    "message": f"已清除 {subject_name} 的脑图缓存"
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 缓存清除失败 - 可能缓存不存在")
+                return json.dumps({
+                    "success": False,
+                    "error": "缓存清除失败，可能缓存不存在"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 清除脑图缓存失败: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
     def getKnowledgePointDetail(self, knowledge_point_id):
         """获取知识点详情"""
         self.logger.info("=" * 60)

@@ -122,7 +122,7 @@
 
 <!-- 知识脑图页面 -->
 <div id="mindmapPage" class="min-h-screen p-8 hidden">
-    <div class="max-w-6xl mx-auto">
+    <div class="max-w-7xl mx-auto">
         <!-- 头部 -->
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center space-x-4">
@@ -130,11 +130,26 @@
                     ← 返回
                 </button>
                 <h1 id="mindmapTitle" class="text-2xl font-bold text-gray-800">知识脑图</h1>
+                <div id="cacheStatus" class="text-sm text-gray-600"></div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <!-- 刷新缓存按钮 -->
+                <button id="refreshCacheBtn" onclick="refreshMindmapCache()" 
+                        class="bg-orange-500 text-white px-3 py-2 rounded-lg hover:bg-orange-600 transition-colors flex items-center space-x-1">
+                    <span class="material-icons-outlined text-sm">refresh</span>
+                    <span>刷新</span>
+                </button>
+                <!-- 全屏按钮 -->
+                <button id="fullscreenBtn" onclick="toggleFullscreen()" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center space-x-2">
+                    <span class="material-icons-outlined text-lg">fullscreen</span>
+                    <span>全屏</span>
+                </button>
             </div>
         </div>
 
         <!-- 脑图容器 -->
-        <div class="bg-white rounded-lg shadow-lg p-4 min-h-96 relative">
+        <div id="mindmapContainer" class="bg-white rounded-lg shadow-lg p-4 relative" style="min-height: 700px;">
             <!-- 脑图工具栏 -->
             <div class="flex items-center justify-between mb-4 pb-2 border-b">
                 <div class="flex items-center space-x-4">
@@ -146,11 +161,16 @@
                     <button onclick="zoomIn()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">放大</button>
                     <button onclick="zoomOut()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">缩小</button>
                     <button onclick="resetView()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">重置</button>
+                    <!-- 全屏模式下的退出按钮 -->
+                    <button id="exitFullscreenBtn" onclick="exitFullscreen()" 
+                            class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 hidden">
+                        <span class="material-icons-outlined text-sm">fullscreen_exit</span>
+                    </button>
                 </div>
             </div>
             
             <!-- 脑图SVG -->
-            <div id="mindmapContainer" class="w-full" style="height: 500px;">
+            <div id="mindmapSvgContainer" class="w-full" style="height: 600px;">
                 <svg id="mindmapSvg" width="100%" height="100%"></svg>
             </div>
             
@@ -165,7 +185,47 @@
     </div>
 </div>
 
+<!-- 全屏模式样式 -->
+<style>
+.fullscreen-mode {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 9999 !important;
+    background: white !important;
+    padding: 20px !important;
+    margin: 0 !important;
+    max-width: none !important;
+}
+
+.fullscreen-mode #mindmapSvgContainer {
+    height: calc(100vh - 140px) !important;
+}
+
+.fullscreen-mode .max-w-7xl {
+    max-width: none !important;
+}
+
+/* 关系文字样式 */
+.link-label {
+    font-family: 'Arial', sans-serif;
+    text-shadow: 1px 1px 3px rgba(255,255,255,0.8), -1px -1px 3px rgba(255,255,255,0.8);
+    pointer-events: none; /* 防止文字阻挡鼠标事件 */
+}
+
+/* 箭头样式 */
+marker path {
+    stroke: #666;
+    stroke-width: 1;
+}
+</style>
+
 <script>
+// 全局变量
+let currentSubjectName = '';
+
 // 简单直接的日志函数
 function log(message) {
     const timestamp = new Date().toLocaleTimeString();
@@ -208,6 +268,9 @@ function clearLog() {
 // 选择学科
 function selectSubject(subjectName) {
     log(`🎯 点击了学科: ${subjectName}`);
+    
+    // 设置全局变量
+    currentSubjectName = subjectName;
     
     // 隐藏学科选择页面
     document.getElementById('subjectSelectionPage').classList.add('hidden');
@@ -255,7 +318,24 @@ async function generateMindmap(subjectName) {
             const result = JSON.parse(response);
             
             if (result.success && result.mindmap && result.mindmap.data) {
-                log(`✅ 使用真实LLM生成的脑图数据`);
+                // 显示缓存状态
+                const cacheStatus = result.mindmap.cache_status || 'unknown';
+                const cacheStatusElement = document.getElementById('cacheStatus');
+                
+                if (cacheStatus === 'from_cache') {
+                    log(`💾 使用缓存的脑图数据`);
+                    log(`📅 缓存时间: ${result.mindmap.updated_time || 'unknown'}`);
+                    log(`🔢 版本: ${result.mindmap.version || 1}`);
+                    cacheStatusElement.innerHTML = `<span class="text-green-600">💾 缓存数据</span> | 版本: ${result.mindmap.version || 1}`;
+                } else if (cacheStatus === 'newly_generated') {
+                    log(`🆕 使用新生成的脑图数据`);
+                    log(`🤖 LLM生成完成并已缓存`);
+                    cacheStatusElement.innerHTML = `<span class="text-blue-600">🆕 新生成</span> | 已缓存`;
+                } else {
+                    log(`✅ 使用真实脑图数据`);
+                    cacheStatusElement.innerHTML = `<span class="text-gray-600">✅ 数据加载</span>`;
+                }
+                
                 log(`📊 节点数: ${result.mindmap.data.nodes?.length || 0}`);
                 log(`🔗 连线数: ${result.mindmap.data.edges?.length || 0}`);
                 
@@ -383,14 +463,14 @@ function showMockMindmap(subjectName) {
             { id: 'kp4', name: '搜索算法', type: 'knowledge_point', x: 700, y: 100 }
         ],
         edges: [
-            { source: 'center', target: 'node1' },
-            { source: 'center', target: 'node2' },
-            { source: 'center', target: 'node3' },
-            { source: 'center', target: 'node4' },
-            { source: 'node1', target: 'kp1' },
-            { source: 'node1', target: 'kp2' },
-            { source: 'node2', target: 'kp3' },
-            { source: 'node2', target: 'kp4' }
+            { source: 'center', target: 'node1', relation: '包含' },
+            { source: 'center', target: 'node2', relation: '包含' },
+            { source: 'center', target: 'node3', relation: '包含' },
+            { source: 'center', target: 'node4', relation: '包含' },
+            { source: 'node1', target: 'kp1', relation: '细分为' },
+            { source: 'node1', target: 'kp2', relation: '细分为' },
+            { source: 'node2', target: 'kp3', relation: '实现为' },
+            { source: 'node2', target: 'kp4', relation: '实现为' }
         ]
     };
     
@@ -415,22 +495,62 @@ function renderMindmap() {
     
     // 清空之前的内容
     g.selectAll('*').remove();
+    svg.selectAll('defs').remove(); // 清空箭头定义
     
     // 创建力导向图
     simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
-        .force('charge', d3.forceManyBody().strength(-300))
+        .force('link', d3.forceLink(edges).id(d => d.id).distance(150))
+        .force('charge', d3.forceManyBody().strength(-500))
         .force('center', d3.forceCenter(400, 250))
-        .force('collision', d3.forceCollide().radius(40));
+        .force('collision', d3.forceCollide().radius(d => {
+            const textLength = d.name.length;
+            if (d.type === 'center') {
+                return Math.max(50, textLength * 4) + 10; // 额外10px间距
+            }
+            if (d.type === 'category') {
+                return Math.max(40, textLength * 3.5) + 8;
+            }
+            return Math.max(35, textLength * 3) + 6;
+        }));
     
-    // 绘制连线
+    // 定义箭头标记
+    const defs = svg.append('defs');
+    defs.append('marker')
+        .attr('id', 'arrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 10) // 箭头尖端位置
+        .attr('refY', 0)
+        .attr('markerWidth', 8)
+        .attr('markerHeight', 8)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M0,-5L10,0L0,5')
+        .attr('fill', '#3498db');
+    
+    // 绘制有向连线
     const links = g.append('g')
         .selectAll('line')
         .data(edges)
         .enter().append('line')
-        .attr('stroke', '#999')
-        .attr('stroke-opacity', 0.6)
-        .attr('stroke-width', 2);
+        .attr('stroke', '#3498db')
+        .attr('stroke-opacity', 0.9)
+        .attr('stroke-width', 3)
+        .attr('marker-end', 'url(#arrow)');
+    
+    // 绘制关系文字
+    const linkLabels = g.append('g')
+        .selectAll('text')
+        .data(edges)
+        .enter().append('text')
+        .attr('class', 'link-label')
+        .attr('text-anchor', 'middle')
+        .attr('dy', -5)
+        .style('font-size', '10px')
+        .style('font-weight', 'bold')
+        .style('fill', '#555')
+        .style('background', 'white')
+        .style('padding', '2px')
+        .text(d => d.relation || '关联');
     
     // 绘制节点组
     const nodeGroups = g.append('g')
@@ -444,9 +564,18 @@ function renderMindmap() {
             .on('drag', dragged)
             .on('end', dragended));
     
-    // 节点圆圈
+    // 节点圆圈 - 根据文字长度动态调整大小
     nodeGroups.append('circle')
-        .attr('r', d => d.type === 'center' ? 30 : d.type === 'category' ? 25 : 20)
+        .attr('r', d => {
+            const textLength = d.name.length;
+            if (d.type === 'center') {
+                return Math.max(50, textLength * 4); // 最小50，每字符4px
+            }
+            if (d.type === 'category') {
+                return Math.max(40, textLength * 3.5); // 最小40，每字符3.5px
+            }
+            return Math.max(35, textLength * 3); // 知识点：最小35，每字符3px
+        })
         .attr('fill', d => {
             if (d.type === 'center') return '#3B82F6';
             if (d.type === 'category') return '#10B981';
@@ -455,14 +584,79 @@ function renderMindmap() {
         .attr('stroke', '#fff')
         .attr('stroke-width', 2);
     
-    // 节点文本
-    nodeGroups.append('text')
-        .attr('dy', '.35em')
-        .attr('text-anchor', 'middle')
-        .style('fill', 'white')
-        .style('font-size', d => d.type === 'center' ? '14px' : '12px')
-        .style('font-weight', 'bold')
-        .text(d => d.name.length > 6 ? d.name.substring(0, 6) + '...' : d.name);
+    // 节点文本 - 完整显示，不截断
+    nodeGroups.each(function(d) {
+        const group = d3.select(this);
+        const fontSize = d.type === 'center' ? 14 : d.type === 'category' ? 12 : 11;
+        
+        // 获取当前圆圈的半径
+        const circle = group.select('circle');
+        const radius = parseFloat(circle.attr('r'));
+        
+        // 智能分行：根据圆圈大小决定每行字符数
+        const maxWidth = radius * 1.6; // 圆圈直径的80%作为文字宽度
+        const avgCharWidth = fontSize * 0.6; // 平均字符宽度
+        const maxCharsPerLine = Math.max(4, Math.floor(maxWidth / avgCharWidth));
+        
+        // 按自然断点分词（空格、括号、标点等）
+        const text = d.name;
+        let words = [];
+        
+        // 如果包含英文，按单词分割；否则按字符分割
+        if (/[a-zA-Z]/.test(text)) {
+            words = text.split(/(\s+|\(|\)|（|）|,|，|、|：|:|-)/);
+        } else {
+            words = text.split('');
+        }
+        
+        const lines = [];
+        let currentLine = '';
+        
+        for (let word of words) {
+            if (!word.trim() && word !== ' ') continue; // 跳过空白但保留空格
+            
+            const testLine = currentLine + word;
+            if (testLine.length <= maxCharsPerLine || currentLine === '') {
+                currentLine = testLine;
+            } else {
+                if (currentLine) lines.push(currentLine);
+                currentLine = word;
+            }
+        }
+        if (currentLine) lines.push(currentLine);
+        
+        // 如果文字很短，单行显示
+        if (lines.length === 1 && lines[0].length <= maxCharsPerLine) {
+            group.append('text')
+                .attr('x', 0)
+                .attr('y', 0)
+                .attr('text-anchor', 'middle')
+                .style('fill', 'white')
+                .style('font-size', fontSize + 'px')
+                .style('font-weight', 'bold')
+                .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.5)')
+                .style('dominant-baseline', 'middle')
+                .text(lines[0]);
+        } else {
+            // 多行显示
+            const lineHeight = fontSize + 2;
+            const totalHeight = lines.length * lineHeight;
+            const startY = -(totalHeight / 2) + (lineHeight / 2);
+            
+            lines.forEach((line, index) => {
+                group.append('text')
+                    .attr('x', 0)
+                    .attr('y', startY + (index * lineHeight))
+                    .attr('text-anchor', 'middle')
+                    .style('fill', 'white')
+                    .style('font-size', fontSize + 'px')
+                    .style('font-weight', 'bold')
+                    .style('text-shadow', '1px 1px 2px rgba(0,0,0,0.5)')
+                    .style('dominant-baseline', 'middle')
+                    .text(line);
+            });
+        }
+    });
     
     // 节点点击事件
     nodeGroups.on('click', (event, d) => {
@@ -474,11 +668,47 @@ function renderMindmap() {
     
     // 更新位置
     simulation.on('tick', () => {
-        links
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
+        links.each(function(d) {
+            // 计算连线方向
+            const dx = d.target.x - d.source.x;
+            const dy = d.target.y - d.source.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // 避免除零错误
+            if (distance === 0) return;
+            
+            // 计算节点半径（使用动态半径）
+            const getNodeRadius = (node) => {
+                const textLength = node.name.length;
+                if (node.type === 'center') {
+                    return Math.max(50, textLength * 4);
+                }
+                if (node.type === 'category') {
+                    return Math.max(40, textLength * 3.5);
+                }
+                return Math.max(35, textLength * 3);
+            };
+            
+            const sourceRadius = getNodeRadius(d.source);
+            const targetRadius = getNodeRadius(d.target);
+            
+            // 计算连线起点和终点（在圆圈边缘）
+            const sourceX = d.source.x + (dx / distance) * sourceRadius;
+            const sourceY = d.source.y + (dy / distance) * sourceRadius;
+            const targetX = d.target.x - (dx / distance) * (targetRadius + 5); // 留出箭头空间
+            const targetY = d.target.y - (dy / distance) * (targetRadius + 5);
+            
+            d3.select(this)
+                .attr('x1', sourceX)
+                .attr('y1', sourceY)
+                .attr('x2', targetX)
+                .attr('y2', targetY);
+        });
+        
+        // 更新关系文字位置（在连线中点）
+        linkLabels
+            .attr('x', d => (d.source.x + d.target.x) / 2)
+            .attr('y', d => (d.source.y + d.target.y) / 2);
         
         nodeGroups
             .attr('transform', d => `translate(${d.x},${d.y})`);
@@ -607,6 +837,142 @@ function searchNodes() {
                     log(`✅ 找到匹配节点: ${d.name}`);
                 }
             });
+    }
+}
+
+// 全屏功能
+let isFullscreen = false;
+
+function toggleFullscreen() {
+    if (!isFullscreen) {
+        enterFullscreen();
+    } else {
+        exitFullscreen();
+    }
+}
+
+function enterFullscreen() {
+    log('🖥️ 进入全屏模式');
+    
+    const mindmapPage = document.getElementById('mindmapPage');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
+    
+    // 添加全屏样式类
+    mindmapPage.classList.add('fullscreen-mode');
+    
+    // 切换按钮显示
+    fullscreenBtn.classList.add('hidden');
+    exitFullscreenBtn.classList.remove('hidden');
+    
+    // 更新状态
+    isFullscreen = true;
+    
+    // 重新调整SVG大小
+    setTimeout(() => {
+        if (svg && zoom) {
+            // 重新设置SVG尺寸
+            const container = document.getElementById('mindmapSvgContainer');
+            const rect = container.getBoundingClientRect();
+            svg.attr('width', rect.width).attr('height', rect.height);
+            
+            // 重置视图以适应新尺寸
+            svg.call(zoom.transform, d3.zoomIdentity);
+            log('✅ 全屏模式SVG已调整');
+        }
+    }, 100);
+    
+    log('✅ 已进入全屏模式');
+}
+
+function exitFullscreen() {
+    log('🖥️ 退出全屏模式');
+    
+    const mindmapPage = document.getElementById('mindmapPage');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const exitFullscreenBtn = document.getElementById('exitFullscreenBtn');
+    
+    // 移除全屏样式类
+    mindmapPage.classList.remove('fullscreen-mode');
+    
+    // 切换按钮显示
+    fullscreenBtn.classList.remove('hidden');
+    exitFullscreenBtn.classList.add('hidden');
+    
+    // 更新状态
+    isFullscreen = false;
+    
+    // 重新调整SVG大小
+    setTimeout(() => {
+        if (svg && zoom) {
+            // 重新设置SVG尺寸
+            const container = document.getElementById('mindmapSvgContainer');
+            const rect = container.getBoundingClientRect();
+            svg.attr('width', rect.width).attr('height', rect.height);
+            
+            // 重置视图以适应新尺寸
+            svg.call(zoom.transform, d3.zoomIdentity);
+            log('✅ 普通模式SVG已调整');
+        }
+    }, 100);
+    
+    log('✅ 已退出全屏模式');
+}
+
+// 键盘快捷键支持
+document.addEventListener('keydown', function(e) {
+    // F11键切换全屏
+    if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+    }
+    // ESC键退出全屏
+    if (e.key === 'Escape' && isFullscreen) {
+        exitFullscreen();
+    }
+});
+
+// 刷新脑图缓存
+async function refreshMindmapCache() {
+    // 优先使用全局变量，备用方案是从标题提取
+    let currentSubject = currentSubjectName;
+    if (!currentSubject) {
+        const titleText = document.getElementById('mindmapTitle').textContent;
+        currentSubject = titleText.replace(' - 知识脑图', '').replace('知识脑图', '').trim();
+    }
+    
+    if (!currentSubject) {
+        log('❌ 无法获取当前学科名称');
+        log(`全局变量: "${currentSubjectName}"`);
+        log(`页面标题: "${document.getElementById('mindmapTitle').textContent}"`);
+        return;
+    }
+    
+    log(`🔄 开始刷新 "${currentSubject}" 的脑图缓存...`);
+    
+    // 更新按钮状态
+    const refreshBtn = document.getElementById('refreshCacheBtn');
+    const originalText = refreshBtn.innerHTML;
+    refreshBtn.innerHTML = '<span class="material-icons-outlined text-sm animate-spin">refresh</span><span>刷新中...</span>';
+    refreshBtn.disabled = true;
+    
+    try {
+        if (window.bridge && window.bridge.clearMindmapCache) {
+            // 先清除缓存
+            await window.bridge.clearMindmapCache(currentSubject);
+            log(`🗑️ 已清除 "${currentSubject}" 的缓存`);
+        }
+        
+        // 重新生成脑图
+        await generateMindmap(currentSubject);
+        log(`✅ 脑图缓存刷新完成`);
+        
+    } catch (error) {
+        log(`❌ 刷新缓存失败: ${error.message}`);
+    } finally {
+        // 恢复按钮状态
+        refreshBtn.innerHTML = originalText;
+        refreshBtn.disabled = false;
     }
 }
 

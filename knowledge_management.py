@@ -2008,32 +2008,54 @@ class KnowledgeManagementSystem:
         return self.mindmap_manager.get_mindmap(subject_name)
     
     def generate_or_get_mindmap(self, subject_name: str) -> Optional[Dict]:
-        """生成或获取学科的知识脑图"""
-        # 首先尝试获取现有脑图
+        """生成或获取学科的知识脑图（带缓存优化）"""
+        print(f"🔍 检查学科 '{subject_name}' 的脑图缓存...")
+        
+        # 首先尝试获取现有脑图缓存
         existing_mindmap = self.mindmap_manager.get_mindmap(subject_name)
         if existing_mindmap:
+            print(f"✅ 找到缓存脑图 - 版本: {existing_mindmap.get('version', 1)}, 更新时间: {existing_mindmap.get('updated_time', 'unknown')}")
             return existing_mindmap
         
-        # 如果没有现有脑图，则生成新的
+        print(f"❌ 未找到缓存，开始生成新脑图...")
+        
+        # 获取知识点数据
         knowledge_points = self.get_knowledge_points_by_subject(subject_name)
         if not knowledge_points:
+            print(f"⚠️ 学科 '{subject_name}' 没有知识点数据")
             return None
         
+        print(f"📊 找到 {len(knowledge_points)} 个知识点，调用LLM生成脑图...")
+        
+        # 使用LLM生成脑图
         mindmap_data = self.mindmap_manager.generate_mindmap_with_llm(subject_name, knowledge_points)
         if mindmap_data:
-            # 保存生成的脑图
-            self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+            print(f"🎯 LLM生成成功，保存到缓存...")
+            # 保存生成的脑图到缓存
+            save_success = self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+            if save_success:
+                print(f"💾 脑图缓存保存成功")
+            else:
+                print(f"⚠️ 脑图缓存保存失败")
+            
             return {
                 "data": mindmap_data,
                 "version": 1,
-                "updated_time": datetime.now().isoformat()
+                "updated_time": datetime.now().isoformat(),
+                "cache_status": "newly_generated"
             }
-        
-        return None
+        else:
+            print(f"❌ LLM生成脑图失败")
+            return None
     
     def save_mindmap(self, subject_name: str, mindmap_data: Dict) -> bool:
         """保存知识脑图"""
         return self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+    
+    def clear_mindmap_cache(self, subject_name: str) -> bool:
+        """清除学科的脑图缓存"""
+        print(f"🗑️ 开始清除学科 '{subject_name}' 的脑图缓存...")
+        return self.mindmap_manager.clear_mindmap_cache(subject_name)
 
 
 class MindmapManager:
@@ -2044,7 +2066,9 @@ class MindmapManager:
         self.config = config
     
     def get_mindmap(self, subject_name: str, user_id: str = "0001") -> Optional[Dict]:
-        """获取学科的知识脑图"""
+        """获取学科的知识脑图（从缓存）"""
+        print(f"🔍 从数据库查询学科 '{subject_name}' 的脑图缓存...")
+        
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
@@ -2057,14 +2081,21 @@ class MindmapManager:
         
         if result:
             try:
-                return {
-                    "data": json.loads(result[0]),
+                mindmap_data = json.loads(result[0])
+                cache_info = {
+                    "data": mindmap_data,
                     "version": result[1],
-                    "updated_time": result[2]
+                    "updated_time": result[2],
+                    "cache_status": "from_cache"
                 }
-            except json.JSONDecodeError:
+                print(f"✅ 缓存命中 - 版本: {result[1]}, 节点数: {len(mindmap_data.get('nodes', []))}, 更新时间: {result[2]}")
+                return cache_info
+            except json.JSONDecodeError as e:
+                print(f"❌ 缓存数据解析失败: {e}")
                 return None
-        return None
+        else:
+            print(f"❌ 缓存未命中 - 数据库中没有找到该学科的脑图")
+            return None
     
     def save_mindmap(self, subject_name: str, mindmap_data: Dict, user_id: str = "0001") -> bool:
         """保存知识脑图"""
@@ -2108,7 +2139,7 @@ class MindmapManager:
             point_info.append(f"- ID:{point.get('id', 'unknown')} {point.get('point_name', '')}")
         
         # 构建LLM提示词
-        prompt = f"""请分析以下{subject_name}学科的知识点，生成一个知识关系脑图。
+        prompt = f"""请分析以下{subject_name}学科的知识点，生成一个有向知识关系脑图。
 
 知识点列表：
 {chr(10).join(point_info)}
@@ -2117,38 +2148,62 @@ class MindmapManager:
 {{
     "nodes": [
         {{
-            "id": "kp_1",
-            "name": "知识点名称",
-            "type": "knowledge_point",
-            "level": 1,
-            "x": 100,
-            "y": 100
+            "id": "center",
+            "name": "{subject_name}",
+            "type": "center",
+            "level": 0,
+            "x": 400,
+            "y": 300
         }},
         {{
             "id": "category_1", 
-            "name": "分类名称",
+            "name": "基础概念",
             "type": "category",
-            "level": 0,
+            "level": 1,
             "x": 200,
             "y": 200
+        }},
+        {{
+            "id": "kp_1",
+            "name": "知识点名称",
+            "type": "knowledge_point",
+            "level": 2,
+            "x": 100,
+            "y": 100
         }}
     ],
     "edges": [
         {{
+            "source": "center",
+            "target": "category_1",
+            "relation": "包含",
+            "direction": "forward"
+        }},
+        {{
             "source": "category_1",
             "target": "kp_1",
-            "relation": "包含"
+            "relation": "细分为",
+            "direction": "forward"
+        }},
+        {{
+            "source": "kp_1",
+            "target": "kp_2",
+            "relation": "依赖于",
+            "direction": "forward"
         }}
     ]
 }}
 
 要求：
-1. 知识点节点的id必须使用"kp_"前缀加上实际的知识点ID（如kp_1, kp_2等）
-2. 分类节点的id使用"category_"前缀
-3. 分析知识点之间的关系，可以创建新的分类节点作为归类
-4. 设置合理的坐标位置，避免节点重叠
-5. 关系类型可以是：包含、依赖、相关、前置等
-6. 只返回JSON数据，不要其他说明文字"""
+1. 必须包含一个中心节点，id为"center"，name为学科名称，type为"center"
+2. 知识点节点的id必须使用"kp_"前缀加上实际的知识点ID（如kp_1, kp_2等）
+3. 分类节点的id使用"category_"前缀，用于归类相关知识点
+4. 每条边必须包含relation字段，描述两个节点的具体关系
+5. 关系类型要具体化，如：包含、细分为、依赖于、前置条件、应用于、扩展为等
+6. direction字段表示关系方向，"forward"表示从source指向target
+7. 设置合理的坐标位置，形成层次化布局
+8. 分析知识点的逻辑关系，构建有意义的学习路径
+9. 只返回JSON数据，不要其他说明文字"""
 
         try:
             # 使用与学习资料相同的方式调用LLM
@@ -2190,3 +2245,45 @@ class MindmapManager:
             import traceback
             traceback.print_exc()
             return None
+    
+    def clear_mindmap_cache(self, subject_name: str, user_id: str = "0001") -> bool:
+        """清除学科的脑图缓存"""
+        print(f"🗑️ 从数据库删除学科 '{subject_name}' 的脑图缓存...")
+        
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 先检查是否存在缓存
+            cursor.execute(
+                "SELECT COUNT(*) FROM knowledge_mindmaps WHERE user_id = ? AND subject_name = ?",
+                (user_id, subject_name)
+            )
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                print(f"⚠️ 没有找到需要清除的缓存")
+                conn.close()
+                return False
+            
+            # 删除缓存
+            cursor.execute(
+                "DELETE FROM knowledge_mindmaps WHERE user_id = ? AND subject_name = ?",
+                (user_id, subject_name)
+            )
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                print(f"✅ 成功删除 {deleted_count} 条缓存记录")
+                return True
+            else:
+                print(f"⚠️ 没有删除任何缓存记录")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 清除缓存失败: {e}")
+            conn.close()
+            return False
