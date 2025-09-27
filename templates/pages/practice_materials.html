@@ -436,6 +436,7 @@ function selectSubject(subjectName) {
         g = null;
         zoom = null;
         isGeneratingMindmap = false;
+        // 不重置currentSubjectName，保留用于防重复检查
         log(`🧹 已重置全局变量`);
         
         // 4. 清理详情面板状态
@@ -480,6 +481,7 @@ function selectSubject(subjectName) {
     log(`✅ 已进入 ${subjectName} 脑图页面`);
     
     // 调用后端API生成脑图
+    log(`🔍 selectSubject即将调用generateMindmap: ${subjectName}`);
     generateMindmap(subjectName);
 }
 
@@ -513,15 +515,25 @@ let simulation = null;
 let isGeneratingMindmap = false; // 防重复调用标志
 
 // 生成脑图
-async function generateMindmap(subjectName) {
+async function generateMindmap(subjectName, forceRefresh = false) {
+    log(`🔍 generateMindmap被调用: ${subjectName}, 强制刷新: ${forceRefresh}`);
+    log(`🔍 当前状态: isGeneratingMindmap=${isGeneratingMindmap}, currentSubjectName=${window.currentSubjectName}`);
+    
     // 防重复调用检查
     if (isGeneratingMindmap) {
-        log(`⚠️ 脑图正在生成中，跳过重复调用`);
+        log(`⚠️ 脑图正在生成中，跳过重复调用 (学科: ${subjectName})`);
+        return;
+    }
+    
+    // 如果不是强制刷新，且当前已有相同学科的脑图数据，直接渲染
+    if (!forceRefresh && currentMindmapData && window.currentSubjectName === subjectName) {
+        log(`📊 使用现有脑图数据，直接渲染 (学科: ${subjectName})`);
+        renderMindmap();
         return;
     }
     
     isGeneratingMindmap = true;
-    log(`🧠 开始生成 ${subjectName} 的知识脑图`);
+    log(`🧠 开始生成 ${subjectName} 的知识脑图 (强制刷新: ${forceRefresh})`);
     
     // === 新增：生成前检查 ===
     try {
@@ -796,6 +808,13 @@ function renderMindmap() {
     if (!currentMindmapData || !currentMindmapData.nodes) {
         log('❌ 脑图数据无效');
         return;
+    }
+    
+    // 强制停止之前的simulation
+    if (simulation) {
+        simulation.stop();
+        simulation = null;
+        log('🛑 强制停止之前的simulation');
     }
     
     // 重置筛选和搜索状态
@@ -1075,11 +1094,8 @@ function initSvg() {
         return false;
     }
     
-    // 如果已经初始化且有效，直接返回
-    if (svg && g && !svg.empty() && !g.empty()) {
-        log('✅ SVG已初始化，跳过重复初始化');
-        return true;
-    }
+    // 强制重新初始化，确保清理干净
+    log('🎨 强制重新初始化SVG容器');
     
     log('🎨 初始化SVG容器');
     
@@ -2116,28 +2132,16 @@ function restorePreviousMindmapState() {
             const lastViewedKnowledgePoint = localStorage.getItem('lastViewedKnowledgePoint');
             
             if (lastViewedSubject) {
-                log(`🔄 恢复上次查看的学科: ${lastViewedSubject}`);
+                log(`🔄 发现上次查看的学科: ${lastViewedSubject} (但不自动恢复，避免重复渲染)`);
                 
-                // 延迟一点时间确保页面完全加载
-                setTimeout(() => {
-                    selectSubject(lastViewedSubject);
-                    
-                    // 如果有上次查看的知识点，也恢复它
-                    if (lastViewedKnowledgePoint) {
-                        setTimeout(() => {
-                            const nodeId = lastViewedKnowledgePoint;
-                            log(`🔄 恢复上次查看的知识点: ${nodeId}`);
-                            
-                            // 查找对应的节点并显示详情
-                            if (currentMindmapData && currentMindmapData.nodes) {
-                                const node = currentMindmapData.nodes.find(n => n.id === nodeId);
-                                if (node) {
-                                    showKnowledgePointDetail(node);
-                                }
-                            }
-                        }, 1000);
-                    }
-                }, 500);
+                // 不自动恢复，避免与用户手动点击冲突导致重复渲染
+                // 用户需要手动点击学科卡片
+                log(`💡 请手动点击 "${lastViewedSubject}" 学科卡片`);
+                
+                // 如果有上次查看的知识点，记录但不自动恢复
+                if (lastViewedKnowledgePoint) {
+                    log(`🔄 发现上次查看的知识点: ${lastViewedKnowledgePoint} (不自动恢复)`);
+                }
             }
         } else {
             log('⚠️ localStorage不可用，跳过状态恢复');
@@ -2430,25 +2434,10 @@ function refreshKnowledgePointDetail() {
 function refreshMindmapColors() {
     log('🎨 刷新脑图节点颜色');
     
-    // 如果当前有脑图数据，重新渲染以更新颜色
+    // 如果当前有脑图数据，直接重新渲染以更新颜色，不需要重新获取数据
     if (currentMindmapData && currentMindmapData.nodes) {
-        // 重新获取最新的脑图数据（包含更新后的熟练度）
-        const currentSubject = getCurrentSubject();
-        if (currentSubject) {
-            log(`🔄 重新获取学科 "${currentSubject}" 的脑图数据`);
-            // 强制刷新，不使用缓存
-            generateMindmap(currentSubject, true);
-        } else {
-            // 尝试从全局变量获取学科名称
-            if (window.currentSubjectName) {
-                log(`🔄 使用全局变量学科名称: ${window.currentSubjectName}`);
-                generateMindmap(window.currentSubjectName, true);
-            } else {
-                // 如果无法获取当前学科，直接重新渲染现有数据
-                log('🎨 直接重新渲染现有脑图数据');
-                renderMindmap();
-            }
-        }
+        log('🎨 直接重新渲染现有脑图数据以更新颜色');
+        renderMindmap();
     } else {
         log('⚠️ 没有脑图数据可刷新');
     }
