@@ -412,8 +412,61 @@ function clearLog() {
 function selectSubject(subjectName) {
     log(`🎯 点击了学科: ${subjectName}`);
     
+    // 添加调试信息
+    console.log(`🎯 selectSubject被调用: ${subjectName}`);
+    
+    // === 新增：页面状态清理 ===
+    try {
+        // 1. 清理之前的脑图渲染
+        if (simulation) {
+            simulation.stop();
+            simulation = null;
+            log(`🧹 已停止之前的simulation`);
+        }
+        
+        // 2. 清理SVG内容
+        const svg = d3.select("#mindmapSvg");
+        if (!svg.empty()) {
+            svg.selectAll("*").remove();
+            log(`🧹 已清理SVG内容`);
+        }
+        
+        // 3. 重置全局变量
+        currentMindmapData = null;
+        g = null;
+        zoom = null;
+        isGeneratingMindmap = false;
+        log(`🧹 已重置全局变量`);
+        
+        // 4. 清理详情面板状态
+        const detailPanel = document.getElementById('knowledgePointDetail');
+        if (detailPanel) {
+            detailPanel.classList.add('hidden');
+            log(`🧹 已隐藏详情面板`);
+        }
+        
+        // 5. 重置加载状态
+        hideLoading();
+        log(`🧹 已重置加载状态`);
+        
+    } catch (error) {
+        log(`⚠️ 清理过程中出现错误: ${error.message}`);
+    }
+    // === 清理逻辑结束 ===
+    
     // 设置全局变量
     currentSubjectName = subjectName;
+    window.currentSubjectName = subjectName; // 确保全局可访问
+    
+    // 保存当前查看的学科到localStorage（如果可用）
+    try {
+        if (typeof(Storage) !== "undefined" && window.localStorage) {
+            localStorage.setItem('lastViewedSubject', subjectName);
+            log(`💾 已保存当前学科状态: ${subjectName}`);
+        }
+    } catch (error) {
+        log(`⚠️ 无法保存学科状态: ${error.message}`);
+    }
     
     // 隐藏学科选择页面
     document.getElementById('subjectSelectionPage').classList.add('hidden');
@@ -434,6 +487,17 @@ function selectSubject(subjectName) {
 function backToSubjects() {
     log('🔙 返回学科选择页面');
     
+    // 清除保存的状态（如果localStorage可用）
+    try {
+        if (typeof(Storage) !== "undefined" && window.localStorage) {
+            localStorage.removeItem('lastViewedSubject');
+            localStorage.removeItem('lastViewedKnowledgePoint');
+            log('🗑️ 已清除保存的状态');
+        }
+    } catch (error) {
+        log(`⚠️ 无法清除状态: ${error.message}`);
+    }
+    
     document.getElementById('mindmapPage').classList.add('hidden');
     document.getElementById('subjectSelectionPage').classList.remove('hidden');
     
@@ -446,17 +510,69 @@ let svg = null;
 let g = null;
 let zoom = null;
 let simulation = null;
+let isGeneratingMindmap = false; // 防重复调用标志
 
 // 生成脑图
 async function generateMindmap(subjectName) {
+    // 防重复调用检查
+    if (isGeneratingMindmap) {
+        log(`⚠️ 脑图正在生成中，跳过重复调用`);
+        return;
+    }
+    
+    isGeneratingMindmap = true;
     log(`🧠 开始生成 ${subjectName} 的知识脑图`);
+    
+    // === 新增：生成前检查 ===
+    try {
+        // 检查页面状态
+        const mindmapPage = document.getElementById('mindmapPage');
+        const subjectPage = document.getElementById('subjectSelectionPage');
+        
+        if (!mindmapPage || mindmapPage.classList.contains('hidden')) {
+            log(`❌ 脑图页面状态异常，尝试修复`);
+            if (mindmapPage) {
+                mindmapPage.classList.remove('hidden');
+            }
+            if (subjectPage) {
+                subjectPage.classList.add('hidden');
+            }
+        }
+        
+        // 检查SVG容器
+        const svgContainer = document.getElementById('mindmapSvg');
+        if (!svgContainer) {
+            log(`❌ SVG容器不存在`);
+            isGeneratingMindmap = false;
+            hideLoading();
+            return;
+        }
+        
+        log(`✅ 页面状态检查通过`);
+        
+    } catch (error) {
+        log(`❌ 页面状态检查失败: ${error.message}`);
+        isGeneratingMindmap = false;
+        hideLoading();
+        return;
+    }
+    // === 检查逻辑结束 ===
+    
     showLoading();
     
     try {
+        // 详细的调试信息
+        log(`🔍 检查WebChannel连接状态:`);
+        log(`  - window.bridge 存在: ${!!window.bridge}`);
+        log(`  - getOrGenerateMindmap 方法存在: ${!!(window.bridge && window.bridge.getOrGenerateMindmap)}`);
+        
         if (window.bridge && window.bridge.getOrGenerateMindmap) {
             log(`📡 调用后端API获取脑图数据...`);
+            log(`📤 请求参数: 学科="${subjectName}"`);
+            
             const response = await window.bridge.getOrGenerateMindmap(subjectName);
-            log(`📡 API响应: ${response.substring(0, 200)}...`);
+            log(`📡 API响应长度: ${response ? response.length : 0}`);
+            log(`📡 API响应预览: ${response ? response.substring(0, 200) : 'null'}...`);
             
             const result = JSON.parse(response);
             
@@ -499,40 +615,50 @@ async function generateMindmap(subjectName) {
             }
         } else {
             log('⚠️ 后端API不可用，显示模拟脑图');
+            log(`🔍 WebChannel状态详情:`);
+            log(`  - window 对象: ${typeof window}`);
+            log(`  - bridge 属性: ${typeof window.bridge}`);
+            if (window.bridge) {
+                log(`  - bridge 方法列表: ${Object.keys(window.bridge).join(', ')}`);
+            }
             showMockMindmap(subjectName);
         }
     } catch (error) {
         log(`❌ 生成脑图时出错: ${error.message}`);
+        log(`📊 错误详情: ${error.stack || error}`);
         log(`🔄 回退到模拟数据`);
         showMockMindmap(subjectName);
     }
     
+    // 确保重置状态
+    isGeneratingMindmap = false;
     hideLoading();
+    log(`🏁 脑图生成流程完成`);
 }
 
 // 根据熟练度获取知识点颜色
 function getKnowledgePointColor(masteryScore) {
-    // 如果是-1或未定义，返回灰白色（未评估）
+    // 如果是-1或未定义，返回浅灰色（未评估）
     if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
-        return '#E5E7EB'; // 灰白色
+        return '#E5E7EB'; // 浅灰色
     }
     
     // 将熟练度分数(0-100)映射到颜色深度
-    // 使用橙色系，从浅橙色到深橙色
+    // 使用橙色到红色系的渐变，颜色对比度更明显
     const score = Math.max(0, Math.min(100, masteryScore)); // 确保在0-100范围内
     
-    // 定义颜色梯度：从浅橙色到深橙色
+    // 定义颜色梯度：从极浅橙色到深酒红色，每10分一个等级
     const colors = [
-        '#FEF3C7', // 0-10分：极浅黄橙色
-        '#FDE68A', // 10-20分：浅黄橙色
-        '#FCD34D', // 20-30分：黄橙色
-        '#FBBF24', // 30-40分：金黄色
-        '#F59E0B', // 40-50分：橙色
-        '#D97706', // 50-60分：深橙色
-        '#B45309', // 60-70分：棕橙色
-        '#92400E', // 70-80分：深棕橙色
-        '#78350F', // 80-90分：很深棕橙色
-        '#451A03'  // 90-100分：最深棕色
+        '#FFF7ED', // 0-10分：极浅橙色，接近白色
+        '#FFEDD5', // 10-20分：很浅橙色，淡桃色
+        '#FED7AA', // 20-30分：浅橙色，浅杏色
+        '#FDBA74', // 30-40分：中浅橙色，明显橙色
+        '#FB923C', // 40-50分：标准橙色，鲜明橙色
+        '#F97316', // 50-60分：深橙色，浓郁橙色
+        '#EA580C', // 60-70分：很深橙色，深红橙
+        '#DC2626', // 70-80分：橙红色，偏红的橙
+        '#B91C1C', // 80-90分：深红橙色，深红色
+        '#991B1B'  // 90-100分：最深红橙，深酒红
     ];
     
     // 计算颜色索引
@@ -555,11 +681,28 @@ function validateMindmapData(data) {
     }
     
     // 检查节点格式
+    const nodeIds = new Set();
     for (let node of data.nodes) {
         if (!node.id || !node.name) {
             log(`❌ 节点缺少必要字段: ${JSON.stringify(node)}`);
             return false;
         }
+        nodeIds.add(node.id);
+    }
+    
+    // 检查边的引用完整性
+    if (data.edges && Array.isArray(data.edges)) {
+        for (let edge of data.edges) {
+            if (!nodeIds.has(edge.source)) {
+                log(`❌ 边引用了不存在的源节点: ${edge.source}`);
+                return false;
+            }
+            if (!nodeIds.has(edge.target)) {
+                log(`❌ 边引用了不存在的目标节点: ${edge.target}`);
+                return false;
+            }
+        }
+        log(`✅ 边引用验证通过，共 ${data.edges.length} 条边`);
     }
     
     log('✅ 脑图数据格式验证通过');
@@ -575,43 +718,38 @@ function fixMindmapData(data, subjectName) {
         edges: []
     };
     
-    // 添加中心节点
-    fixedData.nodes.push({
-        id: 'center',
-        name: subjectName,
-        type: 'center',
-        x: 400,
-        y: 250
-    });
+    // 收集所有有效的节点ID
+    const validNodeIds = new Set();
     
     // 处理原始节点
     if (data.nodes && Array.isArray(data.nodes)) {
         data.nodes.forEach((node, index) => {
-            const fixedNode = {
-                id: node.id || `node_${index}`,
-                name: node.name || `节点${index + 1}`,
-                type: node.type || 'knowledge_point',
-                x: node.x || Math.random() * 600 + 100,
-                y: node.y || Math.random() * 400 + 100
-            };
-            fixedData.nodes.push(fixedNode);
-            
-            // 连接到中心节点
-            fixedData.edges.push({
-                source: 'center',
-                target: fixedNode.id
-            });
+            if (node.id && node.name) {
+                const fixedNode = {
+                    id: node.id,
+                    name: node.name,
+                    type: node.type || 'knowledge_point',
+                    x: node.x || Math.random() * 600 + 100,
+                    y: node.y || Math.random() * 400 + 100,
+                    mastery_score: node.mastery_score || -1
+                };
+                fixedData.nodes.push(fixedNode);
+                validNodeIds.add(node.id);
+            }
         });
     }
     
-    // 处理原始连线
+    // 只保留引用有效节点的边
     if (data.edges && Array.isArray(data.edges)) {
         data.edges.forEach(edge => {
-            if (edge.source && edge.target) {
+            if (validNodeIds.has(edge.source) && validNodeIds.has(edge.target)) {
                 fixedData.edges.push({
                     source: edge.source,
-                    target: edge.target
+                    target: edge.target,
+                    relation: edge.relation || '相关'
                 });
+            } else {
+                log(`🗑️ 移除无效边: ${edge.source} -> ${edge.target}`);
             }
         });
     }
@@ -668,14 +806,17 @@ function renderMindmap() {
     log(`📊 开始渲染脑图，节点数: ${currentMindmapData.nodes.length}`);
     
     // 初始化SVG
-    initSvg();
+    if (!initSvg()) {
+        log('❌ SVG初始化失败，无法渲染脑图');
+        return;
+    }
     
     const nodes = currentMindmapData.nodes.map(d => ({...d}));
     const edges = currentMindmapData.edges || [];
     
-    // 清空之前的内容
-    g.selectAll('*').remove();
-    svg.selectAll('defs').remove(); // 清空箭头定义
+    // 清空之前的内容（SVG已在initSvg中清理）
+    // g.selectAll('*').remove(); // 不需要，因为g是新创建的
+    // svg.selectAll('defs').remove(); // 不需要，因为svg已清空
     
     // 创建力导向图
     simulation = d3.forceSimulation(nodes)
@@ -779,15 +920,16 @@ function renderMindmap() {
         let textColor = 'white'; // 默认白色
         if (d.type === 'knowledge_point') {
             const bgColor = getKnowledgePointColor(d.mastery_score);
-            // 如果是灰白色（未评估），使用黑色文字
-            if (bgColor === '#E5E7EB') {
-                textColor = '#374151'; // 深灰色文字，更显眼
+            const masteryScore = d.mastery_score;
+            
+            // 根据新的颜色方案确定文字颜色
+            if (masteryScore === -1 || masteryScore === null || masteryScore === undefined || masteryScore < 40) {
+                // 未评估或0-40分：浅色背景，使用深灰色文字
+                textColor = '#374151';
+            } else {
+                // 40分以上：深色背景，使用白色文字
+                textColor = '#FFFFFF';
             }
-            // 如果是浅色背景，使用深色文字
-            else if (['#FEF3C7', '#FDE68A', '#FCD34D'].includes(bgColor)) {
-                textColor = '#374151'; // 深灰色文字
-            }
-            // 深色背景继续使用白色文字
         }
         
         // 获取当前圆圈的半径
@@ -926,9 +1068,28 @@ function renderMindmap() {
 
 // 初始化SVG
 function initSvg() {
-    if (svg) return;
+    // 检查SVG容器是否存在
+    const svgElement = document.getElementById('mindmapSvg');
+    if (!svgElement) {
+        log('❌ SVG容器不存在，无法初始化');
+        return false;
+    }
     
+    // 如果已经初始化且有效，直接返回
+    if (svg && g && !svg.empty() && !g.empty()) {
+        log('✅ SVG已初始化，跳过重复初始化');
+        return true;
+    }
+    
+    log('🎨 初始化SVG容器');
+    
+    // 重新选择SVG元素
     svg = d3.select('#mindmapSvg');
+    
+    // 清空SVG内容
+    svg.selectAll('*').remove();
+    
+    // 创建新的g元素
     g = svg.append('g');
     
     // 初始化缩放
@@ -939,6 +1100,9 @@ function initSvg() {
         });
     
     svg.call(zoom);
+    
+    log('✅ SVG初始化完成');
+    return true;
 }
 
 // 拖拽函数
@@ -962,6 +1126,16 @@ function dragended(event, d) {
 // 显示知识点详情
 async function showKnowledgePointDetail(node) {
     log(`🔍 获取知识点详情: ${node.name} (ID: ${node.id})`);
+    
+    // 保存当前查看的知识点到localStorage（如果可用）
+    try {
+        if (typeof(Storage) !== "undefined" && window.localStorage) {
+            localStorage.setItem('lastViewedKnowledgePoint', node.id);
+            log(`💾 已保存当前知识点状态: ${node.id}`);
+        }
+    } catch (error) {
+        log(`⚠️ 无法保存知识点状态: ${error.message}`);
+    }
     
     // 显示详情层
     const detailLayer = document.getElementById('knowledgePointDetailLayer');
@@ -1925,14 +2099,74 @@ document.addEventListener('DOMContentLoaded', function() {
     log('📋 检查环境...');
     log(`- window.bridge: ${window.bridge ? '可用' : '不可用'}`);
     log(`- 学科卡片数量: ${document.querySelectorAll('.subject-card').length}`);
+    
+    // 尝试恢复之前的脑图状态
+    restorePreviousMindmapState();
+    
     log('✅ 初始化完成，请点击学科卡片');
 });
+
+// 恢复之前的脑图状态
+function restorePreviousMindmapState() {
+    // 在Qt WebEngine环境中，localStorage可能不可用
+    // 使用全局变量或其他方式管理状态
+    try {
+        if (typeof(Storage) !== "undefined" && window.localStorage) {
+            const lastViewedSubject = localStorage.getItem('lastViewedSubject');
+            const lastViewedKnowledgePoint = localStorage.getItem('lastViewedKnowledgePoint');
+            
+            if (lastViewedSubject) {
+                log(`🔄 恢复上次查看的学科: ${lastViewedSubject}`);
+                
+                // 延迟一点时间确保页面完全加载
+                setTimeout(() => {
+                    selectSubject(lastViewedSubject);
+                    
+                    // 如果有上次查看的知识点，也恢复它
+                    if (lastViewedKnowledgePoint) {
+                        setTimeout(() => {
+                            const nodeId = lastViewedKnowledgePoint;
+                            log(`🔄 恢复上次查看的知识点: ${nodeId}`);
+                            
+                            // 查找对应的节点并显示详情
+                            if (currentMindmapData && currentMindmapData.nodes) {
+                                const node = currentMindmapData.nodes.find(n => n.id === nodeId);
+                                if (node) {
+                                    showKnowledgePointDetail(node);
+                                }
+                            }
+                        }, 1000);
+                    }
+                }, 500);
+            }
+        } else {
+            log('⚠️ localStorage不可用，跳过状态恢复');
+        }
+    } catch (error) {
+        log(`⚠️ localStorage访问失败: ${error.message}，跳过状态恢复`);
+    }
+}
 
 // 添加鼠标悬停效果测试
 document.addEventListener('mouseover', function(e) {
     if (e.target.closest('.subject-card')) {
         const subjectName = e.target.closest('.subject-card').dataset.subject;
         log(`🖱️ 鼠标悬停: ${subjectName}`);
+    }
+});
+
+// 添加点击事件测试
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.subject-card')) {
+        const subjectName = e.target.closest('.subject-card').dataset.subject;
+        log(`👆 点击了学科卡片: ${subjectName}`);
+        console.log(`👆 点击了学科卡片: ${subjectName}`);
+        
+        // 如果onclick没有工作，手动调用selectSubject
+        if (typeof selectSubject === 'function') {
+            log(`🔧 手动调用selectSubject`);
+            selectSubject(subjectName);
+        }
     }
 });
 
@@ -2186,7 +2420,57 @@ function refreshKnowledgePointDetail() {
     if (nodeId) {
         // 重新加载知识点详情
         loadKnowledgePointDetail(nodeId);
+        
+        // 刷新脑图显示（更新节点颜色）
+        refreshMindmapColors();
     }
+}
+
+// 刷新脑图中的节点颜色
+function refreshMindmapColors() {
+    log('🎨 刷新脑图节点颜色');
+    
+    // 如果当前有脑图数据，重新渲染以更新颜色
+    if (currentMindmapData && currentMindmapData.nodes) {
+        // 重新获取最新的脑图数据（包含更新后的熟练度）
+        const currentSubject = getCurrentSubject();
+        if (currentSubject) {
+            log(`🔄 重新获取学科 "${currentSubject}" 的脑图数据`);
+            // 强制刷新，不使用缓存
+            generateMindmap(currentSubject, true);
+        } else {
+            // 尝试从全局变量获取学科名称
+            if (window.currentSubjectName) {
+                log(`🔄 使用全局变量学科名称: ${window.currentSubjectName}`);
+                generateMindmap(window.currentSubjectName, true);
+            } else {
+                // 如果无法获取当前学科，直接重新渲染现有数据
+                log('🎨 直接重新渲染现有脑图数据');
+                renderMindmap();
+            }
+        }
+    } else {
+        log('⚠️ 没有脑图数据可刷新');
+    }
+}
+
+// 获取当前显示的学科名称
+function getCurrentSubject() {
+    // 从面包屑或其他UI元素获取当前学科
+    const breadcrumb = document.querySelector('.breadcrumb-item.active');
+    if (breadcrumb) {
+        return breadcrumb.textContent.trim();
+    }
+    
+    // 从脑图数据中获取中心节点名称
+    if (currentMindmapData && currentMindmapData.nodes) {
+        const centerNode = currentMindmapData.nodes.find(node => node.type === 'center');
+        if (centerNode) {
+            return centerNode.name;
+        }
+    }
+    
+    return null;
 }
 </script>
 

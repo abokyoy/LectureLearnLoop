@@ -5066,6 +5066,9 @@ class CorgiWebBridge(QObject):
             conn.commit()
             conn.close()
             
+            # 更新脑图缓存中的熟练度信息
+            self._update_mindmap_cache_mastery_score(knowledge_point_id, mastery_score)
+            
             self.logger.info(f"✅ 熟练度评估完成")
             self.logger.info(f"   - 正确题数: {correct_count}/{total_questions}")
             self.logger.info(f"   - 正确率: {accuracy:.1%}")
@@ -5088,6 +5091,91 @@ class CorgiWebBridge(QObject):
                 "success": False,
                 "error": str(e)
             }, ensure_ascii=False)
+    
+    def _update_mindmap_cache_mastery_score(self, knowledge_point_id, new_mastery_score):
+        """更新脑图缓存中指定知识点的熟练度分数"""
+        self.logger.info(f"🔄 开始更新脑图缓存中的熟练度 - 知识点ID: {knowledge_point_id}, 新分数: {new_mastery_score}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 首先获取该知识点所属的学科
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT subject_name FROM knowledge_points 
+                WHERE id = ?
+            """, (knowledge_point_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                self.logger.warning(f"⚠️ 未找到知识点ID {knowledge_point_id}")
+                conn.close()
+                return False
+            
+            subject_name = result[0]
+            self.logger.info(f"📚 知识点所属学科: {subject_name}")
+            
+            # 获取该学科的脑图缓存
+            cursor.execute("""
+                SELECT mindmap_data FROM knowledge_mindmaps 
+                WHERE subject_name = ? AND user_id = ?
+            """, (subject_name, "0001"))
+            
+            cache_result = cursor.fetchone()
+            conn.close()
+            
+            if not cache_result:
+                self.logger.info(f"ℹ️ 学科 '{subject_name}' 没有脑图缓存，无需更新")
+                return True
+            
+            # 解析脑图数据
+            try:
+                mindmap_data = json.loads(cache_result[0])
+                self.logger.info(f"📊 成功解析脑图缓存数据")
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ 脑图缓存数据解析失败: {e}")
+                return False
+            
+            # 查找并更新对应的知识点节点
+            nodes_updated = 0
+            target_node_ids = [str(knowledge_point_id), f"kp_{knowledge_point_id}"]
+            
+            for node in mindmap_data.get('nodes', []):
+                if node.get('type') == 'knowledge_point' and node.get('id') in target_node_ids:
+                    old_score = node.get('mastery_score', -1)
+                    node['mastery_score'] = new_mastery_score
+                    nodes_updated += 1
+                    self.logger.info(f"✅ 更新节点 {node['id']}: {old_score} → {new_mastery_score}")
+            
+            if nodes_updated == 0:
+                self.logger.warning(f"⚠️ 在脑图缓存中未找到知识点节点 (ID: {knowledge_point_id})")
+                return True  # 不算错误，可能节点ID格式不同
+            
+            # 保存更新后的脑图缓存
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            updated_mindmap_json = json.dumps(mindmap_data, ensure_ascii=False)
+            cursor.execute("""
+                UPDATE knowledge_mindmaps 
+                SET mindmap_data = ?, updated_time = CURRENT_TIMESTAMP
+                WHERE subject_name = ? AND user_id = ?
+            """, (updated_mindmap_json, subject_name, "0001"))
+            
+            conn.commit()
+            conn.close()
+            
+            self.logger.info(f"💾 脑图缓存更新成功 - 更新了 {nodes_updated} 个节点")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ 更新脑图缓存失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return False
 
 
 class DragOverlay(QWidget):

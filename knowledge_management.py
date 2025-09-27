@@ -2252,32 +2252,76 @@ class MindmapManager:
     
     def _merge_mastery_scores(self, mindmap_data: Dict, knowledge_points: List[Dict]) -> None:
         """将原始知识点的熟练度信息合并到脑图节点中"""
-        # 创建知识点ID到熟练度的映射
+        # 获取知识点数据并构建熟练度映射和名称映射
         mastery_map = {}
+        name_to_id_map = {}  # 名称到真实ID的映射
         for point in knowledge_points:
             point_id = str(point.get('id', ''))
+            point_name = point.get('point_name', '')
             mastery_score = point.get('mastery_score', -1)
             mastery_map[point_id] = mastery_score
             # 同时支持kp_前缀的ID
             mastery_map[f"kp_{point_id}"] = mastery_score
+            # 建立名称到ID的映射
+            name_to_id_map[point_name] = point_id
         
         print(f"🔗 熟练度映射表: {mastery_map}")
         
-        # 为脑图中的知识点节点添加熟练度信息
+        # 为脑图中的知识点节点添加熟练度信息并修正ID映射
         nodes_updated = 0
+        old_to_new_id_map = {}  # 记录ID变更映射
+        
         for node in mindmap_data.get('nodes', []):
             if node.get('type') == 'knowledge_point':
                 node_id = node.get('id', '')
+                node_name = node.get('name', '')
+                
+                # 首先尝试直接匹配ID
                 if node_id in mastery_map:
                     node['mastery_score'] = mastery_map[node_id]
                     nodes_updated += 1
                     print(f"✅ 节点 {node_id} 熟练度: {mastery_map[node_id]}")
+                # 如果直接匹配失败，尝试通过名称匹配真实ID
+                elif node_name in name_to_id_map:
+                    real_id = name_to_id_map[node_name]
+                    real_mastery = mastery_map.get(real_id, -1)
+                    
+                    # 记录ID变更
+                    old_id = node_id
+                    new_id = f"kp_{real_id}"
+                    old_to_new_id_map[old_id] = new_id
+                    
+                    # 更新节点ID为真实ID
+                    node['id'] = new_id
+                    node['mastery_score'] = real_mastery
+                    nodes_updated += 1
+                    print(f"🔧 节点名称匹配: {node_name} | {old_id} -> {new_id} | 熟练度: {real_mastery}")
                 else:
-                    # 如果没有找到对应的熟练度，设置为-1（未评估）
+                    # 设置默认熟练度
                     node['mastery_score'] = -1
-                    print(f"⚠️ 节点 {node_id} 未找到熟练度，设置为-1")
+                    print(f"⚠️ 节点 {node_id}({node_name}) 未找到匹配，设为默认值 -1")
         
-        print(f"📊 更新了 {nodes_updated} 个知识点节点的熟练度信息")
+        # 更新边的引用
+        edges_updated = 0
+        for edge in mindmap_data.get('edges', []):
+            source_updated = False
+            target_updated = False
+            
+            if edge.get('source') in old_to_new_id_map:
+                old_source = edge['source']
+                edge['source'] = old_to_new_id_map[old_source]
+                source_updated = True
+                
+            if edge.get('target') in old_to_new_id_map:
+                old_target = edge['target']
+                edge['target'] = old_to_new_id_map[old_target]
+                target_updated = True
+                
+            if source_updated or target_updated:
+                edges_updated += 1
+                print(f"🔗 更新边引用: {edge.get('source')} -> {edge.get('target')}")
+        
+        print(f"📊 更新了 {nodes_updated} 个知识点节点，{edges_updated} 条边")
     
     def clear_mindmap_cache(self, subject_name: str, user_id: str = "0001") -> bool:
         """清除学科的脑图缓存"""
