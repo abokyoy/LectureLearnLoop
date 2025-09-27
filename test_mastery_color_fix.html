@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>熟练度颜色修复测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">熟练度颜色修复测试</h1>
+        
+        <!-- 测试说明 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">修复内容</h2>
+            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <li><strong>过拟合知识点</strong>：ID为6，熟练度55分，应显示为中等深度橙色</li>
+                <li><strong>灰色背景文字</strong>：熟练度-1时，背景为灰色，文字改为黑色更显眼</li>
+                <li><strong>浅色背景文字</strong>：浅色背景使用深色文字，深色背景使用白色文字</li>
+                <li><strong>清除缓存</strong>：清除脑图缓存，确保使用最新的熟练度数据</li>
+            </ul>
+        </div>
+        
+        <!-- 颜色对比测试 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">文字颜色对比测试</h2>
+            <div class="grid grid-cols-5 gap-4">
+                <!-- 未评估：灰色背景，黑色文字 -->
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center font-bold border-2 border-white" 
+                         style="background-color: #E5E7EB; color: #374151;">
+                        未评估
+                    </div>
+                    <div class="text-sm font-semibold">-1分</div>
+                    <div class="text-xs text-gray-600">灰色背景 + 黑色文字</div>
+                </div>
+                
+                <!-- 低分：浅色背景，黑色文字 -->
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center font-bold border-2 border-white" 
+                         style="background-color: #FEF3C7; color: #374151;">
+                        初学
+                    </div>
+                    <div class="text-sm font-semibold">5分</div>
+                    <div class="text-xs text-gray-600">浅色背景 + 黑色文字</div>
+                </div>
+                
+                <!-- 中等：中等背景，白色文字 -->
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center font-bold border-2 border-white" 
+                         style="background-color: #F59E0B; color: white;">
+                        一般
+                    </div>
+                    <div class="text-sm font-semibold">45分</div>
+                    <div class="text-xs text-gray-600">中等背景 + 白色文字</div>
+                </div>
+                
+                <!-- 过拟合：55分，应该是深橙色背景，白色文字 -->
+                <div class="text-center p-4 border rounded-lg bg-yellow-100">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center font-bold border-2 border-white" 
+                         style="background-color: #D97706; color: white;">
+                        过拟合
+                    </div>
+                    <div class="text-sm font-semibold">55分</div>
+                    <div class="text-xs text-red-600">目标效果</div>
+                </div>
+                
+                <!-- 高分：深色背景，白色文字 -->
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center font-bold border-2 border-white" 
+                         style="background-color: #451A03; color: white;">
+                        精通
+                    </div>
+                    <div class="text-sm font-semibold">95分</div>
+                    <div class="text-xs text-gray-600">深色背景 + 白色文字</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- D3.js 脑图测试 -->
+        <div class="bg-white rounded-lg p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">D3.js 脑图颜色测试</h2>
+            <div id="mindmap-container" class="w-full h-96 border border-gray-200 rounded-lg"></div>
+        </div>
+    </div>
+
+    <script>
+        // 根据熟练度获取知识点颜色（与实际应用中的函数相同）
+        function getKnowledgePointColor(masteryScore) {
+            // 如果是-1或未定义，返回灰白色（未评估）
+            if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
+                return '#E5E7EB'; // 灰白色
+            }
+            
+            // 将熟练度分数(0-100)映射到颜色深度
+            const score = Math.max(0, Math.min(100, masteryScore));
+            
+            // 定义颜色梯度：从浅橙色到深橙色
+            const colors = [
+                '#FEF3C7', // 0-10分：极浅黄橙色
+                '#FDE68A', // 10-20分：浅黄橙色
+                '#FCD34D', // 20-30分：黄橙色
+                '#FBBF24', // 30-40分：金黄色
+                '#F59E0B', // 40-50分：橙色
+                '#D97706', // 50-60分：深橙色 ← 55分应该是这个颜色
+                '#B45309', // 60-70分：棕橙色
+                '#92400E', // 70-80分：深棕橙色
+                '#78350F', // 80-90分：很深棕橙色
+                '#451A03'  // 90-100分：最深棕色
+            ];
+            
+            // 计算颜色索引
+            const colorIndex = Math.floor(score / 10);
+            const adjustedIndex = Math.min(colorIndex, colors.length - 1);
+            
+            return colors[adjustedIndex];
+        }
+
+        // 创建测试脑图
+        function createTestMindmap() {
+            const container = d3.select('#mindmap-container');
+            const width = 800;
+            const height = 400;
+            
+            const svg = container.append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            // 测试数据，包含过拟合知识点
+            const testNodes = [
+                { id: 'center', name: '机器学习', type: 'center', x: 400, y: 200 },
+                { id: 'kp_1', name: '训练数据', type: 'knowledge_point', x: 200, y: 100, mastery_score: -1 },
+                { id: 'kp_2', name: '测试数据', type: 'knowledge_point', x: 600, y: 100, mastery_score: 15 },
+                { id: 'kp_6', name: '过拟合', type: 'knowledge_point', x: 200, y: 300, mastery_score: 55 },
+                { id: 'kp_7', name: '模型容量', type: 'knowledge_point', x: 600, y: 300, mastery_score: 85 }
+            ];
+            
+            // 绘制节点
+            const nodeGroups = svg.selectAll('.node-group')
+                .data(testNodes)
+                .enter().append('g')
+                .attr('class', 'node-group')
+                .attr('transform', d => `translate(${d.x}, ${d.y})`);
+            
+            // 节点圆圈
+            nodeGroups.append('circle')
+                .attr('r', d => d.type === 'center' ? 50 : 40)
+                .attr('fill', d => {
+                    if (d.type === 'center') return '#3B82F6';
+                    return getKnowledgePointColor(d.mastery_score);
+                })
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2);
+            
+            // 节点文本
+            nodeGroups.each(function(d) {
+                const group = d3.select(this);
+                const fontSize = d.type === 'center' ? 14 : 12;
+                
+                // 根据背景颜色确定文字颜色
+                let textColor = 'white';
+                if (d.type === 'knowledge_point') {
+                    const bgColor = getKnowledgePointColor(d.mastery_score);
+                    if (bgColor === '#E5E7EB') {
+                        textColor = '#374151'; // 灰色背景用深色文字
+                    } else if (['#FEF3C7', '#FDE68A', '#FCD34D'].includes(bgColor)) {
+                        textColor = '#374151'; // 浅色背景用深色文字
+                    }
+                }
+                
+                group.append('text')
+                    .attr('x', 0)
+                    .attr('y', 0)
+                    .attr('text-anchor', 'middle')
+                    .style('fill', textColor)
+                    .style('font-size', fontSize + 'px')
+                    .style('font-weight', 'bold')
+                    .style('text-shadow', textColor === '#374151' ? 'none' : '1px 1px 2px rgba(0,0,0,0.5)')
+                    .style('dominant-baseline', 'middle')
+                    .text(d.name);
+                
+                // 添加熟练度标签
+                if (d.type === 'knowledge_point') {
+                    group.append('text')
+                        .attr('x', 0)
+                        .attr('y', 55)
+                        .attr('text-anchor', 'middle')
+                        .style('fill', '#6B7280')
+                        .style('font-size', '10px')
+                        .text(d.mastery_score === -1 ? '未评估' : `${d.mastery_score}分`);
+                }
+            });
+            
+            // 添加说明
+            svg.append('text')
+                .attr('x', 20)
+                .attr('y', 30)
+                .style('fill', '#374151')
+                .style('font-size', '14px')
+                .style('font-weight', 'bold')
+                .text('测试效果：过拟合(55分)应显示为深橙色背景+白色文字');
+        }
+
+        // 页面加载完成后创建测试脑图
+        document.addEventListener('DOMContentLoaded', function() {
+            createTestMindmap();
+            
+            // 显示过拟合的预期颜色
+            const expectedColor = getKnowledgePointColor(55);
+            console.log('过拟合(55分)的预期颜色:', expectedColor);
+        });
+    </script>
+</body>
+</html>

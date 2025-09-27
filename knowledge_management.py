@@ -2227,6 +2227,10 @@ class MindmapManager:
                 # 验证数据结构
                 if 'nodes' in mindmap_data and 'edges' in mindmap_data:
                     print(f"✅ 脑图数据解析成功: {len(mindmap_data['nodes'])}个节点, {len(mindmap_data['edges'])}条边")
+                    
+                    # 将原始知识点的熟练度信息合并到生成的节点中
+                    self._merge_mastery_scores(mindmap_data, knowledge_points)
+                    
                     return mindmap_data
                 else:
                     print("❌ 脑图数据缺少必要字段")
@@ -2246,10 +2250,37 @@ class MindmapManager:
             traceback.print_exc()
             return None
     
+    def _merge_mastery_scores(self, mindmap_data: Dict, knowledge_points: List[Dict]) -> None:
+        """将原始知识点的熟练度信息合并到脑图节点中"""
+        # 创建知识点ID到熟练度的映射
+        mastery_map = {}
+        for point in knowledge_points:
+            point_id = str(point.get('id', ''))
+            mastery_score = point.get('mastery_score', -1)
+            mastery_map[point_id] = mastery_score
+            # 同时支持kp_前缀的ID
+            mastery_map[f"kp_{point_id}"] = mastery_score
+        
+        print(f"🔗 熟练度映射表: {mastery_map}")
+        
+        # 为脑图中的知识点节点添加熟练度信息
+        nodes_updated = 0
+        for node in mindmap_data.get('nodes', []):
+            if node.get('type') == 'knowledge_point':
+                node_id = node.get('id', '')
+                if node_id in mastery_map:
+                    node['mastery_score'] = mastery_map[node_id]
+                    nodes_updated += 1
+                    print(f"✅ 节点 {node_id} 熟练度: {mastery_map[node_id]}")
+                else:
+                    # 如果没有找到对应的熟练度，设置为-1（未评估）
+                    node['mastery_score'] = -1
+                    print(f"⚠️ 节点 {node_id} 未找到熟练度，设置为-1")
+        
+        print(f"📊 更新了 {nodes_updated} 个知识点节点的熟练度信息")
+    
     def clear_mindmap_cache(self, subject_name: str, user_id: str = "0001") -> bool:
         """清除学科的脑图缓存"""
-        print(f"🗑️ 从数据库删除学科 '{subject_name}' 的脑图缓存...")
-        
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         

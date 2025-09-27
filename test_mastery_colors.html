@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>熟练度颜色测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">知识点熟练度颜色系统测试</h1>
+        
+        <!-- 颜色说明 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">颜色深度说明</h2>
+            <p class="text-gray-600 mb-4">
+                知识点的颜色深度反映熟练度水平：<strong>-1为灰白色（未评估）</strong>，随着熟练度增加，颜色从浅橙色逐渐变为深棕色。
+            </p>
+        </div>
+        
+        <!-- 颜色梯度展示 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">颜色梯度展示</h2>
+            <div class="grid grid-cols-11 gap-2">
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #E5E7EB;">
+                        -1
+                    </div>
+                    <div class="text-xs text-gray-600">未评估</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-gray-800 font-bold" style="background-color: #FEF3C7;">
+                        5
+                    </div>
+                    <div class="text-xs text-gray-600">0-10分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-gray-800 font-bold" style="background-color: #FDE68A;">
+                        15
+                    </div>
+                    <div class="text-xs text-gray-600">10-20分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-gray-800 font-bold" style="background-color: #FCD34D;">
+                        25
+                    </div>
+                    <div class="text-xs text-gray-600">20-30分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-gray-800 font-bold" style="background-color: #FBBF24;">
+                        35
+                    </div>
+                    <div class="text-xs text-gray-600">30-40分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #F59E0B;">
+                        45
+                    </div>
+                    <div class="text-xs text-gray-600">40-50分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #D97706;">
+                        55
+                    </div>
+                    <div class="text-xs text-gray-600">50-60分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #B45309;">
+                        65
+                    </div>
+                    <div class="text-xs text-gray-600">60-70分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #92400E;">
+                        75
+                    </div>
+                    <div class="text-xs text-gray-600">70-80分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #78350F;">
+                        85
+                    </div>
+                    <div class="text-xs text-gray-600">80-90分</div>
+                </div>
+                <div class="text-center">
+                    <div class="w-16 h-16 rounded-full mx-auto mb-2 flex items-center justify-center text-white font-bold" style="background-color: #451A03;">
+                        95
+                    </div>
+                    <div class="text-xs text-gray-600">90-100分</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 实际应用示例 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">脑图中的实际效果</h2>
+            <div class="grid grid-cols-4 gap-4">
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white font-bold border-2 border-white" style="background-color: #E5E7EB; color: #6B7280;">
+                        数据类型
+                    </div>
+                    <div class="text-sm font-semibold text-gray-800">数据类型</div>
+                    <div class="text-xs text-gray-600">未评估 (-1分)</div>
+                </div>
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-gray-800 font-bold border-2 border-white" style="background-color: #FCD34D;">
+                        变量
+                    </div>
+                    <div class="text-sm font-semibold text-gray-800">变量作用域</div>
+                    <div class="text-xs text-gray-600">一般 (25分)</div>
+                </div>
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white font-bold border-2 border-white" style="background-color: #B45309;">
+                        排序
+                    </div>
+                    <div class="text-sm font-semibold text-gray-800">排序算法</div>
+                    <div class="text-xs text-gray-600">熟练 (65分)</div>
+                </div>
+                <div class="text-center p-4 border rounded-lg">
+                    <div class="w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white font-bold border-2 border-white" style="background-color: #451A03;">
+                        搜索
+                    </div>
+                    <div class="text-sm font-semibold text-gray-800">搜索算法</div>
+                    <div class="text-xs text-gray-600">精通 (95分)</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 颜色函数测试 -->
+        <div class="bg-white rounded-lg p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">颜色函数测试</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">输入熟练度分数 (-1 到 100)：</label>
+                <input type="number" id="masteryInput" min="-1" max="100" value="50" 
+                       class="border border-gray-300 rounded-lg px-3 py-2 w-32">
+                <button onclick="testColor()" class="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600">
+                    测试颜色
+                </button>
+            </div>
+            <div id="colorResult" class="flex items-center space-x-4">
+                <!-- 测试结果将在这里显示 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 根据熟练度获取知识点颜色（与实际应用中的函数相同）
+        function getKnowledgePointColor(masteryScore) {
+            // 如果是-1或未定义，返回灰白色（未评估）
+            if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
+                return '#E5E7EB'; // 灰白色
+            }
+            
+            // 将熟练度分数(0-100)映射到颜色深度
+            // 使用橙色系，从浅橙色到深橙色
+            const score = Math.max(0, Math.min(100, masteryScore)); // 确保在0-100范围内
+            
+            // 定义颜色梯度：从浅橙色到深橙色
+            const colors = [
+                '#FEF3C7', // 0-10分：极浅黄橙色
+                '#FDE68A', // 10-20分：浅黄橙色
+                '#FCD34D', // 20-30分：黄橙色
+                '#FBBF24', // 30-40分：金黄色
+                '#F59E0B', // 40-50分：橙色
+                '#D97706', // 50-60分：深橙色
+                '#B45309', // 60-70分：棕橙色
+                '#92400E', // 70-80分：深棕橙色
+                '#78350F', // 80-90分：很深棕橙色
+                '#451A03'  // 90-100分：最深棕色
+            ];
+            
+            // 计算颜色索引
+            const colorIndex = Math.floor(score / 10);
+            const adjustedIndex = Math.min(colorIndex, colors.length - 1);
+            
+            return colors[adjustedIndex];
+        }
+
+        // 获取熟练度等级描述
+        function getMasteryLevel(masteryScore) {
+            if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
+                return '未评估';
+            } else if (masteryScore >= 90) {
+                return '精通';
+            } else if (masteryScore >= 70) {
+                return '熟练';
+            } else if (masteryScore >= 50) {
+                return '一般';
+            } else {
+                return '待提高';
+            }
+        }
+
+        // 测试颜色函数
+        function testColor() {
+            const input = document.getElementById('masteryInput');
+            const result = document.getElementById('colorResult');
+            const score = parseInt(input.value);
+            
+            const color = getKnowledgePointColor(score);
+            const level = getMasteryLevel(score);
+            
+            // 判断文字颜色（深色背景用白字，浅色背景用黑字）
+            const textColor = ['#F59E0B', '#D97706', '#B45309', '#92400E', '#78350F', '#451A03'].includes(color) ? 'white' : '#374151';
+            
+            result.innerHTML = `
+                <div class="w-16 h-16 rounded-full flex items-center justify-center font-bold border-2 border-white" 
+                     style="background-color: ${color}; color: ${textColor};">
+                    ${score}
+                </div>
+                <div>
+                    <div class="font-semibold">颜色值: ${color}</div>
+                    <div class="text-sm text-gray-600">等级: ${level}</div>
+                </div>
+            `;
+        }
+
+        // 页面加载时显示默认测试
+        document.addEventListener('DOMContentLoaded', function() {
+            testColor();
+        });
+    </script>
+</body>
+</html>
