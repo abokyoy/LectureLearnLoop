@@ -2459,11 +2459,14 @@ class MindmapManager:
         """使用LLM生成学习路径图"""
         print(f"🤖 使用LLM生成 '{subject_name}' 的学习路径图")
         
-        # 构建知识点列表
+        # 构建知识点列表（包含ID信息）
         kp_list = []
+        kp_id_map = {}  # 保存ID映射关系
         for i, kp in enumerate(knowledge_points, 1):
-            kp_info = f"{i}. {kp['point_name']}: {kp['core_description']}"
+            kp_id = f"kp_{kp['id']}"  # 使用数据库ID生成节点ID
+            kp_info = f"{i}. {kp['point_name']} (ID: {kp_id}): {kp['core_description']}"
             kp_list.append(kp_info)
+            kp_id_map[kp_id] = kp  # 保存ID到知识点的映射
         
         kp_text = "\n".join(kp_list)
         
@@ -2517,7 +2520,7 @@ JSON格式示例：
     {{"id": "end", "name": "掌握{subject_name}", "type": "end", "level": 4, "description": "完成学习目标"}},
     
     {{"id": "kp_math", "name": "数学基础", "type": "supplement_kp", "level": 1, "parent_stage": "stage1", "description": "LLM补充：线性代数、概率统计"}},
-    {{"id": "kp_existing1", "name": "现有知识点名称", "type": "existing_kp", "level": 2, "parent_stage": "stage2", "description": "学生已掌握的概念"}},
+    {{"id": "kp_123", "name": "现有知识点名称", "type": "existing_kp", "level": 2, "parent_stage": "stage2", "description": "学生已掌握的概念"}},
     {{"id": "kp_project", "name": "项目实践", "type": "supplement_kp", "level": 3, "parent_stage": "stage3", "description": "LLM补充：综合项目练习"}}
   ],
   "edges": [
@@ -2527,7 +2530,7 @@ JSON格式示例：
     {{"source": "stage3", "target": "end", "relationship": "完成学习"}},
     
     {{"source": "stage1", "target": "kp_math", "relationship": "包含知识点"}},
-    {{"source": "stage2", "target": "kp_existing1", "relationship": "包含知识点"}},
+    {{"source": "stage2", "target": "kp_123", "relationship": "包含知识点"}},
     {{"source": "stage3", "target": "kp_project", "relationship": "包含知识点"}}
   ]
 }}
@@ -2535,9 +2538,10 @@ JSON格式示例：
 **重要要求：**
 1. **主线必须线性**：start → stage1 → stage2 → ... → end
 2. **知识点归类**：每个现有知识点必须归属到某个stage
-3. **补充缺失**：从严谨的学习路径设计角度，必须掌握的知识点必须要补充
-4. **鱼骨结构**：stage是主干，knowledge_point是分支
-5. **只返回JSON**：不要其他说明文字
+3. **使用正确ID**：现有知识点必须使用提供的ID（如kp_123），不要自己编造
+4. **补充缺失**：从严谨的学习路径设计角度，必须掌握的知识点必须要补充
+5. **鱼骨结构**：stage是主干，knowledge_point是分支
+6. **只返回JSON**：不要其他说明文字
 
 请确保学习计划具有清晰的线性进阶路径！"""
 
@@ -2572,7 +2576,7 @@ JSON格式示例：
                     return None
                 
                 # 将原始知识点信息合并到生成的节点中
-                self._merge_knowledge_point_info(learning_path_data, knowledge_points)
+                self._merge_knowledge_point_info(learning_path_data, knowledge_points, kp_id_map)
                 
                 print(f"✅ 学习路径生成成功: {len(learning_path_data.get('nodes', []))}个节点, {len(learning_path_data.get('edges', []))}条路径")
                 return learning_path_data
@@ -2714,25 +2718,88 @@ JSON格式示例：
         conn.close()
         return points
     
-    def _merge_knowledge_point_info(self, learning_path_data: Dict, knowledge_points: List[Dict]) -> None:
+    def _merge_knowledge_point_info(self, learning_path_data: Dict, knowledge_points: List[Dict], kp_id_map: Dict) -> None:
         """将原始知识点信息合并到学习路径节点中"""
-        # 构建知识点名称到详细信息的映射
-        kp_name_map = {}
-        for kp in knowledge_points:
-            kp_name_map[kp['point_name']] = kp
+        print(f"📊 开始合并知识点信息，共有{len(kp_id_map)}个已有知识点")
+        merged_count = 0
         
         # 更新学习路径中的知识点节点
         for node in learning_path_data.get('nodes', []):
-            if node.get('type') == 'knowledge_point':
+            # 处理已有知识点和补充知识点
+            if node.get('type') in ['existing_kp', 'supplement_kp', 'knowledge_point']:
+                node_id = node.get('id', '')
                 node_name = node.get('name', '')
-                # 尝试匹配知识点名称
-                for kp_name, kp_info in kp_name_map.items():
-                    if kp_name in node_name or node_name in kp_name:
-                        # 更新节点信息
-                        node['original_kp_id'] = kp_info.get('id')
-                        node['mastery_score'] = kp_info.get('mastery_score', 50)
-                        if not node.get('description') or len(node.get('description', '')) < 20:
-                            node['description'] = kp_info.get('core_description', '')[:100]
-                        break
+                print(f"🔍 处理节点: {node_name} (ID: {node_id}, 类型: {node.get('type')})")
+                
+                # 优先通过ID匹配
+                if node_id in kp_id_map:
+                    kp_info = kp_id_map[node_id]
+                    # 保存原始类型
+                    original_type = node.get('type')
+                    # 更新节点信息
+                    node['original_kp_id'] = kp_info.get('id')
+                    node['mastery_score'] = kp_info.get('mastery_score', 50)
+                    node['point_name'] = kp_info.get('point_name')
+                    if not node.get('description') or len(node.get('description', '')) < 20:
+                        node['description'] = kp_info.get('core_description', '')[:100]
+                    
+                    # 如果是LLM补充的知识点，保持其supplement_kp类型，但添加标记
+                    if original_type == 'supplement_kp':
+                        node['is_llm_supplement'] = True
+                        print(f"  ✅ ID匹配成功(LLM补充): {node_name} (ID: {node_id}) → 保持淡绿色显示")
+                    else:
+                        print(f"  ✅ ID匹配成功: {node_name} (ID: {node_id}) → 熟练度: {kp_info.get('mastery_score', 50)}")
+                    merged_count += 1
+                else:
+                    # 如果ID匹配失败，尝试名称匹配（兼容性）
+                    matched = False
+                    for kp_id, kp_info in kp_id_map.items():
+                        kp_name = kp_info.get('point_name', '')
+                        
+                        # 清理特殊字符的函数
+                        def clean_text(text):
+                            import re
+                            # 移除常见特殊字符：反引号、斜杠、空格等
+                            cleaned = re.sub(r'[`/\s\-_()（）【】\[\]{}]', '', text.lower())
+                            return cleaned
+                        
+                        # 清理后的文本进行匹配
+                        clean_kp_name = clean_text(kp_name)
+                        clean_node_name = clean_text(node_name)
+                        
+                        # 多种匹配策略
+                        if (kp_name.lower() in node_name.lower() or 
+                            node_name.lower() in kp_name.lower() or
+                            clean_kp_name in clean_node_name or
+                            clean_node_name in clean_kp_name or
+                            kp_name.replace(' ', '').lower() in node_name.replace(' ', '').lower()):
+                            
+                            # 保存原始类型
+                            original_type = node.get('type')
+                            # 更新节点信息
+                            node['original_kp_id'] = kp_info.get('id')
+                            node['mastery_score'] = kp_info.get('mastery_score', 50)
+                            node['point_name'] = kp_info.get('point_name')
+                            if not node.get('description') or len(node.get('description', '')) < 20:
+                                node['description'] = kp_info.get('core_description', '')[:100]
+                            
+                            # 如果是LLM补充的知识点，保持其supplement_kp类型，但添加标记
+                            if original_type == 'supplement_kp':
+                                node['is_llm_supplement'] = True
+                                print(f"  ✅ 名称匹配成功(LLM补充): {node_name} → {kp_name} → 保持淡绿色显示")
+                            else:
+                                print(f"  ✅ 名称匹配成功: {node_name} → {kp_name} (熟练度: {kp_info.get('mastery_score', 50)})")
+                            merged_count += 1
+                            matched = True
+                            break
+                    
+                    if not matched:
+                        # 对于已有知识点类型但没有匹配到的，设置默认熟练度
+                        if node.get('type') == 'existing_kp':
+                            node['mastery_score'] = 50  # 默认中等熟练度
+                            print(f"  ⚠️ 未匹配到具体信息，设置默认熟练度: {node_name} (熟练度: 50)")
+                        else:
+                            node['mastery_score'] = -1  # 补充知识点默认未评估
+                            print(f"  ℹ️ 补充知识点，设置未评估: {node_name} (熟练度: -1)")
         
-        print(f"🔗 已合并知识点信息到学习路径节点")
+        print(f"🔗 已合并知识点信息到学习路径节点，成功匹配 {merged_count} 个节点")

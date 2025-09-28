@@ -703,6 +703,16 @@ function getKnowledgePointColor(masteryScore) {
     return colors[adjustedIndex];
 }
 
+// 根据熟练度决定已有知识点文本颜色（浅底用深字，深底用白字）
+function getKpTextColor(masteryScore) {
+    if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
+        return '#374151'; // 未评估：浅灰底，用深灰字
+    }
+    const score = Math.max(0, Math.min(100, masteryScore));
+    // 0-39 分底色偏浅，使用深色文字，其余使用白色
+    return score < 40 ? '#374151' : 'white';
+}
+
 // 验证脑图数据格式
 function validateMindmapData(data) {
     if (!data || !data.nodes || !Array.isArray(data.nodes)) {
@@ -2972,11 +2982,18 @@ function renderLearningPath() {
         .data(nodes)
         .enter().append('g')
         .attr('class', 'learning-node')
-        .style('cursor', d => d.type === 'stage' ? 'pointer' : 'default')
+        .style('cursor', d => {
+            if (d.type === 'stage') return 'pointer';
+            if (d.type === 'existing_kp' && d.original_kp_id) return 'pointer';
+            return 'default';
+        })
         .on('click', function(event, d) {
             if (d.type === 'stage') {
                 event.stopPropagation(); // 防止事件冒泡
                 highlightStageAndChildren(d);
+            } else if (d.type === 'existing_kp' && d.original_kp_id) {
+                event.stopPropagation(); // 防止事件冒泡
+                showKnowledgePointDetail(d);
             }
         })
         .call(d3.drag()
@@ -3002,41 +3019,95 @@ function renderLearningPath() {
         })
         .attr('fill', d => {
             if (d.type === 'start') return '#2196F3';           // 蓝色 - 起点
-            if (d.type === 'end') return '#FF5722';             // 红色 - 终点
-            if (d.type === 'stage') return '#FF9800';           // 橙色 - 学习阶段
-            if (d.type === 'existing_kp') return '#4CAF50';     // 绿色 - 已有知识点
-            if (d.type === 'supplement_kp') return '#E91E63';   // 粉色 - LLM补充知识点
+            if (d.type === 'end') return '#2196F3';             // 蓝色 - 终点
+            if (d.type === 'stage') return '#2196F3';           // 蓝色 - 学习阶段
+            
+            // 检查是否是LLM推荐的特定节点（强制淡绿色）
+            const llmRecommendedNodes = [
+                '账户登录与切换', '模型配置', '云环境管理', 
+                '系统状态查看', '成本监控', 'login', 'logout',
+                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
+            ];
+            const nodeName = (d.name || '').toLowerCase();
+            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
+                nodeName.includes(keyword.toLowerCase()) || 
+                keyword.toLowerCase().includes(nodeName)
+            );
+            
+            if (isLLMRecommended) return '#81C784';             // 强制淡绿色 - LLM推荐节点
+            
+            // 已有知识点：按熟练度着色
+            if (d.type === 'existing_kp') return getKnowledgePointColor(d.mastery_score);
+            if (d.type === 'supplement_kp') return '#81C784';   // 淡绿色 - LLM补充知识点
             // 兼容旧的节点类型
-            if (d.type === 'milestone') return '#FF9800';       // 橙色 - 里程碑
+            if (d.type === 'milestone') return '#2196F3';       // 蓝色 - 里程碑
             if (d.type === 'foundation') return '#9C27B0';      // 紫色 - 基础概念
-            if (d.type === 'supplement') return '#E91E63';      // 粉色 - LLM补充知识
+            if (d.type === 'supplement') return '#81C784';      // 淡绿色 - LLM补充知识
             if (d.type === 'core') return '#4CAF50';            // 绿色 - 已有核心知识
             if (d.type === 'advanced') return '#795548';        // 棕色 - 高级应用
             return '#607D8B';                                   // 灰蓝色 - 默认
         })
         .attr('stroke', d => {
-            // 为LLM新增的知识点添加特殊边框
-            if (d.type === 'supplement_kp') return '#C2185B';   // 深粉色边框 - LLM补充知识点
-            if (d.type === 'stage') return '#F57C00';           // 深橙色边框 - 学习阶段
+            // 主线节点不要外圈
+            if (d.type === 'start' || d.type === 'end' || d.type === 'stage') return 'none';
+            
+            // 检查是否是LLM推荐的特定节点（强制淡绿色边框）
+            const llmRecommendedNodes = [
+                '账户登录与切换', '模型配置', '云环境管理', 
+                '系统状态查看', '成本监控', 'login', 'logout',
+                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
+            ];
+            const nodeName = (d.name || '').toLowerCase();
+            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
+                nodeName.includes(keyword.toLowerCase()) || 
+                keyword.toLowerCase().includes(nodeName)
+            );
+            
+            if (isLLMRecommended) return '#66BB6A';             // 强制淡绿色边框 - LLM推荐节点
+            
+            // LLM补充知识点使用淡绿色边框
+            if (d.type === 'supplement_kp') return '#66BB6A';   // 淡绿色边框 - LLM补充知识点
             // 兼容旧的节点类型
-            if (d.type === 'supplement') return '#C2185B';      // 深粉色边框 - LLM补充
+            if (d.type === 'supplement') return '#66BB6A';      // 淡绿色边框 - LLM补充
             if (d.type === 'foundation') return '#7B1FA2';      // 深紫色边框 - 基础概念
             return '#fff';                                      // 白色边框 - 其他
         })
         .attr('stroke-width', d => {
-            // 学习阶段和LLM新增知识点使用更粗的边框
-            if (d.type === 'stage') return 4;                  // 学习阶段最粗
+            // 主线节点不显示边框
+            if (d.type === 'start' || d.type === 'end' || d.type === 'stage') return 0;
+            
+            // 检查是否是LLM推荐的特定节点（使用边框）
+            const llmRecommendedNodes = [
+                '账户登录与切换', '模型配置', '云环境管理', 
+                '系统状态查看', '成本监控', 'login', 'logout',
+                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
+            ];
+            const nodeName = (d.name || '').toLowerCase();
+            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
+                nodeName.includes(keyword.toLowerCase()) || 
+                keyword.toLowerCase().includes(nodeName)
+            );
+            
+            if (isLLMRecommended) return 3;                    // LLM推荐节点使用边框
+            
+            // LLM补充知识点使用边框
             if (d.type === 'supplement_kp') return 3;          // LLM补充知识点
             if (d.type === 'supplement' || d.type === 'foundation') return 3;
             return 2;
         })
-        .style('cursor', d => d.type === 'stage' ? 'pointer' : 'default');
+        .style('cursor', d => {
+            if (d.type === 'stage') return 'pointer';
+            if (d.type === 'existing_kp' && d.original_kp_id) return 'pointer';
+            return 'default';
+        });
     
     // 节点文字 - 多行显示以适应圆圈
     nodeGroups.each(function(d) {
         const group = d3.select(this);
         const radius = group.select('circle').attr('r');
         const name = d.name || '';
+        // 文本颜色：已有知识点按熟练度选择，其它使用白色
+        const textColor = (d.type === 'existing_kp') ? getKpTextColor(d.mastery_score) : 'white';
         
         // 根据圆圈大小决定文字处理方式
         if (radius > 30) {
@@ -3053,7 +3124,7 @@ function renderLearningPath() {
                             .attr('dy', i === 0 ? '-0.2em' : '1em')
                             .attr('font-size', '11px')
                             .attr('font-weight', 'bold')
-                            .attr('fill', 'white')
+                            .attr('fill', textColor)
                             .text(word.length > maxCharsPerLine ? word.substring(0, maxCharsPerLine) + '...' : word);
                     }
                 });
@@ -3064,7 +3135,7 @@ function renderLearningPath() {
                     .attr('dy', '0.35em')
                     .attr('font-size', '12px')
                     .attr('font-weight', 'bold')
-                    .attr('fill', 'white')
+                    .attr('fill', textColor)
                     .text(name.length > maxCharsPerLine ? name.substring(0, maxCharsPerLine) + '...' : name);
             }
         } else {
@@ -3075,7 +3146,7 @@ function renderLearningPath() {
                 .attr('dy', '0.35em')
                 .attr('font-size', '10px')
                 .attr('font-weight', 'bold')
-                .attr('fill', 'white')
+                .attr('fill', textColor)
                 .text(name.length > maxLength ? name.substring(0, maxLength) + '...' : name);
         }
     });
@@ -3094,11 +3165,12 @@ function renderLearningPath() {
         .attr('transform', 'translate(20, 20)');
     
     const legendData = [
-        { type: 'stage', color: '#FF9800', stroke: '#F57C00', label: '学习阶段（主线）', strokeWidth: 4 },
-        { type: 'existing_kp', color: '#4CAF50', stroke: '#fff', label: '已有知识点', strokeWidth: 2 },
-        { type: 'supplement_kp', color: '#E91E63', stroke: '#C2185B', label: 'LLM补充知识点', strokeWidth: 3 },
-        { type: 'start', color: '#2196F3', stroke: '#fff', label: '学习起点', strokeWidth: 2 },
-        { type: 'end', color: '#FF5722', stroke: '#fff', label: '学习终点', strokeWidth: 2 }
+        { type: 'stage', color: '#2196F3', stroke: 'none', label: '学习阶段（主线）', strokeWidth: 0 },
+        // 图例颜色用于示意，实际已有知识点根据熟练度动态着色
+        { type: 'existing_kp', color: '#FDBA74', stroke: '#fff', label: '已有知识点（按熟练度着色）', strokeWidth: 2 },
+        { type: 'supplement_kp', color: '#81C784', stroke: '#66BB6A', label: 'LLM补充知识点', strokeWidth: 3 },
+        { type: 'start', color: '#2196F3', stroke: 'none', label: '学习起点', strokeWidth: 0 },
+        { type: 'end', color: '#2196F3', stroke: 'none', label: '学习终点', strokeWidth: 0 }
     ];
     
     // 图例背景
