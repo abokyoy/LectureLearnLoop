@@ -3071,7 +3071,7 @@ class CorgiWebBridge(QObject):
             km_system = KnowledgeManagementSystem(self.config)
             self.logger.info(f"✅ KnowledgeManagementSystem实例创建成功")
             
-            # 获取或生成学习路径
+            # 获取或生成学习路径（使用真正的LLM）
             self.logger.info(f"🔍 调用get_or_generate_learning_path方法...")
             learning_path_result = km_system.get_or_generate_learning_path(subject_name)
             self.logger.info(f"📊 学习路径结果: {learning_path_result is not None}")

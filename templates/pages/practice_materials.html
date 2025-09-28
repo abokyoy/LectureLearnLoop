@@ -431,10 +431,20 @@ function selectSubject(subjectName) {
         }
         
         // 2. 清理SVG内容
-        const svg = d3.select("#mindmapSvg");
-        if (!svg.empty()) {
-            svg.selectAll("*").remove();
-            log(`🧹 已清理SVG内容`);
+        try {
+            if (typeof d3 !== 'undefined') {
+                const svg = d3.select("#mindmapSvg");
+                if (!svg.empty()) {
+                    svg.selectAll("*").remove();
+                    log(`🧹 已清理SVG内容`);
+                } else {
+                    log(`⚠️ SVG元素不存在，跳过清理`);
+                }
+            } else {
+                log(`⚠️ D3.js未加载，跳过SVG清理`);
+            }
+        } catch (error) {
+            log(`⚠️ 清理过程中出现错误: ${error.message}`);
         }
         
         // 3. 重置全局变量

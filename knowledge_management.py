@@ -2400,7 +2400,7 @@ class MindmapManager:
         print(f"🔍 缓存不存在，开始生成新的学习路径")
         
         # 获取学科的所有知识点
-        knowledge_points = self.get_knowledge_points_by_subject(subject_name)
+        knowledge_points = self._get_knowledge_points_by_subject(subject_name)
         if not knowledge_points:
             print(f"⚠️ 学科 '{subject_name}' 没有知识点，无法生成学习路径")
             return None
@@ -2461,8 +2461,8 @@ class MindmapManager:
         
         # 构建知识点列表
         kp_list = []
-        for kp in knowledge_points:
-            kp_info = f"- {kp['point_name']}: {kp['core_description']}"
+        for i, kp in enumerate(knowledge_points, 1):
+            kp_info = f"{i}. {kp['point_name']}: {kp['core_description']}"
             kp_list.append(kp_info)
         
         kp_text = "\n".join(kp_list)
@@ -2487,37 +2487,43 @@ class MindmapManager:
    - 终点：学习完成
 
 3. **节点类型**：
-   - start: 学习起点
-   - knowledge_point: 具体知识点
-   - milestone: 重要里程碑
-   - end: 学习终点
+   - start: 学习起点（蓝色）
+   - knowledge_point: 具体知识点（绿色）
+   - milestone: 重要里程碑（橙色）
+   - end: 学习终点（红色）
+
+4. **重要要求**：
+   - 必须包含提供的所有知识点
+   - 知识点ID使用kp_1, kp_2等格式
+   - level表示学习层级，0=起点，1=基础，2=进阶，3=高级，4=终点
+   - edges表示学习的先后顺序和依赖关系
 
 请按以下JSON格式输出（确保是有效的JSON）：
 {{
   "nodes": [
-    {{"id": "start", "name": "开始学习", "type": "start", "level": 0, "description": "学习路径起点"}},
-    {{"id": "kp_1", "name": "知识点名称", "type": "knowledge_point", "level": 1, "description": "简短说明"}},
-    {{"id": "milestone_1", "name": "里程碑名称", "type": "milestone", "level": 2, "description": "阶段性目标"}},
-    {{"id": "end", "name": "完成学习", "type": "end", "level": 3, "description": "学习路径终点"}}
+    {{"id": "start", "name": "开始学习{subject_name}", "type": "start", "level": 0, "description": "学习路径起点"}},
+    {{"id": "kp_1", "name": "基础概念", "type": "knowledge_point", "level": 1, "description": "基础知识点"}},
+    {{"id": "milestone_basic", "name": "基础掌握", "type": "milestone", "level": 2, "description": "基础阶段完成"}},
+    {{"id": "kp_2", "name": "进阶概念", "type": "knowledge_point", "level": 2, "description": "进阶知识点"}},
+    {{"id": "milestone_advanced", "name": "进阶掌握", "type": "milestone", "level": 3, "description": "进阶阶段完成"}},
+    {{"id": "end", "name": "完成{subject_name}学习", "type": "end", "level": 4, "description": "学习路径终点"}}
   ],
   "edges": [
     {{"source": "start", "target": "kp_1", "relationship": "开始学习"}},
-    {{"source": "kp_1", "target": "milestone_1", "relationship": "掌握后进入"}}
+    {{"source": "kp_1", "target": "milestone_basic", "relationship": "掌握后进入"}},
+    {{"source": "milestone_basic", "target": "kp_2", "relationship": "继续学习"}},
+    {{"source": "kp_2", "target": "milestone_advanced", "relationship": "掌握后进入"}},
+    {{"source": "milestone_advanced", "target": "end", "relationship": "完成学习"}}
   ]
 }}
 
-注意：
-- 所有知识点的ID使用原有的格式（如kp_1, kp_2等）
-- level表示学习层级，数字越大表示越高级
-- edges表示学习的先后顺序和依赖关系
-- 确保返回的是有效的JSON格式"""
+注意：确保返回的是有效的JSON格式，不要包含任何其他文字说明。"""
 
         try:
-            # 使用LLM提供者工厂
-            from llm_provider_factory import LLMProviderFactory
+            # 使用LLM提供者工厂（和知识脑图相同的机制）
+            from llm_provider_factory import call_llm
             
-            llm_factory = LLMProviderFactory(self.config)
-            response = llm_factory.call_llm(prompt, task_type="generate_learning_path")
+            response = call_llm(prompt, context="generate_learning_path")
             
             if not response:
                 print(f"❌ LLM返回空响应")
@@ -2525,7 +2531,7 @@ class MindmapManager:
             
             print(f"🤖 LLM原始响应: {response[:500]}...")
             
-            # 解析JSON响应
+            # 解析JSON响应（和知识脑图相同的解析逻辑）
             try:
                 # 提取JSON部分
                 json_start = response.find('{')
@@ -2543,6 +2549,9 @@ class MindmapManager:
                     print(f"❌ 学习路径数据格式验证失败")
                     return None
                 
+                # 将原始知识点信息合并到生成的节点中
+                self._merge_knowledge_point_info(learning_path_data, knowledge_points)
+                
                 print(f"✅ 学习路径生成成功: {len(learning_path_data.get('nodes', []))}个节点, {len(learning_path_data.get('edges', []))}条路径")
                 return learning_path_data
                 
@@ -2552,6 +2561,8 @@ class MindmapManager:
                 
         except Exception as e:
             print(f"❌ LLM调用失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _validate_learning_path_data(self, data: Dict) -> bool:
@@ -2657,3 +2668,49 @@ class MindmapManager:
             print(f"❌ 清除学习路径缓存失败: {e}")
             conn.close()
             return False
+    
+    def _get_knowledge_points_by_subject(self, subject_name: str, user_id: str = "0001") -> List[Dict]:
+        """获取学科下的知识点（内部方法）"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT id, point_name, core_description, mastery_score, created_time
+                   FROM knowledge_points
+                   WHERE user_id = ? AND subject_name = ?
+                   ORDER BY created_time DESC""",
+            (user_id, subject_name)
+        )
+        points: List[Dict] = []
+        for row in cursor.fetchall():
+            points.append({
+                "id": row[0],
+                "point_name": row[1],
+                "core_description": row[2],
+                "mastery_score": row[3],
+                "created_time": row[4]
+            })
+        conn.close()
+        return points
+    
+    def _merge_knowledge_point_info(self, learning_path_data: Dict, knowledge_points: List[Dict]) -> None:
+        """将原始知识点信息合并到学习路径节点中"""
+        # 构建知识点名称到详细信息的映射
+        kp_name_map = {}
+        for kp in knowledge_points:
+            kp_name_map[kp['point_name']] = kp
+        
+        # 更新学习路径中的知识点节点
+        for node in learning_path_data.get('nodes', []):
+            if node.get('type') == 'knowledge_point':
+                node_name = node.get('name', '')
+                # 尝试匹配知识点名称
+                for kp_name, kp_info in kp_name_map.items():
+                    if kp_name in node_name or node_name in kp_name:
+                        # 更新节点信息
+                        node['original_kp_id'] = kp_info.get('id')
+                        node['mastery_score'] = kp_info.get('mastery_score', 50)
+                        if not node.get('description') or len(node.get('description', '')) < 20:
+                            node['description'] = kp_info.get('core_description', '')[:100]
+                        break
+        
+        print(f"🔗 已合并知识点信息到学习路径节点")
