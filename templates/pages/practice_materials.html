@@ -1200,9 +1200,20 @@ async function showKnowledgePointDetail(node) {
     document.getElementById('detailTitle').textContent = node.name;
     
     try {
+        // 支持知识脑图的knowledge_point类型（学习路径节点已转换为此格式）
         if (window.bridge && window.bridge.getKnowledgePointDetail && node.type === 'knowledge_point') {
-            // 提取真实的知识点ID（去掉kp_前缀）
-            const realId = node.id.startsWith('kp_') ? node.id.substring(3) : node.id;
+            
+            let realId;
+            
+            // 优先使用original_kp_id（来自学习路径的转换节点）
+            if (node.original_kp_id) {
+                realId = node.original_kp_id;
+                log(`🔍 使用original_kp_id: ${realId}`);
+            } else {
+                // 知识脑图中的原生节点，提取真实的知识点ID（去掉kp_前缀）
+                realId = node.id.startsWith('kp_') ? node.id.substring(3) : node.id;
+                log(`🔍 知识脑图原生节点，提取ID: ${realId}`);
+            }
             
             const response = await window.bridge.getKnowledgePointDetail(realId);
             const result = JSON.parse(response);
@@ -1218,17 +1229,30 @@ async function showKnowledgePointDetail(node) {
                 updateKnowledgePointDetail({
                     name: node.name,
                     description: `无法获取详细信息: ${result.error || '数据不存在'}`,
-                    mastery_score: 0,
+                    mastery_score: node.mastery_score || 0,
                     created_time: '未知'
                 }, node);
                 log(`⚠️ 获取详情失败: ${result.error}`);
             }
         } else {
             // 显示基本信息
+            let description = `节点类型：${node.type}\n节点ID：${node.id}`;
+            
+            // 如果是学习路径中的节点，显示更多信息
+            if (node.type === 'existing_kp') {
+                description += `\n原始知识点ID：${node.original_kp_id || '未知'}`;
+                description += `\n熟练度：${node.mastery_score || '未评估'}`;
+                if (node.point_name) {
+                    description += `\n知识点名称：${node.point_name}`;
+                }
+            }
+            
+            description += `\n\n这是一个基本的节点信息显示。`;
+            
             updateKnowledgePointDetail({
                 name: node.name,
-                description: `节点类型：${node.type}\n节点ID：${node.id}\n\n这是一个基本的节点信息显示。`,
-                mastery_score: 0,
+                description: description,
+                mastery_score: node.mastery_score || 0,
                 created_time: '未知'
             }, node);
             log(`ℹ️ 显示基本节点信息`);
@@ -2993,7 +3017,48 @@ function renderLearningPath() {
                 highlightStageAndChildren(d);
             } else if (d.type === 'existing_kp' && d.original_kp_id) {
                 event.stopPropagation(); // 防止事件冒泡
-                showKnowledgePointDetail(d);
+                
+                // 转换为知识脑图节点格式，确保完全兼容
+                const knowledgePointNode = {
+                    id: `kp_${d.original_kp_id}`, // 转换为知识脑图的ID格式
+                    name: d.name,
+                    type: 'knowledge_point', // 转换为知识脑图的节点类型
+                    mastery_score: d.mastery_score || -1,
+                    original_kp_id: d.original_kp_id, // 保留原始ID用于API调用
+                    point_name: d.point_name,
+                    description: d.description
+                };
+                
+                showKnowledgePointDetail(knowledgePointNode);
+            } else {
+                // 检查LLM推荐节点是否有original_kp_id（可点击）
+                const llmRecommendedNodes = [
+                    '账户登录与切换', '模型配置', '云环境管理', 
+                    '系统状态查看', '成本监控', 'login', 'logout',
+                    'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
+                ];
+                const nodeName = (d.name || '').toLowerCase();
+                const isLLMRecommended = llmRecommendedNodes.some(keyword => 
+                    nodeName.includes(keyword.toLowerCase()) || 
+                    keyword.toLowerCase().includes(nodeName)
+                );
+                
+                if (isLLMRecommended && d.original_kp_id) {
+                    event.stopPropagation(); // 防止事件冒泡
+                    
+                    // 转换为知识脑图节点格式，确保完全兼容
+                    const knowledgePointNode = {
+                        id: `kp_${d.original_kp_id}`, // 转换为知识脑图的ID格式
+                        name: d.name,
+                        type: 'knowledge_point', // 转换为知识脑图的节点类型
+                        mastery_score: d.mastery_score || -1,
+                        original_kp_id: d.original_kp_id, // 保留原始ID用于API调用
+                        point_name: d.point_name,
+                        description: d.description
+                    };
+                    
+                    showKnowledgePointDetail(knowledgePointNode);
+                }
             }
         })
         .call(d3.drag()
@@ -3098,6 +3163,21 @@ function renderLearningPath() {
         .style('cursor', d => {
             if (d.type === 'stage') return 'pointer';
             if (d.type === 'existing_kp' && d.original_kp_id) return 'pointer';
+            
+            // 检查LLM推荐节点是否有original_kp_id（可点击）
+            const llmRecommendedNodes = [
+                '账户登录与切换', '模型配置', '云环境管理', 
+                '系统状态查看', '成本监控', 'login', 'logout',
+                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
+            ];
+            const nodeName = (d.name || '').toLowerCase();
+            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
+                nodeName.includes(keyword.toLowerCase()) || 
+                keyword.toLowerCase().includes(nodeName)
+            );
+            
+            if (isLLMRecommended && d.original_kp_id) return 'pointer';
+            
             return 'default';
         });
     
