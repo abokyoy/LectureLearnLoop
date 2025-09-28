@@ -2700,10 +2700,14 @@ function renderLearningPath() {
             return 18;
         })
         .attr('fill', d => {
-            if (d.type === 'start') return '#2196F3';
-            if (d.type === 'end') return '#FF5722';
-            if (d.type === 'milestone') return '#FF9800';
-            return '#4CAF50';
+            if (d.type === 'start') return '#2196F3';           // 蓝色 - 起点
+            if (d.type === 'end') return '#FF5722';             // 红色 - 终点
+            if (d.type === 'milestone') return '#FF9800';       // 橙色 - 里程碑
+            if (d.type === 'foundation') return '#9C27B0';      // 紫色 - 基础概念
+            if (d.type === 'supplement') return '#E91E63';      // 粉色 - 补充知识
+            if (d.type === 'core') return '#4CAF50';            // 绿色 - 核心知识
+            if (d.type === 'advanced') return '#795548';        // 棕色 - 高级应用
+            return '#607D8B';                                   // 灰蓝色 - 默认
         })
         .attr('stroke', '#fff')
         .attr('stroke-width', 2);

@@ -2467,57 +2467,63 @@ class MindmapManager:
         
         kp_text = "\n".join(kp_list)
         
-        prompt = f"""请为"{subject_name}"学科创建一个学习路径图，基于以下知识点：
+        prompt = f"""作为一名{subject_name}领域的专家教师，请为学生制定一个完整的学习路线图。
 
+**学生现有知识点：**
 {kp_text}
 
-请分析这些知识点的学习顺序和依赖关系，创建一个学习路径图。要求：
+**任务要求：**
+1. **分析现有知识体系**：评估学生已有知识点的完整性和层次
+2. **识别知识缺口**：找出学习{subject_name}必需但学生缺少的关键知识点
+3. **设计学习主线**：构建一条从零基础到掌握的完整学习路径
+4. **补充必要知识**：添加缺失的基础概念、核心理论、实践技能等
 
-1. **学习路径设计**：
-   - 确定哪些知识点是基础前置知识（应该最先学习）
-   - 确定哪些知识点有依赖关系（需要先学A才能学B）
-   - 确定哪些知识点是高级内容（需要多个基础知识点支撑）
-   - 如果某些知识点与该学科关联度较低，可以放在"其他相关知识"分支
+**学习路线图设计原则：**
+- **循序渐进**：从最基础的概念开始，逐步深入
+- **逻辑连贯**：每个知识点都有明确的前置依赖关系
+- **查漏补缺**：补充学生知识体系中的重要缺失
+- **实用导向**：包含理论基础和实践应用
 
-2. **路径结构**：
-   - 起点：学习开始
-   - 基础层：基础概念和前置知识
-   - 进阶层：建立在基础之上的核心知识
-   - 高级层：综合应用和高级概念
-   - 终点：学习完成
+**节点类型说明：**
+- **start**: 学习起点
+- **foundation**: 基础概念（必须先掌握的基础知识）
+- **core**: 核心知识点（学科的主要内容）
+- **advanced**: 高级应用（需要多个基础支撑）
+- **supplement**: 补充知识（LLM建议添加的重要知识点）
+- **milestone**: 学习里程碑（阶段性目标）
+- **end**: 学习终点
 
-3. **节点类型**：
-   - start: 学习起点（蓝色）
-   - knowledge_point: 具体知识点（绿色）
-   - milestone: 重要里程碑（橙色）
-   - end: 学习终点（红色）
+**输出格式：**
+请返回一个完整的学习路线图JSON，包含：
+1. 学生已有的所有知识点（保持原名称）
+2. 你建议补充的重要知识点（标注为supplement类型）
+3. 清晰的学习顺序和依赖关系
+4. 阶段性里程碑
 
-4. **重要要求**：
-   - 必须包含提供的所有知识点
-   - 知识点ID使用kp_1, kp_2等格式
-   - level表示学习层级，0=起点，1=基础，2=进阶，3=高级，4=终点
-   - edges表示学习的先后顺序和依赖关系
-
-请按以下JSON格式输出（确保是有效的JSON）：
+JSON格式示例：
 {{
   "nodes": [
-    {{"id": "start", "name": "开始学习{subject_name}", "type": "start", "level": 0, "description": "学习路径起点"}},
-    {{"id": "kp_1", "name": "基础概念", "type": "knowledge_point", "level": 1, "description": "基础知识点"}},
-    {{"id": "milestone_basic", "name": "基础掌握", "type": "milestone", "level": 2, "description": "基础阶段完成"}},
-    {{"id": "kp_2", "name": "进阶概念", "type": "knowledge_point", "level": 2, "description": "进阶知识点"}},
-    {{"id": "milestone_advanced", "name": "进阶掌握", "type": "milestone", "level": 3, "description": "进阶阶段完成"}},
-    {{"id": "end", "name": "完成{subject_name}学习", "type": "end", "level": 4, "description": "学习路径终点"}}
+    {{"id": "start", "name": "开始{subject_name}学习之旅", "type": "start", "level": 0, "description": "学习起点"}},
+    {{"id": "foundation_1", "name": "数学基础", "type": "supplement", "level": 1, "description": "LLM建议：学习{subject_name}必需的数学基础"}},
+    {{"id": "core_1", "name": "已有知识点名称", "type": "core", "level": 2, "description": "学生已掌握的核心概念"}},
+    {{"id": "milestone_1", "name": "基础阶段完成", "type": "milestone", "level": 3, "description": "已具备进入下一阶段的能力"}},
+    {{"id": "advanced_1", "name": "高级应用", "type": "advanced", "level": 4, "description": "综合运用多个知识点"}},
+    {{"id": "end", "name": "掌握{subject_name}", "type": "end", "level": 5, "description": "完成整个学习路径"}}
   ],
   "edges": [
-    {{"source": "start", "target": "kp_1", "relationship": "开始学习"}},
-    {{"source": "kp_1", "target": "milestone_basic", "relationship": "掌握后进入"}},
-    {{"source": "milestone_basic", "target": "kp_2", "relationship": "继续学习"}},
-    {{"source": "kp_2", "target": "milestone_advanced", "relationship": "掌握后进入"}},
-    {{"source": "milestone_advanced", "target": "end", "relationship": "完成学习"}}
+    {{"source": "start", "target": "foundation_1", "relationship": "首先学习"}},
+    {{"source": "foundation_1", "target": "core_1", "relationship": "基础上学习"}},
+    {{"source": "core_1", "target": "milestone_1", "relationship": "掌握后达成"}},
+    {{"source": "milestone_1", "target": "advanced_1", "relationship": "进入高级阶段"}},
+    {{"source": "advanced_1", "target": "end", "relationship": "最终掌握"}}
   ]
 }}
 
-注意：确保返回的是有效的JSON格式，不要包含任何其他文字说明。"""
+**重要提醒：**
+- 必须包含学生提供的所有知识点
+- 重点补充缺失的基础和核心知识
+- 确保学习路径的逻辑性和完整性
+- 只返回JSON格式，不要其他说明文字"""
 
         try:
             # 使用LLM提供者工厂（和知识脑图相同的机制）
