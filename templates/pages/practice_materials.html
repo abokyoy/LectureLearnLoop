@@ -190,12 +190,19 @@
                             class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 hidden">
                         <span class="material-icons-outlined text-sm">fullscreen_exit</span>
                     </button>
+                    
+                    <!-- 重置高亮按钮 -->
+                    <button id="resetHighlightBtn" onclick="resetHighlight()" 
+                            class="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700 ml-2">
+                        <span class="material-icons-outlined text-sm">refresh</span>
+                        重置
+                    </button>
                 </div>
             </div>
             
             <!-- 脑图SVG -->
             <div id="mindmapSvgContainer" class="w-full" style="height: 700px; overflow: auto;">
-                <svg id="mindmapSvg" width="100%" height="100%" viewBox="0 0 1600 700"></svg>
+                <svg id="mindmapSvg" width="100%" height="100%" viewBox="0 0 3200 700"></svg>
             </div>
             
             <!-- 加载状态 -->
@@ -2648,6 +2655,63 @@ function renderLearningPath() {
     const nodes = currentLearningPathData.nodes.map(d => ({...d}));
     const edges = currentLearningPathData.edges || [];
     
+    // 预设主线节点的固定位置 - 增加间距
+    const mainLineNodes = nodes.filter(n => n.type === 'start' || n.type === 'stage' || n.type === 'end');
+    const totalMainNodes = mainLineNodes.length;
+    const containerWidth = 3200; // 进一步增加容器宽度
+    const padding = 150; // 增加边距
+    const availableWidth = containerWidth - 2 * padding;
+    const minSpacing = 300; // 进一步增加最小间距到300px
+    const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : minSpacing);
+    
+    log(`🔍 主线布局计算: 总节点${totalMainNodes}个, 间距${spacing}px, 容器宽度${containerWidth}px`);
+    
+    // 为主线节点设置固定的初始位置
+    nodes.forEach(node => {
+        if (node.type === 'start' || node.type === 'stage' || node.type === 'end') {
+            node.x = padding + node.level * spacing; // 固定X坐标，使用更大间距
+            node.y = 350; // 固定Y坐标
+            node.fx = node.x; // 固定X位置
+            node.fy = node.y; // 固定Y位置
+            log(`  - 主线节点 ${node.name}: 位置(${node.x}, ${node.y})`);
+        }
+    });
+    
+    // 为知识点节点预设围绕父节点的初始位置
+    const knowledgeNodes = nodes.filter(n => n.type === 'existing_kp' || n.type === 'supplement_kp');
+    const stageGroups = {};
+    
+    // 按父阶段分组知识点
+    knowledgeNodes.forEach(node => {
+        const parentStage = node.parent_stage || 'unknown';
+        if (!stageGroups[parentStage]) {
+            stageGroups[parentStage] = [];
+        }
+        stageGroups[parentStage].push(node);
+    });
+    
+    // 为每个阶段的知识点设置围绕分布
+    Object.keys(stageGroups).forEach(stageId => {
+        const stageNode = nodes.find(n => n.id === stageId);
+        const knowledgePoints = stageGroups[stageId];
+        
+        if (stageNode && knowledgePoints.length > 0) {
+            const stageX = stageNode.x;
+            const stageY = stageNode.y;
+            const radius = 120; // 围绕半径
+            const angleStep = (2 * Math.PI) / knowledgePoints.length;
+            
+            knowledgePoints.forEach((kp, index) => {
+                const angle = index * angleStep;
+                // 上下交替分布，避免都在一侧
+                const side = index % 2 === 0 ? 1 : -1;
+                kp.x = stageX + Math.cos(angle) * radius;
+                kp.y = stageY + side * (80 + Math.sin(angle) * 40); // 上下错开分布
+                log(`  - 知识点 ${kp.name}: 围绕${stageId}分布到(${kp.x.toFixed(0)}, ${kp.y.toFixed(0)})`);
+            });
+        }
+    });
+    
     // 调试：检查节点和边的数据
     log(`🔍 节点数据检查: ${nodes.length}个节点`);
     nodes.forEach(node => {
@@ -2680,16 +2744,53 @@ function renderLearningPath() {
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(validEdges).id(d => d.id).distance(d => {
                 // 主线连接距离更大，确保主线更长
-                if (d.source.type === 'stage' && d.target.type === 'stage') return 400; // 增加主线间距
-                if (d.source.type === 'start' && d.target.type === 'stage') return 350;
-                if (d.source.type === 'stage' && d.target.type === 'end') return 350;
-                return 100; // 阶段到知识点的距离
+                if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 大幅增加主线间距
+                if (d.source.type === 'start' && d.target.type === 'stage') return 800;
+                if (d.source.type === 'stage' && d.target.type === 'end') return 800;
+                return 80; // 阶段到知识点的距离，稍微减少避免过度拉扯
             }))
             .force('charge', d3.forceManyBody().strength(d => {
-                // 学习阶段排斥力更强，保持主线清晰
-                if (d.type === 'stage') return -1200;
-                return -600;
+                // 减少排斥力，避免布局混乱
+                if (d.type === 'stage') return -300; // 大幅减少主线节点排斥力
+                return -150; // 大幅减少知识点排斥力
             }))
+            .force('center', d3.forceCenter(1600, 350))
+            .force('x', d3.forceX(d => {
+                // 主线节点水平排列，支持更长的主线
+                if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                    // 计算主线节点总数
+                    const mainLineNodes = nodes.filter(n => n.type === 'start' || n.type === 'stage' || n.type === 'end');
+                    const totalMainNodes = mainLineNodes.length;
+                    
+                    // 动态调整间距，确保主线更长更展开
+                    const containerWidth = 1600; // 增加SVG容器宽度
+                    const padding = 50; // 减少边距，增加可用空间
+                    const availableWidth = containerWidth - 2 * padding;
+                    const minSpacing = 120; // 最小间距
+                    const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : 0);
+                    
+                    return padding + d.level * spacing; // 动态间距的水平主线
+                }
+                return d.x; // 知识点节点自由排列
+            }).strength(0.8))
+            .force('y', d3.forceY(d => {
+                // 主线节点严格保持在同一水平线上
+                if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                    return 350; // 主线固定在水平线上
+                }
+                // 知识点在主线上下分布
+                return 350 + (Math.random() - 0.5) * 300; // 增加分布范围
+            }).strength(d => {
+                // 主线节点使用更强的力保持水平
+                if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                    return 1.0; // 主线节点强制水平对齐
+                }
+                return 0.3; // 知识点节点较弱的力
+            }))
+            .force('collision', d3.forceCollide().radius(d => {
+                if (d.type === 'stage') return 80; // 学习阶段需要更大空间
+                return 50;
+            }));
     } else {
         log(`✅ 所有边都有效，直接使用`);
         
@@ -2697,21 +2798,21 @@ function renderLearningPath() {
         simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
                 // 主线连接距离更大，确保主线更长
-                if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 增加主线间距
+                if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 大幅增加主线间距
                 if (d.source.type === 'start' && d.target.type === 'stage') return 800;
                 if (d.source.type === 'stage' && d.target.type === 'end') return 800;
-                return 100; // 阶段到知识点的距离
+                return 80; // 阶段到知识点的距离，稍微减少避免过度拉扯
             }))
             .force('charge', d3.forceManyBody().strength(d => {
-                // 学习阶段排斥力更强，保持主线清晰
-                if (d.type === 'stage') return -1200;
-                return -600;
+                // 减少排斥力，避免布局混乱
+                if (d.type === 'stage') return -300; // 大幅减少主线节点排斥力
+                return -150; // 大幅减少知识点排斥力
             }))
     }
     
     // 继续力导向图的其他配置
     simulation
-        .force('center', d3.forceCenter(400, 250))
+        .force('center', d3.forceCenter(1600, 350))
         .force('x', d3.forceX(d => {
             // 主线节点水平排列，支持更长的主线
             if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
@@ -2720,24 +2821,30 @@ function renderLearningPath() {
                 const totalMainNodes = mainLineNodes.length;
                 
                 // 动态调整间距，确保主线更长更展开
-                const containerWidth = 1600; // 增加SVG容器宽度
-                const padding = 50; // 减少边距，增加可用空间
+                const containerWidth = 3200; // 进一步增加SVG容器宽度
+                const padding = 150; // 增加边距
                 const availableWidth = containerWidth - 2 * padding;
-                const minSpacing = 120; // 最小间距
-                const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : 0);
+                const minSpacing = 300; // 进一步增加最小间距
+                const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : minSpacing);
                 
                 return padding + d.level * spacing; // 动态间距的水平主线
             }
             return d.x; // 知识点节点自由排列
         }).strength(0.8))
         .force('y', d3.forceY(d => {
-            // 主线节点在中央，知识点在上下分布
+            // 主线节点严格保持在同一水平线上
             if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                return 250; // 主线在中央
+                return 350; // 主线固定在水平线上
             }
             // 知识点在主线上下分布
-            return 250 + (Math.random() - 0.5) * 200;
-        }).strength(0.3))
+            return 350 + (Math.random() - 0.5) * 300; // 增加分布范围
+        }).strength(d => {
+            // 主线节点使用更强的力保持水平
+            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                return 1.0; // 主线节点强制水平对齐
+            }
+            return 0.3; // 知识点节点较弱的力
+        }))
         .force('collision', d3.forceCollide().radius(d => {
             if (d.type === 'stage') return 80; // 学习阶段需要更大空间
             return 50;
@@ -2794,7 +2901,13 @@ function renderLearningPath() {
         .data(nodes)
         .enter().append('g')
         .attr('class', 'learning-node')
-        .style('cursor', 'pointer')
+        .style('cursor', d => d.type === 'stage' ? 'pointer' : 'default')
+        .on('click', function(event, d) {
+            if (d.type === 'stage') {
+                event.stopPropagation(); // 防止事件冒泡
+                highlightStageAndChildren(d);
+            }
+        })
         .call(d3.drag()
             .on('start', dragstarted)
             .on('drag', dragged)
@@ -2845,7 +2958,8 @@ function renderLearningPath() {
             if (d.type === 'supplement_kp') return 3;          // LLM补充知识点
             if (d.type === 'supplement' || d.type === 'foundation') return 3;
             return 2;
-        });
+        })
+        .style('cursor', d => d.type === 'stage' ? 'pointer' : 'default');
     
     // 节点文字 - 多行显示以适应圆圈
     nodeGroups.each(function(d) {
@@ -2958,8 +3072,15 @@ function renderLearningPath() {
         .attr('fill', '#333')
         .text(d => d.label);
     
-    // 更新位置
+    // 更新位置 - 强制主线节点保持水平
     simulation.on('tick', () => {
+        // 强制主线节点保持在固定的水平线上
+        nodes.forEach(d => {
+            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                d.y = 350; // 强制主线节点Y坐标固定为350
+            }
+        });
+        
         links
             .attr('x1', d => d.source.x)
             .attr('y1', d => d.source.y)
@@ -2969,7 +3090,245 @@ function renderLearningPath() {
         nodeGroups.attr('transform', d => `translate(${d.x},${d.y})`);
     });
     
+    // 保存全局变量供点击事件使用
+    globalNodes = nodes;
+    globalEdges = finalEdges;
+    globalLinks = links;
+    globalNodeGroups = nodeGroups;
+    
+    // 添加背景点击事件，点击空白区域恢复正常显示
+    svg.on('click', function(event) {
+        // 检查点击的是否是背景（不是节点或连线）
+        if (event.target === this && currentHighlightedStage) {
+            log('🖱️ 点击背景，恢复正常显示');
+            resetHighlight();
+        }
+    });
+    
     log('✅ 学习路径图渲染完成');
+}
+
+// 全局变量存储当前突出显示的状态
+let currentHighlightedStage = null;
+let globalNodes = [];
+let globalEdges = [];
+let globalLinks = null;
+let globalNodeGroups = null;
+
+// 突出显示stage节点及其子节点
+function highlightStageAndChildren(stageNode) {
+    log(`🎯 点击stage节点: ${stageNode.name} (${stageNode.id})`);
+    log(`🔍 当前突出显示状态: ${currentHighlightedStage ? currentHighlightedStage.id : 'null'}`);
+    
+    // 检查全局变量是否已初始化
+    if (!globalNodes || !globalEdges || !globalLinks || !globalNodeGroups) {
+        log('❌ 全局变量未初始化，无法执行突出显示');
+        return;
+    }
+    
+    log(`✅ 全局变量检查通过: nodes=${globalNodes.length}, edges=${globalEdges.length}`);
+    
+    // 如果点击的是已经突出显示的节点，则恢复正常显示
+    if (currentHighlightedStage && currentHighlightedStage.id === stageNode.id) {
+        log(`🔄 检测到重复点击同一节点: ${stageNode.id}，执行恢复操作`);
+        resetHighlight();
+        return;
+    }
+    
+    // 如果已经有突出显示的节点，先记录切换信息
+    if (currentHighlightedStage) {
+        log(`🔀 从 ${currentHighlightedStage.id} 切换到 ${stageNode.id}`);
+    }
+    
+    // 更新当前突出显示的节点
+    currentHighlightedStage = stageNode;
+    
+    // 找到该stage的所有子知识点
+    const childrenIds = new Set();
+    
+    globalEdges.forEach(edge => {
+        if (edge.source === stageNode.id || (typeof edge.source === 'object' && edge.source.id === stageNode.id)) {
+            const targetId = typeof edge.target === 'string' ? edge.target : edge.target.id;
+            childrenIds.add(targetId);
+        }
+    });
+    
+    log(`📋 找到${childrenIds.size}个子节点: ${Array.from(childrenIds).join(', ')}`);
+    
+    // 突出显示相关节点，淡化其他节点
+    globalNodeGroups.selectAll('circle')
+        .transition()
+        .duration(300)
+        .style('opacity', d => {
+            // 突出显示：当前stage节点 + 其子节点
+            if (d.id === stageNode.id || childrenIds.has(d.id)) {
+                return 1.0; // 完全不透明
+            }
+            // 淡化其他节点
+            return 0.2; // 很透明
+        })
+        .attr('stroke-width', d => {
+            // 突出显示的节点边框更粗
+            if (d.id === stageNode.id) {
+                return 6; // stage节点边框最粗
+            }
+            if (childrenIds.has(d.id)) {
+                return 4; // 子节点边框较粗
+            }
+            // 其他节点边框变细
+            return 1;
+        });
+    
+    // 突出显示相关文字
+    globalNodeGroups.selectAll('text')
+        .transition()
+        .duration(300)
+        .style('opacity', d => {
+            if (d.id === stageNode.id || childrenIds.has(d.id)) {
+                return 1.0;
+            }
+            return 0.3;
+        })
+        .style('font-weight', d => {
+            if (d.id === stageNode.id || childrenIds.has(d.id)) {
+                return 'bold';
+            }
+            return 'normal';
+        });
+    
+    // 突出显示相关连线
+    globalLinks.transition()
+        .duration(300)
+        .style('opacity', d => {
+            const sourceId = typeof d.source === 'string' ? d.source : d.source.id;
+            const targetId = typeof d.target === 'string' ? d.target : d.target.id;
+            
+            // 突出显示：从stage到子节点的连线
+            if (sourceId === stageNode.id || targetId === stageNode.id) {
+                return 1.0;
+            }
+            // 淡化其他连线
+            return 0.1;
+        })
+        .attr('stroke-width', d => {
+            const sourceId = typeof d.source === 'string' ? d.source : d.source.id;
+            const targetId = typeof d.target === 'string' ? d.target : d.target.id;
+            
+            if (sourceId === stageNode.id || targetId === stageNode.id) {
+                return 4; // 相关连线更粗
+            }
+            return 1; // 其他连线变细
+        });
+    
+    // 显示提示信息
+    showStageInfo(stageNode, childrenIds.size);
+}
+
+// 恢复正常显示
+function resetHighlight() {
+    log('🔄 恢复正常显示');
+    currentHighlightedStage = null;
+    
+    // 检查全局变量是否已初始化
+    if (!globalNodes || !globalEdges || !globalLinks || !globalNodeGroups) {
+        log('❌ 全局变量未初始化，无法执行恢复显示');
+        return;
+    }
+    
+    // 恢复所有节点的正常显示
+    globalNodeGroups.selectAll('circle')
+        .transition()
+        .duration(300)
+        .style('opacity', 1.0)
+        .attr('stroke-width', d => {
+            // 恢复原始边框宽度
+            if (d.type === 'stage') return 4;
+            if (d.type === 'supplement_kp') return 3;
+            if (d.type === 'supplement' || d.type === 'foundation') return 3;
+            return 2;
+        });
+    
+    // 恢复所有文字的正常显示
+    globalNodeGroups.selectAll('text')
+        .transition()
+        .duration(300)
+        .style('opacity', 1.0)
+        .style('font-weight', 'normal');
+    
+    // 恢复所有连线的正常显示
+    globalLinks.transition()
+        .duration(300)
+        .style('opacity', d => {
+            // 恢复原始透明度
+            const sourceType = typeof d.source === 'object' ? d.source.type : 
+                              globalNodes.find(n => n.id === d.source)?.type;
+            const targetType = typeof d.target === 'object' ? d.target.type : 
+                              globalNodes.find(n => n.id === d.target)?.type;
+            
+            if ((sourceType === 'start' || sourceType === 'stage') && 
+                (targetType === 'stage' || targetType === 'end')) {
+                return 1.0; // 主线完全不透明
+            }
+            return 0.8; // 分支线稍微透明
+        })
+        .attr('stroke-width', d => {
+            // 恢复原始线宽
+            const sourceType = typeof d.source === 'object' ? d.source.type : 
+                              globalNodes.find(n => n.id === d.source)?.type;
+            const targetType = typeof d.target === 'object' ? d.target.type : 
+                              globalNodes.find(n => n.id === d.target)?.type;
+            
+            if ((sourceType === 'start' || sourceType === 'stage') && 
+                (targetType === 'stage' || targetType === 'end')) {
+                return 4; // 主线粗线
+            }
+            return 2; // 分支线细线
+        });
+    
+    // 隐藏提示信息
+    hideStageInfo();
+}
+
+// 显示stage信息
+function showStageInfo(stageNode, childrenCount) {
+    // 移除现有的信息框
+    d3.select('#stageInfoBox').remove();
+    
+    // 创建信息框
+    const infoBox = d3.select('#mindmapSvgContainer')
+        .append('div')
+        .attr('id', 'stageInfoBox')
+        .style('position', 'absolute')
+        .style('top', '10px')
+        .style('right', '10px')
+        .style('background', 'rgba(0,0,0,0.8)')
+        .style('color', 'white')
+        .style('padding', '10px')
+        .style('border-radius', '5px')
+        .style('font-size', '14px')
+        .style('max-width', '300px')
+        .style('z-index', '1000')
+        .style('opacity', '0');
+    
+    infoBox.html(`
+        <div style="font-weight: bold; margin-bottom: 5px;">📚 ${stageNode.name}</div>
+        <div style="font-size: 12px; color: #ccc;">包含 ${childrenCount} 个知识点</div>
+        <div style="font-size: 11px; color: #999; margin-top: 5px;">点击其他stage切换 | 再次点击恢复</div>
+    `);
+    
+    // 淡入动画
+    infoBox.transition()
+        .duration(300)
+        .style('opacity', '1');
+}
+
+// 隐藏stage信息
+function hideStageInfo() {
+    d3.select('#stageInfoBox')
+        .transition()
+        .duration(300)
+        .style('opacity', '0')
+        .remove();
 }
 
 // 拖拽相关函数
@@ -2980,14 +3339,28 @@ function dragstarted(event, d) {
 }
 
 function dragged(event, d) {
-    d.fx = event.x;
-    d.fy = event.y;
+    if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+        // 主线节点只能水平拖拽，Y坐标固定
+        d.fx = event.x;
+        d.fy = 350; // 强制保持在水平线上
+    } else {
+        // 知识点节点可以自由拖拽
+        d.fx = event.x;
+        d.fy = event.y;
+    }
 }
 
 function dragended(event, d) {
     if (!event.active) simulation.alphaTarget(0);
-    d.fx = null;
-    d.fy = null;
+    if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+        // 主线节点保持固定位置
+        d.fx = d.x;
+        d.fy = 350;
+    } else {
+        // 知识点节点释放固定
+        d.fx = null;
+        d.fy = null;
+    }
 }
 
 </script>
