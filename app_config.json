@@ -24,6 +24,6 @@
   "main_window_state_v1": "AAAA/wAAAAH9AAAAAgAAAAAAAASaAAACf/wCAAAAAfwAAAAhAAACfwAAAMQA/////AEAAAAC/AAAAAAAAAMsAAABtQD////8AgAAAAL7AAAAGABDAG8AbgB0AHIAbwBsAHMARABvAGMAawEAAAAhAAAAYgAAAEEA////+wAAABYAUwB1AG0AbQBhAHIAeQBEAG8AYwBrAQAAAIcAAAIZAAAAfwD////7AAAAIgBUAHIAYQBuAHMAYwByAGkAcAB0AGkAbwBuAEQAbwBjAGsBAAADMAAAAWoAAABtAP///wAAAAMAAASwAAAA1/wBAAAAAfsAAAAOAEwAbwBnAEQAbwBjAGsAAAAAAAAABLAAAABPAP///wAAABIAAAJ/AAAABAAAAAQAAAAIAAAACPwAAAAA",
   "last_selected_subject": "机器学习",
   "llm_call_logging_enabled": true,
-  "selected_audio_device_index": 6,
-  "selected_audio_device_name": "CABLE Output (VB-Audio Virtual "
+  "selected_audio_device_index": 0,
+  "selected_audio_device_name": "Microsoft 声音映射器 - Input"
 }

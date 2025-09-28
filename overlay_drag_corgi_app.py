@@ -3054,6 +3054,81 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"获取LLM调用日志失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
+    # ==================== 学习路径图功能 ====================
+    
+    @Slot(str, result=str)
+    def getOrGenerateLearningPath(self, subject_name):
+        """获取或生成学科的学习路径图"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【学习路径】getOrGenerateLearningPath 开始 - 学科: {subject_name}")
+        
+        try:
+            self.logger.info(f"🔍 导入KnowledgeManagementSystem...")
+            from knowledge_management import KnowledgeManagementSystem
+            self.logger.info(f"✅ KnowledgeManagementSystem导入成功")
+            
+            self.logger.info(f"🔍 创建KnowledgeManagementSystem实例...")
+            km_system = KnowledgeManagementSystem(self.config)
+            self.logger.info(f"✅ KnowledgeManagementSystem实例创建成功")
+            
+            # 获取或生成学习路径
+            self.logger.info(f"🔍 调用get_or_generate_learning_path方法...")
+            learning_path_result = km_system.get_or_generate_learning_path(subject_name)
+            self.logger.info(f"📊 学习路径结果: {learning_path_result is not None}")
+            
+            if learning_path_result:
+                self.logger.info(f"✅ 成功获取/生成学习路径")
+                return json.dumps({
+                    "success": True,
+                    "learningPath": learning_path_result
+                }, ensure_ascii=False)
+            else:
+                self.logger.error(f"❌ 学习路径生成失败")
+                return json.dumps({
+                    "success": False,
+                    "error": "学习路径生成失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 获取学习路径异常: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def clearLearningPathCache(self, subject_name):
+        """清除学科的学习路径缓存"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【学习路径】clearLearningPathCache 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 清除缓存
+            success = km_system.clear_learning_path_cache(subject_name)
+            
+            if success:
+                self.logger.info(f"✅ 成功清除学习路径缓存")
+                return json.dumps({
+                    "success": True,
+                    "message": f"已清除 {subject_name} 的学习路径缓存"
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 缓存清除失败 - 可能缓存不存在")
+                return json.dumps({
+                    "success": False,
+                    "error": "缓存清除失败，可能缓存不存在"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 清除学习路径缓存失败: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
     # ====== 网课笔记录音功能 ======
     
     @Slot()

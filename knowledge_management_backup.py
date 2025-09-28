@@ -2400,7 +2400,7 @@ class MindmapManager:
         print(f"🔍 缓存不存在，开始生成新的学习路径")
         
         # 获取学科的所有知识点
-        knowledge_points = self.get_knowledge_points_by_subject(subject_name)
+        knowledge_points = self._get_knowledge_points_from_db(subject_name, user_id)
         if not knowledge_points:
             print(f"⚠️ 学科 '{subject_name}' 没有知识点，无法生成学习路径")
             return None
@@ -2657,3 +2657,29 @@ class MindmapManager:
             print(f"❌ 清除学习路径缓存失败: {e}")
             conn.close()
             return False
+    
+    def _get_knowledge_points_from_db(self, subject_name: str, user_id: str = "0001") -> List[Dict]:
+        """从数据库获取学科的知识点"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            """SELECT id, point_name, core_description, mastery_score, created_time
+               FROM knowledge_points
+               WHERE user_id = ? AND subject_name = ?
+               ORDER BY created_time DESC""",
+            (user_id, subject_name)
+        )
+        
+        points = []
+        for row in cursor.fetchall():
+            points.append({
+                "id": row[0],
+                "point_name": row[1],
+                "core_description": row[2],
+                "mastery_score": row[3],
+                "created_time": row[4]
+            })
+        
+        conn.close()
+        return points

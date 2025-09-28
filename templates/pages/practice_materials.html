@@ -141,6 +141,12 @@
                     <span class="material-icons-outlined text-sm">refresh</span>
                     <span>刷新</span>
                 </button>
+                <!-- 梳理知识点按钮 -->
+                <button id="generateLearningPathBtn" onclick="generateLearningPath()" 
+                        class="bg-green-500 text-white px-3 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-1">
+                    <span class="material-icons-outlined text-sm">account_tree</span>
+                    <span>梳理知识点</span>
+                </button>
                 <!-- 全屏按钮 -->
                 <button id="fullscreenBtn" onclick="toggleFullscreen()" 
                         class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center space-x-2">
@@ -2508,6 +2514,225 @@ function getCurrentSubject() {
         </div>
     </div>
 </div>
+
+<script>
+// 学习路径图相关功能
+let currentLearningPathData = null;
+let isGeneratingLearningPath = false;
+
+// 生成学习路径图
+async function generateLearningPath() {
+    if (isGeneratingLearningPath) {
+        log('⚠️ 学习路径正在生成中，跳过重复调用');
+        return;
+    }
+    
+    if (!currentSubjectName) {
+        log('❌ 没有选择学科，无法生成学习路径');
+        return;
+    }
+    
+    isGeneratingLearningPath = true;
+    log(`🌳 开始生成 ${currentSubjectName} 的学习路径图`);
+    
+    // 更新按钮状态
+    const btn = document.getElementById('generateLearningPathBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-icons-outlined text-sm animate-spin">refresh</span><span>生成中...</span>';
+    btn.disabled = true;
+    
+    try {
+        // 检查WebChannel连接
+        log(`🔍 检查WebChannel连接状态:`);
+        log(`  - window.bridge 存在: ${!!window.bridge}`);
+        log(`  - getOrGenerateLearningPath 方法存在: ${!!(window.bridge && window.bridge.getOrGenerateLearningPath)}`);
+        
+        if (!window.bridge || !window.bridge.getOrGenerateLearningPath) {
+            throw new Error('WebChannel连接不可用或方法不存在');
+        }
+        
+        log(`📡 调用后端API生成学习路径...`);
+        log(`📤 请求参数: 学科="${currentSubjectName}"`);
+        
+        const response = await window.bridge.getOrGenerateLearningPath(currentSubjectName);
+        log(`📡 API响应长度: ${response ? response.length : 0}`);
+        log(`📡 API响应预览: ${response ? response.substring(0, 200) + '...' : 'null'}`);
+        
+        const result = JSON.parse(response);
+        
+        if (result.success && result.learningPath && result.learningPath.data) {
+            log(`✅ 学习路径生成成功`);
+            currentLearningPathData = result.learningPath.data;
+            
+            // 切换到学习路径视图
+            switchToLearningPathView();
+            renderLearningPath();
+        } else {
+            throw new Error(result.error || '学习路径生成失败');
+        }
+        
+    } catch (error) {
+        log(`❌ 生成学习路径失败: ${error.message}`);
+        alert(`生成学习路径失败: ${error.message}`);
+    } finally {
+        // 恢复按钮状态
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        isGeneratingLearningPath = false;
+    }
+}
+
+// 切换到学习路径视图
+function switchToLearningPathView() {
+    log('🔄 切换到学习路径视图');
+    
+    // 更新标题
+    document.getElementById('mindmapTitle').textContent = `${currentSubjectName} - 学习路径图`;
+    
+    // 添加返回按钮
+    const titleDiv = document.querySelector('#mindmapPage .flex.items-center.justify-between');
+    if (!document.getElementById('backToMindmapBtn')) {
+        const backBtn = document.createElement('button');
+        backBtn.id = 'backToMindmapBtn';
+        backBtn.onclick = switchToMindmapView;
+        backBtn.className = 'bg-gray-500 text-white px-3 py-1 rounded-lg hover:bg-gray-600 transition-colors flex items-center space-x-1';
+        backBtn.innerHTML = '<span class="material-icons-outlined text-sm">arrow_back</span><span>返回脑图</span>';
+        titleDiv.querySelector('div:first-child').appendChild(backBtn);
+    }
+}
+
+// 切换回知识脑图视图
+function switchToMindmapView() {
+    log('🔄 切换回知识脑图视图');
+    
+    // 更新标题
+    document.getElementById('mindmapTitle').textContent = `${currentSubjectName} - 知识脑图`;
+    
+    // 移除返回按钮
+    const backBtn = document.getElementById('backToMindmapBtn');
+    if (backBtn) {
+        backBtn.remove();
+    }
+    
+    // 重新渲染知识脑图
+    if (currentMindmapData) {
+        renderMindmap();
+    }
+}
+
+// 渲染学习路径图
+function renderLearningPath() {
+    if (!currentLearningPathData || !currentLearningPathData.nodes) {
+        log('❌ 学习路径数据无效');
+        return;
+    }
+    
+    log(`🌳 开始渲染学习路径图，节点数: ${currentLearningPathData.nodes.length}`);
+    
+    // 初始化SVG（复用现有的initSvg函数）
+    if (!initSvg()) {
+        log('❌ SVG初始化失败，无法渲染学习路径图');
+        return;
+    }
+    
+    const nodes = currentLearningPathData.nodes.map(d => ({...d}));
+    const edges = currentLearningPathData.edges || [];
+    
+    // 创建层次化布局的力导向图
+    simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(edges).id(d => d.id).distance(200))
+        .force('charge', d3.forceManyBody().strength(-800))
+        .force('center', d3.forceCenter(400, 250))
+        .force('y', d3.forceY(d => d.level * 150).strength(0.5)) // 按层级排列
+        .force('collision', d3.forceCollide().radius(60));
+    
+    // 定义箭头标记（表示学习顺序）
+    const defs = svg.append('defs');
+    defs.append('marker')
+        .attr('id', 'learningArrow')
+        .attr('viewBox', '0 -5 10 10')
+        .attr('refX', 15)
+        .attr('refY', 0)
+        .attr('markerWidth', 10)
+        .attr('markerHeight', 10)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M0,-5L10,0L0,5')
+        .attr('fill', '#4CAF50');
+    
+    // 绘制连线（学习路径）
+    const links = g.selectAll('.learning-link')
+        .data(edges)
+        .enter().append('line')
+        .attr('class', 'learning-link')
+        .attr('stroke', '#4CAF50')
+        .attr('stroke-width', 3)
+        .attr('marker-end', 'url(#learningArrow)')
+        .attr('opacity', 0.8);
+    
+    // 绘制节点
+    const nodeGroups = g.selectAll('.learning-node')
+        .data(nodes)
+        .enter().append('g')
+        .attr('class', 'learning-node')
+        .style('cursor', 'pointer')
+        .call(d3.drag()
+            .on('start', dragstarted)
+            .on('drag', dragged)
+            .on('end', dragended));
+    
+    // 节点圆圈
+    nodeGroups.append('circle')
+        .attr('r', d => {
+            if (d.type === 'start') return 25;
+            if (d.type === 'end') return 25;
+            if (d.type === 'milestone') return 20;
+            return 18;
+        })
+        .attr('fill', d => {
+            if (d.type === 'start') return '#2196F3';
+            if (d.type === 'end') return '#FF5722';
+            if (d.type === 'milestone') return '#FF9800';
+            return '#4CAF50';
+        })
+        .attr('stroke', '#fff')
+        .attr('stroke-width', 2);
+    
+    // 节点文字
+    nodeGroups.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.35em')
+        .attr('font-size', '12px')
+        .attr('font-weight', 'bold')
+        .attr('fill', 'white')
+        .text(d => {
+            const maxLength = 8;
+            return d.name.length > maxLength ? d.name.substring(0, maxLength) + '...' : d.name;
+        });
+    
+    // 节点标签（在节点下方）
+    nodeGroups.append('text')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '35px')
+        .attr('font-size', '10px')
+        .attr('fill', '#666')
+        .text(d => d.description || '');
+    
+    // 更新位置
+    simulation.on('tick', () => {
+        links
+            .attr('x1', d => d.source.x)
+            .attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x)
+            .attr('y2', d => d.target.y);
+        
+        nodeGroups
+            .attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+    
+    log('✅ 学习路径图渲染完成');
+}
+</script>
 
 </body>
 </html>
