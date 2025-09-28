@@ -2678,36 +2678,101 @@ function renderLearningPath() {
     });
     
     // 为知识点节点预设围绕父节点的初始位置
+    log(`🔍 开始处理知识点节点布局...`);
     const knowledgeNodes = nodes.filter(n => n.type === 'existing_kp' || n.type === 'supplement_kp');
+    log(`📊 找到${knowledgeNodes.length}个知识点节点`);
     const stageGroups = {};
     
     // 按父阶段分组知识点
     knowledgeNodes.forEach(node => {
         const parentStage = node.parent_stage || 'unknown';
+        log(`🔍 检查知识点 ${node.name}:`);
+        log(`  - ID: ${node.id}`);
+        log(`  - Type: ${node.type}`);
+        log(`  - Parent Stage: ${node.parent_stage}`);
+        log(`  - 归属于: ${parentStage}`);
+        
         if (!stageGroups[parentStage]) {
             stageGroups[parentStage] = [];
         }
         stageGroups[parentStage].push(node);
     });
     
+    log(`📋 分组结果: ${Object.keys(stageGroups).length}个阶段组`);
+    Object.keys(stageGroups).forEach(stageId => {
+        log(`  - ${stageId}: ${stageGroups[stageId].length}个知识点`);
+    });
+    
     // 为每个阶段的知识点设置围绕分布
+    log(`🎯 开始为每个阶段设置知识点分布...`);
     Object.keys(stageGroups).forEach(stageId => {
         const stageNode = nodes.find(n => n.id === stageId);
         const knowledgePoints = stageGroups[stageId];
         
         if (stageNode && knowledgePoints.length > 0) {
+            log(`📍 为${stageId}的${knowledgePoints.length}个知识点设置上下分布位置`);
             const stageX = stageNode.x;
             const stageY = stageNode.y;
-            const radius = 120; // 围绕半径
-            const angleStep = (2 * Math.PI) / knowledgePoints.length;
+            log(`🎯 Stage节点位置: ${stageId} at (${stageX}, ${stageY})`);
+            
+            // 新的布局策略：上下均匀分布，以stage节点为中心左右对称分布
+            const verticalSpacing = 120; // 增加垂直间距，让子节点离stage更远一点
+            const horizontalSpread = 120; // 稍微增加水平分布范围
+            log(`📐 布局参数: verticalSpacing=${verticalSpacing}, horizontalSpread=${horizontalSpread}`);
+            
+            // 将知识点分为上下两组
+            const upperCount = Math.ceil(knowledgePoints.length / 2);
+            const lowerCount = knowledgePoints.length - upperCount;
+            log(`📊 分组情况: 上方${upperCount}个节点, 下方${lowerCount}个节点`);
             
             knowledgePoints.forEach((kp, index) => {
-                const angle = index * angleStep;
-                // 上下交替分布，避免都在一侧
-                const side = index % 2 === 0 ? 1 : -1;
-                kp.x = stageX + Math.cos(angle) * radius;
-                kp.y = stageY + side * (80 + Math.sin(angle) * 40); // 上下错开分布
-                log(`  - 知识点 ${kp.name}: 围绕${stageId}分布到(${kp.x.toFixed(0)}, ${kp.y.toFixed(0)})`);
+                if (index < upperCount) {
+                    // 上方节点 - 以stage为中心左右分布
+                    const upperIndex = index;
+                    if (upperCount === 1) {
+                        // 只有1个节点，放在stage正上方
+                        kp.x = stageX;
+                        log(`    ✅ 单节点上方: ${kp.name} -> x=${kp.x} (stage中心)`);
+                    } else {
+                        // 多个节点，以stage为中心左右分布
+                        const spacing = horizontalSpread / (upperCount - 1);
+                        const calculatedX = stageX - (horizontalSpread / 2) + upperIndex * spacing;
+                        kp.x = calculatedX;
+                        log(`    📊 上方节点${upperIndex}: ${kp.name}`);
+                        log(`      - spacing=${spacing.toFixed(1)}`);
+                        log(`      - 计算: ${stageX} - ${horizontalSpread/2} + ${upperIndex} * ${spacing.toFixed(1)} = ${calculatedX.toFixed(1)}`);
+                    }
+                    kp.y = stageY - verticalSpacing;
+                    log(`  ✅ 知识点 ${kp.name}: 上方分布到(${kp.x.toFixed(0)}, ${kp.y.toFixed(0)})`);
+                    
+                    // 设置固定位置，防止力导向图改变
+                    kp.fx = kp.x;
+                    kp.fy = kp.y;
+                    log(`  🔒 固定知识点 ${kp.name} 位置: fx=${kp.fx}, fy=${kp.fy}`);
+                } else {
+                    // 下方节点 - 以stage为中心左右分布
+                    const lowerIndex = index - upperCount;
+                    if (lowerCount === 1) {
+                        // 只有1个节点，放在stage正下方
+                        kp.x = stageX;
+                        log(`    ✅ 单节点下方: ${kp.name} -> x=${kp.x} (stage中心)`);
+                    } else {
+                        // 多个节点，以stage为中心左右分布
+                        const spacing = horizontalSpread / (lowerCount - 1);
+                        const calculatedX = stageX - (horizontalSpread / 2) + lowerIndex * spacing;
+                        kp.x = calculatedX;
+                        log(`    📊 下方节点${lowerIndex}: ${kp.name}`);
+                        log(`      - spacing=${spacing.toFixed(1)}`);
+                        log(`      - 计算: ${stageX} - ${horizontalSpread/2} + ${lowerIndex} * ${spacing.toFixed(1)} = ${calculatedX.toFixed(1)}`);
+                    }
+                    kp.y = stageY + verticalSpacing;
+                    log(`  ✅ 知识点 ${kp.name}: 下方分布到(${kp.x.toFixed(0)}, ${kp.y.toFixed(0)})`);
+                    
+                    // 设置固定位置，防止力导向图改变
+                    kp.fx = kp.x;
+                    kp.fy = kp.y;
+                    log(`  🔒 固定知识点 ${kp.name} 位置: fx=${kp.fx}, fy=${kp.fy}`);
+                }
             });
         }
     });
@@ -2747,12 +2812,12 @@ function renderLearningPath() {
                 if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 大幅增加主线间距
                 if (d.source.type === 'start' && d.target.type === 'stage') return 800;
                 if (d.source.type === 'stage' && d.target.type === 'end') return 800;
-                return 80; // 阶段到知识点的距离，稍微减少避免过度拉扯
+                return 50; // 减少阶段到知识点的距离，让连线更短
             }))
             .force('charge', d3.forceManyBody().strength(d => {
                 // 减少排斥力，避免布局混乱
                 if (d.type === 'stage') return -300; // 大幅减少主线节点排斥力
-                return -150; // 大幅减少知识点排斥力
+                return -80; // 进一步减少知识点排斥力，让它们更紧凑
             }))
             .force('center', d3.forceCenter(1600, 350))
             .force('x', d3.forceX(d => {
@@ -2801,12 +2866,12 @@ function renderLearningPath() {
                 if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 大幅增加主线间距
                 if (d.source.type === 'start' && d.target.type === 'stage') return 800;
                 if (d.source.type === 'stage' && d.target.type === 'end') return 800;
-                return 80; // 阶段到知识点的距离，稍微减少避免过度拉扯
+                return 50; // 减少阶段到知识点的距离，让连线更短
             }))
             .force('charge', d3.forceManyBody().strength(d => {
                 // 减少排斥力，避免布局混乱
                 if (d.type === 'stage') return -300; // 大幅减少主线节点排斥力
-                return -150; // 大幅减少知识点排斥力
+                return -80; // 进一步减少知识点排斥力，让它们更紧凑
             }))
     }
     
@@ -2829,21 +2894,27 @@ function renderLearningPath() {
                 
                 return padding + d.level * spacing; // 动态间距的水平主线
             }
-            return d.x; // 知识点节点自由排列
-        }).strength(0.8))
+            return d.x; // 知识点节点使用预设的X坐标
+        }).strength(d => {
+            // 知识点节点也使用较强的力保持预设位置
+            if (d.type === 'existing_kp' || d.type === 'supplement_kp') {
+                return 0.8; // 知识点使用较强的力保持预设X坐标
+            }
+            return 0.8; // 其他节点也保持较强的力
+        }))
         .force('y', d3.forceY(d => {
             // 主线节点严格保持在同一水平线上
             if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
                 return 350; // 主线固定在水平线上
             }
-            // 知识点在主线上下分布
-            return 350 + (Math.random() - 0.5) * 300; // 增加分布范围
+            // 知识点使用我们手动设置的Y坐标
+            return d.y; // 使用预设的Y坐标，不再随机分布
         }).strength(d => {
             // 主线节点使用更强的力保持水平
             if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
                 return 1.0; // 主线节点强制水平对齐
             }
-            return 0.3; // 知识点节点较弱的力
+            return 0.8; // 知识点节点也使用较强的力保持预设位置
         }))
         .force('collision', d3.forceCollide().radius(d => {
             if (d.type === 'stage') return 80; // 学习阶段需要更大空间
@@ -3356,8 +3427,13 @@ function dragended(event, d) {
         // 主线节点保持固定位置
         d.fx = d.x;
         d.fy = 350;
+    } else if (d.type === 'existing_kp' || d.type === 'supplement_kp') {
+        // 知识点节点：保持在当前拖动位置，不要释放固定
+        d.fx = d.x;
+        d.fy = d.y;
+        log(`🔒 拖动结束，固定知识点 ${d.name} 在新位置: (${d.fx}, ${d.fy})`);
     } else {
-        // 知识点节点释放固定
+        // 其他节点释放固定
         d.fx = null;
         d.fy = null;
     }
