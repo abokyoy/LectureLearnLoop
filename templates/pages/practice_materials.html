@@ -194,8 +194,8 @@
             </div>
             
             <!-- 脑图SVG -->
-            <div id="mindmapSvgContainer" class="w-full" style="height: 600px;">
-                <svg id="mindmapSvg" width="100%" height="100%"></svg>
+            <div id="mindmapSvgContainer" class="w-full" style="height: 700px; overflow: auto;">
+                <svg id="mindmapSvg" width="100%" height="100%" viewBox="0 0 1600 700"></svg>
             </div>
             
             <!-- 加载状态 -->
@@ -2648,13 +2648,100 @@ function renderLearningPath() {
     const nodes = currentLearningPathData.nodes.map(d => ({...d}));
     const edges = currentLearningPathData.edges || [];
     
-    // 创建层次化布局的力导向图
-    simulation = d3.forceSimulation(nodes)
-        .force('link', d3.forceLink(edges).id(d => d.id).distance(200))
-        .force('charge', d3.forceManyBody().strength(-800))
+    // 调试：检查节点和边的数据
+    log(`🔍 节点数据检查: ${nodes.length}个节点`);
+    nodes.forEach(node => {
+        log(`  - 节点: ${node.id} (${node.name}) - 类型: ${node.type}`);
+    });
+    
+    log(`🔍 边数据检查: ${edges.length}条边`);
+    edges.forEach(edge => {
+        log(`  - 边: ${edge.source} → ${edge.target}`);
+    });
+    
+    // 验证所有边引用的节点都存在
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const invalidEdges = edges.filter(edge => 
+        !nodeIds.has(edge.source) || !nodeIds.has(edge.target)
+    );
+    
+    if (invalidEdges.length > 0) {
+        log(`❌ 发现无效边: ${invalidEdges.length}条`);
+        invalidEdges.forEach(edge => {
+            log(`  - 无效边: ${edge.source} → ${edge.target}`);
+        });
+        // 过滤掉无效边
+        const validEdges = edges.filter(edge => 
+            nodeIds.has(edge.source) && nodeIds.has(edge.target)
+        );
+        log(`✅ 使用有效边: ${validEdges.length}条`);
+        
+        // 创建鱼骨图布局的力导向图
+        simulation = d3.forceSimulation(nodes)
+            .force('link', d3.forceLink(validEdges).id(d => d.id).distance(d => {
+                // 主线连接距离更大，确保主线更长
+                if (d.source.type === 'stage' && d.target.type === 'stage') return 400; // 增加主线间距
+                if (d.source.type === 'start' && d.target.type === 'stage') return 350;
+                if (d.source.type === 'stage' && d.target.type === 'end') return 350;
+                return 100; // 阶段到知识点的距离
+            }))
+            .force('charge', d3.forceManyBody().strength(d => {
+                // 学习阶段排斥力更强，保持主线清晰
+                if (d.type === 'stage') return -1200;
+                return -600;
+            }))
+    } else {
+        log(`✅ 所有边都有效，直接使用`);
+        
+        // 创建鱼骨图布局的力导向图
+        simulation = d3.forceSimulation(nodes)
+            .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
+                // 主线连接距离更大，确保主线更长
+                if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 增加主线间距
+                if (d.source.type === 'start' && d.target.type === 'stage') return 800;
+                if (d.source.type === 'stage' && d.target.type === 'end') return 800;
+                return 100; // 阶段到知识点的距离
+            }))
+            .force('charge', d3.forceManyBody().strength(d => {
+                // 学习阶段排斥力更强，保持主线清晰
+                if (d.type === 'stage') return -1200;
+                return -600;
+            }))
+    }
+    
+    // 继续力导向图的其他配置
+    simulation
         .force('center', d3.forceCenter(400, 250))
-        .force('y', d3.forceY(d => d.level * 150).strength(0.5)) // 按层级排列
-        .force('collision', d3.forceCollide().radius(60));
+        .force('x', d3.forceX(d => {
+            // 主线节点水平排列，支持更长的主线
+            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                // 计算主线节点总数
+                const mainLineNodes = nodes.filter(n => n.type === 'start' || n.type === 'stage' || n.type === 'end');
+                const totalMainNodes = mainLineNodes.length;
+                
+                // 动态调整间距，确保主线更长更展开
+                const containerWidth = 1600; // 增加SVG容器宽度
+                const padding = 50; // 减少边距，增加可用空间
+                const availableWidth = containerWidth - 2 * padding;
+                const minSpacing = 120; // 最小间距
+                const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : 0);
+                
+                return padding + d.level * spacing; // 动态间距的水平主线
+            }
+            return d.x; // 知识点节点自由排列
+        }).strength(0.8))
+        .force('y', d3.forceY(d => {
+            // 主线节点在中央，知识点在上下分布
+            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
+                return 250; // 主线在中央
+            }
+            // 知识点在主线上下分布
+            return 250 + (Math.random() - 0.5) * 200;
+        }).strength(0.3))
+        .force('collision', d3.forceCollide().radius(d => {
+            if (d.type === 'stage') return 80; // 学习阶段需要更大空间
+            return 50;
+        }));
     
     // 定义箭头标记（表示学习顺序）
     const defs = svg.append('defs');
@@ -2670,14 +2757,36 @@ function renderLearningPath() {
         .attr('d', 'M0,-5L10,0L0,5')
         .attr('fill', '#4CAF50');
     
-    // 绘制连线（学习路径）
+    // 绘制连线（学习路径）- 使用验证后的边数据
+    const finalEdges = invalidEdges.length > 0 ? validEdges : edges;
     const links = g.selectAll('.learning-link')
-        .data(edges)
+        .data(finalEdges)
         .enter().append('line')
         .attr('class', 'learning-link')
-        .attr('stroke', '#4CAF50')
-        .attr('stroke-width', 3)
-        .attr('marker-end', 'url(#learningArrow)')
+        .attr('stroke', d => {
+            // 主线使用粗线，分支使用细线
+            if ((d.source.type === 'start' || d.source.type === 'stage') && 
+                (d.target.type === 'stage' || d.target.type === 'end')) {
+                return '#FF9800'; // 橙色主线
+            }
+            return '#4CAF50'; // 绿色分支线
+        })
+        .attr('stroke-width', d => {
+            // 主线更粗，分支较细
+            if ((d.source.type === 'start' || d.source.type === 'stage') && 
+                (d.target.type === 'stage' || d.target.type === 'end')) {
+                return 5; // 主线粗
+            }
+            return 2; // 分支细
+        })
+        .attr('marker-end', d => {
+            // 只有主线显示箭头
+            if ((d.source.type === 'start' || d.source.type === 'stage') && 
+                (d.target.type === 'stage' || d.target.type === 'end')) {
+                return 'url(#learningArrow)';
+            }
+            return '';
+        })
         .attr('opacity', 0.8);
     
     // 绘制节点
@@ -2691,38 +2800,100 @@ function renderLearningPath() {
             .on('drag', dragged)
             .on('end', dragended));
     
-    // 节点圆圈
+    // 节点圆圈 - 根据文字长度动态调整大小
     nodeGroups.append('circle')
         .attr('r', d => {
-            if (d.type === 'start') return 25;
-            if (d.type === 'end') return 25;
-            if (d.type === 'milestone') return 20;
-            return 18;
+            if (d.type === 'start' || d.type === 'end') return 35;
+            if (d.type === 'milestone') return 30;
+            
+            // 根据文字长度动态计算半径
+            const textLength = d.name ? d.name.length : 5;
+            let baseRadius = 25;
+            
+            if (textLength > 8) {
+                baseRadius = Math.max(25, Math.min(45, textLength * 2.5));
+            }
+            
+            return baseRadius;
         })
         .attr('fill', d => {
             if (d.type === 'start') return '#2196F3';           // 蓝色 - 起点
             if (d.type === 'end') return '#FF5722';             // 红色 - 终点
+            if (d.type === 'stage') return '#FF9800';           // 橙色 - 学习阶段
+            if (d.type === 'existing_kp') return '#4CAF50';     // 绿色 - 已有知识点
+            if (d.type === 'supplement_kp') return '#E91E63';   // 粉色 - LLM补充知识点
+            // 兼容旧的节点类型
             if (d.type === 'milestone') return '#FF9800';       // 橙色 - 里程碑
             if (d.type === 'foundation') return '#9C27B0';      // 紫色 - 基础概念
-            if (d.type === 'supplement') return '#E91E63';      // 粉色 - 补充知识
-            if (d.type === 'core') return '#4CAF50';            // 绿色 - 核心知识
+            if (d.type === 'supplement') return '#E91E63';      // 粉色 - LLM补充知识
+            if (d.type === 'core') return '#4CAF50';            // 绿色 - 已有核心知识
             if (d.type === 'advanced') return '#795548';        // 棕色 - 高级应用
             return '#607D8B';                                   // 灰蓝色 - 默认
         })
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2);
-    
-    // 节点文字
-    nodeGroups.append('text')
-        .attr('text-anchor', 'middle')
-        .attr('dy', '0.35em')
-        .attr('font-size', '12px')
-        .attr('font-weight', 'bold')
-        .attr('fill', 'white')
-        .text(d => {
-            const maxLength = 8;
-            return d.name.length > maxLength ? d.name.substring(0, maxLength) + '...' : d.name;
+        .attr('stroke', d => {
+            // 为LLM新增的知识点添加特殊边框
+            if (d.type === 'supplement_kp') return '#C2185B';   // 深粉色边框 - LLM补充知识点
+            if (d.type === 'stage') return '#F57C00';           // 深橙色边框 - 学习阶段
+            // 兼容旧的节点类型
+            if (d.type === 'supplement') return '#C2185B';      // 深粉色边框 - LLM补充
+            if (d.type === 'foundation') return '#7B1FA2';      // 深紫色边框 - 基础概念
+            return '#fff';                                      // 白色边框 - 其他
+        })
+        .attr('stroke-width', d => {
+            // 学习阶段和LLM新增知识点使用更粗的边框
+            if (d.type === 'stage') return 4;                  // 学习阶段最粗
+            if (d.type === 'supplement_kp') return 3;          // LLM补充知识点
+            if (d.type === 'supplement' || d.type === 'foundation') return 3;
+            return 2;
         });
+    
+    // 节点文字 - 多行显示以适应圆圈
+    nodeGroups.each(function(d) {
+        const group = d3.select(this);
+        const radius = group.select('circle').attr('r');
+        const name = d.name || '';
+        
+        // 根据圆圈大小决定文字处理方式
+        if (radius > 30) {
+            // 大圆圈：尝试多行显示
+            const words = name.split(/[\s\-()（）]/);
+            const maxCharsPerLine = Math.floor(radius / 6);
+            
+            if (words.length > 1 && name.length > maxCharsPerLine) {
+                // 多行显示
+                words.forEach((word, i) => {
+                    if (i < 2) { // 最多显示2行
+                        group.append('text')
+                            .attr('text-anchor', 'middle')
+                            .attr('dy', i === 0 ? '-0.2em' : '1em')
+                            .attr('font-size', '11px')
+                            .attr('font-weight', 'bold')
+                            .attr('fill', 'white')
+                            .text(word.length > maxCharsPerLine ? word.substring(0, maxCharsPerLine) + '...' : word);
+                    }
+                });
+            } else {
+                // 单行显示
+                group.append('text')
+                    .attr('text-anchor', 'middle')
+                    .attr('dy', '0.35em')
+                    .attr('font-size', '12px')
+                    .attr('font-weight', 'bold')
+                    .attr('fill', 'white')
+                    .text(name.length > maxCharsPerLine ? name.substring(0, maxCharsPerLine) + '...' : name);
+            }
+        } else {
+            // 小圆圈：单行显示
+            const maxLength = Math.floor(radius / 3);
+            group.append('text')
+                .attr('text-anchor', 'middle')
+                .attr('dy', '0.35em')
+                .attr('font-size', '10px')
+                .attr('font-weight', 'bold')
+                .attr('fill', 'white')
+                .text(name.length > maxLength ? name.substring(0, maxLength) + '...' : name);
+        }
+    });
     
     // 节点标签（在节点下方）
     nodeGroups.append('text')
@@ -2732,6 +2903,61 @@ function renderLearningPath() {
         .attr('fill', '#666')
         .text(d => d.description || '');
     
+    // 添加图例
+    const legend = svg.append('g')
+        .attr('class', 'learning-path-legend')
+        .attr('transform', 'translate(20, 20)');
+    
+    const legendData = [
+        { type: 'stage', color: '#FF9800', stroke: '#F57C00', label: '学习阶段（主线）', strokeWidth: 4 },
+        { type: 'existing_kp', color: '#4CAF50', stroke: '#fff', label: '已有知识点', strokeWidth: 2 },
+        { type: 'supplement_kp', color: '#E91E63', stroke: '#C2185B', label: 'LLM补充知识点', strokeWidth: 3 },
+        { type: 'start', color: '#2196F3', stroke: '#fff', label: '学习起点', strokeWidth: 2 },
+        { type: 'end', color: '#FF5722', stroke: '#fff', label: '学习终点', strokeWidth: 2 }
+    ];
+    
+    // 图例背景
+    legend.append('rect')
+        .attr('x', -10)
+        .attr('y', -10)
+        .attr('width', 180)
+        .attr('height', legendData.length * 25 + 20)
+        .attr('fill', 'rgba(255, 255, 255, 0.9)')
+        .attr('stroke', '#ddd')
+        .attr('rx', 5);
+    
+    // 图例标题
+    legend.append('text')
+        .attr('x', 0)
+        .attr('y', 5)
+        .attr('font-size', '14px')
+        .attr('font-weight', 'bold')
+        .attr('fill', '#333')
+        .text('节点类型说明');
+    
+    // 图例项目
+    const legendItems = legend.selectAll('.legend-item')
+        .data(legendData)
+        .enter().append('g')
+        .attr('class', 'legend-item')
+        .attr('transform', (d, i) => `translate(0, ${20 + i * 25})`);
+    
+    // 图例圆圈
+    legendItems.append('circle')
+        .attr('r', 8)
+        .attr('fill', d => d.color)
+        .attr('stroke', d => d.stroke)
+        .attr('stroke-width', d => d.strokeWidth);
+    
+    // 图例文字
+    legendItems.append('text')
+        .attr('x', 15)
+        .attr('y', 0)
+        .attr('dy', '0.35em')
+        .attr('font-size', '12px')
+        .attr('fill', '#333')
+        .text(d => d.label);
+    
     // 更新位置
     simulation.on('tick', () => {
         links
@@ -2740,13 +2966,30 @@ function renderLearningPath() {
             .attr('x2', d => d.target.x)
             .attr('y2', d => d.target.y);
         
-        nodeGroups
-            .attr('transform', d => `translate(${d.x},${d.y})`);
+        nodeGroups.attr('transform', d => `translate(${d.x},${d.y})`);
     });
     
     log('✅ 学习路径图渲染完成');
 }
-</script>
 
+// 拖拽相关函数
+function dragstarted(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x;
+    d.fy = d.y;
+}
+
+function dragged(event, d) {
+    d.fx = event.x;
+    d.fy = event.y;
+}
+
+function dragended(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null;
+    d.fy = null;
+}
+
+</script>
 </body>
 </html>

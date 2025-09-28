@@ -2467,63 +2467,79 @@ class MindmapManager:
         
         kp_text = "\n".join(kp_list)
         
-        prompt = f"""作为一名{subject_name}领域的专家教师，请为学生制定一个完整的学习路线图。
+        prompt = f"""作为一名{subject_name}领域的专家教师，请为学生制定一个**详细的线性学习计划**，类似鱼骨图结构。
 
 **学生现有知识点：**
 {kp_text}
 
 **任务要求：**
-1. **分析现有知识体系**：评估学生已有知识点的完整性和层次
-2. **识别知识缺口**：找出学习{subject_name}必需但学生缺少的关键知识点
-3. **设计学习主线**：构建一条从零基础到掌握的完整学习路径
-4. **补充必要知识**：添加缺失的基础概念、核心理论、实践技能等
+1. **设计详细主线**：制定10-20个学习阶段，形成详细的线性路径，每个阶段专注一个具体学习目标
+2. **细化学习进程**：将学习过程分解为更多细粒度的阶段，确保循序渐进
+3. **知识点归类**：将学生的现有知识点归类到相应的学习阶段中
+4. **补充缺失知识**：为每个阶段补充必要的前置知识或核心概念
+5. **鱼骨图结构**：主线是学习阶段，知识点作为每个阶段的子节点
 
-**学习路线图设计原则：**
-- **循序渐进**：从最基础的概念开始，逐步深入
-- **逻辑连贯**：每个知识点都有明确的前置依赖关系
-- **查漏补缺**：补充学生知识体系中的重要缺失
-- **实用导向**：包含理论基础和实践应用
+**设计原则：**
+- **详细主线**：设计10-20个学习阶段，确保主线足够长，覆盖完整学习路径
+- **细粒度阶段**：每个阶段专注1-2个核心概念，避免阶段过于宽泛
+- **渐进式学习**：从最基础到最高级，每个阶段都是前一阶段的自然延续
+- **知识归类**：现有知识点必须归属到某个stage
+- **查漏补缺**：为缺少知识点的阶段补充必要内容
+- **鱼骨结构**：主干是阶段，分支是具体知识点
+
+**阶段设计建议：**
+- 基础准备阶段可以分为：数学基础、编程基础、统计基础等多个阶段
+- 核心概念可以分为：监督学习基础、无监督学习基础、深度学习基础等
+- 算法学习可以分为：线性模型、树模型、集成方法、神经网络等多个阶段
+- 实践应用可以分为：数据预处理、模型训练、模型评估、模型部署等阶段
 
 **节点类型说明：**
+- **stage**: 学习阶段（主线节点，如"基础阶段"、"核心阶段"）
+- **existing_kp**: 学生已有知识点（归类到某个阶段下）
+- **supplement_kp**: LLM补充的知识点（填补阶段缺失）
 - **start**: 学习起点
-- **foundation**: 基础概念（必须先掌握的基础知识）
-- **core**: 核心知识点（学科的主要内容）
-- **advanced**: 高级应用（需要多个基础支撑）
-- **supplement**: 补充知识（LLM建议添加的重要知识点）
-- **milestone**: 学习里程碑（阶段性目标）
 - **end**: 学习终点
 
 **输出格式：**
-请返回一个完整的学习路线图JSON，包含：
-1. 学生已有的所有知识点（保持原名称）
-2. 你建议补充的重要知识点（标注为supplement类型）
-3. 清晰的学习顺序和依赖关系
-4. 阶段性里程碑
+请返回鱼骨图结构的JSON，包含：
+1. 线性主线：start → stage1 → stage2 → ... → end
+2. 知识点分支：每个stage下挂载相关的知识点
+3. 现有知识点归类：标注为existing_kp类型
+4. 补充知识点：标注为supplement_kp类型
 
 JSON格式示例：
 {{
   "nodes": [
-    {{"id": "start", "name": "开始{subject_name}学习之旅", "type": "start", "level": 0, "description": "学习起点"}},
-    {{"id": "foundation_1", "name": "数学基础", "type": "supplement", "level": 1, "description": "LLM建议：学习{subject_name}必需的数学基础"}},
-    {{"id": "core_1", "name": "已有知识点名称", "type": "core", "level": 2, "description": "学生已掌握的核心概念"}},
-    {{"id": "milestone_1", "name": "基础阶段完成", "type": "milestone", "level": 3, "description": "已具备进入下一阶段的能力"}},
-    {{"id": "advanced_1", "name": "高级应用", "type": "advanced", "level": 4, "description": "综合运用多个知识点"}},
-    {{"id": "end", "name": "掌握{subject_name}", "type": "end", "level": 5, "description": "完成整个学习路径"}}
+    {{"id": "start", "name": "开始学习{subject_name}", "type": "start", "level": 0, "description": "学习起点"}},
+    {{"id": "stage1", "name": "基础准备阶段", "type": "stage", "level": 1, "description": "掌握必要的基础知识"}},
+    {{"id": "stage2", "name": "核心概念阶段", "type": "stage", "level": 2, "description": "学习核心理论和方法"}},
+    {{"id": "stage3", "name": "实践应用阶段", "type": "stage", "level": 3, "description": "动手实践和项目应用"}},
+    {{"id": "end", "name": "掌握{subject_name}", "type": "end", "level": 4, "description": "完成学习目标"}},
+    
+    {{"id": "kp_math", "name": "数学基础", "type": "supplement_kp", "level": 1, "parent_stage": "stage1", "description": "LLM补充：线性代数、概率统计"}},
+    {{"id": "kp_existing1", "name": "现有知识点名称", "type": "existing_kp", "level": 2, "parent_stage": "stage2", "description": "学生已掌握的概念"}},
+    {{"id": "kp_project", "name": "项目实践", "type": "supplement_kp", "level": 3, "parent_stage": "stage3", "description": "LLM补充：综合项目练习"}}
   ],
   "edges": [
-    {{"source": "start", "target": "foundation_1", "relationship": "首先学习"}},
-    {{"source": "foundation_1", "target": "core_1", "relationship": "基础上学习"}},
-    {{"source": "core_1", "target": "milestone_1", "relationship": "掌握后达成"}},
-    {{"source": "milestone_1", "target": "advanced_1", "relationship": "进入高级阶段"}},
-    {{"source": "advanced_1", "target": "end", "relationship": "最终掌握"}}
+    {{"source": "start", "target": "stage1", "relationship": "开始学习"}},
+    {{"source": "stage1", "target": "stage2", "relationship": "进入下一阶段"}},
+    {{"source": "stage2", "target": "stage3", "relationship": "进入下一阶段"}},
+    {{"source": "stage3", "target": "end", "relationship": "完成学习"}},
+    
+    {{"source": "stage1", "target": "kp_math", "relationship": "包含知识点"}},
+    {{"source": "stage2", "target": "kp_existing1", "relationship": "包含知识点"}},
+    {{"source": "stage3", "target": "kp_project", "relationship": "包含知识点"}}
   ]
 }}
 
-**重要提醒：**
-- 必须包含学生提供的所有知识点
-- 重点补充缺失的基础和核心知识
-- 确保学习路径的逻辑性和完整性
-- 只返回JSON格式，不要其他说明文字"""
+**重要要求：**
+1. **主线必须线性**：start → stage1 → stage2 → ... → end
+2. **知识点归类**：每个现有知识点必须归属到某个stage
+3. **补充缺失**：从严谨的学习路径设计角度，必须掌握的知识点必须要补充
+4. **鱼骨结构**：stage是主干，knowledge_point是分支
+5. **只返回JSON**：不要其他说明文字
+
+请确保学习计划具有清晰的线性进阶路径！"""
 
         try:
             # 使用LLM提供者工厂（和知识脑图相同的机制）
