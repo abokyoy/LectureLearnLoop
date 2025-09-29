@@ -985,8 +985,17 @@
             
             function smartScrollToBottom(container) {
                 if (!container) return;
-                if (!userScrolledUp || isAtBottom(container)) {
+                
+                // 直接检查用户是否在底部附近（50px容差）
+                const isUserAtBottom = isAtBottom(container, 50);
+                console.log('smartScrollToBottom调用 - 用户是否在底部:', isUserAtBottom);
+                
+                // 只有当用户在底部附近时，才自动滚动
+                if (isUserAtBottom) {
+                    console.log('用户在底部，执行自动滚动');
                     container.scrollTop = container.scrollHeight;
+                } else {
+                    console.log('用户不在底部，跳过自动滚动');
                 }
             }
             
@@ -1154,8 +1163,15 @@
                 addMessage(message, 'user');
                 chatInput.value = '';
                 
-                // 用户发送消息时重置滚动状态，总是滚动到底部
-                userScrolledUp = false;
+                // 用户发送消息时强制滚动到底部
+                const smallMessagesContainer = document.getElementById('aiChatMessages');
+                const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
+                if (smallMessagesContainer) {
+                    smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                }
+                if (maxMessagesContainer) {
+                    maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                }
                 
                 // 立即显示AI正在思考的消息
                 const thinkingMessageId = addThinkingMessage();
