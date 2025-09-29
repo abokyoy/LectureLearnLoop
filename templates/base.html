@@ -556,7 +556,441 @@
             51%, 100% { opacity: 0; }
         }
     </style>
-    <script src="static/js/practice_welcome.js"></script>
+    <script>
+        // 直接内联practice_welcome.js的内容，避免路径问题
+        // 练习助手欢迎界面功能
+
+        // 创建练习欢迎界面
+        function createPracticeWelcome() {
+            // 检查是否已经存在欢迎界面
+            const existingWelcome = document.getElementById('practiceWelcomePanel');
+            if (existingWelcome) {
+                addDebugLog('欢迎界面已存在，跳过创建');
+                return;
+            }
+            
+            const practiceTabContent = document.getElementById('practiceTabContent');
+            const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+            
+            addDebugLog(`创建练习欢迎界面 - practiceTabContent: ${!!practiceTabContent}, aiPracticeMessages: ${!!aiPracticeMessages}`);
+            
+            if (practiceTabContent && aiPracticeMessages) {
+                const welcomeHTML = `
+                <div class="practice-welcome-panel" id="practiceWelcomePanel" style="display: block;">
+                    <div class="flex flex-col items-center justify-center h-full p-8 text-center">
+                        <div class="mb-8">
+                            <span class="material-icons-outlined text-6xl text-primary mb-4 block">quiz</span>
+                            <h2 class="text-2xl font-bold text-text-dark-brown mb-2">AI练习助手</h2>
+                            <p class="text-text-medium-brown mb-6">智能生成练习题目，提升学习效果</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md">
+                            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomeNewPracticeBtn">
+                                <span class="material-icons-outlined text-3xl text-primary mb-2">add_circle_outline</span>
+                                <span class="font-medium text-text-dark-brown">开始新练习</span>
+                                <span class="text-sm text-text-medium-brown mt-1">生成新的练习题目</span>
+                            </button>
+                            
+                            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomePracticeHistoryBtn">
+                                <span class="material-icons-outlined text-3xl text-blue-500 mb-2">history</span>
+                                <span class="font-medium text-text-dark-brown">练习历史</span>
+                                <span class="text-sm text-text-medium-brown mt-1">查看历史练习记录</span>
+                            </button>
+                        </div>
+                        
+                        <div class="mt-8 text-sm text-text-medium-brown">
+                            <p>💡 提示：您可以通过AI对话生成个性化练习题目</p>
+                        </div>
+                    </div>
+                </div>
+                `;
+                
+                // 在消息面板前插入欢迎界面
+                addDebugLog('📝 插入欢迎界面HTML');
+                aiPracticeMessages.insertAdjacentHTML('beforebegin', welcomeHTML);
+                
+                // 隐藏消息面板，显示欢迎界面
+                addDebugLog('👁️ 隐藏消息面板，显示欢迎界面');
+                aiPracticeMessages.style.display = 'none';
+                
+                // 验证欢迎界面是否成功创建
+                const createdWelcome = document.getElementById('practiceWelcomePanel');
+                addDebugLog(`✅ 欢迎界面创建结果: ${!!createdWelcome}`);
+                
+                if (createdWelcome) {
+                    addDebugLog(`🎨 欢迎界面样式: display=${createdWelcome.style.display}`);
+                }
+                
+                // 绑定按钮事件
+                bindPracticeWelcomeEvents();
+            }
+        }
+
+        // 绑定练习欢迎界面的事件
+        function bindPracticeWelcomeEvents() {
+            const welcomeNewPracticeBtn = document.getElementById('welcomeNewPracticeBtn');
+            const welcomePracticeHistoryBtn = document.getElementById('welcomePracticeHistoryBtn');
+            
+            if (welcomeNewPracticeBtn) {
+                welcomeNewPracticeBtn.addEventListener('click', function() {
+                    addDebugLog('点击开始新练习');
+                    // 隐藏欢迎界面，显示消息面板
+                    showPracticeMessages();
+                    // 添加提示消息
+                    if (typeof addPracticeMessage === 'function') {
+                        addPracticeMessage('请通过AI对话描述您想要练习的内容，我将为您生成个性化的练习题目。\\n\\n例如：\\n• "请为我生成5道关于机器学习的选择题"\\n• "帮我出几道Python编程练习题"\\n• "生成一些数学应用题"', 'ai');
+                    }
+                });
+            }
+            
+            if (welcomePracticeHistoryBtn) {
+                welcomePracticeHistoryBtn.addEventListener('click', function() {
+                    addDebugLog('点击练习历史按钮');
+                    
+                    // 检查全局的showPracticeHistory函数是否存在
+                    if (typeof window.showPracticeHistory === 'function') {
+                        addDebugLog('✅ 找到全局showPracticeHistory函数，调用中...');
+                        try {
+                            window.showPracticeHistory();
+                        } catch (error) {
+                            addDebugLog('❌ 调用showPracticeHistory出错: ' + error.message);
+                            // 显示错误信息
+                            showPracticeMessages();
+                            if (typeof addPracticeMessage === 'function') {
+                                addPracticeMessage('练习历史加载失败：' + error.message, 'ai');
+                            }
+                        }
+                    } else {
+                        addDebugLog('❌ 未找到showPracticeHistory函数，显示提示信息');
+                        // 隐藏欢迎界面，显示消息面板
+                        showPracticeMessages();
+                        if (typeof addPracticeMessage === 'function') {
+                            addPracticeMessage('正在加载练习历史...', 'ai');
+                            
+                            // 模拟加载练习历史
+                            setTimeout(() => {
+                                addPracticeMessage('练习历史功能正在开发中！\\n\\n目前您可以：\\n• 通过对话生成新的练习题目\\n• 完成练习后查看评估结果\\n• 将错题添加到错题库', 'ai');
+                            }, 1000);
+                        }
+                    }
+                });
+            }
+        }
+
+        // 显示练习消息面板
+        function showPracticeMessages() {
+            const welcomePanel = document.getElementById('practiceWelcomePanel');
+            const messagesPanel = document.getElementById('aiPracticeMessages');
+            
+            if (welcomePanel) welcomePanel.style.display = 'none';
+            if (messagesPanel) messagesPanel.style.display = 'block';
+        }
+
+        // 显示练习欢迎界面
+        function showPracticeWelcome() {
+            // 如果有当前练习数据，不显示欢迎界面
+            if (typeof currentPracticeId !== 'undefined' && currentPracticeId) {
+                addDebugLog('⚠️ 有当前练习数据，跳过显示欢迎界面');
+                return;
+            }
+            
+            const welcomePanel = document.getElementById('practiceWelcomePanel');
+            const messagesPanel = document.getElementById('aiPracticeMessages');
+            const practiceContainer = document.getElementById('practiceContainer');
+            
+            addDebugLog('📋 显示练习欢迎界面');
+            
+            if (welcomePanel) {
+                welcomePanel.style.display = 'block';
+            } else {
+                // 如果欢迎界面不存在，创建它
+                createPracticeWelcome();
+                return;
+            }
+            
+            if (messagesPanel) messagesPanel.style.display = 'none';
+            if (practiceContainer) practiceContainer.style.display = 'none';
+        }
+
+        // 初始化练习欢迎界面
+        function initPracticeWelcome() {
+            // 检查是否已经存在欢迎界面
+            const existingWelcome = document.getElementById('practiceWelcomePanel');
+            if (!existingWelcome) {
+                createPracticeWelcome();
+            }
+        }
+
+        // 创建可见的调试面板
+        function createDebugPanel() {
+            // 移除已存在的调试面板
+            const existingDebug = document.getElementById('practice-debug-panel');
+            if (existingDebug) {
+                existingDebug.remove();
+            }
+            
+            const debugPanel = document.createElement('div');
+            debugPanel.id = 'practice-debug-panel';
+            debugPanel.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(0, 0, 0, 0.9);
+                color: #00ff00;
+                padding: 15px;
+                border-radius: 8px;
+                font-family: monospace;
+                font-size: 12px;
+                z-index: 10000;
+                max-width: 400px;
+                max-height: 300px;
+                overflow-y: auto;
+                border: 1px solid #333;
+            `;
+            
+            debugPanel.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 10px; color: #ffff00;">
+                    🔧 练习助手调试面板
+                    <button onclick="this.parentElement.parentElement.remove()" style="
+                        float: right;
+                        background: none;
+                        border: none;
+                        color: #ff6666;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">×</button>
+                </div>
+                <div id="debug-log" style="line-height: 1.4;"></div>
+            `;
+            
+            document.body.appendChild(debugPanel);
+            return debugPanel;
+        }
+
+        // 添加调试日志
+        function addDebugLog(message) {
+            console.log(message);
+            
+            let debugPanel = document.getElementById('practice-debug-panel');
+            if (!debugPanel) {
+                debugPanel = createDebugPanel();
+            }
+            
+            const logContainer = debugPanel.querySelector('#debug-log');
+            if (logContainer) {
+                const timestamp = new Date().toLocaleTimeString();
+                logContainer.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        // 更积极的初始化策略
+        function forceInitPracticeWelcome() {
+            addDebugLog('🔄 强制初始化练习欢迎界面');
+            const practiceTabContent = document.getElementById('practiceTabContent');
+            const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+            
+            addDebugLog(`📋 元素检查: practiceTabContent=${!!practiceTabContent}, aiPracticeMessages=${!!aiPracticeMessages}`);
+            
+            if (practiceTabContent) {
+                addDebugLog('✅ 找到practiceTabContent，开始创建欢迎界面');
+                createPracticeWelcome();
+            } else {
+                addDebugLog('❌ 未找到practiceTabContent，1秒后重试');
+                setTimeout(forceInitPracticeWelcome, 1000);
+            }
+        }
+
+        // 当页面加载完成时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 延迟初始化，确保其他组件已加载
+            setTimeout(initPracticeWelcome, 1000);
+        });
+
+        // 立即尝试初始化
+        setTimeout(forceInitPracticeWelcome, 500);
+
+        // 导出函数到全局作用域
+        window.createPracticeWelcome = createPracticeWelcome;
+        window.showPracticeWelcome = showPracticeWelcome;
+        window.showPracticeMessages = showPracticeMessages;
+        window.initPracticeWelcome = initPracticeWelcome;
+        
+        // 创建简化的练习历史功能
+        function createSimpleShowPracticeHistory() {
+            window.showPracticeHistory = function() {
+                addDebugLog('📆 简化版练习历史功能被调用');
+                
+                // 检查bridge对象是否存在
+                if (!window.bridge) {
+                    addDebugLog('❌ bridge对象不存在');
+                    alert('练习历史功能暂时不可用：系统未准备就绪');
+                    return;
+                }
+                
+                // 检查getPracticeHistory方法是否存在
+                if (!window.bridge.getPracticeHistory) {
+                    addDebugLog('❌ getPracticeHistory方法不存在');
+                    alert('练习历史功能暂时不可用：接口未实现');
+                    return;
+                }
+                
+                try {
+                    addDebugLog('🔄 开始获取练习历史...');
+                    
+                    // 使用延迟和重试机制处理QWebChannel异步问题
+                    setTimeout(() => {
+                        try {
+                            addDebugLog('🚀 第一次尝试调用getPracticeHistory...');
+                            const response = window.bridge.getPracticeHistory();
+                            
+                            addDebugLog('📝 第一次调用收到响应类型: ' + typeof response);
+                            addDebugLog('📝 第一次调用响应内容: ' + JSON.stringify(response));
+                            
+                            // 检查是否为Promise
+                            if (response && typeof response.then === 'function') {
+                                addDebugLog('⚠️ 第一次调用返回Promise，尝试Promise处理...');
+                                response.then(function(actualResponse) {
+                                    addDebugLog('✅ Promise resolved，处理实际响应');
+                                    handlePracticeHistoryResponse(actualResponse);
+                                }).catch(function(error) {
+                                    addDebugLog('❌ Promise rejected: ' + error.message);
+                                    // Promise失败，尝试第二次同步调用
+                                    retryGetPracticeHistory();
+                                });
+                            } else {
+                                // 直接处理响应
+                                handlePracticeHistoryResponse(response);
+                            }
+                        } catch (error) {
+                            addDebugLog('❌ 第一次调用出错: ' + error.message);
+                            retryGetPracticeHistory();
+                        }
+                    }, 100);
+                    
+                    // 处理响应的函数
+                    function handlePracticeHistoryResponse(response) {
+                        addDebugLog('🔍 处理响应: ' + JSON.stringify(response));
+                        addDebugLog('🔍 响应类型: ' + typeof response);
+                        
+                        // 如果响应是字符串，需要解析JSON
+                        let parsedResponse = response;
+                        if (typeof response === 'string') {
+                            try {
+                                parsedResponse = JSON.parse(response);
+                                addDebugLog('✅ JSON解析成功');
+                            } catch (parseError) {
+                                addDebugLog('❌ JSON解析失败: ' + parseError.message);
+                                alert('数据格式错误，无法解析练习历史');
+                                return;
+                            }
+                        }
+                        
+                        addDebugLog('🔍 解析后的响应: ' + JSON.stringify(parsedResponse));
+                        
+                        if (parsedResponse && parsedResponse.success) {
+                            const practices = parsedResponse.practices || [];
+                            addDebugLog('✅ 成功获取到 ' + practices.length + ' 个练习历史');
+                            
+                            if (practices.length > 0) {
+                                addDebugLog('🔄 切换到练习页面并显示历史面板');
+                                
+                                // 1. 隐藏欢迎界面
+                                const welcomePanel = document.getElementById('practiceWelcomePanel');
+                                if (welcomePanel) {
+                                    welcomePanel.style.display = 'none';
+                                    addDebugLog('✅ 已隐藏欢迎界面');
+                                }
+                                
+                                // 2. 隐藏消息面板
+                                const messagesPanel = document.getElementById('aiPracticeMessages');
+                                if (messagesPanel) {
+                                    messagesPanel.style.display = 'none';
+                                    addDebugLog('✅ 已隐藏消息面板');
+                                }
+                                
+                                // 3. 显示练习面板
+                                const practiceContainer = document.getElementById('practiceContainer');
+                                if (practiceContainer) {
+                                    practiceContainer.style.display = 'flex';
+                                    addDebugLog('✅ 已显示练习面板');
+                                }
+                                
+                                // 4. 延迟调用原有的练习历史按钮点击事件
+                                setTimeout(() => {
+                                    addDebugLog('🚀 模拟点击原有的练习历史按钮');
+                                    try {
+                                        // 查找原有的练习历史按钮并点击
+                                        const practiceHistoryBtn = document.getElementById('practiceHistoryBtn');
+                                        if (practiceHistoryBtn) {
+                                            addDebugLog('✅ 找到原有的练习历史按钮，模拟点击');
+                                            practiceHistoryBtn.click();
+                                        } else {
+                                            addDebugLog('❌ 未找到practiceHistoryBtn，尝试其他方式');
+                                            // 尝试查找其他可能的练习历史按钮
+                                            const historyBtns = document.querySelectorAll('[id*="history"], [class*="history"]');
+                                            addDebugLog('🔍 找到 ' + historyBtns.length + ' 个可能的历史按钮');
+                                            
+                                            if (historyBtns.length > 0) {
+                                                addDebugLog('✅ 点击第一个历史按钮');
+                                                historyBtns[0].click();
+                                            } else {
+                                                addDebugLog('❌ 未找到任何历史按钮，显示简单列表');
+                                                // 简单显示练习列表
+                                                let historyText = '练习历史记录：\\n\\n';
+                                                practices.slice(0, 5).forEach((practice, index) => {
+                                                    historyText += `${index + 1}. 练习${practice.id}\\n`;
+                                                    historyText += `   时间: ${new Date(practice.timestamp).toLocaleString()}\\n`;
+                                                    historyText += `   状态: ${practice.status}\\n\\n`;
+                                                });
+                                                alert(historyText);
+                                            }
+                                        }
+                                    } catch (error) {
+                                        addDebugLog('❌ 模拟点击出错: ' + error.message);
+                                        alert('练习历史功能暂时不可用');
+                                    }
+                                }, 1000);
+                            } else {
+                                addDebugLog('ℹ️ 练习列表为空');
+                                alert('暂无练习历史记录。\\n\\n您可以先通过AI对话生成一个练习试试！');
+                            }
+                        } else {
+                            addDebugLog('❌ 获取练习历史失败: ' + (parsedResponse ? parsedResponse.error : '响应为空或格式错误'));
+                            alert('获取练习历史失败: ' + (parsedResponse && parsedResponse.error ? parsedResponse.error : '数据获取异常，请重试'));
+                        }
+                    }
+                    
+                    // 重试函数
+                    function retryGetPracticeHistory() {
+                        addDebugLog('🔄 第二次尝试调用getPracticeHistory...');
+                        setTimeout(() => {
+                            try {
+                                const response2 = window.bridge.getPracticeHistory();
+                                addDebugLog('📝 第二次调用响应: ' + JSON.stringify(response2));
+                                handlePracticeHistoryResponse(response2);
+                            } catch (error2) {
+                                addDebugLog('❌ 第二次调用也失败: ' + error2.message);
+                                alert('练习历史功能暂时不可用，请稍后重试');
+                            }
+                        }, 500);
+                    }
+                    
+                } catch (error) {
+                    addDebugLog('❌ 调用练习历史出错: ' + error.message);
+                    alert('练习历史功能出错: ' + error.message);
+                }
+            };
+            
+            addDebugLog('✅ 简化版showPracticeHistory函数已创建并导出到全局作用域');
+        }
+        
+        // 注意：练习历史弹窗功能已在页面后面的原有代码中实现
+        // 这里不需要重复创建，直接复用现有的 showPracticeHistoryModal 函数
+        
+        // 立即创建简化版练习历史功能
+        createSimpleShowPracticeHistory();
+    </script>
 </head>
 <body class="bg-bg-light-blue-gray font-sans">
     <!-- AI助手浮窗 -->
@@ -666,6 +1100,10 @@
                         <!-- 顶部工具栏 - 对应练习.html的94-121行 -->
                         <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
                             <div class="flex items-center space-x-4">
+                                <button class="flex items-center text-text-gray hover:text-primary" id="backToWelcomeBtn">
+                                    <span class="material-icons-outlined mr-1">home</span>
+                                    <span>返回欢迎页</span>
+                                </button>
                                 <button class="flex items-center text-text-gray hover:text-primary" id="practiceHistoryBtn">
                                     <span class="material-icons-outlined mr-1">history</span>
                                     <span>练习历史</span>
@@ -960,6 +1398,7 @@
             const aiPracticeMessages = document.getElementById('aiPracticeMessages');
             
             // 练习按钮元素
+            const backToWelcomeBtn = document.getElementById('backToWelcomeBtn');
             const practiceHistoryBtn = document.getElementById('practiceHistoryBtn');
             const newPracticeBtn = document.getElementById('newPracticeBtn');
             const startPracticeBtn = document.getElementById('startPracticeBtn');
@@ -1122,6 +1561,27 @@
             }
             
             // 练习按钮事件绑定
+            if (backToWelcomeBtn) {
+                backToWelcomeBtn.addEventListener('click', function() {
+                    // 清除当前练习数据
+                    currentPracticeId = null;
+                    currentPracticeQuestions = null;
+                    currentPracticeAnswer = '';
+                    currentEvaluationResult = null;
+                    practiceAnswerHistory = [];
+                    
+                    // 隐藏练习容器，显示欢迎界面
+                    if (practiceContainer) {
+                        practiceContainer.style.display = 'none';
+                    }
+                    if (typeof showPracticeWelcome === 'function') {
+                        showPracticeWelcome();
+                    }
+                    
+                    globalDebugLog('🏠 已返回练习欢迎页面');
+                });
+            }
+            
             if (practiceHistoryBtn) {
                 practiceHistoryBtn.addEventListener('click', showPracticeHistory);
             }
@@ -1946,7 +2406,15 @@
                     const practiceTabBtn = document.getElementById('practiceTabBtn');
                     const practiceTabContent = document.getElementById('practiceTabContent');
                     if (practiceTabBtn) practiceTabBtn.classList.add('active');
-                    if (practiceTabContent) { practiceTabContent.classList.add('active'); setTimeout(() => { if (typeof showPracticeWelcome === 'function') showPracticeWelcome(); }, 100); }
+                    if (practiceTabContent) { 
+                        practiceTabContent.classList.add('active'); 
+                        // 只有在没有当前练习数据时才显示欢迎界面
+                        setTimeout(() => { 
+                            if (typeof showPracticeWelcome === 'function' && !currentPracticeId) {
+                                showPracticeWelcome(); 
+                            }
+                        }, 100); 
+                    }
                 }
             }
             
@@ -3828,18 +4296,25 @@
                             if (historyModal) {
                                 historyModal.classList.remove('show');
                             }
-                            
                             // 自动最大化并切换到练习Tab
                             if (!isMaximized) {
                                 toggleMaximizeChat();
                             }
                             setTimeout(() => {
                                 switchTab('practice');
+                                // 隐藏欢迎界面，显示练习面板
+                                const practiceWelcomePanel = document.getElementById('practiceWelcomePanel');
+                                if (practiceWelcomePanel) {
+                                    practiceWelcomePanel.style.display = 'none';
+                                    globalDebugLog('✅ 已隐藏练习欢迎界面');
+                                }
                                 if (practiceContainer) {
                                     practiceContainer.style.display = 'flex';
+                                    globalDebugLog('✅ 已显示练习容器');
                                 }
                                 if (aiPracticeMessages) {
                                     aiPracticeMessages.style.display = 'none';
+                                    globalDebugLog('✅ 已隐藏练习消息面板');
                                 }
                             }, 300);
                             
