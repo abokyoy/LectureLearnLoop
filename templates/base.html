@@ -556,6 +556,7 @@
             51%, 100% { opacity: 0; }
         }
     </style>
+    <script src="static/js/practice_welcome.js"></script>
 </head>
 <body class="bg-bg-light-blue-gray font-sans">
     <!-- AI助手浮窗 -->
@@ -1945,7 +1946,7 @@
                     const practiceTabBtn = document.getElementById('practiceTabBtn');
                     const practiceTabContent = document.getElementById('practiceTabContent');
                     if (practiceTabBtn) practiceTabBtn.classList.add('active');
-                    if (practiceTabContent) practiceTabContent.classList.add('active');
+                    if (practiceTabContent) { practiceTabContent.classList.add('active'); setTimeout(() => { if (typeof showPracticeWelcome === 'function') showPracticeWelcome(); }, 100); }
                 }
             }
             
@@ -4218,3 +4219,6 @@ ${cleanContent}
     {% block on_bridge_ready %}{% endblock %}
 </body>
 </html>
+
+
+

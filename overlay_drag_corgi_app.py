@@ -5452,12 +5452,170 @@ class OverlayDragCorgiApp(QMainWindow):
         log_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         log_shortcut.activated.connect(self.open_log_viewer)
         print("✅ 快捷键 Ctrl+L 已设置 - 打开日志查看器")
+        
+        # F12 打开浏览器控制台
+        console_shortcut = QShortcut(QKeySequence("F12"), self)
+        console_shortcut.activated.connect(self.open_browser_console)
+        print("✅ 快捷键 F12 已设置 - 打开浏览器控制台")
     
     def open_log_viewer(self):
         """打开日志查看器"""
         print("🔍 快捷键触发：打开LLM调用日志查看器")
         if self.bridge:
             self.bridge.loadContent("llm_logs")
+    
+    def open_browser_console(self):
+        """打开浏览器控制台"""
+        print("🔧 快捷键触发：打开浏览器控制台")
+        try:
+            # 通过JavaScript打开开发者工具
+            js_code = """
+            (function() {
+                // 通用方法：执行一个会在控制台显示的命令
+                console.log('='.repeat(50));
+                console.log('🔧 浏览器控制台已激活！');
+                console.log('您现在可以在这里查看调试信息');
+                console.log('='.repeat(50));
+                
+                // 检查practice_welcome.js是否加载
+                console.log('检查JavaScript文件加载状态:');
+                console.log('- createPracticeWelcome函数:', typeof window.createPracticeWelcome);
+                console.log('- showPracticeWelcome函数:', typeof window.showPracticeWelcome);
+                
+                // 移除已存在的提示面板
+                var existingPanel = document.getElementById('debug-console-hint');
+                if (existingPanel) {
+                    existingPanel.remove();
+                }
+                
+                // 创建练习助手专用调试面板
+                var practiceDebugPanel = document.createElement('div');
+                practiceDebugPanel.id = 'practice-debug-panel';
+                practiceDebugPanel.style.cssText = 
+                    'position: fixed;' +
+                    'bottom: 20px;' +
+                    'left: 20px;' +
+                    'background: rgba(0, 0, 0, 0.9);' +
+                    'color: #00ff00;' +
+                    'padding: 15px;' +
+                    'border-radius: 8px;' +
+                    'font-family: monospace;' +
+                    'font-size: 12px;' +
+                    'z-index: 10000;' +
+                    'max-width: 400px;' +
+                    'max-height: 300px;' +
+                    'overflow-y: auto;' +
+                    'border: 1px solid #333;';
+                    
+                practiceDebugPanel.innerHTML = 
+                    '<div style="font-weight: bold; margin-bottom: 10px; color: #ffff00;">' +
+                    '🔧 练习助手调试面板' +
+                    '<button onclick="this.parentElement.parentElement.remove()" style="' +
+                    'float: right;' +
+                    'background: none;' +
+                    'border: none;' +
+                    'color: #ff6666;' +
+                    'cursor: pointer;' +
+                    'font-size: 14px;' +
+                    '">×</button>' +
+                    '</div>' +
+                    '<div id="debug-log" style="line-height: 1.4;"></div>';
+                
+                // 添加到页面
+                document.body.appendChild(practiceDebugPanel);
+                
+                // 添加初始调试信息
+                var logContainer = practiceDebugPanel.querySelector('#debug-log');
+                function addLog(message) {
+                    var timestamp = new Date().toLocaleTimeString();
+                    logContainer.innerHTML += '<div>[' + timestamp + '] ' + message + '</div>';
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+                
+                addLog('🔄 调试面板已创建');
+                addLog('📋 检查元素状态...');
+                
+                // 检查关键元素
+                var practiceTabContent = document.getElementById('practiceTabContent');
+                var aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                
+                addLog('practiceTabContent: ' + (practiceTabContent ? '✅存在' : '❌不存在'));
+                addLog('aiPracticeMessages: ' + (aiPracticeMessages ? '✅存在' : '❌不存在'));
+                
+                // 检查JavaScript文件加载
+                addLog('createPracticeWelcome函数: ' + typeof window.createPracticeWelcome);
+                
+                // 如果函数存在，尝试调用
+                if (typeof window.createPracticeWelcome === 'function') {
+                    addLog('🚀 尝试调用createPracticeWelcome...');
+                    try {
+                        window.createPracticeWelcome();
+                        addLog('✅ createPracticeWelcome调用成功');
+                    } catch (error) {
+                        addLog('❌ createPracticeWelcome调用失败: ' + error.message);
+                    }
+                } else {
+                    addLog('❌ practice_welcome.js文件未正确加载');
+                }
+                
+                // 创建右上角的提示面板
+                var debugPanel = document.createElement('div');
+                debugPanel.id = 'debug-console-hint';
+                debugPanel.style.cssText = 
+                    'position: fixed;' +
+                    'top: 20px;' +
+                    'right: 20px;' +
+                    'background: #333;' +
+                    'color: white;' +
+                    'padding: 15px 20px;' +
+                    'border-radius: 8px;' +
+                    'z-index: 10000;' +
+                    'font-family: monospace;' +
+                    'font-size: 14px;' +
+                    'box-shadow: 0 4px 12px rgba(0,0,0,0.3);' +
+                    'max-width: 300px;';
+                    
+                debugPanel.innerHTML = 
+                    '<div style="font-weight: bold; margin-bottom: 8px;">🔧 调试控制台提示</div>' +
+                    '<div style="font-size: 12px; line-height: 1.4;">' +
+                    '• 右键页面选择"检查"<br>' +
+                    '• 点击 Console 标签页<br>' +
+                    '• 查看调试信息<br>' +
+                    '• 左下角有详细调试面板' +
+                    '</div>' +
+                    '<button onclick="this.parentElement.remove()" style="' +
+                    'position: absolute;' +
+                    'top: 5px;' +
+                    'right: 8px;' +
+                    'background: none;' +
+                    'border: none;' +
+                    'color: white;' +
+                    'cursor: pointer;' +
+                    'font-size: 16px;' +
+                    '">×</button>';
+                
+                // 添加到页面
+                document.body.appendChild(debugPanel);
+                
+                // 5秒后自动移除提示
+                setTimeout(function() {
+                    if (debugPanel.parentElement) {
+                        debugPanel.remove();
+                    }
+                }, 8000);
+            })();
+            """
+            
+            # 在WebEngine中执行JavaScript
+            if hasattr(self, 'web_view') and self.web_view:
+                # 直接显示调试提示面板
+                self.web_view.page().runJavaScript(js_code)
+                print("✅ 浏览器控制台提示面板已显示")
+            else:
+                print("❌ 无法访问WebView")
+                
+        except Exception as e:
+            print(f"❌ 打开浏览器控制台失败: {e}")
         
     def showEvent(self, event):
         """窗口显示时设置圆角mask"""
