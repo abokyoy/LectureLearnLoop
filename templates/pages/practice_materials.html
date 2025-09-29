@@ -249,11 +249,11 @@
                         <button id="masteryAssessmentBtn" onclick="startMasteryAssessment()" class="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors">
                             熟练度评估
                         </button>
-                        <button class="px-6 py-2.5 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors">
-                            专项练习
+                        <button id="noteBasedPracticeBtn" onclick="startNoteBasedPractice()" class="px-6 py-2.5 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
+                            基于笔记练习
                         </button>
-                        <button class="px-6 py-2.5 bg-orange-400 text-white rounded-lg font-semibold hover:bg-orange-500 transition-colors">
-                            错题练习
+                        <button id="analogyPracticeBtn" onclick="startAnalogyPractice()" class="px-6 py-2.5 bg-orange-400 text-white rounded-lg font-semibold hover:bg-orange-500 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
+                            举一反三练习
                         </button>
                     </div>
                 </div>
@@ -1328,6 +1328,74 @@ function updateKnowledgePointDetail(detail, node) {
     
     // 异步加载关联题目
     loadKnowledgePointQuestions(node.id);
+    
+    // 更新练习按钮状态
+    updatePracticeButtonsState(detail, node.id);
+}
+
+// 更新练习按钮状态
+async function updatePracticeButtonsState(detail, nodeId) {
+    const noteBasedBtn = document.getElementById('noteBasedPracticeBtn');
+    const analogyBtn = document.getElementById('analogyPracticeBtn');
+    
+    if (!noteBasedBtn || !analogyBtn) return;
+    
+    try {
+        // 提取真实的知识点ID
+        const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+        
+        // 检查关联笔记数量
+        const notesCount = detail.notes_count || 0;
+        if (notesCount > 0) {
+            // 有关联笔记，启用按钮
+            noteBasedBtn.disabled = false;
+            noteBasedBtn.classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+            noteBasedBtn.title = `基于 ${notesCount} 篇关联笔记生成练习`;
+        } else {
+            // 无关联笔记，禁用按钮
+            noteBasedBtn.disabled = true;
+            noteBasedBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+            noteBasedBtn.title = '该知识点暂无关联笔记';
+        }
+        
+        // 检查错题数量（异步获取）
+        if (window.bridge && window.bridge.getKnowledgePointQuestions) {
+            const response = await window.bridge.getKnowledgePointQuestions(realId);
+            const result = JSON.parse(response);
+            
+            if (result.success && result.questions && result.questions.length > 0) {
+                // 筛选出真正的错题（有错误记录的题目）
+                const errorQuestions = result.questions.filter(q => {
+                    const errorCount = q.practice_count - q.correct_count;
+                    return errorCount > 0;
+                });
+                
+                if (errorQuestions.length > 0) {
+                    // 有错题记录，启用按钮
+                    analogyBtn.disabled = false;
+                    analogyBtn.classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+                    analogyBtn.title = `基于 ${errorQuestions.length} 道错题生成举一反三练习`;
+                } else {
+                    // 无错题记录，禁用按钮
+                    analogyBtn.disabled = true;
+                    analogyBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+                    analogyBtn.title = '该知识点暂无错题记录';
+                }
+            } else {
+                // 无题目记录，禁用按钮
+                analogyBtn.disabled = true;
+                analogyBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+                analogyBtn.title = '该知识点暂无题目记录';
+            }
+        }
+        
+    } catch (error) {
+        log(`❌ 更新练习按钮状态失败: ${error.message}`);
+        // 出错时禁用按钮
+        analogyBtn.disabled = true;
+        analogyBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
+        analogyBtn.title = '无法获取错题信息';
+    }
 }
 
 // 加载知识点关联笔记
@@ -3589,6 +3657,372 @@ function dragended(event, d) {
         d.fx = null;
         d.fy = null;
     }
+}
+
+// 基于笔记练习功能
+async function startNoteBasedPractice() {
+    const detailLayer = document.getElementById('knowledgePointDetailLayer');
+    const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
+    
+    if (!nodeId) {
+        showToast('无法获取知识点信息', 'error');
+        return;
+    }
+    
+    log(`🎯 开始基于笔记练习 - 知识点ID: ${nodeId}`);
+    
+    // 提取真实的知识点ID（去掉kp_前缀）
+    const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+    log(`🔍 提取真实ID: ${realId}`);
+    
+    try {
+        // 获取知识点的关联笔记列表
+        const response = await window.bridge.getKnowledgePointNotes(realId);
+        const result = JSON.parse(response);
+        
+        if (!result.success || !result.notes || result.notes.length === 0) {
+            showToast('该知识点暂无关联笔记，无法生成练习', 'warning');
+            return;
+        }
+        
+        log(`📝 找到 ${result.notes.length} 篇关联笔记，开始获取详细内容...`);
+        
+        // 获取每个笔记的详细内容
+        const notesWithContent = [];
+        for (const note of result.notes) {
+            try {
+                const contentResponse = await window.bridge.getNoteContent(note.id);
+                const contentResult = JSON.parse(contentResponse);
+                
+                if (contentResult.success && contentResult.note) {
+                    notesWithContent.push({
+                        title: contentResult.note.title,
+                        content: contentResult.note.content,
+                        file_name: contentResult.note.file_name
+                    });
+                    log(`✅ 获取笔记内容成功: ${contentResult.note.title}`);
+                } else {
+                    log(`⚠️ 获取笔记内容失败: ${note.title}`);
+                }
+            } catch (error) {
+                log(`❌ 获取笔记内容出错: ${note.title} - ${error.message}`);
+            }
+        }
+        
+        if (notesWithContent.length === 0) {
+            showToast('无法获取笔记内容，请稍后重试', 'error');
+            return;
+        }
+        
+        // 构建笔记内容
+        const notesContent = notesWithContent.map(note => {
+            return `【笔记标题】: ${note.title}\n【文件名】: ${note.file_name}\n【笔记内容】:\n${note.content}`;
+        }).join('\n\n---\n\n');
+        
+        // 获取知识点名称
+        const knowledgePointName = document.getElementById('detailTitle').textContent;
+        
+        // 构建练习生成提示词
+        const practicePrompt = `请基于以下笔记内容，为知识点"${knowledgePointName}"生成一套练习题。
+
+**关联笔记内容：**
+${notesContent}
+
+**要求：**
+1. 仔细阅读上述笔记内容，找到与知识点"${knowledgePointName}"相关的原文内容
+2. 严格基于笔记中的原文内容出题，不要超出原文的范畴
+3. 题目类型包括：选择题、判断题、填空题、简答题
+4. 每种题型2-3道，总共8-10道题
+5. 题目难度适中，既考查基础理解，也考查应用能力
+
+**返回格式要求（严格按照以下格式）：**
+
+## 选择题
+
+**1. [题目内容]**
+A. [选项A]
+B. [选项B] 
+C. [选项C]
+D. [选项D]
+
+**答案：** [正确答案字母]
+**解析：** [详细解析]
+
+## 判断题
+
+**1. [题目内容]**
+
+**答案：** [正确/错误]
+**解析：** [详细解析]
+
+## 填空题
+
+**1. [题目内容，用______表示空白]**
+
+**答案：** [标准答案]
+**解析：** [详细解析]
+
+## 简答题
+
+**1. [题目内容]**
+
+**参考答案：** [详细答案]
+**评分要点：** [关键得分点]
+
+请确保所有题目都严格基于提供的笔记内容，不要添加笔记中没有的知识点。`;
+
+        // 打开AI聊天窗口
+        if (window.openAIChatWindow) {
+            window.openAIChatWindow();
+        }
+        
+        // 生成练习ID
+        const practiceId = 'note_practice_' + Date.now();
+        
+        // 创建练习数据
+        const practiceData = {
+            id: practiceId,
+            type: 'note_based',
+            knowledgePoint: knowledgePointName,
+            notesCount: result.notes.length,
+            questions: null,
+            status: 'generating'
+        };
+        
+        // 显示AI练习面板
+        if (window.showAIPracticePanel) {
+            window.showAIPracticePanel(practiceData);
+        }
+        
+        // 异步生成练习题目
+        setTimeout(() => {
+            generatePracticeQuestionsForAI(practicePrompt, practiceId);
+        }, 500);
+        
+    } catch (error) {
+        log(`❌ 获取关联笔记失败: ${error.message}`);
+        showToast('获取关联笔记失败，请稍后重试', 'error');
+    }
+}
+
+// 举一反三练习功能
+async function startAnalogyPractice() {
+    const detailLayer = document.getElementById('knowledgePointDetailLayer');
+    const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
+    
+    if (!nodeId) {
+        showToast('无法获取知识点信息', 'error');
+        return;
+    }
+    
+    log(`🎯 开始举一反三练习 - 知识点ID: ${nodeId}`);
+    
+    // 提取真实的知识点ID（去掉kp_前缀）
+    const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+    log(`🔍 提取真实ID: ${realId}`);
+    
+    try {
+        // 获取知识点的错题记录
+        const response = await window.bridge.getKnowledgePointQuestions(realId);
+        const result = JSON.parse(response);
+        
+        if (!result.success || !result.questions || result.questions.length === 0) {
+            showToast('该知识点暂无错题记录，无法生成举一反三练习', 'warning');
+            return;
+        }
+        
+        log(`📊 找到 ${result.questions.length} 道相关题目，筛选错题...`);
+        
+        // 筛选出错题（练习次数大于正确次数的题目）
+        const errorQuestions = result.questions.filter(q => {
+            const errorCount = q.practice_count - q.correct_count;
+            return errorCount > 0; // 有错误记录的题目
+        });
+        
+        if (errorQuestions.length === 0) {
+            showToast('该知识点暂无错题记录，无法生成举一反三练习', 'warning');
+            return;
+        }
+        
+        log(`❌ 筛选出 ${errorQuestions.length} 道错题`);
+        
+        // 构建错题内容
+        const errorQuestionsContent = errorQuestions.map((q, index) => {
+            const errorCount = q.practice_count - q.correct_count;
+            const correctRate = q.practice_count > 0 ? (q.correct_count / q.practice_count * 100).toFixed(1) : 0;
+            
+            return `【错题${index + 1}】
+题目内容: ${q.content}
+题目类型: ${q.type}
+练习次数: ${q.practice_count}次
+正确次数: ${q.correct_count}次
+错误次数: ${errorCount}次
+正确率: ${correctRate}%
+最后练习: ${q.last_practice_time}
+最后结果: ${q.last_result ? '正确' : '错误'}
+熟练度: ${q.mastery_stars}星`;
+        }).join('\n\n');
+        
+        // 获取知识点名称
+        const knowledgePointName = document.getElementById('detailTitle').textContent;
+        
+        // 构建练习生成提示词
+        const practicePrompt = `请基于以下错题记录，为知识点"${knowledgePointName}"生成举一反三练习题。
+
+**知识点错题记录：**
+${errorQuestionsContent}
+
+**要求：**
+1. 分析上述错题的题型、考查点和错误原因
+2. 保持与错题相同的题型和难度水平
+3. 出类似的题目供用户练习，但不要完全相同
+4. 重点针对用户容易出错的知识点进行强化练习
+5. 每种错题题型生成2-3道类似题目
+
+**返回格式要求（严格按照以下格式）：**
+
+## 选择题
+
+**1. [题目内容]**
+A. [选项A]
+B. [选项B] 
+C. [选项C]
+D. [选项D]
+
+**答案：** [正确答案字母]
+**解析：** [详细解析，说明易错点]
+
+## 判断题
+
+**1. [题目内容]**
+
+**答案：** [正确/错误]
+**解析：** [详细解析，说明易错点]
+
+## 填空题
+
+**1. [题目内容，用______表示空白]**
+
+**答案：** [标准答案]
+**解析：** [详细解析，说明易错点]
+
+## 简答题
+
+**1. [题目内容]**
+
+**参考答案：** [详细答案]
+**评分要点：** [关键得分点]
+**易错提醒：** [常见错误和注意事项]
+
+请确保题目与原错题类型一致，但内容有所变化，重点帮助用户克服相同类型的错误。`;
+
+        // 打开AI聊天窗口
+        if (window.openAIChatWindow) {
+            window.openAIChatWindow();
+        }
+        
+        // 生成练习ID
+        const practiceId = 'analogy_practice_' + Date.now();
+        
+        // 创建练习数据
+        const practiceData = {
+            id: practiceId,
+            type: 'analogy_based',
+            knowledgePoint: knowledgePointName,
+            errorQuestionsCount: result.questions.length,
+            questions: null,
+            status: 'generating'
+        };
+        
+        // 显示AI练习面板
+        if (window.showAIPracticePanel) {
+            window.showAIPracticePanel(practiceData);
+        }
+        
+        // 异步生成练习题目
+        setTimeout(() => {
+            generatePracticeQuestionsForAI(practicePrompt, practiceId);
+        }, 500);
+        
+    } catch (error) {
+        log(`❌ 获取错题记录失败: ${error.message}`);
+        showToast('获取错题记录失败，请稍后重试', 'error');
+    }
+}
+
+// 生成练习题目的通用函数（复用文档中的实现）
+function generatePracticeQuestionsForAI(promptText, practiceId) {
+    if (window.bridge && window.bridge.generatePracticeQuestions) {
+        try {
+            window.bridge.generatePracticeQuestions(promptText, function(response) {
+                if (response && response.trim()) {
+                    // 发送成功消息到AI助手
+                    if (window.addAIPracticeMessage) {
+                        window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + response, 'ai');
+                    }
+                    
+                    // 更新练习数据
+                    const updatedPracticeData = {
+                        id: practiceId,
+                        questions: response,
+                        status: 'ready'
+                    };
+                    
+                    // 更新练习面板
+                    if (window.showAIPracticePanel) {
+                        window.showAIPracticePanel(updatedPracticeData);
+                    }
+                } else {
+                    // 生成失败
+                    if (window.addAIPracticeMessage) {
+                        window.addAIPracticeMessage('练习题目生成失败，请稍后重试。', 'error');
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('调用generatePracticeQuestions失败:', error);
+            if (window.addAIPracticeMessage) {
+                window.addAIPracticeMessage('练习题目生成出错：' + error.message, 'error');
+            }
+        }
+    } else {
+        console.error('generatePracticeQuestions方法不可用');
+        if (window.addAIPracticeMessage) {
+            window.addAIPracticeMessage('练习功能暂不可用，请检查系统配置。', 'error');
+        }
+    }
+}
+
+// 显示提示消息的函数
+function showToast(message, type = 'info') {
+    // 创建提示元素
+    const toast = document.createElement('div');
+    toast.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 text-white font-semibold`;
+    
+    // 根据类型设置颜色
+    switch(type) {
+        case 'success':
+            toast.className += ' bg-green-500';
+            break;
+        case 'warning':
+            toast.className += ' bg-yellow-500';
+            break;
+        case 'error':
+            toast.className += ' bg-red-500';
+            break;
+        default:
+            toast.className += ' bg-blue-500';
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // 3秒后自动移除
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 3000);
 }
 
 </script>
