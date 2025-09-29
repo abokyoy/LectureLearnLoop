@@ -965,17 +965,51 @@
             const saveResultBtn = document.getElementById('saveResultBtn');
             const addToErrorsBtn = document.getElementById('addToErrorsBtn');
             const submitAnswerBtn = document.getElementById('submitAnswerBtn');
-            const aiEvaluateBtn = document.getElementById('aiEvaluateBtn');
             
+            // 智能滚动相关变量
+            let userScrolledUp = false;
+            let scrollCheckTimeout = null;
+            
+            // 拖拽相关变量
             let isDragging = false;
-            let dragOffset = { x: 0, y: 0 };
             let dragStartTime = 0;
-            let dragStartPos = { x: 0, y: 0 };
             let hasMoved = false;
+            let dragStartPos = { x: 0, y: 0 };
+            let dragOffset = { x: 0, y: 0 };
             
-            // 拖拽功能
-            aiAvatar.addEventListener('mousedown', function(e) {
-                dragStartTime = Date.now();
+            // 智能滚动功能函数
+            function isAtBottom(container, threshold = 50) {
+                if (!container) return false;
+                return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+            }
+            
+            function smartScrollToBottom(container) {
+                if (!container) return;
+                if (!userScrolledUp || isAtBottom(container)) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+            
+            function setupScrollListener(container) {
+                if (!container) return;
+                
+                container.addEventListener('scroll', function() {
+                    // 清除之前的定时器
+                    if (scrollCheckTimeout) {
+                        clearTimeout(scrollCheckTimeout);
+                    }
+                    
+                    // 延迟检查用户是否停止滚动
+                    scrollCheckTimeout = setTimeout(() => {
+                        userScrolledUp = !isAtBottom(container);
+                        console.log('用户滚动状态:', userScrolledUp ? '已上滑' : '在底部');
+                    }, 150);
+                });
+            }
+        
+        // 拖拽功能
+        aiAvatar.addEventListener('mousedown', function(e) {
+            dragStartTime = Date.now();
                 dragStartPos.x = e.clientX;
                 dragStartPos.y = e.clientY;
                 isDragging = true;
@@ -1120,6 +1154,9 @@
                 addMessage(message, 'user');
                 chatInput.value = '';
                 
+                // 用户发送消息时重置滚动状态，总是滚动到底部
+                userScrolledUp = false;
+                
                 // 立即显示AI正在思考的消息
                 const thinkingMessageId = addThinkingMessage();
                 
@@ -1198,6 +1235,22 @@
                 if (isWindowOpen) {
                     chatWindow.classList.add('show');
                     chatInput.focus();
+                    
+                    // 初始化智能滚动监听器
+                    const smallMessagesContainer = document.getElementById('aiChatMessages');
+                    const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
+                    
+                    if (smallMessagesContainer && !smallMessagesContainer.hasScrollListener) {
+                        setupScrollListener(smallMessagesContainer);
+                        smallMessagesContainer.hasScrollListener = true;
+                    }
+                    if (maxMessagesContainer && !maxMessagesContainer.hasScrollListener) {
+                        setupScrollListener(maxMessagesContainer);
+                        maxMessagesContainer.hasScrollListener = true;
+                    }
+                    
+                    // 重置滚动状态
+                    userScrolledUp = false;
                 } else {
                     chatWindow.classList.remove('show');
                     // 保存对话
@@ -1332,10 +1385,10 @@
                             
                             showDebug(`✅ 同步后 - 最大化窗口: ${maxMessages.children.length} 条消息`);
                             
-                            // 滚动到底部
+                            // 智能滚动到底部
                             setTimeout(() => {
-                                maxMessages.scrollTop = maxMessages.scrollHeight;
-                                showDebug('📜 已滚动到底部');
+                                smartScrollToBottom(maxMessages);
+                                showDebug('📜 已智能滚动到底部');
                             }, 100);
                         } else {
                             showDebug('❌ 无法找到消息容器');
@@ -1353,9 +1406,9 @@
                     // 复制最大化窗口的所有消息到小窗口
                     smallWindowMessages.innerHTML = maximizedMessages.innerHTML;
                     
-                    // 滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        smallWindowMessages.scrollTop = smallWindowMessages.scrollHeight;
+                        smartScrollToBottom(smallWindowMessages);
                     }, 100);
                 }
             }
@@ -1377,10 +1430,10 @@
                     
                     showDebug(`✅ 同步完成，最大化窗口消息数: ${maximizedMessages.children.length}`);
                     
-                    // 滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        maximizedMessages.scrollTop = maximizedMessages.scrollHeight;
-                        showDebug('📜 滚动到底部完成');
+                        smartScrollToBottom(maximizedMessages);
+                        showDebug('📜 智能滚动到底部完成');
                     }, 50);
                 } else {
                     showDebug('❌ 无法找到消息容器进行同步');
@@ -1513,9 +1566,9 @@
                 if (smallMessagesContainer) {
                     const smallMessageElement = createMessageElement();
                     smallMessagesContainer.appendChild(smallMessageElement);
-                    // 强制滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                        smartScrollToBottom(smallMessagesContainer);
                     }, 10);
                     showDebug(`✅ 消息已添加到小窗口，当前消息数: ${smallMessagesContainer.children.length}`);
                 } else {
@@ -1526,9 +1579,9 @@
                 if (maxMessagesContainer) {
                     const maxMessageElement = createMessageElement();
                     maxMessagesContainer.appendChild(maxMessageElement);
-                    // 强制滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                        smartScrollToBottom(maxMessagesContainer);
                     }, 10);
                     showDebug(`✅ 消息已添加到最大化窗口，当前消息数: ${maxMessagesContainer.children.length}`);
                 } else {
@@ -1568,7 +1621,7 @@
                     thinkingElement = createThinkingElement();
                     smallMessagesContainer.appendChild(thinkingElement);
                     setTimeout(() => {
-                        smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                        smartScrollToBottom(smallMessagesContainer);
                     }, 10);
                 }
                 
@@ -1577,7 +1630,7 @@
                     const maxThinkingElement = createThinkingElement();
                     maxMessagesContainer.appendChild(maxThinkingElement);
                     setTimeout(() => {
-                        maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                        smartScrollToBottom(maxMessagesContainer);
                     }, 10);
                 }
                 
@@ -1685,12 +1738,12 @@
                         
                         index++;
                         
-                        // 滚动到底部
+                        // 智能滚动到底部
                         if (smallMessagesContainer) {
-                            smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                            smartScrollToBottom(smallMessagesContainer);
                         }
                         if (maxMessagesContainer) {
-                            maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                            smartScrollToBottom(maxMessagesContainer);
                         }
                         
                         setTimeout(typeWriter, speed);
@@ -1900,13 +1953,12 @@
                 } else {
                     messageContent.textContent = content;
                 }
-                
                 messageDiv.appendChild(avatar);
                 messageDiv.appendChild(messageContent);
                 aiPracticeMessages.appendChild(messageDiv);
                 
-                // 滚动到底部
-                aiPracticeMessages.scrollTop = aiPracticeMessages.scrollHeight;
+                // 智能滚动到底部
+                smartScrollToBottom(aiPracticeMessages);
             }
             
             // 显示练习面板
@@ -1983,11 +2035,11 @@
                     toggleChatWindow();
                 }
                 
-                // 滚动到最新消息
+                // 智能滚动到最新消息
                 setTimeout(() => {
                     const messagesContainer = document.getElementById('aiChatMessages');
                     if (messagesContainer) {
-                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        smartScrollToBottom(messagesContainer);
                     }
                 }, 100);
             };
