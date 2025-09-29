@@ -1666,6 +1666,134 @@ class KnowledgeManagementSystem:
         """添加新学科"""
         return self.subject_manager.add_subject(subject_name)
     
+    # ---- 科目管理API ----
+    def create_subject(self, subject_name: str) -> bool:
+        """创建新科目"""
+        return self.subject_manager.add_subject(subject_name)
+    
+    def update_subject_name(self, old_name: str, new_name: str) -> bool:
+        """更新科目名称"""
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 更新用户学科表
+            cursor.execute(
+                "UPDATE user_subjects SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新知识点表
+            cursor.execute(
+                "UPDATE knowledge_points SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新练习记录表
+            cursor.execute(
+                "UPDATE practice_records SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新错题表
+            cursor.execute(
+                "UPDATE error_questions SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新收藏题目表
+            cursor.execute(
+                "UPDATE favorite_questions SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新脑图缓存表
+            cursor.execute(
+                "UPDATE knowledge_mindmaps SET subject_name = ? WHERE subject_name = ?",
+                (new_name, old_name)
+            )
+            
+            # 更新学习路径缓存表
+            cursor.execute(
+                "UPDATE learning_paths SET subject_name = ? WHERE subject_name = ?",
+                (new_name, old_name)
+            )
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"更新科目名称失败: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            return False
+    
+    def delete_subject(self, subject_name: str) -> bool:
+        """删除科目（仅当知识点数量为0时）"""
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 检查是否有知识点
+            cursor.execute(
+                "SELECT COUNT(*) FROM knowledge_points WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            kp_count = cursor.fetchone()[0]
+            
+            if kp_count > 0:
+                conn.close()
+                return False  # 有知识点，不能删除
+            
+            # 删除相关记录
+            cursor.execute(
+                "DELETE FROM user_subjects WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除练习记录
+            cursor.execute(
+                "DELETE FROM practice_records WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除错题记录
+            cursor.execute(
+                "DELETE FROM error_questions WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除收藏题目
+            cursor.execute(
+                "DELETE FROM favorite_questions WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除脑图缓存
+            cursor.execute(
+                "DELETE FROM knowledge_mindmaps WHERE subject_name = ?",
+                (subject_name,)
+            )
+            
+            # 删除学习路径缓存
+            cursor.execute(
+                "DELETE FROM learning_paths WHERE subject_name = ?",
+                (subject_name,)
+            )
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"删除科目失败: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            return False
+    
     # ---- 题库管理支持API ----
     def get_subject_stats(self) -> List[Dict]:
         """返回每个学科的知识点数量与错题/收藏数量: [{subject_name, kp_count, error_count, favorite_count}]"""

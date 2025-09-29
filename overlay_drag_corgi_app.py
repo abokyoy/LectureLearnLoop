@@ -3054,6 +3054,182 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"获取LLM调用日志失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
+    # ==================== 科目管理功能 ====================
+    
+    @Slot(str, result=str)
+    def createSubject(self, subject_name):
+        """创建新科目"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【科目管理】createSubject 开始 - 科目名: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 检查科目是否已存在
+            existing_subjects = km_system.get_subject_stats()
+            for subject in existing_subjects:
+                if subject["subject_name"] == subject_name:
+                    return json.dumps({
+                        "success": False,
+                        "error": f"科目 '{subject_name}' 已存在"
+                    }, ensure_ascii=False)
+            
+            # 创建科目（通过插入一个临时知识点然后删除来创建科目记录）
+            result = km_system.create_subject(subject_name)
+            
+            if result:
+                self.logger.info(f"✅ 科目创建成功: {subject_name}")
+                return json.dumps({
+                    "success": True,
+                    "message": f"科目 '{subject_name}' 创建成功"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "科目创建失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 创建科目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, str, result=str)
+    def updateSubject(self, old_name, new_name):
+        """更新科目名称"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【科目管理】updateSubject 开始 - 旧名称: {old_name}, 新名称: {new_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 检查新名称是否已存在
+            existing_subjects = km_system.get_subject_stats()
+            for subject in existing_subjects:
+                if subject["subject_name"] == new_name and subject["subject_name"] != old_name:
+                    return json.dumps({
+                        "success": False,
+                        "error": f"科目名称 '{new_name}' 已存在"
+                    }, ensure_ascii=False)
+            
+            # 更新科目名称
+            result = km_system.update_subject_name(old_name, new_name)
+            
+            if result:
+                self.logger.info(f"✅ 科目更新成功: {old_name} -> {new_name}")
+                return json.dumps({
+                    "success": True,
+                    "message": f"科目名称已更新为 '{new_name}'"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "科目更新失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 更新科目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def deleteSubject(self, subject_name):
+        """删除科目（仅当知识点数量为0时）"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【科目管理】deleteSubject 开始 - 科目名: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 检查科目是否存在以及知识点数量
+            subject_stats = km_system.get_subject_stats()
+            target_subject = None
+            for subject in subject_stats:
+                if subject["subject_name"] == subject_name:
+                    target_subject = subject
+                    break
+            
+            if not target_subject:
+                return json.dumps({
+                    "success": False,
+                    "error": f"科目 '{subject_name}' 不存在"
+                }, ensure_ascii=False)
+            
+            # 检查知识点数量
+            if target_subject["kp_count"] > 0:
+                return json.dumps({
+                    "success": False,
+                    "error": f"无法删除科目 '{subject_name}'，该科目包含 {target_subject['kp_count']} 个知识点。只有知识点数量为0的科目才能删除。"
+                }, ensure_ascii=False)
+            
+            # 删除科目
+            result = km_system.delete_subject(subject_name)
+            
+            if result:
+                self.logger.info(f"✅ 科目删除成功: {subject_name}")
+                return json.dumps({
+                    "success": True,
+                    "message": f"科目 '{subject_name}' 删除成功"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "科目删除失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 删除科目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def getAllSubjects(self):
+        """获取所有科目列表（包括知识点数量为0的科目）"""
+        self.logger.info("=" * 60)
+        self.logger.info("【科目管理】getAllSubjects 开始")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取所有科目统计信息（包括知识点数量为0的）
+            subject_stats = km_system.get_subject_stats()
+            
+            subjects_list = []
+            for stat in subject_stats:
+                subject_data = {
+                    "name": stat["subject_name"],
+                    "knowledge_count": stat["kp_count"],
+                    "can_delete": stat["kp_count"] == 0  # 只有知识点数量为0才能删除
+                }
+                subjects_list.append(subject_data)
+                self.logger.info(f"科目: {subject_data}")
+            
+            self.logger.info(f"✅ 获取到 {len(subjects_list)} 个科目")
+            
+            return json.dumps(subjects_list, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取科目列表失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps([], ensure_ascii=False)
+    
     # ==================== 学习路径图功能 ====================
     
     @Slot(str, result=str)
@@ -5488,10 +5664,10 @@ class OverlayDragCorgiApp(QMainWindow):
                     existingPanel.remove();
                 }
                 
-                // 创建练习助手专用调试面板
-                var practiceDebugPanel = document.createElement('div');
-                practiceDebugPanel.id = 'practice-debug-panel';
-                practiceDebugPanel.style.cssText = 
+                // 创建全局调试面板
+                var globalDebugPanel = document.createElement('div');
+                globalDebugPanel.id = 'global-debug-panel';
+                globalDebugPanel.style.cssText = 
                     'position: fixed;' +
                     'bottom: 20px;' +
                     'left: 20px;' +
@@ -5502,60 +5678,150 @@ class OverlayDragCorgiApp(QMainWindow):
                     'font-family: monospace;' +
                     'font-size: 12px;' +
                     'z-index: 10000;' +
-                    'max-width: 400px;' +
-                    'max-height: 300px;' +
+                    'max-width: 500px;' +
+                    'max-height: 400px;' +
                     'overflow-y: auto;' +
-                    'border: 1px solid #333;';
+                    'border: 1px solid #333;' +
+                    'resize: both;';
                     
-                practiceDebugPanel.innerHTML = 
-                    '<div style="font-weight: bold; margin-bottom: 10px; color: #ffff00;">' +
-                    '🔧 练习助手调试面板' +
-                    '<button onclick="this.parentElement.parentElement.remove()" style="' +
-                    'float: right;' +
-                    'background: none;' +
-                    'border: none;' +
-                    'color: #ff6666;' +
-                    'cursor: pointer;' +
-                    'font-size: 14px;' +
+                globalDebugPanel.innerHTML = 
+                    '<div style="font-weight: bold; margin-bottom: 10px; color: #ffff00; display: flex; justify-content: space-between; align-items: center;">' +
+                    '<span>🔧 全局调试面板</span>' +
+                    '<div>' +
+                    '<button onclick="document.getElementById(\\'debug-log\\').innerHTML=\\'\\'" style="' +
+                    'background: #333; border: 1px solid #555; color: #fff; cursor: pointer; font-size: 10px; margin-right: 5px; padding: 2px 6px; border-radius: 3px;' +
+                    '">清空</button>' +
+                    '<button onclick="this.parentElement.parentElement.parentElement.remove()" style="' +
+                    'background: none; border: none; color: #ff6666; cursor: pointer; font-size: 14px;' +
                     '">×</button>' +
+                    '</div>' +
                     '</div>' +
                     '<div id="debug-log" style="line-height: 1.4;"></div>';
                 
                 // 添加到页面
-                document.body.appendChild(practiceDebugPanel);
+                document.body.appendChild(globalDebugPanel);
                 
                 // 添加初始调试信息
-                var logContainer = practiceDebugPanel.querySelector('#debug-log');
+                var logContainer = globalDebugPanel.querySelector('#debug-log');
                 function addLog(message) {
                     var timestamp = new Date().toLocaleTimeString();
                     logContainer.innerHTML += '<div>[' + timestamp + '] ' + message + '</div>';
                     logContainer.scrollTop = logContainer.scrollHeight;
                 }
                 
-                addLog('🔄 调试面板已创建');
-                addLog('📋 检查元素状态...');
+                // 将addLog函数暴露为全局函数，供其他页面使用
+                window.addDebugLog = addLog;
                 
-                // 检查关键元素
-                var practiceTabContent = document.getElementById('practiceTabContent');
-                var aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                addLog('🔄 全局调试面板已创建');
+                addLog('📋 检查当前页面状态...');
                 
-                addLog('practiceTabContent: ' + (practiceTabContent ? '✅存在' : '❌不存在'));
-                addLog('aiPracticeMessages: ' + (aiPracticeMessages ? '✅存在' : '❌不存在'));
-                
-                // 检查JavaScript文件加载
-                addLog('createPracticeWelcome函数: ' + typeof window.createPracticeWelcome);
-                
-                // 如果函数存在，尝试调用
-                if (typeof window.createPracticeWelcome === 'function') {
-                    addLog('🚀 尝试调用createPracticeWelcome...');
-                    try {
-                        window.createPracticeWelcome();
-                        addLog('✅ createPracticeWelcome调用成功');
-                    } catch (error) {
-                        addLog('❌ createPracticeWelcome调用失败: ' + error.message);
-                    }
+                // 检测当前页面类型
+                var currentPage = 'unknown';
+                if (document.getElementById('practiceTabContent')) {
+                    currentPage = 'practice_assistant';
+                    addLog('📄 当前页面: 练习助手');
+                } else if (document.getElementById('subjectsContainer')) {
+                    currentPage = 'knowledge_mindmap';
+                    addLog('📄 当前页面: 知识脑图练习');
+                } else if (document.getElementById('fileTree')) {
+                    currentPage = 'learn_materials';
+                    addLog('📄 当前页面: 从资料学习');
                 } else {
-                    addLog('❌ practice_welcome.js文件未正确加载');
+                    addLog('📄 当前页面: 未知页面');
+                }
+                
+                // 检查WebChannel状态
+                function checkWebChannelStatus() {
+                    addLog('🔍 WebChannel状态检查:');
+                    addLog('  - window.pybridge: ' + (window.pybridge ? '✅可用' : '❌不可用'));
+                    if (window.pybridge) {
+                        var methodCount = Object.keys(window.pybridge).length;
+                        addLog('  - 可用方法数量: ' + methodCount);
+                        addLog('  - getSubjectsWithKnowledgeCount: ' + (window.pybridge.getSubjectsWithKnowledgeCount ? '✅存在' : '❌不存在'));
+                        return true;
+                    } else {
+                        addLog('  - 正在等待WebChannel初始化...');
+                        return false;
+                    }
+                }
+                
+                // 初始检查
+                var webChannelReady = checkWebChannelStatus();
+                
+                // 如果WebChannel未就绪，定期重新检查
+                if (!webChannelReady) {
+                    var retryCount = 0;
+                    var maxRetries = 10;
+                    var checkInterval = setInterval(function() {
+                        retryCount++;
+                        addLog('🔄 重新检查WebChannel状态 (' + retryCount + '/' + maxRetries + ')');
+                        
+                        if (checkWebChannelStatus()) {
+                            clearInterval(checkInterval);
+                            addLog('✅ WebChannel已就绪！');
+                            
+                            // 如果是知识脑图页面，尝试加载科目
+                            if (currentPage === 'knowledge_mindmap' && window.loadSubjects) {
+                                addLog('🚀 尝试加载科目列表...');
+                                window.loadSubjects();
+                            }
+                        } else if (retryCount >= maxRetries) {
+                            clearInterval(checkInterval);
+                            addLog('❌ WebChannel初始化超时');
+                            addLog('💡 建议：刷新页面重试');
+                        }
+                    }, 1000);
+                }
+                
+                // 根据页面类型进行特定检查
+                if (currentPage === 'practice_assistant') {
+                    // 练习助手页面检查
+                    var practiceTabContent = document.getElementById('practiceTabContent');
+                    var aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                    
+                    addLog('🔧 练习助手元素检查:');
+                    addLog('  - practiceTabContent: ' + (practiceTabContent ? '✅存在' : '❌不存在'));
+                    addLog('  - aiPracticeMessages: ' + (aiPracticeMessages ? '✅存在' : '❌不存在'));
+                    addLog('  - createPracticeWelcome函数: ' + typeof window.createPracticeWelcome);
+                    
+                    // 如果函数存在，尝试调用
+                    if (typeof window.createPracticeWelcome === 'function') {
+                        addLog('🚀 尝试调用createPracticeWelcome...');
+                        try {
+                            window.createPracticeWelcome();
+                            addLog('✅ createPracticeWelcome调用成功');
+                        } catch (error) {
+                            addLog('❌ createPracticeWelcome调用失败: ' + error.message);
+                        }
+                    }
+                } else if (currentPage === 'knowledge_mindmap') {
+                    // 知识脑图页面检查
+                    var subjectsContainer = document.getElementById('subjectsContainer');
+                    var subjectManagerModal = document.getElementById('subjectManagerModal');
+                    
+                    addLog('🧠 知识脑图元素检查:');
+                    addLog('  - subjectsContainer: ' + (subjectsContainer ? '✅存在' : '❌不存在'));
+                    addLog('  - subjectManagerModal: ' + (subjectManagerModal ? '✅存在' : '❌不存在'));
+                    
+                    // 检查科目管理相关API
+                    if (window.pybridge) {
+                        addLog('  - getSubjectsWithKnowledgeCount: ' + (window.pybridge.getSubjectsWithKnowledgeCount ? '✅存在' : '❌不存在'));
+                        addLog('  - getAllSubjects: ' + (window.pybridge.getAllSubjects ? '✅存在' : '❌不存在'));
+                        addLog('  - createSubject: ' + (window.pybridge.createSubject ? '✅存在' : '❌不存在'));
+                    }
+                    
+                    // 检查科目加载状态
+                    if (subjectsContainer) {
+                        var loadingText = subjectsContainer.textContent;
+                        if (loadingText.includes('正在加载')) {
+                            addLog('⏳ 科目列表正在加载中...');
+                        } else if (loadingText.includes('加载失败')) {
+                            addLog('❌ 科目列表加载失败');
+                        } else {
+                            var subjectCards = subjectsContainer.querySelectorAll('.subject-card');
+                            addLog('📊 已加载 ' + subjectCards.length + ' 个科目卡片');
+                        }
+                    }
                 }
                 
                 // 创建右上角的提示面板
