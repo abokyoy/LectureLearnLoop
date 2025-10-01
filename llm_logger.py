@@ -138,6 +138,56 @@ class LLMLogger:
             }
         
         self.log_api_call("ollama", function_name, input_data, output_data, error, response_time)
+    
+    def log_qwen_call(self,
+                     function_name: str,
+                     model: str,
+                     prompt: str,
+                     response: Optional[str] = None,
+                     error: Optional[str] = None,
+                     response_time: Optional[float] = None,
+                     config: Optional[Dict] = None):
+        """记录Qwen API调用"""
+        
+        input_data = {
+            "model": model,
+            "prompt": prompt,
+            "config": config or {}
+        }
+        
+        output_data = None
+        if response:
+            output_data = {
+                "response": response,
+                "response_length": len(response)
+            }
+        
+        self.log_api_call("qwen", function_name, input_data, output_data, error, response_time)
+    
+    def log_deepseek_call(self,
+                         function_name: str,
+                         model: str,
+                         prompt: str,
+                         response: Optional[str] = None,
+                         error: Optional[str] = None,
+                         response_time: Optional[float] = None,
+                         config: Optional[Dict] = None):
+        """记录DeepSeek API调用"""
+        
+        input_data = {
+            "model": model,
+            "prompt": prompt,
+            "config": config or {}
+        }
+        
+        output_data = None
+        if response:
+            output_data = {
+                "response": response,
+                "response_length": len(response)
+            }
+        
+        self.log_api_call("deepseek", function_name, input_data, output_data, error, response_time)
 
 
 # 全局日志记录器实例
@@ -163,3 +213,17 @@ def log_ollama_call(function_name: str, model: str, prompt: str, response: str =
     """便捷函数：记录Ollama调用"""
     logger = get_llm_logger()
     logger.log_ollama_call(function_name, model, prompt, response, error, response_time, **kwargs)
+
+
+def log_qwen_call(function_name: str, model: str, prompt: str, response: str = None,
+                 error: str = None, response_time: float = None, **kwargs):
+    """便捷函数：记录Qwen调用"""
+    logger = get_llm_logger()
+    logger.log_qwen_call(function_name, model, prompt, response, error, response_time, **kwargs)
+
+
+def log_deepseek_call(function_name: str, model: str, prompt: str, response: str = None,
+                     error: str = None, response_time: float = None, **kwargs):
+    """便捷函数：记录DeepSeek调用"""
+    logger = get_llm_logger()
+    logger.log_deepseek_call(function_name, model, prompt, response, error, response_time, **kwargs)

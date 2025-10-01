@@ -310,6 +310,18 @@ class KnowledgePointManager:
                 except Exception as ollama_error:
                     print(f"[LLM调用] Ollama API也失败: {ollama_error}")
                     return self._extract_with_rules(subject_name, note_content)
+        elif llm_provider == "Qwen":
+            print(f"[模型选择] 使用Qwen模型: {self.config.get('qwen_model', 'qwen-flash')}")
+            try:
+                return self._extract_with_qwen(prompt)
+            except Exception as qwen_error:
+                print(f"[LLM调用] Qwen API失败: {qwen_error}")
+                print(f"[模型选择] Qwen失败，尝试Ollama作为备用")
+                try:
+                    return self._extract_with_ollama(prompt)
+                except Exception as ollama_error:
+                    print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                    return self._extract_with_rules(subject_name, note_content)
         else:
             print(f"[模型选择] 使用Ollama模型: {self.config.get('ollama_model', 'deepseek-coder')}")
             try:
@@ -330,8 +342,8 @@ class KnowledgePointManager:
             api_key = self.config.get("deepseek_api_key", "")
             if not api_key:
                 error_msg = "未配置DeepSeek API密钥"
-                from llm_logger import log_ollama_call
-                log_ollama_call("extract_knowledge_points", "deepseek-chat", prompt, error=error_msg)
+                from llm_logger import log_deepseek_call
+                log_deepseek_call("extract_knowledge_points", "deepseek-chat", prompt, error=error_msg)
                 raise Exception(error_msg)
             
             # 使用用户配置的DeepSeek模型
@@ -373,16 +385,16 @@ class KnowledgePointManager:
                 print(f"[LLM调用] DeepSeek原始响应内容: {content[:500]}...")
                 
                 # 记录成功的API调用
-                from llm_logger import log_ollama_call
-                log_ollama_call("extract_knowledge_points", deepseek_model, prompt, content, response_time=response_time)
+                from llm_logger import log_deepseek_call
+                log_deepseek_call("extract_knowledge_points", deepseek_model, prompt, content, response_time=response_time)
                 
                 # 解析JSON响应
                 return self._parse_json_response(content)
                 
             else:
                 error_msg = f"DeepSeek API调用失败: {response.status_code} - {response.text}"
-                from llm_logger import log_ollama_call
-                log_ollama_call("extract_knowledge_points", deepseek_model, prompt, error=error_msg, response_time=response_time)
+                from llm_logger import log_deepseek_call
+                log_deepseek_call("extract_knowledge_points", deepseek_model, prompt, error=error_msg, response_time=response_time)
                 raise Exception(error_msg)
                 
         except Exception as e:
@@ -571,6 +583,130 @@ class KnowledgePointManager:
             error_msg = f"Ollama API调用失败: {e}"
             print(f"[LLM调用] {error_msg}")
             raise Exception(error_msg)
+    
+    def _extract_with_qwen(self, prompt: str) -> List[Dict]:
+        """使用Qwen API提取知识点"""
+        try:
+            # 调用Qwen API
+            api_key = self.config.get("qwen_api_key", "")
+            if not api_key:
+                error_msg = "未配置Qwen API密钥"
+                from llm_logger import log_qwen_call
+                log_qwen_call("extract_knowledge_points", "qwen-flash", prompt, error=error_msg)
+                raise Exception(error_msg)
+            
+            # 使用用户配置的Qwen模型
+            qwen_model = self.config.get("qwen_model", "qwen-flash")
+            url = self.config.get("qwen_api_url", "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
+            print(f"[模型调用] 实际调用的Qwen模型: {qwen_model}")
+            
+            payload = {
+                "model": qwen_model,
+                "input": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ]
+                },
+                "parameters": {
+                    "temperature": 0.3,
+                    "top_p": 0.9,
+                    "max_tokens": 2048
+                }
+            }
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            start_time = time.time()
+            
+            # 记录请求开始
+            print(f"[LLM调用] 开始调用Qwen API提取知识点")
+            print(f"[LLM调用] 输入prompt长度: {len(prompt)}")
+            print(f"[LLM调用] 输入内容: {prompt[:500]}...")
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response_time = time.time() - start_time
+            
+            print(f"[LLM调用] Qwen响应状态码: {response.status_code}")
+            print(f"[LLM调用] 响应时间: {response_time:.2f}秒")
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                print(f"[LLM调用] Qwen原始响应: {response_data}")
+                
+                # 提取响应内容
+                if "output" in response_data and "text" in response_data["output"]:
+                    content = response_data["output"]["text"]
+                elif "output" in response_data and "choices" in response_data["output"] and len(response_data["output"]["choices"]) > 0:
+                    content = response_data["output"]["choices"][0].get("message", {}).get("content", "")
+                else:
+                    content = str(response_data)
+                
+                print(f"[LLM调用] Qwen提取的内容长度: {len(content)}")
+                print(f"[LLM调用] Qwen原始响应内容: {content[:500]}...")
+                
+                # 记录成功的API调用
+                from llm_logger import log_qwen_call
+                log_qwen_call("extract_knowledge_points", qwen_model, prompt, content, response_time=response_time)
+                
+                # 解析JSON响应
+                return self._parse_json_response(content)
+                
+            else:
+                error_msg = f"Qwen API调用失败: {response.status_code} - {response.text}"
+                from llm_logger import log_qwen_call
+                log_qwen_call("extract_knowledge_points", qwen_model, prompt, error=error_msg, response_time=response_time)
+                raise Exception(error_msg)
+                
+        except Exception as e:
+            print(f"[LLM调用] Qwen API调用异常: {e}")
+            raise
+    
+    def _parse_json_response(self, content: str) -> List[Dict]:
+        """解析LLM返回的JSON响应"""
+        try:
+            # 清理响应内容，移除可能的markdown代码块标记
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            content = content.strip()
+            
+            # 解析JSON
+            concepts = json.loads(content)
+            print(f"[LLM调用] 解析成功，提取到 {len(concepts)} 个核心概念")
+            
+            # 转换为统一的数据格式
+            formatted_concepts = []
+            for concept in concepts:
+                if isinstance(concept, dict):
+                    formatted_concept = {
+                        "point_name": concept.get("concept_name", ""),
+                        "core_description": concept.get("core_definition", ""),
+                        "category": concept.get("category", ""),
+                        "importance": concept.get("importance", "中等")
+                    }
+                    formatted_concepts.append(formatted_concept)
+            
+            return formatted_concepts
+            
+        except json.JSONDecodeError as e:
+            print(f"[LLM调用] JSON解析失败: {e}")
+            print(f"[LLM调用] 原始内容: {content[:500]}...")
+            # 返回空列表而不是抛出异常，避免整个流程失败
+            return []
+        except Exception as e:
+            print(f"[LLM调用] 响应解析异常: {e}")
+            return []
     
     def _extract_with_rules(self, subject_name: str, note_content: str) -> List[Dict]:
         """基于规则的知识点提取（兜底方案）"""
