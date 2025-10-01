@@ -3608,6 +3608,9 @@
                 globalDebugLog('✅ 答案已提交成功，提交ID: ' + submissionId + '，当前历史数量: ' + practiceAnswerHistory.length);
                 globalDebugLog('📊 当前状态 - 练习ID: ' + (currentPracticeId || 'null') + ', 题目长度: ' + (currentPracticeQuestions || '').length + ', 答案长度: ' + currentPracticeAnswer.length);
                 
+                // 自动保存练习历史（状态：未评估）
+                savePracticeHistoryToDatabase();
+                
                 alert('答案已提交（第' + practiceAnswerHistory.length + '次）\n提交ID: ' + submissionId + '\n可以点击AI评判进行评估');
             }
             
@@ -3836,6 +3839,9 @@
                 
                 globalDebugLog('📊 评估结果已保存到对应的提交记录，等待用户点击查看详情');
                 
+                // 自动更新练习历史状态为已评估
+                updatePracticeEvaluationInDatabase(evaluationData);
+                
                 // 显示提示信息
                 const score = evaluationData.score || 0;
                 let scoreEmoji = '🔴'; // 红色
@@ -3851,6 +3857,138 @@
                 if (evaluateBtn) {
                     evaluateBtn.disabled = false;
                     evaluateBtn.textContent = 'AI评判';
+                }
+            }
+            
+            // 保存练习历史到数据库（用户提交答案时调用）
+            function savePracticeHistoryToDatabase() {
+                globalDebugLog('💾 开始保存练习历史到数据库...');
+                
+                try {
+                    // 确保有必要的数据
+                    if (!currentPracticeId) {
+                        // 如果没有练习ID，生成一个
+                        currentPracticeId = 'practice_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                        globalDebugLog('🆔 生成新的练习ID: ' + currentPracticeId);
+                    }
+                    
+                    // 准备练习数据
+                    const practiceData = {
+                        practice_id: currentPracticeId,
+                        timestamp: new Date().toISOString(),
+                        selected_text: currentPracticeData ? (currentPracticeData.selected_text || '') : '',
+                        questions: currentPracticeQuestions || '',
+                        user_answers: currentPracticeAnswer || '',
+                        answer_history: JSON.stringify(practiceAnswerHistory || []),
+                        evaluation_result: currentEvaluationResult || '',
+                        status: 'submitted'
+                    };
+                    
+                    globalDebugLog('📊 准备保存的练习数据: ' + JSON.stringify(practiceData).substring(0, 200));
+                    
+                    // 调用后端API
+                    if (window.bridge && window.bridge.savePracticeHistory) {
+                        const response = window.bridge.savePracticeHistory(JSON.stringify(practiceData));
+                        
+                        // 处理响应
+                        if (response && typeof response.then === 'function') {
+                            // 如果是Promise，等待结果
+                            response.then(function(result) {
+                                handleSavePracticeHistoryResponse(result);
+                            }).catch(function(error) {
+                                globalDebugError('❌ 保存练习历史Promise失败: ' + error.message);
+                            });
+                        } else {
+                            // 如果是同步响应，直接处理
+                            handleSavePracticeHistoryResponse(response);
+                        }
+                    } else {
+                        globalDebugError('❌ savePracticeHistory API不可用');
+                    }
+                    
+                } catch (error) {
+                    globalDebugError('❌ 保存练习历史时出错: ' + error.message);
+                }
+            }
+            
+            // 处理保存练习历史的响应
+            function handleSavePracticeHistoryResponse(response) {
+                try {
+                    if (typeof response === 'string') {
+                        response = JSON.parse(response);
+                    }
+                    
+                    if (response && response.success) {
+                        globalDebugLog('✅ 练习历史保存成功: ' + response.practice_id);
+                    } else {
+                        globalDebugError('❌ 练习历史保存失败: ' + (response ? response.error : '未知错误'));
+                    }
+                } catch (error) {
+                    globalDebugError('❌ 处理保存练习历史响应时出错: ' + error.message);
+                }
+            }
+            
+            // 更新练习评估状态到数据库（AI评估完成时调用）
+            function updatePracticeEvaluationInDatabase(evaluationData) {
+                globalDebugLog('📊 开始更新练习评估状态到数据库...');
+                
+                try {
+                    // 确保有练习ID
+                    if (!currentPracticeId) {
+                        globalDebugError('❌ 无法更新评估状态：缺少练习ID');
+                        return;
+                    }
+                    
+                    // 准备评估数据
+                    const evalData = {
+                        evaluation_result: JSON.stringify(evaluationData),
+                        score: evaluationData.score || 0,
+                        feedback: evaluationData.feedback || '',
+                        answer_history: JSON.stringify(practiceAnswerHistory || []),
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    globalDebugLog('📊 准备更新的评估数据: ' + JSON.stringify(evalData).substring(0, 200));
+                    
+                    // 调用后端API
+                    if (window.bridge && window.bridge.updatePracticeEvaluation) {
+                        const response = window.bridge.updatePracticeEvaluation(currentPracticeId, JSON.stringify(evalData));
+                        
+                        // 处理响应
+                        if (response && typeof response.then === 'function') {
+                            // 如果是Promise，等待结果
+                            response.then(function(result) {
+                                handleUpdateEvaluationResponse(result);
+                            }).catch(function(error) {
+                                globalDebugError('❌ 更新练习评估Promise失败: ' + error.message);
+                            });
+                        } else {
+                            // 如果是同步响应，直接处理
+                            handleUpdateEvaluationResponse(response);
+                        }
+                    } else {
+                        globalDebugError('❌ updatePracticeEvaluation API不可用');
+                    }
+                    
+                } catch (error) {
+                    globalDebugError('❌ 更新练习评估时出错: ' + error.message);
+                }
+            }
+            
+            // 处理更新练习评估的响应
+            function handleUpdateEvaluationResponse(response) {
+                try {
+                    if (typeof response === 'string') {
+                        response = JSON.parse(response);
+                    }
+                    
+                    if (response && response.success) {
+                        globalDebugLog('✅ 练习评估状态更新成功: ' + response.practice_id);
+                    } else {
+                        globalDebugError('❌ 练习评估状态更新失败: ' + (response ? response.error : '未知错误'));
+                    }
+                } catch (error) {
+                    globalDebugError('❌ 处理更新练习评估响应时出错: ' + error.message);
                 }
             }
             
@@ -3969,63 +4107,17 @@
                 }
             }
             
-            // 加载练习数据
-            function loadPracticeData(practiceData) {
-                globalDebugLog('📁 加载练习数据: ' + JSON.stringify(practiceData).substring(0, 100));
-                
-                currentPracticeId = practiceData.id;
-                currentPracticeQuestions = practiceData.question || practiceData.questions;
-                
-                globalDebugLog('🎯 设置练习状态: ID=' + currentPracticeId + ', 题目长度=' + (currentPracticeQuestions || '').length);
-                
-                // 更新练习ID显示
-                const practiceIdDisplay = document.getElementById('practiceIdDisplay');
-                if (practiceIdDisplay) {
-                    practiceIdDisplay.textContent = currentPracticeId;
-                }
-                
-                // 更新相关学习内容
-                const relatedContentDisplay = document.getElementById('relatedContentDisplay');
-                if (relatedContentDisplay) {
-                    relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">${practiceData.related_content || practiceData.selectedText || '相关学习内容将在这里显示...'}</p>`;
-                }
-                
-                // 更新题目显示
-                const questionDisplayArea = document.querySelector('#questionDisplayArea');
-                if (questionDisplayArea && currentPracticeQuestions) {
-                    questionDisplayArea.innerHTML = `
-                        <p class="text-text-dark-brown leading-relaxed">
-                            <strong>题目：</strong> 
-                            <div class="markdown-content mt-2">${formatMarkdownContent(currentPracticeQuestions)}</div>
-                        </p>
-                    `;
-                }
-                
-                // 清空答案区域
-                const answerInput = document.getElementById('practiceAnswerInput');
-                if (answerInput) {
-                    answerInput.value = '';
-                }
-                
-                // 清空答案历史
-                const answerHistoryArea = document.getElementById('answerHistoryArea');
-                if (answerHistoryArea) {
-                    answerHistoryArea.innerHTML = '';
-                }
-                
-                // 重置状态
-                currentPracticeAnswer = '';
-                currentEvaluationResult = null;
-                practiceAnswerHistory = [];
-                
-                globalDebugLog('✅ 练习数据加载完成');
-            }
+            // 注意：loadPracticeData函数已移动到文件后面，避免重复定义
             
             // 更新答案历史显示 - 改进版本，显示提交ID和分数
             function updateAnswerHistory() {
                 const answerHistoryArea = document.getElementById('answerHistoryArea');
-                if (!answerHistoryArea) return;
+                if (!answerHistoryArea) {
+                    globalDebugError('❌ 找不到answerHistoryArea元素');
+                    return;
+                }
                 
+                globalDebugLog('📊 更新答案历史显示，数组长度: ' + practiceAnswerHistory.length);
                 answerHistoryArea.innerHTML = '';
                 
                 practiceAnswerHistory.forEach((entry, index) => {
@@ -4090,7 +4182,10 @@
                 
                 // 如果没有任何提交记录，显示提示
                 if (practiceAnswerHistory.length === 0) {
+                    globalDebugLog('⚠️ 显示"暂无提交记录"提示');
                     answerHistoryArea.innerHTML = '<div class="text-center text-gray-500 py-4">暂无提交记录</div>';
+                } else {
+                    globalDebugLog('✅ 成功显示 ' + practiceAnswerHistory.length + ' 条答案历史记录');
                 }
             }
             
@@ -5114,20 +5209,64 @@
                 }
                 
                 // 原有的对话历史加载逻辑
-                if (!selectedHistoryId) return;
+                if (!selectedHistoryId) {
+                    alert('请先选择一个对话记录');
+                    return;
+                }
+                
+                globalDebugLog('🔄 开始加载对话历史: ' + selectedHistoryId);
                 
                 if (window.bridge && window.bridge.loadConversationById) {
-                    window.bridge.loadConversationById(selectedHistoryId, function(response) {
-                        try {
-                            const result = JSON.parse(response);
-                            if (result.success) {
-                                loadConversation(result.conversation);
-                                hideHistoryModal();
-                            }
-                        } catch (e) {
-                            console.error('加载对话内容失败:', e);
+                    try {
+                        const response = window.bridge.loadConversationById(selectedHistoryId);
+                        
+                        // 处理Promise响应
+                        if (response && typeof response.then === 'function') {
+                            response.then(function(result) {
+                                handleLoadConversationResponse(result);
+                            }).catch(function(error) {
+                                globalDebugError('❌ 加载对话Promise失败: ' + error.message);
+                                alert('加载对话失败: ' + error.message);
+                            });
+                        } else {
+                            // 同步响应
+                            handleLoadConversationResponse(response);
                         }
-                    });
+                    } catch (error) {
+                        globalDebugError('❌ 加载对话异常: ' + error.message);
+                        alert('加载对话失败: ' + error.message);
+                    }
+                } else {
+                    alert('对话历史功能暂时不可用');
+                }
+            }
+            
+            // 处理加载对话的响应
+            function handleLoadConversationResponse(response) {
+                try {
+                    globalDebugLog('📝 收到对话加载响应: ' + (typeof response === 'string' ? response.substring(0, 100) : JSON.stringify(response).substring(0, 100)));
+                    
+                    if (typeof response === 'string') {
+                        response = JSON.parse(response);
+                    }
+                    
+                    if (response && response.success) {
+                        if (response.conversation) {
+                            globalDebugLog('✅ 对话加载成功，开始载入对话内容');
+                            loadConversation(response.conversation);
+                            hideHistoryModal();
+                        } else {
+                            globalDebugError('❌ 响应中没有对话数据');
+                            alert('加载对话失败: 没有对话数据');
+                        }
+                    } else {
+                        const errorMsg = response ? (response.error || '未知错误') : '响应为空';
+                        globalDebugError('❌ 对话加载失败: ' + errorMsg);
+                        alert('加载对话失败: ' + errorMsg);
+                    }
+                } catch (error) {
+                    globalDebugError('❌ 处理对话加载响应时出错: ' + error.message);
+                    alert('加载对话失败: 响应处理错误');
                 }
             }
             
@@ -5138,9 +5277,15 @@
                 try {
                     // 设置全局练习状态
                     currentPracticeId = practiceData.practice_id || practiceData.id || '';
-                    currentPracticeQuestions = practiceData.questions || '';
+                    currentPracticeQuestions = practiceData.questions || practiceData.question || practiceData.selected_text || '';
                     currentPracticeAnswer = practiceData.user_answers || practiceData.answer || '';
                     currentEvaluationResult = practiceData.evaluation_result || practiceData.evaluation || null;
+                    
+                    globalDebugLog('🆔 练习ID: ' + currentPracticeId);
+                    globalDebugLog('❓ 题目内容: ' + (currentPracticeQuestions ? currentPracticeQuestions.substring(0, 100) + '...' : '无'));
+                    globalDebugLog('✍️ 用户答案: ' + (currentPracticeAnswer ? currentPracticeAnswer.substring(0, 100) + '...' : '无'));
+                    globalDebugLog('📊 评估结果类型: ' + typeof currentEvaluationResult);
+                    globalDebugLog('📊 原始answer_history: ' + (practiceData.answer_history ? practiceData.answer_history.substring(0, 100) + '...' : '无'));
                     
                     // 更新练习ID显示
                     const practiceIdDisplay = document.getElementById('practiceIdDisplay');

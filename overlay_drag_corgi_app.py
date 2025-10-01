@@ -3670,6 +3670,108 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
+    @Slot(str, result=str)
+    def savePracticeHistory(self, practice_data):
+        """保存练习历史（用户提交答案时调用）"""
+        self.logger.info("=== 开始保存练习历史 ===")
+        
+        try:
+            import json
+            
+            self.logger.info(f"📥 接收到练习数据长度: {len(practice_data)} 字符")
+            data = json.loads(practice_data)
+            
+            # 尝试使用数据库方式
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                from services.practice_service import PracticeService
+                
+                # 初始化服务
+                practice_service = PracticeService()
+                
+                # 保存练习历史
+                self.logger.info("💾 使用数据库方式保存练习历史...")
+                result = practice_service.save_practice_history(data)
+                
+                if result["success"]:
+                    self.logger.info(f"✅ 练习历史保存成功: {result.get('practice_id')}")
+                    return json.dumps(result, ensure_ascii=False)
+                else:
+                    raise Exception(result.get("error", "练习历史保存失败"))
+                    
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入模块失败: {import_error}")
+                return json.dumps({"success": False, "error": f"模块导入失败: {import_error}"}, ensure_ascii=False)
+                
+            except Exception as db_error:
+                self.logger.error(f"❌ 数据库保存失败: {db_error}")
+                return json.dumps({"success": False, "error": f"数据库操作失败: {db_error}"}, ensure_ascii=False)
+            
+        except json.JSONDecodeError as json_error:
+            error_msg = f"JSON解析错误: {json_error}"
+            self.logger.error(f"❌ {error_msg}")
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存练习历史发生严重错误: {e}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def updatePracticeEvaluation(self, practice_id, evaluation_data):
+        """更新练习评估结果（AI评估完成时调用）"""
+        self.logger.info(f"=== 开始更新练习评估: {practice_id} ===")
+        
+        try:
+            import json
+            
+            self.logger.info(f"📥 接收到评估数据长度: {len(evaluation_data)} 字符")
+            data = json.loads(evaluation_data)
+            
+            # 尝试使用数据库方式
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                from services.practice_service import PracticeService
+                
+                # 初始化服务
+                practice_service = PracticeService()
+                
+                # 更新练习评估
+                self.logger.info("💾 使用数据库方式更新练习评估...")
+                result = practice_service.update_practice_evaluation(practice_id, data)
+                
+                if result["success"]:
+                    self.logger.info(f"✅ 练习评估更新成功: {practice_id}")
+                    return json.dumps(result, ensure_ascii=False)
+                else:
+                    raise Exception(result.get("error", "练习评估更新失败"))
+                    
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入模块失败: {import_error}")
+                return json.dumps({"success": False, "error": f"模块导入失败: {import_error}"}, ensure_ascii=False)
+                
+            except Exception as db_error:
+                self.logger.error(f"❌ 数据库操作失败: {db_error}")
+                return json.dumps({"success": False, "error": f"数据库操作失败: {db_error}"}, ensure_ascii=False)
+            
+        except json.JSONDecodeError as json_error:
+            error_msg = f"JSON解析错误: {json_error}"
+            self.logger.error(f"❌ {error_msg}")
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 更新练习评估发生严重错误: {e}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
     
     @Slot(str, result=str)
     def importPracticeErrors(self, error_data):

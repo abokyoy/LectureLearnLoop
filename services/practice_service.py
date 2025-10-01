@@ -41,11 +41,22 @@ class PracticeService:
                         questions TEXT,
                         user_answers TEXT,
                         evaluation_result TEXT,
+                        answer_history TEXT,
                         status TEXT DEFAULT 'created',
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
+                
+                # 检查并添加 answer_history 字段（用于已存在的数据库）
+                try:
+                    cursor.execute("ALTER TABLE practice_sessions ADD COLUMN answer_history TEXT")
+                    self.logger.info("✅ 成功添加 answer_history 字段")
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" in str(e).lower():
+                        self.logger.info("ℹ️ answer_history 字段已存在")
+                    else:
+                        self.logger.warning(f"⚠️ 添加 answer_history 字段时出现问题: {e}")
                 
                 # 创建练习提交表
                 cursor.execute('''
@@ -337,6 +348,125 @@ class PracticeService:
             
         except Exception as e:
             self.logger.error(f"❌ 数据迁移失败: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def save_practice_history(self, practice_data: Dict[str, Any]) -> Dict[str, Any]:
+        """保存练习历史（用户提交答案时调用）
+        
+        Args:
+            practice_data: 练习数据，包含practice_id, questions, selected_text等
+        Returns:
+            Dict: 包含success状态和相关信息
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 检查练习是否已存在
+                cursor.execute(
+                    "SELECT id FROM practice_sessions WHERE practice_id = ?",
+                    (practice_data.get('practice_id'),)
+                )
+                existing = cursor.fetchone()
+                
+                if existing:
+                    # 更新现有记录
+                    cursor.execute('''
+                        UPDATE practice_sessions 
+                        SET selected_text = ?, questions = ?, user_answers = ?, 
+                            answer_history = ?, evaluation_result = ?,
+                            status = 'submitted', updated_at = CURRENT_TIMESTAMP
+                        WHERE practice_id = ?
+                    ''', (
+                        practice_data.get('selected_text', ''),
+                        practice_data.get('questions', ''),
+                        practice_data.get('user_answers', ''),
+                        practice_data.get('answer_history', ''),
+                        practice_data.get('evaluation_result', ''),
+                        practice_data.get('practice_id')
+                    ))
+                    self.logger.info(f"✅ 更新练习历史: {practice_data.get('practice_id')}")
+                else:
+                    # 插入新记录
+                    cursor.execute('''
+                        INSERT INTO practice_sessions 
+                        (practice_id, timestamp, selected_text, questions, user_answers, answer_history, evaluation_result, status)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted')
+                    ''', (
+                        practice_data.get('practice_id'),
+                        practice_data.get('timestamp', datetime.now().isoformat()),
+                        practice_data.get('selected_text', ''),
+                        practice_data.get('questions', ''),
+                        practice_data.get('user_answers', ''),
+                        practice_data.get('answer_history', ''),
+                        practice_data.get('evaluation_result', ''),
+                    ))
+                    self.logger.info(f"✅ 保存新练习历史: {practice_data.get('practice_id')}")
+                
+                conn.commit()
+                
+                return {
+                    "success": True,
+                    "message": "练习历史保存成功",
+                    "practice_id": practice_data.get('practice_id')
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ 保存练习历史失败: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+    
+    def update_practice_evaluation(self, practice_id: str, evaluation_data: Dict[str, Any]) -> Dict[str, Any]:
+        """更新练习评估结果（AI评估完成时调用）
+        
+        Args:
+            practice_id: 练习ID
+            evaluation_data: 评估数据，包含evaluation_result, score等
+        Returns:
+            Dict: 包含success状态和相关信息
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 更新练习会话状态为已评估
+                cursor.execute('''
+                    UPDATE practice_sessions 
+                    SET evaluation_result = ?, answer_history = ?, status = 'evaluated', updated_at = CURRENT_TIMESTAMP
+                    WHERE practice_id = ?
+                ''', (
+                    evaluation_data.get('evaluation_result', ''),
+                    evaluation_data.get('answer_history', ''),
+                    practice_id
+                ))
+                
+                # 插入评估记录到评估表
+                cursor.execute('''
+                    INSERT INTO practice_evaluations 
+                    (practice_id, evaluation_content, score)
+                    VALUES (?, ?, ?)
+                ''', (
+                    practice_id,
+                    evaluation_data.get('evaluation_result', ''),
+                    evaluation_data.get('score', 0)
+                ))
+                
+                conn.commit()
+                self.logger.info(f"✅ 更新练习评估: {practice_id}, 得分: {evaluation_data.get('score', 'N/A')}")
+                
+                return {
+                    "success": True,
+                    "message": "练习评估更新成功",
+                    "practice_id": practice_id
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ 更新练习评估失败: {e}")
             return {
                 "success": False,
                 "error": str(e)
