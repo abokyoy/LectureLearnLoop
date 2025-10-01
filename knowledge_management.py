@@ -1808,8 +1808,11 @@ class KnowledgeManagementSystem:
         # 收藏数量
         cursor.execute("SELECT subject_name, COUNT(*) FROM favorite_questions GROUP BY subject_name")
         fav_map = {row[0]: row[1] for row in cursor.fetchall()}
-        # 所有学科
-        subjects = set(kp_map) | set(err_map) | set(fav_map)
+        # 用户创建的所有科目（包括没有知识点的）
+        cursor.execute("SELECT DISTINCT subject_name FROM user_subjects")
+        user_subjects = {row[0] for row in cursor.fetchall()}
+        # 所有学科（包括用户创建的科目）
+        subjects = set(kp_map) | set(err_map) | set(fav_map) | user_subjects
         result = []
         for s in sorted(subjects):
             result.append({

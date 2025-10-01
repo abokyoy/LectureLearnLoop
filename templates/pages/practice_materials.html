@@ -366,27 +366,153 @@ marker path {
 </style>
 
 <script>
-// WebChannel初始化
+// 使用全局WebChannel连接（来自base.html）
 let pybridge = null;
 
-// 初始化WebChannel连接
-new QWebChannel(qt.webChannelTransport, function(channel) {
-    pybridge = channel.objects.bridge;
-    window.pybridge = pybridge;  // 暴露为全局变量
-    console.log('🔗 知识脑图页面WebChannel连接成功');
-    
-    // WebChannel就绪后，触发页面初始化
+// 等待全局WebChannel就绪
+let isPageInitialized = false;
+
+function initializePage() {
+    if (window.bridge) {
+        pybridge = window.bridge;
+        window.pybridge = pybridge;  // 为兼容性保留别名
+        console.log('🔗 知识脑图页面使用全局WebChannel连接');
+        
+        // WebChannel就绪后，触发页面初始化
+        if (typeof window.addDebugLog === 'function') {
+            window.addDebugLog('🔗 使用全局WebChannel连接，pybridge已就绪');
+        }
+        
+        isPageInitialized = true;
+        
+        // 自动尝试加载科目列表
+        setTimeout(() => {
+            if (typeof loadSubjects === 'function') {
+                loadSubjects();
+            }
+        }, 100);
+        
+        return true; // 初始化成功
+    } else {
+        // 如果全局WebChannel还未就绪，等待bridgeReady事件
+        document.addEventListener('bridgeReady', function() {
+            initializePage();
+        }, { once: true }); // 只监听一次
+        
+        return false; // 初始化未完成
+    }
+}
+
+// 强制重新初始化（用于页面切换后重新进入）
+function forceReinitialize() {
     if (typeof window.addDebugLog === 'function') {
-        window.addDebugLog('🔗 WebChannel连接成功，pybridge已就绪');
+        window.addDebugLog('🔄 强制重新初始化知识脑图页面');
     }
     
-    // 自动尝试加载科目列表
-    setTimeout(() => {
-        if (typeof loadSubjects === 'function') {
-            loadSubjects();
+    // 重置所有相关状态
+    isPageInitialized = false;
+    isLoadingSubjects = false; // 重置加载标志
+    
+    // 重新初始化
+    if (!initializePage()) {
+        // 如果WebChannel还未就绪，使用重试机制
+        tryLoadSubjectsWithRetry();
+    }
+}
+
+// 带重试机制的科目加载
+function tryLoadSubjectsWithRetry(retryCount = 0) {
+    if (window.bridge && window.bridge.getSubjectsWithKnowledgeCount) {
+        if (typeof window.addDebugLog === 'function') {
+            window.addDebugLog('✅ WebChannel已准备就绪，开始加载科目');
         }
-    }, 100);
-});
+        loadSubjects();
+    } else if (retryCount < 10) {
+        if (typeof window.addDebugLog === 'function') {
+            window.addDebugLog(`⏳ WebChannel未就绪，等待中... (${retryCount + 1}/10)`);
+        }
+        setTimeout(() => tryLoadSubjectsWithRetry(retryCount + 1), 500);
+    } else {
+        if (typeof window.addDebugLog === 'function') {
+            window.addDebugLog('❌ WebChannel初始化超时，显示错误信息');
+        }
+        const container = document.getElementById('subjectsContainer');
+        if (container) {
+            container.innerHTML = `
+                <div class="col-span-full text-center py-8 text-red-600">
+                    <span class="material-icons-outlined text-4xl mb-4">error</span>
+                    <p class="text-lg font-semibold mb-2">WebChannel连接失败</p>
+                    <p class="text-sm mb-4">前后端通信未建立，请刷新页面重试</p>
+                    <button onclick="forceReinitialize()" 
+                            class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 mr-2">
+                        重新初始化
+                    </button>
+                    <button onclick="location.reload()" 
+                            class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600">
+                        刷新页面
+                    </button>
+                </div>
+            `;
+        }
+    }
+}
+
+// 页面加载时初始化
+initializePage();
+
+// 定义全局回调函数，供base.html调用
+window.onBridgeReady = function() {
+    if (typeof window.addDebugLog === 'function') {
+        window.addDebugLog('🔗 收到bridgeReady回调，重新初始化知识脑图页面');
+    }
+    
+    // 重置状态并重新初始化
+    isPageInitialized = false;
+    initializePage();
+};
+
+// 页面可见性检查机制
+let pageVisibilityCheckInterval = null;
+
+function startPageVisibilityCheck() {
+    // 清除之前的检查
+    if (pageVisibilityCheckInterval) {
+        clearInterval(pageVisibilityCheckInterval);
+    }
+    
+    // 每2秒检查一次页面是否可见
+    pageVisibilityCheckInterval = setInterval(() => {
+        const subjectPage = document.getElementById('subjectSelectionPage');
+        const mindmapPage = document.getElementById('mindmapPage');
+        
+        // 检查知识脑图页面是否可见
+        const isKnowledgeMindmapVisible = subjectPage && !subjectPage.classList.contains('hidden');
+        
+        if (isKnowledgeMindmapVisible) {
+            // 检查科目容器是否显示加载状态
+            const container = document.getElementById('subjectsContainer');
+            if (container && container.innerHTML.includes('正在加载学科列表')) {
+                if (typeof window.addDebugLog === 'function') {
+                    window.addDebugLog('🔍 检测到页面卡在加载状态，尝试重新初始化');
+                }
+                
+                // 重新初始化
+                forceReinitialize();
+            }
+        }
+    }, 2000);
+}
+
+// 停止页面可见性检查
+function stopPageVisibilityCheck() {
+    if (pageVisibilityCheckInterval) {
+        clearInterval(pageVisibilityCheckInterval);
+        pageVisibilityCheckInterval = null;
+    }
+}
+
+// 启动页面可见性检查
+startPageVisibilityCheck();
 
 // 全局变量
 let currentSubjectName = '';
@@ -481,7 +607,10 @@ async function loadSubjectsForManager() {
         }
         
         const result = await window.pybridge.getAllSubjects();
+        log(`📡 getAllSubjects API返回: ${result}`);
+        
         const subjects = JSON.parse(result);
+        log(`📋 解析后的科目列表: ${JSON.stringify(subjects, null, 2)}`);
         
         log(`✅ 获取到 ${subjects.length} 个科目`);
         
@@ -573,8 +702,15 @@ async function createSubject() {
             log(`✅ 科目创建成功: ${subjectName}`);
             alert(response.message);
             input.value = '';
-            loadSubjectsForManager(); // 刷新列表
-            refreshSubjects(); // 刷新主页面
+            
+            // 延迟刷新，确保数据库操作完成
+            log(`🔄 开始刷新科目管理列表...`);
+            setTimeout(async () => {
+                await loadSubjectsForManager(); // 刷新科目管理列表
+                log(`🔄 开始刷新主页面科目列表...`);
+                await refreshSubjects(); // 刷新主页面
+                log(`✅ 所有列表刷新完成`);
+            }, 100);
         } else {
             log(`❌ 科目创建失败: ${response.error}`);
             alert(`创建失败: ${response.error}`);
@@ -2652,6 +2788,16 @@ document.addEventListener('DOMContentLoaded', function() {
     log('📋 检查环境...');
     log(`- window.pybridge: ${window.pybridge ? '可用' : '不可用'}`);
     log(`- 学科卡片数量: ${document.querySelectorAll('.subject-card').length}`);
+    
+    // 如果还没有初始化，强制重新初始化
+    if (!isPageInitialized || !window.pybridge) {
+        log('🔄 页面未初始化或WebChannel不可用，强制重新初始化');
+        forceReinitialize();
+    } else {
+        // 已经初始化，直接加载科目列表
+        log('✅ 页面已初始化，直接加载科目列表');
+        loadSubjects();
+    }
     
     // 尝试恢复之前的脑图状态
     restorePreviousMindmapState();
