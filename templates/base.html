@@ -426,7 +426,6 @@
             justify-content: center;
             z-index: 10000;
         }
-
         .ai-history-modal.show {
             display: flex;
         }
@@ -434,8 +433,9 @@
         .ai-history-content {
             background: white;
             border-radius: 12px;
-            width: 600px;
-            max-height: 80vh;
+            width: 800px;
+            max-width: 90vw;
+            max-height: 85vh;
             display: flex;
             flex-direction: column;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
@@ -457,7 +457,7 @@
         .ai-history-list {
             flex: 1;
             overflow-y: auto;
-            max-height: 400px;
+            min-height: 500px;
             padding: 10px;
         }
 
@@ -688,15 +688,20 @@
 
         // 显示练习欢迎界面
         function showPracticeWelcome() {
-            // 如果有当前练习数据，不显示欢迎界面
+            // 更严格的状态检测：如果有练习数据或练习面板正在显示，不显示欢迎界面
             if (typeof currentPracticeId !== 'undefined' && currentPracticeId) {
                 addDebugLog('⚠️ 有当前练习数据，跳过显示欢迎界面');
                 return;
             }
             
+            const practiceContainer = document.getElementById('practiceContainer');
+            if (practiceContainer && practiceContainer.style.display === 'flex') {
+                addDebugLog('⚠️ 练习面板正在显示，跳过显示欢迎界面');
+                return;
+            }
+            
             const welcomePanel = document.getElementById('practiceWelcomePanel');
             const messagesPanel = document.getElementById('aiPracticeMessages');
-            const practiceContainer = document.getElementById('practiceContainer');
             
             addDebugLog('📋 显示练习欢迎界面');
             
@@ -916,40 +921,37 @@
                                     addDebugLog('✅ 已显示练习面板');
                                 }
                                 
-                                // 4. 延迟调用原有的练习历史按钮点击事件
+                                // 4. 延迟调用独立的练习历史弹窗，确保函数已定义
                                 setTimeout(() => {
-                                    addDebugLog('🚀 模拟点击原有的练习历史按钮');
-                                    try {
-                                        // 查找原有的练习历史按钮并点击
-                                        const practiceHistoryBtn = document.getElementById('practiceHistoryBtn');
-                                        if (practiceHistoryBtn) {
-                                            addDebugLog('✅ 找到原有的练习历史按钮，模拟点击');
-                                            practiceHistoryBtn.click();
-                                        } else {
-                                            addDebugLog('❌ 未找到practiceHistoryBtn，尝试其他方式');
-                                            // 尝试查找其他可能的练习历史按钮
-                                            const historyBtns = document.querySelectorAll('[id*="history"], [class*="history"]');
-                                            addDebugLog('🔍 找到 ' + historyBtns.length + ' 个可能的历史按钮');
-                                            
-                                            if (historyBtns.length > 0) {
-                                                addDebugLog('✅ 点击第一个历史按钮');
-                                                historyBtns[0].click();
-                                            } else {
-                                                addDebugLog('❌ 未找到任何历史按钮，显示简单列表');
-                                                // 简单显示练习列表
-                                                let historyText = '练习历史记录：\\n\\n';
-                                                practices.slice(0, 5).forEach((practice, index) => {
-                                                    historyText += `${index + 1}. 练习${practice.id}\\n`;
-                                                    historyText += `   时间: ${new Date(practice.timestamp).toLocaleString()}\\n`;
-                                                    historyText += `   状态: ${practice.status}\\n\\n`;
-                                                });
-                                                alert(historyText);
+                                    addDebugLog('🚀 延迟调用独立的练习历史弹窗');
+                                    
+                                    // 多次尝试调用，直到函数定义完成
+                                    function tryCallModal(retryCount = 0) {
+                                        if (typeof showPracticeHistoryModal === 'function') {
+                                            addDebugLog('✅ 找到showPracticeHistoryModal函数，直接调用');
+                                            try {
+                                                showPracticeHistoryModal(practices); // 直接调用独立弹窗
+                                            } catch (error) {
+                                                addDebugLog('❌ 调用练习历史弹窗出错: ' + error.message);
+                                                alert('练习历史功能暂时不可用: ' + error.message);
                                             }
+                                        } else if (retryCount < 5) {
+                                            addDebugLog(`⏳ showPracticeHistoryModal函数尚未定义，等待中... (${retryCount + 1}/5)`);
+                                            setTimeout(() => tryCallModal(retryCount + 1), 500);
+                                        } else {
+                                            addDebugLog('❌ showPracticeHistoryModal函数超时未定义，显示简单列表');
+                                            // 降级到简单列表显示
+                                            let historyText = '练习历史记录：\\n\\n';
+                                            practices.slice(0, 5).forEach((practice, index) => {
+                                                historyText += `${index + 1}. 练习${practice.id}\\n`;
+                                                historyText += `   时间: ${new Date(practice.timestamp).toLocaleString()}\\n`;
+                                                historyText += `   状态: ${practice.status}\\n\\n`;
+                                            });
+                                            alert(historyText);
                                         }
-                                    } catch (error) {
-                                        addDebugLog('❌ 模拟点击出错: ' + error.message);
-                                        alert('练习历史功能暂时不可用');
                                     }
+                                    
+                                    tryCallModal();
                                 }, 1000);
                             } else {
                                 addDebugLog('ℹ️ 练习列表为空');
@@ -1209,6 +1211,91 @@
             </div>
         </div>
     </div>
+
+    <!-- 练习历史弹窗 - 完全独立的弹窗系统 -->
+    <div class="ai-history-modal" id="practiceHistoryModal">
+        <div class="ai-history-content" style="width: 800px; max-width: 90vw; max-height: 85vh;">
+            <div class="ai-history-header">
+                <h3 class="text-lg font-semibold">练习历史</h3>
+                <button id="closePracticeHistoryBtn" class="text-gray-500 hover:text-gray-700">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+            
+            <!-- 练习历史控件区域 -->
+            <div class="practice-history-controls mb-4 p-3 bg-gray-50 rounded-lg">
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-2 flex-1">
+                            <input type="text" id="practiceHistorySearchInput" placeholder="搜索题目内容..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        </div>
+                        <select id="practiceTimeFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                            <option value="all">全部时间</option>
+                            <option value="today">今天</option>
+                            <option value="week">本周</option>
+                            <option value="month">本月</option>
+                            <option value="custom">自定义日期</option>
+                        </select>
+                        <select id="practiceStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                            <option value="all">全部状态</option>
+                            <option value="evaluated">已评估</option>
+                            <option value="unevaluated">未评估</option>
+                        </select>
+                        <input type="date" id="practiceCustomDateInput" class="hidden px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    </div>
+                    
+                    <!-- 统计信息和日历切换 -->
+                    <div class="flex justify-between items-center">
+                        <div id="practiceHistoryStats" class="text-sm text-gray-600">
+                            显示 0 项练习历史
+                        </div>
+                        <button id="togglePracticeCalendarBtn" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                            <span class="material-icons-outlined text-sm">calendar_today</span>
+                            <span>显示日历</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 练习日历视图 -->
+            <div id="practiceCalendarView" class="hidden mb-4 p-2 bg-white border border-gray-200 rounded-lg">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="text-sm font-medium text-gray-700">练习日历（点击日期筛选）</div>
+                    <div class="flex items-center gap-2">
+                        <button id="prevMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800">
+                            <span class="material-icons-outlined text-sm">chevron_left</span>
+                        </button>
+                        <span id="currentMonthDisplay" class="text-sm font-medium text-gray-700 min-w-20 text-center"></span>
+                        <button id="nextMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800">
+                            <span class="material-icons-outlined text-sm">chevron_right</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="practiceCalendarGrid" class="grid grid-cols-7 gap-0.5">
+                    <!-- 日历格子将在这里动态生成 -->
+                </div>
+            </div>
+            
+            <div class="ai-history-list" id="practiceHistoryList" style="flex: 1; overflow-y: auto; min-height: 500px; padding: 10px;">
+                <!-- 练习历史列表将在这里动态生成 -->
+            </div>
+            
+            <!-- 分页控件 -->
+            <div id="practiceHistoryPagination" class="mt-4 flex justify-center items-center gap-2">
+                <!-- 分页按钮将在这里动态生成 -->
+            </div>
+            
+            <div class="ai-history-actions">
+                <button id="loadPracticeBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    加载选中练习
+                </button>
+                <button id="cancelPracticeHistoryBtn" class="ml-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <!-- 全局调试面板 -->
     <div id="global-debug-panel" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
         <div class="absolute right-4 top-4 bottom-4 w-1/3 bg-white rounded-lg shadow-2xl flex flex-col">
@@ -1373,7 +1460,7 @@
             const historyModal = document.getElementById('aiHistoryModal');
             const closeHistoryBtn = document.getElementById('closeHistoryBtn');
             const historySearchInput = document.getElementById('historySearchInput');
-            const historyList = document.getElementById('aiHistoryList');
+            let historyList = document.getElementById('aiHistoryList');
             const loadHistoryBtn = document.getElementById('loadHistoryBtn');
             const cancelHistoryBtn = document.getElementById('cancelHistoryBtn');
             
@@ -1549,6 +1636,34 @@
             
             if (historySearchInput) {
                 historySearchInput.addEventListener('input', filterHistoryList);
+            }
+            
+            // 练习历史弹窗事件
+            const practiceHistoryModal = document.getElementById('practiceHistoryModal');
+            const closePracticeHistoryBtn = document.getElementById('closePracticeHistoryBtn');
+            const cancelPracticeHistoryBtn = document.getElementById('cancelPracticeHistoryBtn');
+            const loadPracticeBtn = document.getElementById('loadPracticeBtn');
+            
+            if (closePracticeHistoryBtn) {
+                closePracticeHistoryBtn.addEventListener('click', function() {
+                    if (practiceHistoryModal) {
+                        practiceHistoryModal.classList.remove('show');
+                    }
+                });
+            }
+            
+            if (cancelPracticeHistoryBtn) {
+                cancelPracticeHistoryBtn.addEventListener('click', function() {
+                    if (practiceHistoryModal) {
+                        practiceHistoryModal.classList.remove('show');
+                    }
+                });
+            }
+            
+            if (loadPracticeBtn) {
+                loadPracticeBtn.addEventListener('click', function() {
+                    loadSelectedPractice();
+                });
             }
             
             // Tab切换事件
@@ -2371,16 +2486,31 @@
                 }
             }
             
-            // 过滤历史对话列表
+            // 过滤历史对话列表（兼容练习历史和对话历史）
             function filterHistoryList() {
                 const searchTerm = historySearchInput.value.toLowerCase();
                 const items = historyList.querySelectorAll('.history-item');
                 
-                items.forEach(item => {
-                    const title = item.querySelector('.history-item-title').textContent.toLowerCase();
-                    const visible = title.includes(searchTerm);
-                    item.style.display = visible ? 'block' : 'none';
-                });
+                // 检查是否在练习历史模式
+                const historyTitle = historyModal ? historyModal.querySelector('.ai-history-header h3') : null;
+                const isPracticeHistoryMode = historyTitle && historyTitle.textContent.includes('练习历史');
+                
+                if (isPracticeHistoryMode) {
+                    // 练习历史模式：搜索题目内容
+                    items.forEach(item => {
+                        const questionText = item.dataset.questionText || '';
+                        const title = item.querySelector('.history-item-title').textContent.toLowerCase();
+                        const visible = questionText.includes(searchTerm) || title.includes(searchTerm);
+                        item.style.display = visible ? 'block' : 'none';
+                    });
+                } else {
+                    // 对话历史模式：搜索标题
+                    items.forEach(item => {
+                        const title = item.querySelector('.history-item-title').textContent.toLowerCase();
+                        const visible = title.includes(searchTerm);
+                        item.style.display = visible ? 'block' : 'none';
+                    });
+                }
             }
             
             // Tab切换功能
@@ -2408,10 +2538,19 @@
                     if (practiceTabBtn) practiceTabBtn.classList.add('active');
                     if (practiceTabContent) { 
                         practiceTabContent.classList.add('active'); 
-                        // 只有在没有当前练习数据时才显示欢迎界面
+                        // 智能显示欢迎界面或练习内容
                         setTimeout(() => { 
-                            if (typeof showPracticeWelcome === 'function' && !currentPracticeId) {
+                            if (currentPracticeId || currentPracticeQuestions) {
+                                // 有练习数据时，隐藏欢迎界面
+                                const welcomePanel = document.getElementById('practiceWelcomePanel');
+                                if (welcomePanel) {
+                                    welcomePanel.style.display = 'none';
+                                    globalDebugLog('✅ Tab切换：隐藏欢迎界面（有练习数据）');
+                                }
+                            } else if (typeof showPracticeWelcome === 'function') {
+                                // 没有练习数据时，显示欢迎界面
                                 showPracticeWelcome(); 
+                                globalDebugLog('✅ Tab切换：显示欢迎界面（无练习数据）');
                             }
                         }, 100); 
                     }
@@ -2468,10 +2607,16 @@
                 // 切换到练习Tab
                 switchTab('practice');
                 
-                // 隐藏消息区域，显示练习面板
+                // 隐藏消息区域和欢迎页面，显示练习面板
                 const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                const practiceWelcomePanel = document.getElementById('practiceWelcomePanel');
+                
                 if (aiPracticeMessages) {
                     aiPracticeMessages.style.display = 'none';
+                }
+                if (practiceWelcomePanel) {
+                    practiceWelcomePanel.style.display = 'none';
+                    globalDebugLog('✅ 隐藏练习欢迎页面');
                 }
                 
                 // 显示练习面板
@@ -2606,10 +2751,16 @@
                             return;
                         }
                         
-                        // 如果是Promise对象，说明WebChannel异步问题
+                        // 如果是Promise对象，等待其完成
                         if (response && typeof response.then === 'function') {
-                            globalDebugError('❌ 检测到Promise对象，WebChannel异步问题');
-                            alert('获取练习历史失败: 数据传输异常，请重试');
+                            globalDebugLog('🔄 检测到Promise对象，等待异步响应...');
+                            response.then(function(actualResponse) {
+                                globalDebugLog('✅ Promise resolved，处理实际响应');
+                                handlePracticeHistoryResponse(actualResponse);
+                            }).catch(function(error) {
+                                globalDebugError('❌ Promise rejected: ' + error.message);
+                                alert('获取练习历史失败: 数据传输异常');
+                            });
                             return;
                         }
                         
@@ -4118,36 +4269,19 @@
             globalDebugLog('  - saveCurrentEvaluation: ' + (typeof window.saveCurrentEvaluation));
             globalDebugLog('  - addCurrentToErrorBank: ' + (typeof window.addCurrentToErrorBank));
             
-            // 显示练习历史弹窗的辅助函数
-            function showPracticeHistoryModal(historyData) {
+            // 显示练习历史弹窗的辅助函数 - 定义为全局函数
+            window.showPracticeHistoryModal = function(historyData) {
                 globalDebugLog('📊 将显示练习历史弹窗，数据数量: ' + (historyData ? historyData.length : 0));
                 
-                // 使用对话历史弹窗样式，但修改内容
-                if (!historyModal) {
-                    globalDebugError('❗ 历史弹窗元素未找到');
+                // 使用独立的练习历史弹窗
+                const practiceHistoryModal = document.getElementById('practiceHistoryModal');
+                if (!practiceHistoryModal) {
+                    globalDebugError('❗ 练习历史弹窗元素未找到');
                     return;
                 }
                 
-                // 修改标题
-                const historyTitle = historyModal.querySelector('.ai-history-header h3');
-                if (historyTitle) {
-                    historyTitle.textContent = '📜 练习历史';
-                }
-                
-                // 修改搜索框提示
-                const searchInput = historyModal.querySelector('#historySearchInput');
-                if (searchInput) {
-                    searchInput.placeholder = '搜索练习历史...';
-                }
-                
-                // 修改加载按钮文字
-                const loadBtn = historyModal.querySelector('#loadHistoryBtn');
-                if (loadBtn) {
-                    loadBtn.textContent = '加载选中练习';
-                }
-                
                 // 显示弹窗
-                historyModal.classList.add('show');
+                practiceHistoryModal.classList.add('show');
                 
                 // 填充练习历史数据
                 displayPracticeHistoryList(historyData);
@@ -4155,29 +4289,504 @@
                 globalDebugLog('✅ 练习历史弹窗已显示');
             }
             
-            // 显示练习历史列表
+            // 加载选中的练习 - 定义为全局函数
+            window.loadSelectedPractice = function() {
+                try {
+                    globalDebugLog('🚀 开始加载选中的练习');
+                    
+                    const selectedItems = document.querySelectorAll('#practiceHistoryList .history-item.selected');
+                    globalDebugLog('🔍 找到选中项数量: ' + selectedItems.length);
+                    
+                    if (selectedItems.length === 0) {
+                        alert('请先选择一个练习记录');
+                        return;
+                    }
+                    
+                    const selectedItem = selectedItems[0];
+                    const practiceId = selectedItem.dataset.practiceId || selectedItem.dataset.id;
+                    globalDebugLog('🎯 选中的练习ID: ' + practiceId);
+                    globalDebugLog('🎯 所有数据集属性: ' + JSON.stringify(selectedItem.dataset));
+                    
+                    // 从练习历史数据中找到对应的练习
+                    const practiceData = allPracticeHistory.find(p => (p.id === practiceId || p.practice_id === practiceId));
+                    if (!practiceData) {
+                        globalDebugError('❌ 未找到练习数据，ID: ' + practiceId);
+                        globalDebugLog('📋 可用的练习ID列表: ' + allPracticeHistory.map(p => p.id || p.practice_id).join(', '));
+                        alert('未找到练习数据');
+                        return;
+                    }
+                    
+                    globalDebugLog('📁 找到练习数据: ' + JSON.stringify(practiceData).substring(0, 200));
+                    
+                    // 自动最大化AI助手窗口并切换到练习Tab
+                    if (!isMaximized) {
+                        toggleMaximizeChat();
+                    }
+                    
+                    setTimeout(() => {
+                        switchTab('practice');
+                        loadPracticeData(practiceData);
+                        
+                        // 关闭练习历史弹窗
+                        const practiceHistoryModal = document.getElementById('practiceHistoryModal');
+                        if (practiceHistoryModal) {
+                            practiceHistoryModal.classList.remove('show');
+                        }
+                    }, 300);
+                    
+                } catch (error) {
+                    globalDebugError('❌ 加载选中练习时出错: ' + error.message);
+                    alert('加载练习时出错: ' + error.message);
+                }
+            };
+            
+            // 调试日志确认练习历史函数绑定
+            globalDebugLog('🔧 练习历史弹窗函数已绑定到全局作用域：');
+            globalDebugLog('  - showPracticeHistoryModal: ' + (typeof window.showPracticeHistoryModal));
+            globalDebugLog('  - loadSelectedPractice: ' + (typeof window.loadSelectedPractice));
+            
+            // 练习历史分页和筛选状态
+            let allPracticeHistory = [];
+            let filteredPracticeHistory = [];
+            let currentPage = 1;
+            const itemsPerPage = 10;
+            let currentSearchTerm = '';
+            let currentTimeFilter = 'all'; // all, today, week, month, custom
+            let currentCustomDate = '';
+            let practiceDatesMap = new Map(); // 存储有练习的日期
+            let currentCalendarYear = new Date().getFullYear();
+            let currentCalendarMonth = new Date().getMonth();
+            
+            // 显示练习历史列表（支持分页和筛选）
             function displayPracticeHistoryList(practiceHistory) {
                 globalDebugLog('📋 将显示练习历史列表，数据数量: ' + (practiceHistory ? practiceHistory.length : 0));
                 
-                if (!historyList) {
-                    globalDebugError('❗ 历史列表元素未找到');
+                // 使用新的练习历史列表容器
+                const practiceHistoryList = document.getElementById('practiceHistoryList');
+                if (!practiceHistoryList) {
+                    globalDebugError('❗ 练习历史列表元素未找到');
                     return;
                 }
                 
+                // 更新全局变量，让其他函数也使用新容器
+                historyList = practiceHistoryList;
+                
+                // 存储原始数据
+                allPracticeHistory = practiceHistory || [];
+                
+                // 构建练习日期映射
+                buildPracticeDatesMap();
+                
+                // 创建筛选和分页控件
+                createPracticeHistoryControls();
+                
+                // 应用筛选和分页
+                applyPracticeHistoryFilters();
+            }
+            
+            // 构建练习日期映射
+            function buildPracticeDatesMap() {
+                practiceDatesMap.clear();
+                
+                allPracticeHistory.forEach(practice => {
+                    if (practice.timestamp) {
+                        try {
+                            const date = new Date(practice.timestamp);
+                            // 使用本地时间格式化日期，避免时区偏移问题
+                            const dateStr = formatDateToString(date);
+                            
+                            if (!practiceDatesMap.has(dateStr)) {
+                                practiceDatesMap.set(dateStr, []);
+                            }
+                            practiceDatesMap.get(dateStr).push(practice);
+                        } catch (e) {
+                            globalDebugLog('❌ 解析日期失败: ' + practice.timestamp);
+                        }
+                    }
+                });
+                
+                globalDebugLog('📅 构建练习日期映射完成，共 ' + practiceDatesMap.size + ' 个日期');
+                
+                // 调试：显示前几个日期
+                if (practiceDatesMap.size > 0) {
+                    const dates = Array.from(practiceDatesMap.keys()).slice(0, 3);
+                    globalDebugLog('📅 前3个练习日期: ' + dates.join(', '));
+                }
+            }
+            
+            // 生成练习日历
+            function generatePracticeCalendar() {
+                const calendarContainer = document.getElementById('practiceCalendar');
+                const monthDisplay = document.getElementById('currentMonthDisplay');
+                const prevBtn = document.getElementById('prevMonthBtn');
+                const nextBtn = document.getElementById('nextMonthBtn');
+                
+                if (!calendarContainer) return;
+                
+                const now = new Date();
+                
+                // 更新月份显示
+                if (monthDisplay) {
+                    const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', 
+                                      '7月', '8月', '9月', '10月', '11月', '12月'];
+                    monthDisplay.textContent = `${currentCalendarYear}年${monthNames[currentCalendarMonth]}`;
+                }
+                
+                // 更新按钮状态（只允许往前切换，不允许往后切换到未来月份）
+                if (nextBtn) {
+                    const isCurrentOrFutureMonth = (currentCalendarYear > now.getFullYear()) || 
+                                                  (currentCalendarYear === now.getFullYear() && currentCalendarMonth >= now.getMonth());
+                    nextBtn.disabled = isCurrentOrFutureMonth;
+                    nextBtn.className = isCurrentOrFutureMonth ? 
+                        'p-1 rounded text-gray-400 cursor-not-allowed opacity-50' : 
+                        'p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800';
+                }
+                
+                // 清空日历
+                calendarContainer.innerHTML = '';
+                
+                // 添加星期头
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                weekdays.forEach(day => {
+                    const dayHeader = document.createElement('div');
+                    dayHeader.className = 'text-center font-medium text-gray-500 p-0.5 text-xs min-h-5 flex items-center justify-center';
+                    dayHeader.textContent = day;
+                    calendarContainer.appendChild(dayHeader);
+                });
+                
+                // 获取当前显示月份的第一天
+                const firstDay = new Date(currentCalendarYear, currentCalendarMonth, 1);
+                const lastDay = new Date(currentCalendarYear, currentCalendarMonth + 1, 0);
+                
+                // 计算日历开始日期（从周日开始）
+                const startDate = new Date(firstDay);
+                startDate.setDate(startDate.getDate() - firstDay.getDay());
+                
+                // 生成日历格子
+                for (let i = 0; i < 42; i++) { // 6周 x 7天
+                    const cellDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+                    
+                    // 修复日期计算 - 使用本地时间而不是UTC时间
+                    const localDate = new Date(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate());
+                    const dateStr = formatDateToString(localDate);
+                    
+                    const isCurrentMonth = cellDate.getMonth() === currentCalendarMonth;
+                    const hasPractice = practiceDatesMap.has(dateStr);
+                    const isToday = cellDate.toDateString() === now.toDateString();
+                    
+                    const dayCell = document.createElement('div');
+                    dayCell.className = `text-center p-0.5 cursor-pointer rounded transition-colors text-xs min-h-6 flex flex-col items-center justify-center ${
+                        isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                    } ${
+                        hasPractice ? 'bg-blue-100 hover:bg-blue-200 font-medium' : 'hover:bg-gray-100'
+                    } ${
+                        isToday ? 'ring-1 ring-blue-500' : ''
+                    }`;
+                    
+                    dayCell.textContent = cellDate.getDate();
+                    dayCell.title = hasPractice ? 
+                        `${dateStr} - ${practiceDatesMap.get(dateStr).length}个练习` : 
+                        dateStr;
+                    
+                    // 添加练习标记
+                    if (hasPractice) {
+                        const marker = document.createElement('div');
+                        marker.className = 'w-1 h-1 bg-blue-500 rounded-full mt-0.5';
+                        dayCell.appendChild(marker);
+                    }
+                    
+                    // 点击事件
+                    dayCell.addEventListener('click', function() {
+                        if (hasPractice) {
+                            // 设置自定义日期并筛选
+                            const customDateInput = document.getElementById('practiceCustomDate');
+                            const calendarView = document.getElementById('practiceCalendarView');
+                            
+                            if (customDateInput) {
+                                customDateInput.value = dateStr;
+                                currentCustomDate = dateStr;
+                                currentPage = 1;
+                                applyPracticeHistoryFilters();
+                                
+                                // 点击日期后自动隐藏日历
+                                if (calendarView) {
+                                    calendarView.classList.add('hidden');
+                                    globalDebugLog('📅 点击日期后自动隐藏日历: ' + dateStr);
+                                }
+                            }
+                        }
+                    });
+                    
+                    calendarContainer.appendChild(dayCell);
+                }
+            }
+            
+            // 格式化日期为YYYY-MM-DD字符串（本地时间）
+            function formatDateToString(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            
+            // 切换到上一个月
+            function goToPreviousMonth() {
+                if (currentCalendarMonth === 0) {
+                    currentCalendarYear--;
+                    currentCalendarMonth = 11;
+                } else {
+                    currentCalendarMonth--;
+                }
+                generatePracticeCalendar();
+                globalDebugLog('📅 切换到上一个月: ' + currentCalendarYear + '年' + (currentCalendarMonth + 1) + '月');
+            }
+            
+            // 切换到下一个月（仅限当前月份之前）
+            function goToNextMonth() {
+                const now = new Date();
+                const nextYear = currentCalendarMonth === 11 ? currentCalendarYear + 1 : currentCalendarYear;
+                const nextMonth = currentCalendarMonth === 11 ? 0 : currentCalendarMonth + 1;
+                
+                // 只允许切换到当前月份或之前的月份
+                if (nextYear < now.getFullYear() || (nextYear === now.getFullYear() && nextMonth <= now.getMonth())) {
+                    currentCalendarYear = nextYear;
+                    currentCalendarMonth = nextMonth;
+                    generatePracticeCalendar();
+                    globalDebugLog('📅 切换到下一个月: ' + currentCalendarYear + '年' + (currentCalendarMonth + 1) + '月');
+                }
+            }
+            
+            // 创建练习历史控件（搜索、筛选、分页）
+            function createPracticeHistoryControls() {
+                // 移除已存在的控件
+                const existingControls = document.querySelector('.practice-history-controls');
+                if (existingControls) {
+                    existingControls.remove();
+                }
+                
+                const controlsContainer = document.createElement('div');
+                controlsContainer.className = 'practice-history-controls mb-4 p-3 bg-gray-50 rounded-lg';
+                controlsContainer.innerHTML = `
+                    <div class="flex flex-col gap-2">
+                        <!-- 搜索和筛选行 -->
+                        <div class="flex items-center gap-3">
+                            <!-- 搜索框 -->
+                            <div class="flex items-center gap-2 flex-1">
+                                <span class="material-icons-outlined text-gray-500">search</span>
+                                <input type="text" id="practiceHistorySearch" placeholder="搜索题目内容..." 
+                                       class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            
+                            <!-- 时间筛选 -->
+                            <select id="practiceTimeFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="all">全部时间</option>
+                                <option value="today">今天</option>
+                                <option value="week">本周</option>
+                                <option value="month">本月</option>
+                                <option value="custom">自定义日期</option>
+                            </select>
+                            
+                            <!-- 状态筛选 -->
+                            <select id="practiceStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="all">全部状态</option>
+                                <option value="evaluated">已评估</option>
+                                <option value="unevaluated">未评估</option>
+                            </select>
+                            
+                            <!-- 日期选择器 -->
+                            <input type="date" id="practiceCustomDate" 
+                                   class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 hidden">
+                        </div>
+                        
+                        <!-- 紧凑的日期日历视图 -->
+                        <div id="practiceCalendarView" class="hidden p-2 border border-gray-200 rounded-lg bg-white">
+                            <div class="flex justify-between items-center mb-2">
+                                <div class="text-xs font-medium text-gray-700">练习日历（点击日期筛选）</div>
+                                <div class="flex items-center gap-1">
+                                    <button id="prevMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800">
+                                        <span class="material-icons-outlined text-xs">chevron_left</span>
+                                    </button>
+                                    <span id="currentMonthDisplay" class="text-xs font-medium text-gray-700 min-w-16 text-center"></span>
+                                    <button id="nextMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800 opacity-50 cursor-not-allowed" disabled>
+                                        <span class="material-icons-outlined text-xs">chevron_right</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="practiceCalendar" class="grid grid-cols-7 gap-0.5 text-xs"></div>
+                        </div>
+                        
+                        <!-- 统计信息 -->
+                        <div id="practiceHistoryStats" class="text-xs text-gray-600"></div>
+                    </div>
+                `;
+                
+                // 插入到历史列表前面
+                historyList.parentNode.insertBefore(controlsContainer, historyList);
+                
+                // 绑定事件
+                const searchInput = document.getElementById('practiceHistorySearch');
+                const timeFilter = document.getElementById('practiceTimeFilter');
+                const statusFilter = document.getElementById('practiceStatusFilter');
+                const customDateInput = document.getElementById('practiceCustomDate');
+                const calendarView = document.getElementById('practiceCalendarView');
+                
+                if (searchInput) {
+                    searchInput.addEventListener('input', function() {
+                        currentSearchTerm = this.value.toLowerCase();
+                        currentPage = 1;
+                        applyPracticeHistoryFilters();
+                    });
+                }
+                
+                if (timeFilter) {
+                    timeFilter.addEventListener('change', function() {
+                        currentTimeFilter = this.value;
+                        currentPage = 1;
+                        
+                        // 显示/隐藏自定义日期选择器和日历
+                        if (this.value === 'custom') {
+                            customDateInput.classList.remove('hidden');
+                            calendarView.classList.remove('hidden');
+                            generatePracticeCalendar();
+                            
+                            // 绑定月份切换按钮事件
+                            const prevBtn = document.getElementById('prevMonthBtn');
+                            const nextBtn = document.getElementById('nextMonthBtn');
+                            
+                            if (prevBtn && !prevBtn.hasAttribute('data-event-bound')) {
+                                prevBtn.addEventListener('click', goToPreviousMonth);
+                                prevBtn.setAttribute('data-event-bound', 'true');
+                            }
+                            
+                            if (nextBtn && !nextBtn.hasAttribute('data-event-bound')) {
+                                nextBtn.addEventListener('click', goToNextMonth);
+                                nextBtn.setAttribute('data-event-bound', 'true');
+                            }
+                        } else {
+                            customDateInput.classList.add('hidden');
+                            calendarView.classList.add('hidden');
+                        }
+                        
+                        applyPracticeHistoryFilters();
+                    });
+                }
+                
+                if (customDateInput) {
+                    customDateInput.addEventListener('change', function() {
+                        currentCustomDate = this.value;
+                        currentPage = 1;
+                        applyPracticeHistoryFilters();
+                    });
+                }
+                
+                if (statusFilter) {
+                    statusFilter.addEventListener('change', function() {
+                        currentStatusFilter = this.value;
+                        currentPage = 1;
+                        applyPracticeHistoryFilters();
+                    });
+                }
+            }
+            
+            // 应用筛选和分页
+            function applyPracticeHistoryFilters() {
+                // 1. 筛选数据
+                filteredPracticeHistory = allPracticeHistory.filter(practice => {
+                    // 搜索题目内容
+                    if (currentSearchTerm) {
+                        const questionText = (practice.questions || practice.selected_text || '').toLowerCase();
+                        if (!questionText.includes(currentSearchTerm)) {
+                            return false;
+                        }
+                    }
+                    
+                    // 时间筛选
+                    if (currentTimeFilter !== 'all' && practice.timestamp) {
+                        const practiceDate = new Date(practice.timestamp);
+                        const now = new Date();
+                        
+                        switch (currentTimeFilter) {
+                            case 'today':
+                                if (practiceDate.toDateString() !== now.toDateString()) {
+                                    return false;
+                                }
+                                break;
+                            case 'week':
+                                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                                if (practiceDate < weekAgo) {
+                                    return false;
+                                }
+                                break;
+                            case 'month':
+                                const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                                if (practiceDate < monthAgo) {
+                                    return false;
+                                }
+                                break;
+                            case 'custom':
+                                if (currentCustomDate) {
+                                    const customDate = new Date(currentCustomDate);
+                                    if (practiceDate.toDateString() !== customDate.toDateString()) {
+                                        return false;
+                                    }
+                                }
+                                break;
+                        }
+                    }
+                    
+                    // 状态筛选
+                    const statusFilter = document.getElementById('practiceStatusFilter');
+                    if (statusFilter && statusFilter.value !== 'all') {
+                        const hasEvaluation = practice.has_evaluation || practice.evaluation_result;
+                        if (statusFilter.value === 'evaluated' && !hasEvaluation) {
+                            return false;
+                        }
+                        if (statusFilter.value === 'unevaluated' && hasEvaluation) {
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                // 2. 分页
+                const totalItems = filteredPracticeHistory.length;
+                const totalPages = Math.ceil(totalItems / itemsPerPage);
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                const pageItems = filteredPracticeHistory.slice(startIndex, endIndex);
+                
+                // 3. 更新统计信息
+                updatePracticeHistoryStats(totalItems, totalPages, currentPage);
+                
+                // 4. 渲染列表
+                renderPracticeHistoryItems(pageItems);
+                
+                // 5. 创建分页控件
+                createPracticeHistoryPagination(totalPages, currentPage);
+            }
+            
+            // 渲染练习历史项目
+            function renderPracticeHistoryItems(items) {
                 historyList.innerHTML = '';
                 
-                if (!practiceHistory || practiceHistory.length === 0) {
-                    historyList.innerHTML = '<div class="text-center text-gray-500 py-4">暂无练习历史</div>';
-                    globalDebugLog('ℹ️ 没有练习历史数据');
+                if (items.length === 0) {
+                    historyList.innerHTML = '<div class="text-center text-gray-500 py-8">没有找到匹配的练习历史</div>';
                     return;
                 }
                 
-                practiceHistory.forEach((practice, index) => {
-                    globalDebugLog('📄 处理练习记录 ' + (index + 1) + ': ID=' + practice.id);
+                items.forEach((practice, index) => {
+                    globalDebugLog('📄 处理练习记录: ID=' + practice.id);
                     
                     const item = document.createElement('div');
                     item.className = 'history-item';
-                    item.dataset.id = practice.id;
+                    item.dataset.id = practice.id || practice.practice_id;
+                    item.dataset.practiceId = practice.id || practice.practice_id;  // 添加专用的练习ID属性
+                    
+                    // 获取题目内容，优先使用questions字段
+                    const questionText = practice.questions || practice.selected_text || '无题目内容';
+                    const questionPreview = questionText.length > 120 ? 
+                        questionText.substring(0, 120) + '...' : questionText;
                     
                     const title = document.createElement('div');
                     title.className = 'history-item-title';
@@ -4189,12 +4798,21 @@
                     
                     const preview = document.createElement('div');
                     preview.className = 'history-item-preview';
-                    const questionPreview = (practice.selected_text || '无题目预览').substring(0, 50) + '...';
-                    const statusText = practice.has_evaluation ? '已评估' : '未评估';
+                    const statusText = (practice.has_evaluation || practice.evaluation_result) ? '已评估' : '未评估';
+                    const statusColor = (practice.has_evaluation || practice.evaluation_result) ? 'text-green-600' : 'text-orange-600';
+                    
                     preview.innerHTML = `
-                        <div class="text-sm text-gray-600 mb-1">题目: ${questionPreview}</div>
-                        <div class="text-xs text-gray-500">状态: ${statusText}</div>
+                        <div class="text-sm text-gray-700 mb-2 leading-relaxed">
+                            <strong>题目:</strong> ${questionPreview}
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs ${statusColor} font-medium">${statusText}</span>
+                            <span class="text-xs text-gray-400">${practice.id}</span>
+                        </div>
                     `;
+                    
+                    // 存储完整题目文本用于搜索
+                    item.dataset.questionText = questionText.toLowerCase();
                     
                     item.appendChild(title);
                     item.appendChild(time);
@@ -4214,7 +4832,77 @@
                     historyList.appendChild(item);
                 });
                 
-                globalDebugLog('✅ 练习历史列表显示完成，共 ' + practiceHistory.length + ' 个项目');
+                globalDebugLog('✅ 练习历史列表渲染完成，当前页显示 ' + items.length + ' 个项目');
+            }
+            
+            // 更新统计信息
+            function updatePracticeHistoryStats(totalItems, totalPages, currentPage) {
+                const statsElement = document.getElementById('practiceHistoryStats');
+                if (statsElement) {
+                    const startItem = totalItems > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
+                    const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+                    
+                    statsElement.textContent = `显示 ${startItem}-${endItem} 项，共 ${totalItems} 项练习历史 | 第 ${currentPage}/${totalPages} 页`;
+                }
+            }
+            
+            // 创建分页控件
+            function createPracticeHistoryPagination(totalPages, currentPage) {
+                // 移除已存在的分页控件
+                const existingPagination = document.getElementById('practiceHistoryPagination');
+                if (existingPagination) {
+                    existingPagination.remove();
+                }
+                
+                if (totalPages <= 1) return;
+                
+                const paginationContainer = document.createElement('div');
+                paginationContainer.id = 'practiceHistoryPagination';
+                paginationContainer.className = 'flex justify-center items-center gap-2 mt-4 p-3';
+                
+                // 上一页按钮
+                const prevBtn = document.createElement('button');
+                prevBtn.className = `px-3 py-1 rounded text-sm ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`;
+                prevBtn.textContent = '上一页';
+                prevBtn.disabled = currentPage === 1;
+                prevBtn.addEventListener('click', () => {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        applyPracticeHistoryFilters();
+                    }
+                });
+                paginationContainer.appendChild(prevBtn);
+                
+                // 页码按钮
+                const startPage = Math.max(1, currentPage - 2);
+                const endPage = Math.min(totalPages, currentPage + 2);
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    const pageBtn = document.createElement('button');
+                    pageBtn.className = `px-3 py-1 rounded text-sm ${i === currentPage ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+                    pageBtn.textContent = i;
+                    pageBtn.addEventListener('click', () => {
+                        currentPage = i;
+                        applyPracticeHistoryFilters();
+                    });
+                    paginationContainer.appendChild(pageBtn);
+                }
+                
+                // 下一页按钮
+                const nextBtn = document.createElement('button');
+                nextBtn.className = `px-3 py-1 rounded text-sm ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`;
+                nextBtn.textContent = '下一页';
+                nextBtn.disabled = currentPage === totalPages;
+                nextBtn.addEventListener('click', () => {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        applyPracticeHistoryFilters();
+                    }
+                });
+                paginationContainer.appendChild(nextBtn);
+                
+                // 插入到历史列表后面
+                historyList.parentNode.insertBefore(paginationContainer, historyList.nextSibling);
             }
             
             // 加载选中的练习历史
@@ -4247,8 +4935,14 @@
                         
                         // 检查是否为Promise
                         if (response && typeof response.then === 'function') {
-                            globalDebugError('❌ 检测到Promise对象，数据传输异常');
-                            alert('加载练习失败: 数据传输异常，请重试');
+                            globalDebugLog('🔄 检测到Promise对象，等待异步响应...');
+                            response.then(function(actualResponse) {
+                                globalDebugLog('✅ Promise resolved，处理实际响应');
+                                handleLoadResponse(actualResponse);
+                            }).catch(function(error) {
+                                globalDebugError('❌ Promise rejected: ' + error.message);
+                                alert('加载练习失败: 数据传输异常');
+                            });
                             return;
                         }
                         

@@ -103,9 +103,9 @@ class PracticeService:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # 查询练习历史，按时间倒序
+                # 查询练习历史，按时间倒序，包含questions字段
                 cursor.execute('''
-                    SELECT practice_id, timestamp, selected_text, status,
+                    SELECT practice_id, timestamp, selected_text, questions, status,
                            CASE WHEN evaluation_result IS NOT NULL AND evaluation_result != '' 
                                 THEN 1 ELSE 0 END as has_evaluation
                     FROM practice_sessions
@@ -117,22 +117,28 @@ class PracticeService:
                 
                 practices = []
                 for row in rows:
-                    practice_id, timestamp, selected_text, status, has_evaluation = row
+                    practice_id, timestamp, selected_text, questions, status, has_evaluation = row
                     
-                    # 安全处理selected_text
+                    # 安全处理字段
                     if selected_text is None:
                         selected_text = ""
+                    if questions is None:
+                        questions = ""
                     
-                    # 截取预览文本
-                    text_preview = selected_text[:100] if len(selected_text) > 100 else selected_text
-                    if len(selected_text) > 100:
+                    # 优先使用questions字段，回退到selected_text
+                    question_content = questions if questions else selected_text
+                    
+                    # 截取预览文本（120字符）
+                    text_preview = question_content[:120] if len(question_content) > 120 else question_content
+                    if len(question_content) > 120:
                         text_preview += "..."
                     
                     practices.append({
                         "id": practice_id,
                         "timestamp": timestamp,
                         "status": status or "unknown",
-                        "selected_text": text_preview,
+                        "selected_text": text_preview,  # 保持兼容性
+                        "questions": questions,         # 新增字段
                         "has_evaluation": bool(has_evaluation)
                     })
                 
