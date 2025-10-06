@@ -114,9 +114,10 @@ class PracticeService:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # 查询练习历史，按时间倒序，包含questions字段
+                # 查询练习历史，按时间倒序，包含完整数据（包括answer_history）
                 cursor.execute('''
-                    SELECT practice_id, timestamp, selected_text, questions, status,
+                    SELECT practice_id, timestamp, selected_text, questions, user_answers,
+                           evaluation_result, answer_history, status,
                            CASE WHEN evaluation_result IS NOT NULL AND evaluation_result != '' 
                                 THEN 1 ELSE 0 END as has_evaluation
                     FROM practice_sessions
@@ -128,13 +129,19 @@ class PracticeService:
                 
                 practices = []
                 for row in rows:
-                    practice_id, timestamp, selected_text, questions, status, has_evaluation = row
+                    practice_id, timestamp, selected_text, questions, user_answers, evaluation_result, answer_history, status, has_evaluation = row
                     
                     # 安全处理字段
                     if selected_text is None:
                         selected_text = ""
                     if questions is None:
                         questions = ""
+                    if user_answers is None:
+                        user_answers = ""
+                    if evaluation_result is None:
+                        evaluation_result = ""
+                    if answer_history is None:
+                        answer_history = ""
                     
                     # 优先使用questions字段，回退到selected_text
                     question_content = questions if questions else selected_text
@@ -146,10 +153,17 @@ class PracticeService:
                     
                     practices.append({
                         "id": practice_id,
+                        "practice_id": practice_id,  # 兼容字段
                         "timestamp": timestamp,
                         "status": status or "unknown",
                         "selected_text": text_preview,  # 保持兼容性
-                        "questions": questions,         # 新增字段
+                        "questions": questions,         # 完整题目内容
+                        "question": questions,          # 兼容字段
+                        "user_answers": user_answers,   # 用户答案
+                        "answer": user_answers,         # 兼容字段
+                        "evaluation_result": evaluation_result,  # 评估结果
+                        "evaluation": evaluation_result,         # 兼容字段
+                        "answer_history": answer_history,        # 答案历史 - 关键字段！
                         "has_evaluation": bool(has_evaluation)
                     })
                 
