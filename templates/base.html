@@ -2053,12 +2053,12 @@
                     .replace(/^##### (.*$)/gm, '<h5 style="color: #6b7280; font-size: 1.0em; font-weight: 600; margin: 8px 0 4px 0;">$1</h5>')
                     .replace(/^#### (.*$)/gm, '<h4 style="color: #4b5563; font-size: 1.05em; font-weight: 600; margin: 10px 0 5px 0;">$1</h4>')
                     .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
-                    .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
-                    .replace(/^# (.*$)/gm, '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 20px 0 10px 0;">$1</h1>')
+                    .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 14px 0 8px 0;">$1</h2>')
+                    .replace(/^# (.*$)/gm, '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 12px 0 8px 0;">$1</h1>')
                     
-                    // 处理水平分隔线
-                    .replace(/^---+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
-                    .replace(/^\*\*\*+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
+                    // 处理水平分隔线 (大幅减少margin避免过大空隙)
+                    .replace(/^---+$/gm, '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 4px 0;">')
+                    .replace(/^\*\*\*+$/gm, '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 4px 0;">')
                     
                     // 处理引用块
                     .replace(/^> (.*)$/gm, '<blockquote style="border-left: 4px solid #d1d5db; padding-left: 16px; margin: 8px 0; color: #6b7280; font-style: italic;">$1</blockquote>')
@@ -2103,7 +2103,8 @@
                     .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626; font-weight: 700; background: #fef2f2; padding: 2px 6px; border-radius: 4px;">答案：</strong>')
                     .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed; font-weight: 700; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">解析：</strong>')
                     
-                    // 处理换行 (最后处理)
+                    // 处理换行 (最后处理) - 强力合并多行空行
+                    .replace(/\n{2,}/g, '\n\n')  // 🔥 将2个或更多连续换行合并为2个换行(即1行空行)
                     .replace(/\n/g, '<br>')
                     
                     // 统一渲染表格 (在换行处理之后)
@@ -2130,11 +2131,16 @@
                         return `<table style="border-collapse: collapse; margin: 12px 0; width: 100%; max-width: 800px; border: 1px solid #d1d5db;">${rows}</table>`;
                     })
                     
-                    // 清理多余的<br>和空白
-                    .replace(/^<br>/, '')
-                    .replace(/(<br>\s*){3,}/g, '<br><br>')
+                    // 强力清理多余的<br>和空白
+                    .replace(/^<br>/, '')  // 移除开头的<br>
+                    .replace(/(<br>\s*){2,}/g, '<br><br>')  // 将2个或更多连续<br>合并为2个<br>
+                    .replace(/(<br><br>){2,}/g, '<br><br>')  // 进一步合并连续的双<br>
                     .replace(/<br><div/g, '<div')  // 清理列表前的多余换行
-                    .replace(/<\/div><br>/g, '</div>'); // 清理列表后的多余换行
+                    .replace(/<\/div><br>/g, '</div>')  // 清理列表后的多余换行
+                    .replace(/<br><h([1-6])/g, '<h$1')  // 清理标题前的多余换行
+                    .replace(/<\/h([1-6])><br>/g, '</h$1>')  // 清理标题后的多余换行
+                    .replace(/<br><hr/g, '<hr')  // 清理分隔线前的多余换行
+                    .replace(/<\/hr><br>/g, '</hr>'); // 清理分隔线后的多余换行
                 
                 globalDebugLog('🔥 formatMarkdownContent渲染结果: ' + formatted.substring(0, 200));
                 return formatted;
@@ -2399,6 +2405,26 @@
                         return currentText.replace(/\n/g, '<br>');
                     }
                     
+                    // 🔍 测试调试输出和内容检查
+                    try {
+                        addDebugLog('🔥 renderCurrentText被调用，内容长度: ' + currentText.length);
+                        
+                        // 检查是否包含标题符号
+                        if (currentText.includes('#')) {
+                            addDebugLog('🔍 检测到#符号，内容预览: ' + currentText.substring(0, 200));
+                            
+                            // 检查具体的标题格式
+                            const lines = currentText.split('\n');
+                            lines.forEach((line, index) => {
+                                if (line.includes('#')) {
+                                    addDebugLog('🔍 第' + (index + 1) + '行包含#: "' + line + '"');
+                                }
+                            });
+                        }
+                    } catch(e) {
+                        addDebugLog('❌ 调试输出失败: ' + e.message);
+                    }
+                    
                     // 对AI消息进行实时Markdown渲染 - 完整语法支持
                     let rendered = currentText
                         // 🔥 处理标题 (必须在行首) - 支持所有级别，从最多#开始处理避免冲突
@@ -2406,12 +2432,26 @@
                         .replace(/^##### (.*$)/gm, '<h5 style="color: #6b7280; font-size: 1.0em; font-weight: 600; margin: 8px 0 4px 0;">$1</h5>')
                         .replace(/^#### (.*$)/gm, '<h4 style="color: #4b5563; font-size: 1.05em; font-weight: 600; margin: 10px 0 5px 0;">$1</h4>')
                         .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
-                        .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
-                        .replace(/^# (.*$)/gm, '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 20px 0 10px 0;">$1</h1>')
+                        .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 14px 0 8px 0;">$1</h2>')
+                        .replace(/^# (.*$)/gm, function(match, title) {
+                            // 输出到自定义调试面板
+                            try {
+                                addDebugLog('🔍 发现一级标题: "' + title + '"');
+                                const startPos = Math.max(0, currentText.indexOf(match) - 50);
+                                const endPos = Math.min(currentText.length, currentText.indexOf(match) + match.length + 50);
+                                const context = currentText.substring(startPos, endPos);
+                                addDebugLog('🔍 标题前后内容(原始): ' + JSON.stringify(context));
+                                addDebugLog('🔍 标题前后内容(可视): ' + context.replace(/\n/g, '\\n').replace(/\r/g, '\\r'));
+                            } catch(e) {
+                                addDebugLog('❌ 调试输出失败: ' + e.message);
+                            }
+                            // 🔥 使用更小的margin来减少空隙
+                            return '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 6px 0 4px 0;">' + title + '</h1>';
+                        })
                         
-                        // 🔥 处理水平分隔线
-                        .replace(/^---+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
-                        .replace(/^\*\*\*+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
+                        // 🔥 处理水平分隔线 (大幅减少margin避免过大空隙)
+                        .replace(/^---+$/gm, '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 4px 0;">')
+                        .replace(/^\*\*\*+$/gm, '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 4px 0;">')
                         
                         // 🔥 处理引用块
                         .replace(/^> (.*)$/gm, '<blockquote style="border-left: 4px solid #d1d5db; padding-left: 16px; margin: 8px 0; color: #6b7280; font-style: italic;">$1</blockquote>')
@@ -2456,7 +2496,8 @@
                         .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626; font-weight: 700; background: #fef2f2; padding: 2px 6px; border-radius: 4px;">答案：</strong>')
                         .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed; font-weight: 700; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">解析：</strong>')
                         
-                        // 🔥 处理换行 (最后处理)
+                        // 🔥 处理换行 (最后处理) - 强力合并多行空行
+                        .replace(/\n{2,}/g, '\n\n')  // 🔥 将2个或更多连续换行合并为2个换行(即1行空行)
                         .replace(/\n/g, '<br>')
                         
                         // 🔥 统一渲染表格 (在换行处理之后)
@@ -2483,11 +2524,16 @@
                             return `<table style="border-collapse: collapse; margin: 12px 0; width: 100%; max-width: 800px; border: 1px solid #d1d5db;">${rows}</table>`;
                         })
                         
-                        // 🔥 清理多余的<br>和空白
-                        .replace(/^<br>/, '')
-                        .replace(/(<br>\s*){3,}/g, '<br><br>')
+                        // 🔥 强力清理多余的<br>和空白
+                        .replace(/^<br>/, '')  // 移除开头的<br>
+                        .replace(/(<br>\s*){2,}/g, '<br><br>')  // 将2个或更多连续<br>合并为2个<br>
+                        .replace(/(<br><br>){2,}/g, '<br><br>')  // 进一步合并连续的双<br>
                         .replace(/<br><div/g, '<div')  // 清理列表前的多余换行
-                        .replace(/<\/div><br>/g, '</div>'); // 清理列表后的多余换行
+                        .replace(/<\/div><br>/g, '</div>')  // 清理列表后的多余换行
+                        .replace(/<br><h([1-6])/g, '<h$1')  // 清理标题前的多余换行
+                        .replace(/<\/h([1-6])><br>/g, '</h$1>')  // 清理标题后的多余换行
+                        .replace(/<br><hr/g, '<hr')  // 清理分隔线前的多余换行
+                        .replace(/<\/hr><br>/g, '</hr>'); // 清理分隔线后的多余换行
                     
                     return rendered;
                 }
