@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>题目格式化测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">题目格式化测试</h1>
+        
+        <!-- 测试按钮 -->
+        <div class="mb-6">
+            <button onclick="testQuestionFormatting()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                测试题目格式化
+            </button>
+        </div>
+        
+        <!-- 测试结果容器 -->
+        <div id="testResults" class="space-y-6"></div>
+    </div>
+
+    <script>
+        // 测试用的题目数据
+        const testQuestions = [
+            {
+                id: 1,
+                content: "1. 原题：\n如果在训练过程中观察到损失值居高不下且难以下降，可能是以下哪些因素导致的？\n选项：A) 学习率过高 B) 学习率过低 C) 数据质量差 D) 模型复杂度不足",
+                type: "选择题",
+                practice_count: 5,
+                last_result: false,
+                last_practice_time: "2025-09-16 09:25:35",
+                is_favorite: false,
+                mastery_level: 2
+            },
+            {
+                id: 2,
+                content: "在模型训练过程中，通常通过____来评估模型参数的好坏。\n用户答案：训练数据\n判定：错误\n分析与要点：应该使用验证集或测试集来评估模型性能，而不是训练数据。",
+                type: "填空题",
+                practice_count: 3,
+                last_result: true,
+                last_practice_time: "2025-09-16 06:34:05",
+                is_favorite: true,
+                mastery_level: 4
+            },
+            {
+                id: 3,
+                content: "判断：过拟合是指模型在训练数据上表现很好，但在测试数据上表现较差的现象。（ ）",
+                type: "判断题",
+                practice_count: 2,
+                last_result: true,
+                last_practice_time: "2025-09-15 14:20:10",
+                is_favorite: false,
+                mastery_level: 5
+            },
+            {
+                id: 4,
+                content: "某同学在完成语音识别任务时，发现训练集的损失值为0.15，而测试集的损失值为0.34。请分析这种现象可能的原因，并提出相应的解决方案。\n\n要求：\n1. 分析现象的可能原因\n2. 提出至少3种解决方案\n3. 说明每种方案的优缺点",
+                type: "简答题",
+                practice_count: 1,
+                last_result: false,
+                last_practice_time: "2025-09-16 12:49:30",
+                is_favorite: true,
+                mastery_level: 1
+            }
+        ];
+
+        function testQuestionFormatting() {
+            const container = document.getElementById('testResults');
+            container.innerHTML = '';
+            
+            testQuestions.forEach((question, index) => {
+                const formattedContent = formatQuestionContent(question.content);
+                const questionHtml = createQuestionCard(question, index, formattedContent);
+                container.innerHTML += questionHtml;
+            });
+        }
+
+        function createQuestionCard(question, index, formattedContent) {
+            // 题目类型颜色
+            const typeColors = {
+                '选择题': 'bg-blue-100 text-blue-800',
+                '填空题': 'bg-green-100 text-green-800',
+                '判断题': 'bg-purple-100 text-purple-800',
+                '简答题': 'bg-orange-100 text-orange-800'
+            };
+            
+            // 熟练度星星
+            const stars = '★'.repeat(question.mastery_level) + '☆'.repeat(5 - question.mastery_level);
+            
+            // 最后答题结果
+            const resultText = question.last_result ? '正确' : '错误';
+            const resultColor = question.last_result ? 'text-green-600' : 'text-red-600';
+            
+            // 收藏图标
+            const favoriteIcon = question.is_favorite ? 'star' : 'star_border';
+            const favoriteColor = question.is_favorite ? 'text-yellow-500' : 'text-gray-600';
+            
+            return `
+                <div class="p-4 border border-gray-200 rounded-lg hover:border-green-500 transition-colors bg-white">
+                    <!-- 题目头部 -->
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="flex-1 mr-4">
+                            <div class="flex items-center mb-2">
+                                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded-full mr-2">题目 ${index + 1}</span>
+                                <span class="${typeColors[question.type] || 'bg-gray-100 text-gray-800'} text-xs px-2 py-1 rounded">${question.type}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-1">
+                            <button class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600" title="查看题目">
+                                <span class="material-icons-outlined text-sm">visibility</span>
+                            </button>
+                            <button class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600" title="编辑题目">
+                                <span class="material-icons-outlined text-sm">edit</span>
+                            </button>
+                            <button class="p-1.5 rounded-full hover:bg-gray-100 ${favoriteColor}" title="${question.is_favorite ? '取消收藏' : '收藏题目'}">
+                                <span class="material-icons-outlined text-sm">${favoriteIcon}</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 题目内容 -->
+                    <div class="mb-3">
+                        <div class="text-gray-800 leading-relaxed">${formattedContent}</div>
+                    </div>
+                    
+                    <!-- 题目统计信息 -->
+                    <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600 pt-3 border-t border-gray-100">
+                        <div class="flex items-center">
+                            <span class="material-icons-outlined text-sm mr-1">grade</span>
+                            <span>熟练度: <span class="text-yellow-500">${stars}</span></span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="material-icons-outlined text-sm mr-1">history</span>
+                            <span>上次: <span class="${resultColor}">${resultText}</span></span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="material-icons-outlined text-sm mr-1">repeat</span>
+                            <span>练习: ${question.practice_count}次</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="material-icons-outlined text-sm mr-1">schedule</span>
+                            <span>${question.last_practice_time}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 格式化题目内容
+        function formatQuestionContent(content) {
+            if (!content) return '题目内容为空';
+            
+            // 处理换行和格式
+            let formatted = content
+                .replace(/\n/g, '<br>')  // 换行转为<br>
+                .replace(/\r/g, '')      // 移除回车符
+                .trim();
+            
+            // 检测并格式化选择题
+            if (formatted.includes('选项：') || formatted.includes('A)') || formatted.includes('A.')) {
+                formatted = formatMultipleChoice(formatted);
+            }
+            
+            // 检测并格式化填空题
+            if (formatted.includes('____') || formatted.includes('___')) {
+                formatted = formatFillInBlank(formatted);
+            }
+            
+            // 检测并格式化判断题
+            if (formatted.includes('判断：') || formatted.includes('对错：')) {
+                formatted = formatTrueFalse(formatted);
+            }
+            
+            return formatted;
+        }
+
+        // 格式化选择题
+        function formatMultipleChoice(content) {
+            // 分离题目和选项
+            let parts = content.split(/选项：|选项:/);
+            if (parts.length < 2) {
+                // 尝试其他分割方式
+                parts = content.split(/(?=A[\.\)])/);
+            }
+            
+            if (parts.length >= 2) {
+                const question = parts[0].trim();
+                const options = parts.slice(1).join('').trim();
+                
+                // 格式化选项
+                const formattedOptions = options
+                    .replace(/([A-D][\.\)])/g, '<br><strong>$1</strong>')
+                    .replace(/^<br>/, ''); // 移除开头的<br>
+                
+                return `
+                    <div class="mb-3">
+                        <div class="font-medium text-gray-900 mb-2">${question}</div>
+                        <div class="ml-4 text-gray-700 leading-relaxed">${formattedOptions}</div>
+                    </div>
+                `;
+            }
+            
+            return content;
+        }
+
+        // 格式化填空题
+        function formatFillInBlank(content) {
+            return content.replace(/_{3,}/g, '<span class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded mx-1 min-w-[60px] text-center">____</span>');
+        }
+
+        // 格式化判断题
+        function formatTrueFalse(content) {
+            return content
+                .replace(/(判断：|对错：)/g, '<strong class="text-purple-600">$1</strong>')
+                .replace(/（\s*）/g, '<span class="inline-block bg-purple-100 text-purple-800 px-3 py-1 rounded mx-1">（　）</span>');
+        }
+
+        // 页面加载时自动测试
+        window.onload = function() {
+            testQuestionFormatting();
+        };
+    </script>
+</body>
+</html>

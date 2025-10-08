@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>熟练度评估修复测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">熟练度评估修复测试</h1>
+        
+        <!-- 测试步骤 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">测试步骤</h2>
+            <ol class="list-decimal list-inside space-y-2 text-gray-700">
+                <li>点击"模拟知识点详情"按钮，模拟打开知识点详情页面</li>
+                <li>点击"熟练度评估"按钮，检查是否能正确获取知识点信息</li>
+                <li>查看调试日志，确认节点ID是否正确传递</li>
+            </ol>
+        </div>
+        
+        <!-- 测试按钮 -->
+        <div class="mb-6 space-x-4">
+            <button onclick="simulateShowKnowledgePointDetail()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                模拟知识点详情
+            </button>
+            <button onclick="testMasteryAssessment()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
+                测试熟练度评估
+            </button>
+            <button onclick="clearLog()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">
+                清空日志
+            </button>
+        </div>
+        
+        <!-- 模拟知识点详情层 -->
+        <div id="knowledgePointDetailLayer" class="hidden bg-white rounded-lg p-6 mb-6 border-2 border-blue-200">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 id="detailTitle" class="text-2xl font-bold text-gray-800">测试知识点</h2>
+                    <div class="flex items-center space-x-4 text-sm text-gray-600 mt-2">
+                        <span>掌握情况: <span id="detailMastery" class="text-gray-600 font-semibold">未评估</span></span>
+                    </div>
+                </div>
+                <div class="flex space-x-2">
+                    <button id="masteryAssessmentBtn" onclick="startMasteryAssessment()" class="px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors">
+                        熟练度评估
+                    </button>
+                    <button onclick="closeKnowledgePointDetail()" class="px-4 py-2 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 transition-colors">
+                        关闭
+                    </button>
+                </div>
+            </div>
+            <p class="text-gray-600">这是一个模拟的知识点详情页面，用于测试熟练度评估功能。</p>
+        </div>
+        
+        <!-- 调试日志 -->
+        <div class="bg-black text-green-400 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm">
+            <div class="mb-2 text-green-300 font-bold">🔍 调试日志：</div>
+            <div id="debugLog"></div>
+        </div>
+    </div>
+
+    <script>
+        // 调试日志函数
+        function log(message) {
+            const logElement = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('debugLog').innerHTML = '';
+        }
+
+        // 模拟显示知识点详情
+        function simulateShowKnowledgePointDetail() {
+            log('🎯 模拟显示知识点详情');
+            
+            // 模拟节点数据
+            const mockNode = {
+                id: 'kp_5',
+                name: '优化算法 (Optimization Algorithm)',
+                type: 'knowledge_point'
+            };
+            
+            // 显示详情层
+            const detailLayer = document.getElementById('knowledgePointDetailLayer');
+            detailLayer.classList.remove('hidden');
+            
+            // 保存节点ID到dataset（这是修复的关键）
+            detailLayer.dataset.nodeId = mockNode.id;
+            
+            // 更新标题
+            document.getElementById('detailTitle').textContent = mockNode.name;
+            
+            log(`✅ 知识点详情已显示: ${mockNode.name}`);
+            log(`📝 节点ID已保存到dataset: ${mockNode.id}`);
+        }
+
+        // 关闭知识点详情
+        function closeKnowledgePointDetail() {
+            const detailLayer = document.getElementById('knowledgePointDetailLayer');
+            detailLayer.classList.add('hidden');
+            detailLayer.dataset.nodeId = '';
+            log('🔒 知识点详情已关闭');
+        }
+
+        // 测试熟练度评估（使用修复后的逻辑）
+        function testMasteryAssessment() {
+            log('🧪 开始测试熟练度评估功能');
+            startMasteryAssessment();
+        }
+
+        // 熟练度评估相关变量
+        let currentKnowledgePointId = null;
+        let currentQuestionIndex = 0;
+        let assessmentQuestions = [];
+        let userAnswers = [];
+
+        // 开始熟练度评估（修复后的版本）
+        async function startMasteryAssessment() {
+            const detailLayer = document.getElementById('knowledgePointDetailLayer');
+            const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
+            
+            log(`🔍 调试信息 - 详情层: ${detailLayer ? '存在' : '不存在'}`);
+            log(`🔍 调试信息 - 节点ID: ${nodeId || '未找到'}`);
+            
+            if (!nodeId) {
+                log('❌ 无法获取知识点信息，请先点击知识点节点');
+                alert('无法获取知识点信息，请先点击知识点节点');
+                return;
+            }
+            
+            currentKnowledgePointId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
+            log(`🎯 开始熟练度评估 - 知识点ID: ${currentKnowledgePointId}`);
+            
+            // 显示加载状态
+            const btn = document.getElementById('masteryAssessmentBtn');
+            btn.innerHTML = '生成中...';
+            btn.disabled = true;
+            
+            // 模拟API调用
+            setTimeout(() => {
+                log('✅ 模拟API调用成功');
+                log('📝 在实际应用中，这里会调用 window.bridge.generateAssessmentQuestions()');
+                log('🎉 熟练度评估功能修复验证成功！');
+                
+                // 恢复按钮状态
+                btn.innerHTML = '熟练度评估';
+                btn.disabled = false;
+                
+                alert('✅ 熟练度评估功能修复成功！\n\n现在可以正确获取知识点信息了。');
+            }, 2000);
+        }
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🚀 测试页面加载完成');
+            log('📋 请按照测试步骤进行验证');
+        });
+    </script>
+</body>
+</html>

@@ -23,6 +23,57 @@
         justify-content: center;
     }
     
+    /* 文件结构面板收缩样式 - 类似主菜单的折叠效果 */
+    #file-structure {
+        transition: all 0.3s ease;
+        overflow: hidden;
+    }
+    
+    #file-structure.collapsed {
+        width: 60px !important;
+        min-width: 60px !important;
+    }
+    
+    #file-structure.collapsed .file-structure-text,
+    #file-structure.collapsed .file-tree-container,
+    #file-structure.collapsed .space-x-2 button:not(#collapse-toggle-btn) {
+        display: none;
+    }
+    
+    #file-structure.collapsed #collapse-toggle-btn {
+        margin: 0 auto;
+    }
+    
+    /* 可拖拽分割线样式 */
+    .resizer {
+        width: 4px;
+        background: #e5e7eb;
+        cursor: col-resize;
+        position: relative;
+        transition: background-color 0.2s ease;
+    }
+    
+    .resizer:hover {
+        background: #9ca3af;
+    }
+    
+    .resizer:active {
+        background: #6b7280;
+    }
+    
+    .resizer::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 2px;
+        height: 20px;
+        background: #d1d5db;
+        border-radius: 1px;
+    }
+    
+    
     /* 知识点高亮样式 */
     .knowledge-highlight {
         background-color: #fff3cd;
@@ -429,9 +480,9 @@
     <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
         
         <!-- 左侧文件结构面板 -->
-        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300" id="file-structure">
+        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold text-text-dark-brown">文件结构</h2>
+                <h2 class="text-lg font-semibold text-text-dark-brown file-structure-text">文件结构</h2>
                 <div class="space-x-2">
                     <button class="text-text-gray hover:text-primary" onclick="createNewFolder()" title="新建文件夹">
                         <span class="material-icons-outlined">create_new_folder</span>
@@ -439,14 +490,14 @@
                     <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
                         <span class="material-icons-outlined">note_add</span>
                     </button>
-                    <button class="text-red-600 hover:text-red-800" onclick="validateBackendFunctions()" title="验证后端功能">
-                        <span class="material-icons-outlined">bug_report</span>
+                    <button class="text-text-gray hover:text-primary" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
+                        <span class="material-icons-outlined">chevron_left</span>
                     </button>
                 </div>
             </div>
             
             <!-- 文件树容器 -->
-            <div class="flex-1 overflow-y-auto pr-2">
+            <div class="flex-1 overflow-y-auto pr-2 file-tree-container">
                 <div id="loading-indicator" class="flex items-center justify-center py-8">
                     <div class="animate-spin">
                         <span class="material-icons-outlined text-primary">refresh</span>
@@ -456,9 +507,9 @@
                 <div id="file-tree-container"></div>
             </div>
         </div>
-
+        
         <!-- 中间文档预览/编辑区域 -->
-        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col">
+        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col" id="document-area">
             <!-- 顶部工具栏 -->
             <div class="border-b border-gray-200 p-4 flex justify-between items-center">
                 <div class="flex items-center space-x-2">
@@ -486,9 +537,12 @@
                 <textarea id="edit-content" class="w-full h-full border border-gray-300 rounded-lg p-4 font-mono text-sm resize-none hidden" placeholder="在此编辑Markdown内容..."></textarea>
             </div>
         </div>
+        
+        <!-- 可拖拽分割线 -->
+        <div class="resizer" id="resizer"></div>
 
         <!-- 右侧知识点/实时语音面板 -->
-        <div class="w-1/4 bg-white p-4 flex flex-col">
+        <div class="w-1/4 bg-white p-4 flex flex-col" id="right-panel">
             <!-- 🎯 网课笔记功能标识 -->
             
             
@@ -569,18 +623,18 @@
                         <button id="stop-recording-btn" class="w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all opacity-50 cursor-not-allowed" onclick="stopRecording()" title="停止录音" disabled>
                             <span class="material-icons-outlined text-lg">stop</span>
                         </button>
+                        
+                        <!-- 载入历史记录按钮 -->
+                        <button id="load-transcript-btn" class="w-12 h-12 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center justify-center shadow-md transition-all" onclick="loadTranscriptHistory()" title="载入历史记录">
+                            <span class="material-icons-outlined text-lg">folder_open</span>
+                        </button>
+                        
+                        <!-- 截图按钮 -->
+                        <button id="screenshot-btn" class="w-12 h-12 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center justify-center shadow-md transition-all" onclick="takeScreenshot()" title="截图笔记">
+                            <span class="material-icons-outlined text-lg">camera_alt</span>
+                        </button>
                     </div>
                 </div>
-                
-                <!-- 转写内容区域 -->
-                <div class="flex-1 mb-4">
-                    <div class="h-full bg-gray-50 rounded-lg p-3 overflow-y-auto">
-                        <div id="transcript-content" class="text-sm leading-relaxed">
-                            <p class="text-gray-500">转写内容将在这里实时显示...</p>
-                        </div>
-                    </div>
-                </div>
-                
                 <!-- 手动总结按钮 -->
                 <div class="mb-4">
                     <button id="manual-summarize-btn" class="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed" disabled onclick="manualSummarize()">
@@ -589,6 +643,22 @@
                     </button>
                     <p class="text-xs text-gray-500 mt-1 text-center">选择转写文本后点击按钮进行AI总结</p>
                 </div>
+                <!-- 转写内容区域 -->
+                <div class="flex-1 mb-4">
+                    <div class="border border-gray-200 rounded-lg p-4 overflow-y-auto" style="height: 500px;">
+                        <div id="transcript-content" class="space-y-3">
+                            <!-- 占位符内容 -->
+                            <div class="flex items-center justify-center py-8 text-gray-400">
+                                <div class="text-center">
+                                    <span class="material-icons-outlined text-4xl mb-2 opacity-50">mic</span>
+                                    <p class="text-sm">转写内容将在这里实时显示...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                
             </div>
             
             <!-- 知识点面板 -->
@@ -730,11 +800,26 @@
     // 面板切换变量
     let currentPanel = 'voice'; // 默认显示实时语音面板
     
+    // 面板收缩和拖拽变量
+    let isFileStructureCollapsed = false;
+    let isResizing = false;
+    let startX = 0;
+    let startDocumentWidth = 0;
+    let startRightWidth = 0;
+    
     // 录音相关变量
     let isRecording = false;
     let isPaused = false;
-    let selectedTranscriptText = '';
+    let selectedTranscriptTexts = []; // 改为数组支持多选
     let recordingWorker = null;
+    
+    // 转写历史记录管理
+    let currentTranscriptSession = {
+        sessionId: null,
+        startTime: null,
+        transcripts: [],
+        filePath: null
+    };
 
     // 调试函数
     function debugLog(message) {
@@ -1790,6 +1875,16 @@
             return;
         }
         
+        // 只有在没有载入文件的情况下才开始新的转写会话
+        if (!currentTranscriptSession.sessionId) {
+            startNewTranscriptSession();
+            debugLog('创建新的转写会话并立即保存文件');
+            // 创建新会话时立即保存空文件
+            saveTranscriptSession();
+        } else {
+            debugLog('继续使用当前会话: ' + currentTranscriptSession.sessionId);
+        }
+        
         // 检查是否已选择设备
         if (window.bridge && window.bridge.getSelectedDevice) {
             window.bridge.getSelectedDevice(function(deviceResult) {
@@ -1887,6 +1982,9 @@
             window.bridge.stopRecording(function(result) {
                 debugLog('停止录音结果: ' + result);
                 showMessage('录音已停止', 'info');
+                
+                // 录音结束，文件已在转写过程中实时保存
+                debugLog('录音结束，转写内容已在过程中实时保存');
             });
         }
     };
@@ -1923,7 +2021,7 @@
     
     window.manualSummarize = function() {
         debugLog('手动总结选中内容');
-        if (!selectedTranscriptText.trim()) {
+        if (selectedTranscriptTexts.length === 0) {
             alert('请先选择转写文本');
             return;
         }
@@ -1932,21 +2030,53 @@
         btn.disabled = true;
         btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm animate-spin">refresh</span>AI总结中...';
         
+        // 合并选中的转写文本
+        const combinedText = selectedTranscriptTexts.map(item => 
+            `${item.timestamp} ${item.text}`
+        ).join('\n\n');
+        
+        debugLog('合并的转写文本: ' + combinedText);
+        
         if (window.bridge && window.bridge.summarizeText) {
-            window.bridge.summarizeText(selectedTranscriptText, function(summary) {
-                debugLog('总结完成: ' + summary);
+            window.bridge.summarizeText(combinedText, function(response) {
+                debugLog('AI响应: ' + response);
+                
+                let summaryContent = '';
+                try {
+                    // 尝试解析JSON响应
+                    const jsonResponse = JSON.parse(response);
+                    if (jsonResponse.summary) {
+                        summaryContent = jsonResponse.summary;
+                    } else if (jsonResponse.content) {
+                        summaryContent = jsonResponse.content;
+                    } else {
+                        // 如果没有找到预期字段，使用整个响应
+                        summaryContent = response;
+                    }
+                } catch (error) {
+                    // 如果不是JSON格式，直接使用原始响应
+                    debugLog('响应不是JSON格式，使用原始内容: ' + error.message);
+                    summaryContent = response;
+                }
+                
+                debugLog('提取的总结内容: ' + summaryContent);
                 
                 // 将总结插入到当前编辑的文档中
-                insertSummaryToDocument(summary);
+                insertSummaryToDocument(summaryContent);
                 
-                // 重置按钮状态
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>手动总结选中内容';
+                // 标记已总结的转写条目
+                markTranscriptItemsAsSummarized();
+                
+                // 清空选中状态
+                clearTranscriptSelection();
+                
+                // 恢复按钮状态
+                updateManualSummarizeButton();
             });
         } else {
             alert('总结功能不可用');
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>手动总结选中内容';
+            updateManualSummarizeButton();
         }
     };
     
@@ -1957,10 +2087,16 @@
         if (isEditMode) {
             const editContent = document.getElementById('edit-content');
             if (editContent) {
-                const cursorPos = editContent.selectionStart;
+                let cursorPos = editContent.selectionStart;
+                
+                // 如果光标位置为0或者编辑器没有焦点，插入到文档末尾
+                if (cursorPos === 0 && editContent !== document.activeElement) {
+                    cursorPos = editContent.value.length;
+                }
+                
                 const textBefore = editContent.value.substring(0, cursorPos);
                 const textAfter = editContent.value.substring(cursorPos);
-                const summaryText = '\n\n## AI总结\n\n' + summary + '\n\n';
+                const summaryText = '\n\n## 🤖 AI总结\n\n' + summary + '\n\n';
                 
                 editContent.value = textBefore + summaryText + textAfter;
                 editContent.setSelectionRange(cursorPos + summaryText.length, cursorPos + summaryText.length);
@@ -1968,24 +2104,54 @@
                 
                 // 标记为有未保存的更改
                 handleContentChange();
+                
+                debugLog('总结已插入到文档，位置: ' + cursorPos);
             }
         } else {
-            alert('请先切换到编辑模式以插入总结');
+            // 如果在预览模式，提示用户切换到编辑模式
+            if (confirm('需要切换到编辑模式才能插入总结，是否切换？')) {
+                switchToEdit();
+                // 延迟插入，等待编辑模式加载完成
+                setTimeout(() => {
+                    insertSummaryToDocument(summary);
+                }, 100);
+            }
         }
     }
     
     window.takeScreenshot = function() {
         debugLog('截图笔记');
         if (window.bridge && window.bridge.takeScreenshot) {
-            window.bridge.takeScreenshot(function(result) {
-                debugLog('截图结果: ' + result);
-                if (result) {
-                    // 将截图插入到文档中
-                    insertScreenshotToDocument(result);
+            try {
+                // 直接调用，因为后端使用@Slot(result=str)
+                debugLog('调用截图功能...');
+                const result = window.bridge.takeScreenshot();
+                debugLog('截图方法返回类型: ' + typeof result);
+                debugLog('截图方法返回值: ' + result);
+                
+                // 检查返回值类型
+                if (typeof result === 'string') {
+                    try {
+                        const response = JSON.parse(result);
+                        if (response.success) {
+                            debugLog('截图工具已打开: ' + response.message);
+                            // 截图完成后会通过_on_screenshot_captured自动插入到编辑器
+                        } else {
+                            alert('截图失败: ' + response.error);
+                        }
+                    } catch (parseError) {
+                        debugError('解析截图响应失败: ' + parseError.message);
+                        debugError('原始返回值: ' + result);
+                        // 如果不是JSON格式，可能是直接的成功消息
+                        debugLog('截图请求已发送，等待用户操作');
+                    }
                 } else {
-                    alert('截图失败');
+                    debugLog('截图请求已发送，返回类型: ' + typeof result);
                 }
-            });
+            } catch (error) {
+                debugError('截图请求失败: ' + error.message);
+                alert('截图功能出错: ' + error.message);
+            }
         } else {
             alert('截图功能不可用');
         }
@@ -2000,7 +2166,10 @@
                 const cursorPos = editContent.selectionStart;
                 const textBefore = editContent.value.substring(0, cursorPos);
                 const textAfter = editContent.value.substring(cursorPos);
-                const imageText = '\n\n![截图](' + imagePath + ')\n\n';
+                
+                // 使用Obsidian兼容的图片格式，只使用文件名，不包含路径
+                const fileName = imagePath.split('/').pop(); // 提取文件名
+                const imageText = '\n\n![[' + fileName + ']]\n\n';
                 
                 editContent.value = textBefore + imageText + textAfter;
                 editContent.setSelectionRange(cursorPos + imageText.length, cursorPos + imageText.length);
@@ -2013,19 +2182,230 @@
         }
     }
     
-    // 转写文本选择处理
-    function handleTranscriptTextSelection() {
-        const selection = window.getSelection();
-        selectedTranscriptText = selection.toString().trim();
-        
+    // 更新手动总结按钮状态
+    function updateManualSummarizeButton() {
         const btn = document.getElementById('manual-summarize-btn');
-        if (selectedTranscriptText) {
+        if (!btn) return;
+        
+        if (selectedTranscriptTexts.length > 0) {
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>总结选中内容 (' + selectedTranscriptText.length + '字)';
+            const totalChars = selectedTranscriptTexts.reduce((sum, item) => sum + item.text.length, 0);
+            btn.innerHTML = `<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>总结选中内容 (${selectedTranscriptTexts.length}条, ${totalChars}字)`;
         } else {
             btn.disabled = true;
             btn.innerHTML = '<span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>手动总结选中内容';
         }
+    }
+    
+    // 转写文本选择处理（保留用于兼容性）
+    function handleTranscriptTextSelection() {
+        updateManualSummarizeButton();
+    }
+    
+    // 标记转写条目为已总结
+    function markTranscriptItemsAsSummarized() {
+        selectedTranscriptTexts.forEach(item => {
+            const element = item.element;
+            const timestamp = element.querySelector('span');
+            
+            // 检查是否已经有标记
+            if (!timestamp.querySelector('.summarized-mark')) {
+                // 添加小√图标
+                const checkMark = document.createElement('span');
+                checkMark.className = 'summarized-mark text-green-500 ml-1';
+                checkMark.innerHTML = '✓';
+                checkMark.title = '已总结';
+                timestamp.appendChild(checkMark);
+            }
+            
+            // 更新会话数据中的总结状态
+            const transcriptRecord = currentTranscriptSession.transcripts.find(record => 
+                record.text === item.text && record.timestamp === item.timestamp
+            );
+            if (transcriptRecord) {
+                transcriptRecord.summarized = true;
+            }
+        });
+        
+        // 保存更新后的会话数据
+        saveTranscriptSession();
+    }
+    
+    // 清空转写文本选中状态
+    function clearTranscriptSelection() {
+        selectedTranscriptTexts.forEach(item => {
+            const element = item.element;
+            element.classList.remove('bg-bg-light-green');
+            const textP = element.querySelector('p');
+            if (textP) {
+                textP.classList.remove('text-text-dark-brown');
+                textP.classList.add('text-text-medium-brown');
+            }
+        });
+        selectedTranscriptTexts = [];
+    }
+    
+    // 开始新的转写会话
+    function startNewTranscriptSession() {
+        const now = new Date();
+        currentTranscriptSession = {
+            sessionId: 'transcript_' + now.getTime(),
+            startTime: now.toISOString(),
+            transcripts: [],
+            filePath: null
+        };
+        debugLog('开始新的转写会话: ' + currentTranscriptSession.sessionId);
+    }
+    
+    // 保存转写会话到文件
+    function saveTranscriptSession() {
+        if (window.bridge && window.bridge.saveTranscriptSession) {
+            const sessionData = {
+                sessionId: currentTranscriptSession.sessionId,
+                startTime: currentTranscriptSession.startTime,
+                transcripts: currentTranscriptSession.transcripts,
+                saveTime: new Date().toISOString(),
+                isLoadedFromFile: currentTranscriptSession.isLoadedFromFile || false,
+                originalFilePath: currentTranscriptSession.filePath || null
+            };
+            
+            window.bridge.saveTranscriptSession(JSON.stringify(sessionData), function(filePath) {
+                if (filePath) {
+                    currentTranscriptSession.filePath = filePath;
+                    debugLog('转写会话已保存到: ' + filePath);
+                }
+            });
+        }
+    }
+    
+    // 载入历史转写记录
+    window.loadTranscriptHistory = function() {
+        debugLog('载入历史转写记录');
+        
+        if (window.bridge && window.bridge.loadTranscriptHistory) {
+            // 调用后端方法（无参数，使用回调机制）
+            window.bridge.loadTranscriptHistory();
+        } else {
+            alert('载入功能不可用');
+        }
+    };
+    
+    // 后端载入完成的回调函数
+    window.onTranscriptHistoryLoaded = function(result) {
+        debugLog('收到后端载入结果: ' + (result ? '有数据' : '无数据'));
+        
+        if (result && result.trim()) {
+            try {
+                const sessionData = JSON.parse(result);
+                loadTranscriptSessionData(sessionData);
+                debugLog('历史记录载入成功');
+                alert('历史记录载入成功！');
+            } catch (error) {
+                debugError('解析历史记录失败: ' + error.message);
+                alert('载入历史记录失败：文件格式错误');
+            }
+        } else {
+            debugLog('用户取消载入或没有选择文件');
+        }
+    };
+    
+    // 载入转写会话数据到界面
+    function loadTranscriptSessionData(sessionData) {
+        // 清空当前转写内容
+        const transcriptDiv = document.getElementById('transcript-content');
+        if (!transcriptDiv) return;
+        
+        transcriptDiv.innerHTML = '';
+        
+        // 更新当前会话信息，保持原有的sessionId以便继续录音
+        currentTranscriptSession = {
+            sessionId: sessionData.sessionId,
+            startTime: sessionData.startTime,
+            transcripts: sessionData.transcripts || [],
+            filePath: sessionData.originalFilePath || null,
+            isLoadedFromFile: true,  // 标记为从文件载入的会话
+            originalFileName: sessionData.originalFileName || null   // 记录原始文件名，用于后续保存
+        };
+        
+        // 重新显示所有转写内容
+        sessionData.transcripts.forEach(record => {
+            addTranscriptItemToUI(record.timestamp, record.text, record.summarized);
+        });
+        
+        debugLog('载入了 ' + sessionData.transcripts.length + ' 条转写记录');
+    }
+    
+    // 添加转写条目到UI（不触发保存）
+    function addTranscriptItemToUI(timeString, text, isSummarized = false) {
+        const transcriptDiv = document.getElementById('transcript-content');
+        if (!transcriptDiv) return;
+        
+        // 创建转写条目容器
+        const transcriptItem = document.createElement('div');
+        transcriptItem.className = 'flex cursor-pointer hover:bg-blue-50 p-2 rounded-lg transition-colors';
+        
+        // 添加多选功能
+        transcriptItem.addEventListener('click', function() {
+            const isSelected = this.classList.contains('bg-bg-light-green');
+            const textP = this.querySelector('p');
+            
+            if (isSelected) {
+                // 取消选中
+                this.classList.remove('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-dark-brown');
+                    textP.classList.add('text-text-medium-brown');
+                }
+                // 从选中列表中移除
+                const index = selectedTranscriptTexts.findIndex(item => item.text === text);
+                if (index > -1) {
+                    selectedTranscriptTexts.splice(index, 1);
+                }
+                debugLog('取消选中转写文本: ' + text);
+            } else {
+                // 选中
+                this.classList.add('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-medium-brown');
+                    textP.classList.add('text-text-dark-brown');
+                }
+                // 添加到选中列表
+                selectedTranscriptTexts.push({
+                    text: text,
+                    element: this,
+                    timestamp: timeString
+                });
+                debugLog('选中转写文本: ' + text);
+            }
+            
+            updateManualSummarizeButton();
+        });
+        
+        // 创建时间戳
+        const timestamp = document.createElement('span');
+        timestamp.className = 'text-sm font-semibold text-primary mr-3 flex-shrink-0';
+        timestamp.textContent = timeString;
+        
+        // 如果已总结，添加标记
+        if (isSummarized) {
+            const checkMark = document.createElement('span');
+            checkMark.className = 'summarized-mark text-green-500 ml-1';
+            checkMark.innerHTML = '✓';
+            checkMark.title = '已总结';
+            timestamp.appendChild(checkMark);
+        }
+        
+        // 创建文本内容
+        const textContent = document.createElement('p');
+        textContent.className = 'text-text-medium-brown flex-1 leading-relaxed';
+        textContent.textContent = text;
+        
+        // 组装转写条目
+        transcriptItem.appendChild(timestamp);
+        transcriptItem.appendChild(textContent);
+        
+        // 添加到容器
+        transcriptDiv.appendChild(transcriptItem);
     }
     
     // 添加转写文本到显示区域
@@ -2036,17 +2416,86 @@
         if (!transcriptDiv) return;
         
         // 如果是第一次添加文本，清空占位符
-        if (transcriptDiv.innerHTML.includes('转写内容将在这里实时显示')) {
+        if (transcriptDiv.innerHTML.includes('转写内容将在这里实时显示') || 
+            transcriptDiv.innerHTML.includes('占位符内容')) {
             transcriptDiv.innerHTML = '';
         }
         
-        const textElement = document.createElement('p');
-        textElement.className = 'mb-2 cursor-pointer hover:bg-blue-50 p-1 rounded';
-        textElement.textContent = text;
-        transcriptDiv.appendChild(textElement);
+        // 创建转写条目容器，参考录音室UI样式
+        const transcriptItem = document.createElement('div');
+        transcriptItem.className = 'flex cursor-pointer hover:bg-blue-50 p-2 rounded-lg transition-colors';
+        
+        // 添加多选功能
+        transcriptItem.addEventListener('click', function() {
+            const isSelected = this.classList.contains('bg-bg-light-green');
+            const textP = this.querySelector('p');
+            
+            if (isSelected) {
+                // 取消选中
+                this.classList.remove('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-dark-brown');
+                    textP.classList.add('text-text-medium-brown');
+                }
+                // 从选中列表中移除
+                const index = selectedTranscriptTexts.findIndex(item => item.text === text);
+                if (index > -1) {
+                    selectedTranscriptTexts.splice(index, 1);
+                }
+                debugLog('取消选中转写文本: ' + text);
+            } else {
+                // 选中
+                this.classList.add('bg-bg-light-green');
+                if (textP) {
+                    textP.classList.remove('text-text-medium-brown');
+                    textP.classList.add('text-text-dark-brown');
+                }
+                // 添加到选中列表
+                selectedTranscriptTexts.push({
+                    text: text,
+                    element: this,
+                    timestamp: timestamp.textContent
+                });
+                debugLog('选中转写文本: ' + text);
+            }
+            
+            updateManualSummarizeButton();
+        });
+        
+        // 创建时间戳
+        const timestamp = document.createElement('span');
+        timestamp.className = 'text-sm font-semibold text-primary mr-3 flex-shrink-0';
+        const currentTime = new Date();
+        const timeString = `[${currentTime.getHours().toString().padStart(2, '0')}:${currentTime.getMinutes().toString().padStart(2, '0')}:${currentTime.getSeconds().toString().padStart(2, '0')}]`;
+        timestamp.textContent = timeString;
+        
+        // 创建文本内容
+        const textContent = document.createElement('p');
+        textContent.className = 'text-text-medium-brown flex-1 leading-relaxed';
+        textContent.textContent = text;
+        
+        // 组装转写条目
+        transcriptItem.appendChild(timestamp);
+        transcriptItem.appendChild(textContent);
+        
+        // 添加到容器
+        transcriptDiv.appendChild(transcriptItem);
+        
+        // 添加到当前会话记录
+        const transcriptRecord = {
+            timestamp: timeString,
+            text: text,
+            time: new Date().toISOString(),
+            summarized: false
+        };
+        currentTranscriptSession.transcripts.push(transcriptRecord);
+        
+        // 每次转写都保存文件（追加内容）
+        saveTranscriptSession();
         
         // 自动滚动到底部
-        transcriptDiv.scrollTop = transcriptDiv.scrollHeight;
+        const container = transcriptDiv.parentElement;
+        container.scrollTop = container.scrollHeight;
     }
     
     // 后端调用的转写文本更新函数 - 必须定义为全局函数
@@ -5444,6 +5893,7 @@
     window.clearDebugLog = clearDebugLog;
     window.extractKnowledgePoints = extractKnowledgePoints;
     window.loadContent = loadContent;
+    window.insertScreenshotToDocument = insertScreenshotToDocument;
     
     // 插入文本到当前笔记的全局函数
     window.insertTextToCurrentNote = function(content) {
@@ -6999,12 +7449,69 @@ ${currentPracticeData.answers.map(a => a.content).join('
                 return `<div class="mermaid" id="${id}">${code}</div>`;
             });
             
+            // 预处理：支持Obsidian格式的图片 ![[filename]]
+            content = content.replace(/!\[\[([^\]]+)\]\]/g, function(match, filename) {
+                console.log('发现Obsidian格式图片:', filename);
+                // 构建图片路径：假设图片在attachments目录中
+                const imagePath = 'attachments/' + filename;
+                const converted = `![${filename}](${imagePath})`;
+                console.log('转换为标准格式:', converted);
+                return converted;
+            });
+            
             // 使用marked渲染
             let html = marked.parse(content);
             
             // 后处理：修复任务列表
             html = html.replace(/<li class="task-list-item"><input[^>]*>/g, function(match) {
                 return match.replace('<li class="task-list-item">', '<li class="task-list-item">');
+            });
+            
+            // 后处理：处理图片路径，使用Base64数据URL
+            html = html.replace(/<img([^>]*?)src="([^"]*?)"([^>]*?)>/g, function(match, beforeSrc, src, afterSrc) {
+                console.log('处理图片路径:', src);
+                console.log('当前文件路径:', currentFilePath);
+                
+                // 如果是相对路径且指向attachments目录，通过后端获取Base64数据
+                if (src.startsWith('attachments/') && currentFilePath) {
+                    console.log('检测到attachments图片，准备转换为Base64');
+                    
+                    // 创建一个唯一的ID用于异步更新
+                    const imageId = 'img_' + Math.random().toString(36).substr(2, 9);
+                    
+                    // 先返回占位符图片
+                    const placeholderImg = `<img${beforeSrc}id="${imageId}" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWKoOi9veS4rS4uLjwvdGV4dD48L3N2Zz4=" alt="加载中..." style="max-width: 100%; height: auto;"${afterSrc}>`;
+                    
+                    // 异步获取真实图片数据
+                    setTimeout(() => {
+                        if (window.bridge && window.bridge.getImageAsBase64) {
+                            window.bridge.getImageAsBase64(src, function(result) {
+                                try {
+                                    const response = JSON.parse(result);
+                                    const imgElement = document.getElementById(imageId);
+                                    if (response.success && imgElement) {
+                                        console.log('图片Base64转换成功，更新显示');
+                                        imgElement.src = response.dataUrl;
+                                        imgElement.alt = src;
+                                    } else {
+                                        console.error('图片Base64转换失败:', response.error);
+                                        if (imgElement) {
+                                            imgElement.alt = '图片加载失败: ' + src;
+                                            imgElement.title = response.error || '未知错误';
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('解析图片Base64响应失败:', e);
+                                }
+                            });
+                        } else {
+                            console.error('getImageAsBase64方法不可用');
+                        }
+                    }, 100);
+                    
+                    return placeholderImg;
+                }
+                return match;
             });
             
             return html;
@@ -7049,11 +7556,98 @@ ${currentPracticeData.answers.map(a => a.content).join('
         }
     }
     
+    // 文件结构面板收缩/展开功能 - 定义为全局函数
+    window.toggleFileStructurePanel = function() {
+        const fileStructure = document.getElementById('file-structure');
+        const collapseToggleBtn = document.getElementById('collapse-toggle-btn');
+        const collapseToggleIcon = collapseToggleBtn.querySelector('.material-icons-outlined');
+        
+        isFileStructureCollapsed = !isFileStructureCollapsed;
+        
+        if (isFileStructureCollapsed) {
+            fileStructure.classList.add('collapsed');
+            collapseToggleIcon.textContent = 'chevron_right';
+            debugLog('文件结构面板已折叠');
+        } else {
+            fileStructure.classList.remove('collapsed');
+            collapseToggleIcon.textContent = 'chevron_left';
+            debugLog('文件结构面板已展开');
+        }
+    };
+    
+    // 初始化拖拽调整功能
+    function initResizer() {
+        const resizer = document.getElementById('resizer');
+        const documentArea = document.getElementById('document-area');
+        const rightPanel = document.getElementById('right-panel');
+        
+        if (!resizer || !documentArea || !rightPanel) {
+            console.warn('拖拽调整功能初始化失败：找不到必要的元素');
+            return;
+        }
+        
+        resizer.addEventListener('mousedown', function(e) {
+            isResizing = true;
+            startX = e.clientX;
+            
+            // 获取当前宽度
+            const documentRect = documentArea.getBoundingClientRect();
+            const rightRect = rightPanel.getBoundingClientRect();
+            startDocumentWidth = documentRect.width;
+            startRightWidth = rightRect.width;
+            
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            
+            debugLog('开始拖拽调整面板宽度');
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - startX;
+            const containerWidth = document.getElementById('main-content').getBoundingClientRect().width;
+            
+            // 计算新的宽度百分比
+            const newDocumentWidth = startDocumentWidth + deltaX;
+            const newRightWidth = startRightWidth - deltaX;
+            
+            // 设置最小和最大宽度限制
+            const minWidth = 200;
+            const maxDocumentWidth = containerWidth - minWidth - 4; // 4px for resizer
+            const maxRightWidth = containerWidth - minWidth - 4;
+            
+            if (newDocumentWidth >= minWidth && newDocumentWidth <= maxDocumentWidth &&
+                newRightWidth >= minWidth && newRightWidth <= maxRightWidth) {
+                
+                const documentPercent = (newDocumentWidth / containerWidth) * 100;
+                const rightPercent = (newRightWidth / containerWidth) * 100;
+                
+                documentArea.style.width = documentPercent + '%';
+                rightPanel.style.width = rightPercent + '%';
+            }
+            
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mouseup', function() {
+            if (isResizing) {
+                isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                debugLog('拖拽调整完成');
+            }
+        });
+    }
+    
     // 页面初始化
     function initAll() {
         console.log('开始初始化页面...');
         initializePage();
         initMarkdownEnhancements();
+        initResizer(); // 初始化拖拽调整功能
         
         // 延迟更新设备信息，等待bridge连接
         setTimeout(function() {

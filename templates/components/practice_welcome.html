@@ -1,0 +1,84 @@
+<!-- 练习助手欢迎界面 -->
+<div class="practice-welcome-panel" id="practiceWelcomePanel">
+    <div class="flex flex-col items-center justify-center h-full p-8 text-center">
+        <div class="mb-8">
+            <span class="material-icons-outlined text-6xl text-primary mb-4 block">quiz</span>
+            <h2 class="text-2xl font-bold text-text-dark-brown mb-2">AI练习助手</h2>
+            <p class="text-text-medium-brown mb-6">智能生成练习题目，提升学习效果</p>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md">
+            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomeNewPracticeBtn">
+                <span class="material-icons-outlined text-3xl text-primary mb-2">add_circle_outline</span>
+                <span class="font-medium text-text-dark-brown">开始新练习</span>
+                <span class="text-sm text-text-medium-brown mt-1">生成新的练习题目</span>
+            </button>
+            
+            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomePracticeHistoryBtn">
+                <span class="material-icons-outlined text-3xl text-blue-500 mb-2">history</span>
+                <span class="font-medium text-text-dark-brown">练习历史</span>
+                <span class="text-sm text-text-medium-brown mt-1">查看历史练习记录</span>
+            </button>
+        </div>
+        
+        <div class="mt-8 text-sm text-text-medium-brown">
+            <p>💡 提示：您可以通过AI对话生成个性化练习题目</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// 练习助手欢迎界面的JavaScript逻辑
+document.addEventListener('DOMContentLoaded', function() {
+    // 绑定欢迎界面按钮事件
+    const welcomeNewPracticeBtn = document.getElementById('welcomeNewPracticeBtn');
+    const welcomePracticeHistoryBtn = document.getElementById('welcomePracticeHistoryBtn');
+    
+    if (welcomeNewPracticeBtn) {
+        welcomeNewPracticeBtn.addEventListener('click', function() {
+            console.log('点击开始新练习');
+            // 调用开始新练习的函数
+            if (window.startNewPractice) {
+                window.startNewPractice();
+            } else {
+                // 如果函数不存在，显示提示消息
+                if (window.addPracticeMessage) {
+                    window.addPracticeMessage('请先通过AI对话生成练习题目，然后点击消息中的"开始练习"按钮。', 'ai');
+                }
+            }
+        });
+    }
+    
+    if (welcomePracticeHistoryBtn) {
+        welcomePracticeHistoryBtn.addEventListener('click', function() {
+            console.log('点击练习历史');
+            // 调用显示练习历史的函数
+            if (window.showPracticeHistory) {
+                window.showPracticeHistory();
+            } else {
+                // 如果函数不存在，显示提示消息
+                if (window.addPracticeMessage) {
+                    window.addPracticeMessage('正在加载练习历史功能...', 'ai');
+                }
+            }
+        });
+    }
+});
+
+// 显示欢迎界面的函数
+window.showPracticeWelcome = function() {
+    const welcomePanel = document.getElementById('practiceWelcomePanel');
+    const messagesPanel = document.getElementById('aiPracticeMessages');
+    const practiceContainer = document.getElementById('practiceContainer');
+    
+    if (welcomePanel) welcomePanel.style.display = 'block';
+    if (messagesPanel) messagesPanel.style.display = 'none';
+    if (practiceContainer) practiceContainer.style.display = 'none';
+};
+
+// 隐藏欢迎界面的函数
+window.hidePracticeWelcome = function() {
+    const welcomePanel = document.getElementById('practiceWelcomePanel');
+    if (welcomePanel) welcomePanel.style.display = 'none';
+};
+</script>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>点击事件修复测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">点击事件修复测试</h1>
+        
+        <!-- 问题描述 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-red-600 mb-4">❌ 问题现象</h2>
+            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <li>点击学科卡片没有反应</li>
+                <li>控制台显示localStorage SecurityError</li>
+                <li>鼠标悬停正常，但点击无效</li>
+                <li>错误：<code class="bg-gray-100 px-2 py-1 rounded">Failed to read the 'localStorage' property from 'Window': Storage is disabled inside 'data:' URLs</code></li>
+            </ul>
+        </div>
+        
+        <!-- 修复方案 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-green-600 mb-4">✅ 修复方案</h2>
+            <div class="space-y-4">
+                <div>
+                    <h3 class="font-semibold text-gray-800 mb-2">1. localStorage安全检查</h3>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <pre class="text-sm text-gray-700"><code>try {
+    if (typeof(Storage) !== "undefined" && window.localStorage) {
+        localStorage.setItem('key', 'value');
+    }
+} catch (error) {
+    log(`⚠️ localStorage不可用: ${error.message}`);
+}</code></pre>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold text-gray-800 mb-2">2. 双重点击事件绑定</h3>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <pre class="text-sm text-gray-700"><code>// HTML onclick属性
+&lt;div onclick="selectSubject('机器学习')"&gt;
+
+// JavaScript事件监听器（备用）
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.subject-card')) {
+        selectSubject(subjectName);
+    }
+});</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 测试区域 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-blue-600 mb-4">🧪 测试区域</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <!-- 测试卡片1 -->
+                <div class="subject-card bg-white rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all duration-300 p-6" 
+                     data-subject="机器学习" onclick="testSelectSubject('机器学习')">
+                    <div class="text-center">
+                        <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">🤖</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">机器学习</h3>
+                        <p class="text-gray-600 text-sm mb-3">测试点击事件</p>
+                        <div class="text-blue-600 font-semibold">点击测试</div>
+                    </div>
+                </div>
+                
+                <!-- 测试卡片2 -->
+                <div class="subject-card bg-white rounded-xl border-2 border-gray-200 hover:border-green-400 hover:shadow-lg cursor-pointer transition-all duration-300 p-6" 
+                     data-subject="数据结构" onclick="testSelectSubject('数据结构')">
+                    <div class="text-center">
+                        <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <span class="text-2xl">📊</span>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-800 mb-2">数据结构</h3>
+                        <p class="text-gray-600 text-sm mb-3">测试点击事件</p>
+                        <div class="text-green-600 font-semibold">点击测试</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 测试结果 -->
+            <div id="testResults" class="bg-gray-50 rounded-lg p-4">
+                <h4 class="font-semibold text-gray-800 mb-2">测试结果：</h4>
+                <div id="testLog" class="text-sm text-gray-600">等待点击测试...</div>
+            </div>
+        </div>
+        
+        <!-- 修复状态 -->
+        <div class="bg-white rounded-lg p-6">
+            <h2 class="text-xl font-bold text-purple-600 mb-4">🔧 修复状态</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="text-center p-4 bg-green-50 rounded-lg">
+                    <div class="text-2xl mb-2">✅</div>
+                    <div class="font-semibold text-green-600">localStorage安全检查</div>
+                    <div class="text-sm text-gray-600">已添加try-catch保护</div>
+                </div>
+                
+                <div class="text-center p-4 bg-blue-50 rounded-lg">
+                    <div class="text-2xl mb-2">🔧</div>
+                    <div class="font-semibold text-blue-600">双重事件绑定</div>
+                    <div class="text-sm text-gray-600">onclick + addEventListener</div>
+                </div>
+                
+                <div class="text-center p-4 bg-purple-50 rounded-lg">
+                    <div class="text-2xl mb-2">📝</div>
+                    <div class="font-semibold text-purple-600">详细日志记录</div>
+                    <div class="text-sm text-gray-600">便于调试和监控</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 测试用的selectSubject函数
+        function testSelectSubject(subjectName) {
+            const timestamp = new Date().toLocaleTimeString();
+            const message = `[${timestamp}] ✅ 成功点击学科: ${subjectName}`;
+            
+            console.log(message);
+            
+            // 更新测试结果
+            const testLog = document.getElementById('testLog');
+            const newEntry = document.createElement('div');
+            newEntry.className = 'text-green-600 font-semibold';
+            newEntry.textContent = message;
+            
+            testLog.appendChild(newEntry);
+            
+            // 测试localStorage
+            testLocalStorage();
+        }
+        
+        // 测试localStorage功能
+        function testLocalStorage() {
+            const testLog = document.getElementById('testLog');
+            
+            try {
+                if (typeof(Storage) !== "undefined" && window.localStorage) {
+                    localStorage.setItem('test', 'success');
+                    const result = localStorage.getItem('test');
+                    localStorage.removeItem('test');
+                    
+                    const message = `✅ localStorage测试成功: ${result}`;
+                    console.log(message);
+                    
+                    const newEntry = document.createElement('div');
+                    newEntry.className = 'text-blue-600';
+                    newEntry.textContent = message;
+                    testLog.appendChild(newEntry);
+                } else {
+                    throw new Error('localStorage不可用');
+                }
+            } catch (error) {
+                const message = `⚠️ localStorage测试失败: ${error.message}`;
+                console.log(message);
+                
+                const newEntry = document.createElement('div');
+                newEntry.className = 'text-orange-600';
+                newEntry.textContent = message;
+                testLog.appendChild(newEntry);
+            }
+        }
+        
+        // 添加备用点击事件监听器
+        document.addEventListener('click', function(e) {
+            if (e.target.closest('.subject-card')) {
+                const subjectName = e.target.closest('.subject-card').dataset.subject;
+                const timestamp = new Date().toLocaleTimeString();
+                const message = `[${timestamp}] 🔧 备用事件监听器触发: ${subjectName}`;
+                
+                console.log(message);
+                
+                const testLog = document.getElementById('testLog');
+                const newEntry = document.createElement('div');
+                newEntry.className = 'text-purple-600';
+                newEntry.textContent = message;
+                testLog.appendChild(newEntry);
+            }
+        });
+        
+        // 页面加载完成后的测试
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 测试页面加载完成');
+            
+            const testLog = document.getElementById('testLog');
+            testLog.innerHTML = '<div class="text-blue-600">📋 测试环境已就绪，请点击上方的学科卡片进行测试</div>';
+            
+            // 检查环境
+            const checks = [
+                `✅ document.addEventListener: ${typeof document.addEventListener === 'function'}`,
+                `✅ querySelector支持: ${typeof document.querySelector === 'function'}`,
+                `✅ localStorage检查: ${typeof Storage !== "undefined"}`,
+                `✅ 学科卡片数量: ${document.querySelectorAll('.subject-card').length}`
+            ];
+            
+            checks.forEach(check => {
+                const entry = document.createElement('div');
+                entry.className = 'text-gray-600 text-xs';
+                entry.textContent = check;
+                testLog.appendChild(entry);
+            });
+        });
+    </script>
+</body>
+</html>

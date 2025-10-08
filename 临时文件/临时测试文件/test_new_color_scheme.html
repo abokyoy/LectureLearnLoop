@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新颜色方案测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">熟练度颜色方案测试</h1>
+        
+        <!-- 颜色方案展示 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">新颜色方案预览</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- 未评估 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #E5E7EB; color: #374151;">
+                    <div class="font-bold">未评估 (-1)</div>
+                    <div class="text-sm">#E5E7EB</div>
+                    <div class="text-xs">浅灰色</div>
+                </div>
+                
+                <!-- 0-10分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #FFF7ED; color: #374151;">
+                    <div class="font-bold">初学者 (0-10)</div>
+                    <div class="text-sm">#FFF7ED</div>
+                    <div class="text-xs">极浅橙色</div>
+                </div>
+                
+                <!-- 10-20分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #FFEDD5; color: #374151;">
+                    <div class="font-bold">入门级 (10-20)</div>
+                    <div class="text-sm">#FFEDD5</div>
+                    <div class="text-xs">淡桃色</div>
+                </div>
+                
+                <!-- 20-30分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #FED7AA; color: #374151;">
+                    <div class="font-bold">基础级 (20-30)</div>
+                    <div class="text-sm">#FED7AA</div>
+                    <div class="text-xs">浅杏色</div>
+                </div>
+                
+                <!-- 30-40分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #FDBA74; color: #374151;">
+                    <div class="font-bold">进步级 (30-40)</div>
+                    <div class="text-sm">#FDBA74</div>
+                    <div class="text-xs">明显橙色</div>
+                </div>
+                
+                <!-- 40-50分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #FB923C; color: #FFFFFF;">
+                    <div class="font-bold">一般级 (40-50)</div>
+                    <div class="text-sm">#FB923C</div>
+                    <div class="text-xs">鲜明橙色</div>
+                </div>
+                
+                <!-- 50-60分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #F97316; color: #FFFFFF;">
+                    <div class="font-bold">中等级 (50-60)</div>
+                    <div class="text-sm">#F97316</div>
+                    <div class="text-xs">浓郁橙色</div>
+                </div>
+                
+                <!-- 60-70分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #EA580C; color: #FFFFFF;">
+                    <div class="font-bold">良好级 (60-70)</div>
+                    <div class="text-sm">#EA580C</div>
+                    <div class="text-xs">深红橙</div>
+                </div>
+                
+                <!-- 70-80分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #DC2626; color: #FFFFFF;">
+                    <div class="font-bold">熟练级 (70-80)</div>
+                    <div class="text-sm">#DC2626</div>
+                    <div class="text-xs">橙红色</div>
+                </div>
+                
+                <!-- 80-90分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #B91C1C; color: #FFFFFF;">
+                    <div class="font-bold">精通级 (80-90)</div>
+                    <div class="text-sm">#B91C1C</div>
+                    <div class="text-xs">深红色</div>
+                </div>
+                
+                <!-- 90-100分 -->
+                <div class="border rounded-lg p-4 text-center" style="background-color: #991B1B; color: #FFFFFF;">
+                    <div class="font-bold">专家级 (90-100)</div>
+                    <div class="text-sm">#991B1B</div>
+                    <div class="text-xs">深酒红</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 模拟知识点节点 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">模拟知识点节点效果</h2>
+            
+            <div class="flex flex-wrap gap-4 justify-center">
+                <!-- 过拟合节点 (55分) -->
+                <div class="relative">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-xs font-bold text-center" 
+                         style="background-color: #F97316; color: #FFFFFF;">
+                        过拟合<br>(55分)
+                    </div>
+                    <div class="text-center text-xs mt-2">浓郁橙色</div>
+                </div>
+                
+                <!-- 未评估节点 -->
+                <div class="relative">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-xs font-bold text-center" 
+                         style="background-color: #E5E7EB; color: #374151;">
+                        未评估<br>(-1)
+                    </div>
+                    <div class="text-center text-xs mt-2">浅灰色</div>
+                </div>
+                
+                <!-- 初学者节点 (15分) -->
+                <div class="relative">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-xs font-bold text-center" 
+                         style="background-color: #FFEDD5; color: #374151;">
+                        初学者<br>(15分)
+                    </div>
+                    <div class="text-center text-xs mt-2">淡桃色</div>
+                </div>
+                
+                <!-- 专家级节点 (95分) -->
+                <div class="relative">
+                    <div class="w-20 h-20 rounded-full flex items-center justify-center text-xs font-bold text-center" 
+                         style="background-color: #991B1B; color: #FFFFFF;">
+                        专家级<br>(95分)
+                    </div>
+                    <div class="text-center text-xs mt-2">深酒红</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 颜色函数测试 -->
+        <div class="bg-white rounded-lg p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">JavaScript函数测试</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="font-semibold mb-2">输入熟练度分数测试：</h3>
+                    <input type="number" id="scoreInput" class="border rounded px-3 py-2 w-full" 
+                           placeholder="输入0-100的分数" min="-1" max="100" value="55">
+                    <button onclick="testColor()" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        测试颜色
+                    </button>
+                </div>
+                
+                <div>
+                    <h3 class="font-semibold mb-2">测试结果：</h3>
+                    <div id="testResult" class="border rounded p-4 min-h-20">
+                        点击"测试颜色"查看结果
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 复制系统中的颜色函数
+        function getKnowledgePointColor(masteryScore) {
+            // 如果是-1或未定义，返回浅灰色（未评估）
+            if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
+                return '#E5E7EB'; // 浅灰色
+            }
+            
+            // 将熟练度分数(0-100)映射到颜色深度
+            const score = Math.max(0, Math.min(100, masteryScore));
+            
+            // 定义颜色梯度：从极浅橙色到深酒红色，每10分一个等级
+            const colors = [
+                '#FFF7ED', // 0-10分：极浅橙色，接近白色
+                '#FFEDD5', // 10-20分：很浅橙色，淡桃色
+                '#FED7AA', // 20-30分：浅橙色，浅杏色
+                '#FDBA74', // 30-40分：中浅橙色，明显橙色
+                '#FB923C', // 40-50分：标准橙色，鲜明橙色
+                '#F97316', // 50-60分：深橙色，浓郁橙色
+                '#EA580C', // 60-70分：很深橙色，深红橙
+                '#DC2626', // 70-80分：橙红色，偏红的橙
+                '#B91C1C', // 80-90分：深红橙色，深红色
+                '#991B1B'  // 90-100分：最深红橙，深酒红
+            ];
+            
+            // 计算颜色索引
+            const colorIndex = Math.floor(score / 10);
+            const adjustedIndex = Math.min(colorIndex, colors.length - 1);
+            
+            return colors[adjustedIndex];
+        }
+        
+        function getTextColor(masteryScore) {
+            if (masteryScore === -1 || masteryScore === null || masteryScore === undefined || masteryScore < 40) {
+                return '#374151'; // 深灰色文字
+            } else {
+                return '#FFFFFF'; // 白色文字
+            }
+        }
+        
+        function testColor() {
+            const score = parseInt(document.getElementById('scoreInput').value);
+            const bgColor = getKnowledgePointColor(score);
+            const textColor = getTextColor(score);
+            
+            const resultDiv = document.getElementById('testResult');
+            resultDiv.style.backgroundColor = bgColor;
+            resultDiv.style.color = textColor;
+            resultDiv.innerHTML = `
+                <div class="font-bold">熟练度: ${score}</div>
+                <div class="text-sm">背景色: ${bgColor}</div>
+                <div class="text-sm">文字色: ${textColor}</div>
+                <div class="text-xs mt-2">这是文字显示效果测试</div>
+            `;
+        }
+        
+        // 页面加载时测试过拟合节点
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('scoreInput').value = 55;
+            testColor();
+        });
+    </script>
+</body>
+</html>

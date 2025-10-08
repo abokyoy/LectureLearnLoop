@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>箭头显示测试</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .container {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        h2 {
+            color: #333;
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏹 箭头显示测试页面</h1>
+    
+    <div class="container">
+        <h2>测试1: 简单箭头</h2>
+        <svg id="test1" width="400" height="200"></svg>
+    </div>
+    
+    <div class="container">
+        <h2>测试2: 带文字的箭头</h2>
+        <svg id="test2" width="400" height="200"></svg>
+    </div>
+    
+    <div class="container">
+        <h2>测试3: 多个箭头</h2>
+        <svg id="test3" width="600" height="300"></svg>
+    </div>
+
+    <script>
+        // 测试1: 简单箭头
+        function test1() {
+            const svg = d3.select("#test1");
+            
+            // 定义箭头
+            const defs = svg.append("defs");
+            defs.append("marker")
+                .attr("id", "arrow1")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 8)
+                .attr("refY", 0)
+                .attr("markerWidth", 10)
+                .attr("markerHeight", 10)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#3498db");
+            
+            // 绘制连线
+            svg.append("line")
+                .attr("x1", 50)
+                .attr("y1", 100)
+                .attr("x2", 350)
+                .attr("y2", 100)
+                .attr("stroke", "#3498db")
+                .attr("stroke-width", 3)
+                .attr("marker-end", "url(#arrow1)");
+            
+            // 添加文字
+            svg.append("text")
+                .attr("x", 200)
+                .attr("y", 90)
+                .attr("text-anchor", "middle")
+                .style("font-size", "14px")
+                .style("font-weight", "bold")
+                .text("简单箭头测试");
+        }
+        
+        // 测试2: 带文字的箭头
+        function test2() {
+            const svg = d3.select("#test2");
+            
+            // 定义箭头
+            const defs = svg.append("defs");
+            defs.append("marker")
+                .attr("id", "arrow2")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 8)
+                .attr("refY", 0)
+                .attr("markerWidth", 10)
+                .attr("markerHeight", 10)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#3498db");
+            
+            // 绘制圆圈
+            svg.append("circle")
+                .attr("cx", 80)
+                .attr("cy", 100)
+                .attr("r", 30)
+                .attr("fill", "#3B82F6")
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 2);
+            
+            svg.append("circle")
+                .attr("cx", 320)
+                .attr("cy", 100)
+                .attr("r", 25)
+                .attr("fill", "#10B981")
+                .attr("stroke", "#fff")
+                .attr("stroke-width", 2);
+            
+            // 绘制连线（从圆圈边缘到圆圈边缘）
+            svg.append("line")
+                .attr("x1", 110) // 80 + 30
+                .attr("y1", 100)
+                .attr("x2", 295) // 320 - 25
+                .attr("y2", 100)
+                .attr("stroke", "#3498db")
+                .attr("stroke-width", 3)
+                .attr("marker-end", "url(#arrow2)");
+            
+            // 添加关系文字
+            svg.append("text")
+                .attr("x", 200)
+                .attr("y", 90)
+                .attr("text-anchor", "middle")
+                .style("font-size", "12px")
+                .style("font-weight", "bold")
+                .style("fill", "#555")
+                .text("包含");
+            
+            // 节点文字
+            svg.append("text")
+                .attr("x", 80)
+                .attr("y", 105)
+                .attr("text-anchor", "middle")
+                .style("font-size", "12px")
+                .style("fill", "white")
+                .style("font-weight", "bold")
+                .text("学科");
+            
+            svg.append("text")
+                .attr("x", 320)
+                .attr("y", 105)
+                .attr("text-anchor", "middle")
+                .style("font-size", "11px")
+                .style("fill", "white")
+                .style("font-weight", "bold")
+                .text("分类");
+        }
+        
+        // 测试3: 多个箭头
+        function test3() {
+            const svg = d3.select("#test3");
+            
+            // 定义箭头
+            const defs = svg.append("defs");
+            defs.append("marker")
+                .attr("id", "arrow3")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 8)
+                .attr("refY", 0)
+                .attr("markerWidth", 10)
+                .attr("markerHeight", 10)
+                .attr("orient", "auto")
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#3498db");
+            
+            // 节点数据
+            const nodes = [
+                { id: 'center', x: 300, y: 150, r: 40, color: '#3B82F6', text: '数学' },
+                { id: 'cat1', x: 150, y: 80, r: 30, color: '#10B981', text: '代数' },
+                { id: 'cat2', x: 450, y: 80, r: 30, color: '#10B981', text: '几何' },
+                { id: 'kp1', x: 100, y: 220, r: 25, color: '#F59E0B', text: '方程' },
+                { id: 'kp2', x: 200, y: 220, r: 25, color: '#F59E0B', text: '函数' }
+            ];
+            
+            // 连线数据
+            const edges = [
+                { source: nodes[0], target: nodes[1], relation: '包含' },
+                { source: nodes[0], target: nodes[2], relation: '包含' },
+                { source: nodes[1], target: nodes[3], relation: '细分为' },
+                { source: nodes[1], target: nodes[4], relation: '细分为' }
+            ];
+            
+            // 绘制连线
+            edges.forEach(edge => {
+                const dx = edge.target.x - edge.source.x;
+                const dy = edge.target.y - edge.source.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                const x1 = edge.source.x + (dx / distance) * edge.source.r;
+                const y1 = edge.source.y + (dy / distance) * edge.source.r;
+                const x2 = edge.target.x - (dx / distance) * edge.target.r;
+                const y2 = edge.target.y - (dy / distance) * edge.target.r;
+                
+                svg.append("line")
+                    .attr("x1", x1)
+                    .attr("y1", y1)
+                    .attr("x2", x2)
+                    .attr("y2", y2)
+                    .attr("stroke", "#3498db")
+                    .attr("stroke-width", 3)
+                    .attr("marker-end", "url(#arrow3)");
+                
+                // 关系文字
+                svg.append("text")
+                    .attr("x", (edge.source.x + edge.target.x) / 2)
+                    .attr("y", (edge.source.y + edge.target.y) / 2 - 5)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "10px")
+                    .style("font-weight", "bold")
+                    .style("fill", "#555")
+                    .text(edge.relation);
+            });
+            
+            // 绘制节点
+            nodes.forEach(node => {
+                svg.append("circle")
+                    .attr("cx", node.x)
+                    .attr("cy", node.y)
+                    .attr("r", node.r)
+                    .attr("fill", node.color)
+                    .attr("stroke", "#fff")
+                    .attr("stroke-width", 2);
+                
+                svg.append("text")
+                    .attr("x", node.x)
+                    .attr("y", node.y + 4)
+                    .attr("text-anchor", "middle")
+                    .style("font-size", "12px")
+                    .style("fill", "white")
+                    .style("font-weight", "bold")
+                    .text(node.text);
+            });
+        }
+        
+        // 运行所有测试
+        test1();
+        test2();
+        test3();
+        
+        console.log("✅ 箭头测试页面加载完成");
+    </script>
+</body>
+</html>

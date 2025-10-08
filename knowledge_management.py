@@ -152,6 +152,34 @@ class DatabaseManager:
             )
         ''')
         
+        # 知识脑图表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS knowledge_mindmaps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                subject_name TEXT NOT NULL,
+                mindmap_data TEXT NOT NULL,
+                version INTEGER DEFAULT 1,
+                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, subject_name)
+            )
+        ''')
+        
+        # 学习路径图表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS learning_paths (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                subject_name TEXT NOT NULL,
+                path_data TEXT NOT NULL,
+                version INTEGER DEFAULT 1,
+                created_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, subject_name)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -282,6 +310,18 @@ class KnowledgePointManager:
                 except Exception as ollama_error:
                     print(f"[LLM调用] Ollama API也失败: {ollama_error}")
                     return self._extract_with_rules(subject_name, note_content)
+        elif llm_provider == "Qwen":
+            print(f"[模型选择] 使用Qwen模型: {self.config.get('qwen_model', 'qwen-flash')}")
+            try:
+                return self._extract_with_qwen(prompt)
+            except Exception as qwen_error:
+                print(f"[LLM调用] Qwen API失败: {qwen_error}")
+                print(f"[模型选择] Qwen失败，尝试Ollama作为备用")
+                try:
+                    return self._extract_with_ollama(prompt)
+                except Exception as ollama_error:
+                    print(f"[LLM调用] Ollama API也失败: {ollama_error}")
+                    return self._extract_with_rules(subject_name, note_content)
         else:
             print(f"[模型选择] 使用Ollama模型: {self.config.get('ollama_model', 'deepseek-coder')}")
             try:
@@ -302,8 +342,8 @@ class KnowledgePointManager:
             api_key = self.config.get("deepseek_api_key", "")
             if not api_key:
                 error_msg = "未配置DeepSeek API密钥"
-                from llm_logger import log_ollama_call
-                log_ollama_call("extract_knowledge_points", "deepseek-chat", prompt, error=error_msg)
+                from llm_logger import log_deepseek_call
+                log_deepseek_call("extract_knowledge_points", "deepseek-chat", prompt, error=error_msg)
                 raise Exception(error_msg)
             
             # 使用用户配置的DeepSeek模型
@@ -345,16 +385,16 @@ class KnowledgePointManager:
                 print(f"[LLM调用] DeepSeek原始响应内容: {content[:500]}...")
                 
                 # 记录成功的API调用
-                from llm_logger import log_ollama_call
-                log_ollama_call("extract_knowledge_points", deepseek_model, prompt, content, response_time=response_time)
+                from llm_logger import log_deepseek_call
+                log_deepseek_call("extract_knowledge_points", deepseek_model, prompt, content, response_time=response_time)
                 
                 # 解析JSON响应
                 return self._parse_json_response(content)
                 
             else:
                 error_msg = f"DeepSeek API调用失败: {response.status_code} - {response.text}"
-                from llm_logger import log_ollama_call
-                log_ollama_call("extract_knowledge_points", deepseek_model, prompt, error=error_msg, response_time=response_time)
+                from llm_logger import log_deepseek_call
+                log_deepseek_call("extract_knowledge_points", deepseek_model, prompt, error=error_msg, response_time=response_time)
                 raise Exception(error_msg)
                 
         except Exception as e:
@@ -543,6 +583,130 @@ class KnowledgePointManager:
             error_msg = f"Ollama API调用失败: {e}"
             print(f"[LLM调用] {error_msg}")
             raise Exception(error_msg)
+    
+    def _extract_with_qwen(self, prompt: str) -> List[Dict]:
+        """使用Qwen API提取知识点"""
+        try:
+            # 调用Qwen API
+            api_key = self.config.get("qwen_api_key", "")
+            if not api_key:
+                error_msg = "未配置Qwen API密钥"
+                from llm_logger import log_qwen_call
+                log_qwen_call("extract_knowledge_points", "qwen-flash", prompt, error=error_msg)
+                raise Exception(error_msg)
+            
+            # 使用用户配置的Qwen模型
+            qwen_model = self.config.get("qwen_model", "qwen-flash")
+            url = self.config.get("qwen_api_url", "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
+            print(f"[模型调用] 实际调用的Qwen模型: {qwen_model}")
+            
+            payload = {
+                "model": qwen_model,
+                "input": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ]
+                },
+                "parameters": {
+                    "temperature": 0.3,
+                    "top_p": 0.9,
+                    "max_tokens": 2048
+                }
+            }
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            start_time = time.time()
+            
+            # 记录请求开始
+            print(f"[LLM调用] 开始调用Qwen API提取知识点")
+            print(f"[LLM调用] 输入prompt长度: {len(prompt)}")
+            print(f"[LLM调用] 输入内容: {prompt[:500]}...")
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=30)
+            response_time = time.time() - start_time
+            
+            print(f"[LLM调用] Qwen响应状态码: {response.status_code}")
+            print(f"[LLM调用] 响应时间: {response_time:.2f}秒")
+            
+            if response.status_code == 200:
+                response_data = response.json()
+                print(f"[LLM调用] Qwen原始响应: {response_data}")
+                
+                # 提取响应内容
+                if "output" in response_data and "text" in response_data["output"]:
+                    content = response_data["output"]["text"]
+                elif "output" in response_data and "choices" in response_data["output"] and len(response_data["output"]["choices"]) > 0:
+                    content = response_data["output"]["choices"][0].get("message", {}).get("content", "")
+                else:
+                    content = str(response_data)
+                
+                print(f"[LLM调用] Qwen提取的内容长度: {len(content)}")
+                print(f"[LLM调用] Qwen原始响应内容: {content[:500]}...")
+                
+                # 记录成功的API调用
+                from llm_logger import log_qwen_call
+                log_qwen_call("extract_knowledge_points", qwen_model, prompt, content, response_time=response_time)
+                
+                # 解析JSON响应
+                return self._parse_json_response(content)
+                
+            else:
+                error_msg = f"Qwen API调用失败: {response.status_code} - {response.text}"
+                from llm_logger import log_qwen_call
+                log_qwen_call("extract_knowledge_points", qwen_model, prompt, error=error_msg, response_time=response_time)
+                raise Exception(error_msg)
+                
+        except Exception as e:
+            print(f"[LLM调用] Qwen API调用异常: {e}")
+            raise
+    
+    def _parse_json_response(self, content: str) -> List[Dict]:
+        """解析LLM返回的JSON响应"""
+        try:
+            # 清理响应内容，移除可能的markdown代码块标记
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            content = content.strip()
+            
+            # 解析JSON
+            concepts = json.loads(content)
+            print(f"[LLM调用] 解析成功，提取到 {len(concepts)} 个核心概念")
+            
+            # 转换为统一的数据格式
+            formatted_concepts = []
+            for concept in concepts:
+                if isinstance(concept, dict):
+                    formatted_concept = {
+                        "point_name": concept.get("concept_name", ""),
+                        "core_description": concept.get("core_definition", ""),
+                        "category": concept.get("category", ""),
+                        "importance": concept.get("importance", "中等")
+                    }
+                    formatted_concepts.append(formatted_concept)
+            
+            return formatted_concepts
+            
+        except json.JSONDecodeError as e:
+            print(f"[LLM调用] JSON解析失败: {e}")
+            print(f"[LLM调用] 原始内容: {content[:500]}...")
+            # 返回空列表而不是抛出异常，避免整个流程失败
+            return []
+        except Exception as e:
+            print(f"[LLM调用] 响应解析异常: {e}")
+            return []
     
     def _extract_with_rules(self, subject_name: str, note_content: str) -> List[Dict]:
         """基于规则的知识点提取（兜底方案）"""
@@ -778,9 +942,9 @@ class KnowledgePointManager:
         
         cursor.execute(
             """INSERT INTO knowledge_points 
-               (user_id, subject_name, point_name, core_description) 
-               VALUES (?, ?, ?, ?)""",
-            (user_id, subject_name, point_name, core_description)
+               (user_id, subject_name, point_name, core_description, mastery_score) 
+               VALUES (?, ?, ?, ?, ?)""",
+            (user_id, subject_name, point_name, core_description, -1)
         )
         
         point_id = cursor.lastrowid
@@ -1539,6 +1703,7 @@ class KnowledgeManagementSystem:
         self.practice_manager = PracticeRecordManager(self.db_manager)
         self.error_manager = ErrorQuestionManager(self.db_manager, config)
         self.favorite_manager = FavoriteQuestionManager(self.db_manager)
+        self.mindmap_manager = MindmapManager(self.db_manager, config)
 
     def update_config(self, new_config: dict):
         """更新配置并下发至子管理器（用于动态切换LLM提供商等）"""
@@ -1637,6 +1802,134 @@ class KnowledgeManagementSystem:
         """添加新学科"""
         return self.subject_manager.add_subject(subject_name)
     
+    # ---- 科目管理API ----
+    def create_subject(self, subject_name: str) -> bool:
+        """创建新科目"""
+        return self.subject_manager.add_subject(subject_name)
+    
+    def update_subject_name(self, old_name: str, new_name: str) -> bool:
+        """更新科目名称"""
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 更新用户学科表
+            cursor.execute(
+                "UPDATE user_subjects SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新知识点表
+            cursor.execute(
+                "UPDATE knowledge_points SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新练习记录表
+            cursor.execute(
+                "UPDATE practice_records SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新错题表
+            cursor.execute(
+                "UPDATE error_questions SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新收藏题目表
+            cursor.execute(
+                "UPDATE favorite_questions SET subject_name = ? WHERE subject_name = ? AND user_id = ?",
+                (new_name, old_name, "0001")
+            )
+            
+            # 更新脑图缓存表
+            cursor.execute(
+                "UPDATE knowledge_mindmaps SET subject_name = ? WHERE subject_name = ?",
+                (new_name, old_name)
+            )
+            
+            # 更新学习路径缓存表
+            cursor.execute(
+                "UPDATE learning_paths SET subject_name = ? WHERE subject_name = ?",
+                (new_name, old_name)
+            )
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"更新科目名称失败: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            return False
+    
+    def delete_subject(self, subject_name: str) -> bool:
+        """删除科目（仅当知识点数量为0时）"""
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 检查是否有知识点
+            cursor.execute(
+                "SELECT COUNT(*) FROM knowledge_points WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            kp_count = cursor.fetchone()[0]
+            
+            if kp_count > 0:
+                conn.close()
+                return False  # 有知识点，不能删除
+            
+            # 删除相关记录
+            cursor.execute(
+                "DELETE FROM user_subjects WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除练习记录
+            cursor.execute(
+                "DELETE FROM practice_records WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除错题记录
+            cursor.execute(
+                "DELETE FROM error_questions WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除收藏题目
+            cursor.execute(
+                "DELETE FROM favorite_questions WHERE subject_name = ? AND user_id = ?",
+                (subject_name, "0001")
+            )
+            
+            # 删除脑图缓存
+            cursor.execute(
+                "DELETE FROM knowledge_mindmaps WHERE subject_name = ?",
+                (subject_name,)
+            )
+            
+            # 删除学习路径缓存
+            cursor.execute(
+                "DELETE FROM learning_paths WHERE subject_name = ?",
+                (subject_name,)
+            )
+            
+            conn.commit()
+            conn.close()
+            return True
+            
+        except Exception as e:
+            print(f"删除科目失败: {e}")
+            if conn:
+                conn.rollback()
+                conn.close()
+            return False
+    
     # ---- 题库管理支持API ----
     def get_subject_stats(self) -> List[Dict]:
         """返回每个学科的知识点数量与错题/收藏数量: [{subject_name, kp_count, error_count, favorite_count}]"""
@@ -1651,8 +1944,11 @@ class KnowledgeManagementSystem:
         # 收藏数量
         cursor.execute("SELECT subject_name, COUNT(*) FROM favorite_questions GROUP BY subject_name")
         fav_map = {row[0]: row[1] for row in cursor.fetchall()}
-        # 所有学科
-        subjects = set(kp_map) | set(err_map) | set(fav_map)
+        # 用户创建的所有科目（包括没有知识点的）
+        cursor.execute("SELECT DISTINCT subject_name FROM user_subjects")
+        user_subjects = {row[0] for row in cursor.fetchall()}
+        # 所有学科（包括用户创建的科目）
+        subjects = set(kp_map) | set(err_map) | set(fav_map) | user_subjects
         result = []
         for s in sorted(subjects):
             result.append({
@@ -1986,3 +2282,791 @@ class KnowledgeManagementSystem:
         return self.error_manager.generate_targeted_questions(
             subject_name, knowledge_point_id, count, reference_text=reference_text
         )
+    
+    # ---- 知识脑图相关方法 ----
+    def get_mindmap(self, subject_name: str) -> Optional[Dict]:
+        """获取学科的知识脑图"""
+        return self.mindmap_manager.get_mindmap(subject_name)
+    
+    def generate_or_get_mindmap(self, subject_name: str) -> Optional[Dict]:
+        """生成或获取学科的知识脑图（带缓存优化）"""
+        print(f"🔍 检查学科 '{subject_name}' 的脑图缓存...")
+        
+        # 首先尝试获取现有脑图缓存
+        existing_mindmap = self.mindmap_manager.get_mindmap(subject_name)
+        if existing_mindmap:
+            print(f"✅ 找到缓存脑图 - 版本: {existing_mindmap.get('version', 1)}, 更新时间: {existing_mindmap.get('updated_time', 'unknown')}")
+            return existing_mindmap
+        
+        print(f"❌ 未找到缓存，开始生成新脑图...")
+        
+        # 获取知识点数据
+        knowledge_points = self.get_knowledge_points_by_subject(subject_name)
+        if not knowledge_points:
+            print(f"⚠️ 学科 '{subject_name}' 没有知识点数据")
+            return None
+        
+        print(f"📊 找到 {len(knowledge_points)} 个知识点，调用LLM生成脑图...")
+        
+        # 使用LLM生成脑图
+        mindmap_data = self.mindmap_manager.generate_mindmap_with_llm(subject_name, knowledge_points)
+        if mindmap_data:
+            print(f"🎯 LLM生成成功，保存到缓存...")
+            # 保存生成的脑图到缓存
+            save_success = self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+            if save_success:
+                print(f"💾 脑图缓存保存成功")
+            else:
+                print(f"⚠️ 脑图缓存保存失败")
+            
+            return {
+                "data": mindmap_data,
+                "version": 1,
+                "updated_time": datetime.now().isoformat(),
+                "cache_status": "newly_generated"
+            }
+        else:
+            print(f"❌ LLM生成脑图失败")
+            return None
+    
+    def save_mindmap(self, subject_name: str, mindmap_data: Dict) -> bool:
+        """保存知识脑图"""
+        return self.mindmap_manager.save_mindmap(subject_name, mindmap_data)
+    
+    def clear_mindmap_cache(self, subject_name: str) -> bool:
+        """清除学科的脑图缓存"""
+        print(f"🗑️ 开始清除学科 '{subject_name}' 的脑图缓存...")
+        return self.mindmap_manager.clear_mindmap_cache(subject_name)
+    
+    # ---- 学习路径相关方法 ----
+    def get_or_generate_learning_path(self, subject_name: str) -> Optional[Dict]:
+        """获取或生成学科的学习路径图"""
+        return self.mindmap_manager.get_or_generate_learning_path(subject_name)
+    
+    def clear_learning_path_cache(self, subject_name: str) -> bool:
+        """清除学科的学习路径缓存"""
+        return self.mindmap_manager.clear_learning_path_cache(subject_name)
+
+
+class MindmapManager:
+    """知识脑图管理器"""
+    
+    def __init__(self, db_manager: DatabaseManager, config: Dict):
+        self.db_manager = db_manager
+        self.config = config
+    
+    def get_mindmap(self, subject_name: str, user_id: str = "0001") -> Optional[Dict]:
+        """获取学科的知识脑图（从缓存）"""
+        print(f"🔍 从数据库查询学科 '{subject_name}' 的脑图缓存...")
+        
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT mindmap_data, version, updated_time FROM knowledge_mindmaps WHERE user_id = ? AND subject_name = ?",
+            (user_id, subject_name)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            try:
+                mindmap_data = json.loads(result[0])
+                cache_info = {
+                    "data": mindmap_data,
+                    "version": result[1],
+                    "updated_time": result[2],
+                    "cache_status": "from_cache"
+                }
+                print(f"✅ 缓存命中 - 版本: {result[1]}, 节点数: {len(mindmap_data.get('nodes', []))}, 更新时间: {result[2]}")
+                return cache_info
+            except json.JSONDecodeError as e:
+                print(f"❌ 缓存数据解析失败: {e}")
+                return None
+        else:
+            print(f"❌ 缓存未命中 - 数据库中没有找到该学科的脑图")
+            return None
+    
+    def save_mindmap(self, subject_name: str, mindmap_data: Dict, user_id: str = "0001") -> bool:
+        """保存知识脑图"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            mindmap_json = json.dumps(mindmap_data, ensure_ascii=False)
+            
+            # 尝试更新现有记录
+            cursor.execute(
+                """UPDATE knowledge_mindmaps 
+                   SET mindmap_data = ?, version = version + 1, updated_time = CURRENT_TIMESTAMP 
+                   WHERE user_id = ? AND subject_name = ?""",
+                (mindmap_json, user_id, subject_name)
+            )
+            
+            # 如果没有更新任何记录，则插入新记录
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    "INSERT INTO knowledge_mindmaps (user_id, subject_name, mindmap_data) VALUES (?, ?, ?)",
+                    (user_id, subject_name, mindmap_json)
+                )
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"保存脑图失败: {e}")
+            conn.close()
+            return False
+    
+    def generate_mindmap_with_llm(self, subject_name: str, knowledge_points: List[Dict]) -> Optional[Dict]:
+        """使用LLM生成知识脑图"""
+        if not knowledge_points:
+            return None
+        
+        # 准备知识点信息，包含ID和名称
+        point_info = []
+        for point in knowledge_points:
+            point_info.append(f"- ID:{point.get('id', 'unknown')} {point.get('point_name', '')}")
+        
+        # 构建LLM提示词
+        prompt = f"""请分析以下{subject_name}学科的知识点，生成一个有向知识关系脑图。
+
+知识点列表：
+{chr(10).join(point_info)}
+
+请按照以下JSON格式返回脑图数据：
+{{
+    "nodes": [
+        {{
+            "id": "center",
+            "name": "{subject_name}",
+            "type": "center",
+            "level": 0,
+            "x": 400,
+            "y": 300
+        }},
+        {{
+            "id": "category_1", 
+            "name": "基础概念",
+            "type": "category",
+            "level": 1,
+            "x": 200,
+            "y": 200
+        }},
+        {{
+            "id": "kp_1",
+            "name": "知识点名称",
+            "type": "knowledge_point",
+            "level": 2,
+            "x": 100,
+            "y": 100
+        }}
+    ],
+    "edges": [
+        {{
+            "source": "center",
+            "target": "category_1",
+            "relation": "包含",
+            "direction": "forward"
+        }},
+        {{
+            "source": "category_1",
+            "target": "kp_1",
+            "relation": "细分为",
+            "direction": "forward"
+        }},
+        {{
+            "source": "kp_1",
+            "target": "kp_2",
+            "relation": "依赖于",
+            "direction": "forward"
+        }}
+    ]
+}}
+
+要求：
+1. 必须包含一个中心节点，id为"center"，name为学科名称，type为"center"
+2. 知识点节点的id必须使用"kp_"前缀加上实际的知识点ID（如kp_1, kp_2等）
+3. 分类节点的id使用"category_"前缀，用于归类相关知识点
+4. 每条边必须包含relation字段，描述两个节点的具体关系
+5. 关系类型要具体化，如：包含、细分为、依赖于、前置条件、应用于、扩展为等
+6. direction字段表示关系方向，"forward"表示从source指向target
+7. 设置合理的坐标位置，形成层次化布局
+8. 分析知识点的逻辑关系，构建有意义的学习路径
+9. 只返回JSON数据，不要其他说明文字"""
+
+        try:
+            # 使用与学习资料相同的方式调用LLM
+            from llm_provider_factory import LLMProviderFactory
+            
+            factory = LLMProviderFactory()
+            llm_provider = factory.get_provider()
+            
+            print(f"📡 调用LLM生成脑图，提示词长度: {len(prompt)}")
+            response = llm_provider.call(prompt)
+            print(f"📝 LLM原始响应: {response[:200]}...")
+            
+            # 解析JSON响应
+            import re
+            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                print(f"🔍 提取的JSON: {json_str[:200]}...")
+                mindmap_data = json.loads(json_str)
+                
+                # 验证数据结构
+                if 'nodes' in mindmap_data and 'edges' in mindmap_data:
+                    print(f"✅ 脑图数据解析成功: {len(mindmap_data['nodes'])}个节点, {len(mindmap_data['edges'])}条边")
+                    
+                    # 将原始知识点的熟练度信息合并到生成的节点中
+                    self._merge_mastery_scores(mindmap_data, knowledge_points)
+                    
+                    return mindmap_data
+                else:
+                    print("❌ 脑图数据缺少必要字段")
+                    return None
+            else:
+                print("❌ LLM响应中未找到有效的JSON数据")
+                print(f"完整响应: {response}")
+                return None
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON解析失败: {e}")
+            print(f"尝试解析的内容: {json_match.group() if 'json_match' in locals() else 'N/A'}")
+            return None
+        except Exception as e:
+            print(f"❌ 生成脑图失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _merge_mastery_scores(self, mindmap_data: Dict, knowledge_points: List[Dict]) -> None:
+        """将原始知识点的熟练度信息合并到脑图节点中"""
+        # 获取知识点数据并构建熟练度映射和名称映射
+        mastery_map = {}
+        name_to_id_map = {}  # 名称到真实ID的映射
+        for point in knowledge_points:
+            point_id = str(point.get('id', ''))
+            point_name = point.get('point_name', '')
+            mastery_score = point.get('mastery_score', -1)
+            mastery_map[point_id] = mastery_score
+            # 同时支持kp_前缀的ID
+            mastery_map[f"kp_{point_id}"] = mastery_score
+            # 建立名称到ID的映射
+            name_to_id_map[point_name] = point_id
+        
+        print(f"🔗 熟练度映射表: {mastery_map}")
+        
+        # 为脑图中的知识点节点添加熟练度信息并修正ID映射
+        nodes_updated = 0
+        old_to_new_id_map = {}  # 记录ID变更映射
+        
+        for node in mindmap_data.get('nodes', []):
+            if node.get('type') == 'knowledge_point':
+                node_id = node.get('id', '')
+                node_name = node.get('name', '')
+                
+                # 首先尝试直接匹配ID
+                if node_id in mastery_map:
+                    node['mastery_score'] = mastery_map[node_id]
+                    nodes_updated += 1
+                    print(f"✅ 节点 {node_id} 熟练度: {mastery_map[node_id]}")
+                # 如果直接匹配失败，尝试通过名称匹配真实ID
+                elif node_name in name_to_id_map:
+                    real_id = name_to_id_map[node_name]
+                    real_mastery = mastery_map.get(real_id, -1)
+                    
+                    # 记录ID变更
+                    old_id = node_id
+                    new_id = f"kp_{real_id}"
+                    old_to_new_id_map[old_id] = new_id
+                    
+                    # 更新节点ID为真实ID
+                    node['id'] = new_id
+                    node['mastery_score'] = real_mastery
+                    nodes_updated += 1
+                    print(f"🔧 节点名称匹配: {node_name} | {old_id} -> {new_id} | 熟练度: {real_mastery}")
+                else:
+                    # 设置默认熟练度
+                    node['mastery_score'] = -1
+                    print(f"⚠️ 节点 {node_id}({node_name}) 未找到匹配，设为默认值 -1")
+        
+        # 更新边的引用
+        edges_updated = 0
+        for edge in mindmap_data.get('edges', []):
+            source_updated = False
+            target_updated = False
+            
+            if edge.get('source') in old_to_new_id_map:
+                old_source = edge['source']
+                edge['source'] = old_to_new_id_map[old_source]
+                source_updated = True
+                
+            if edge.get('target') in old_to_new_id_map:
+                old_target = edge['target']
+                edge['target'] = old_to_new_id_map[old_target]
+                target_updated = True
+                
+            if source_updated or target_updated:
+                edges_updated += 1
+                print(f"🔗 更新边引用: {edge.get('source')} -> {edge.get('target')}")
+        
+        print(f"📊 更新了 {nodes_updated} 个知识点节点，{edges_updated} 条边")
+    
+    def clear_mindmap_cache(self, subject_name: str, user_id: str = "0001") -> bool:
+        """清除学科的脑图缓存"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 先检查是否存在缓存
+            cursor.execute(
+                "SELECT COUNT(*) FROM knowledge_mindmaps WHERE user_id = ? AND subject_name = ?",
+                (user_id, subject_name)
+            )
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                print(f"⚠️ 没有找到需要清除的缓存")
+                conn.close()
+                return False
+            
+            # 删除缓存
+            cursor.execute(
+                "DELETE FROM knowledge_mindmaps WHERE user_id = ? AND subject_name = ?",
+                (user_id, subject_name)
+            )
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                print(f"✅ 成功删除 {deleted_count} 条缓存记录")
+                return True
+            else:
+                print(f"⚠️ 没有删除任何缓存记录")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 清除缓存失败: {e}")
+            conn.close()
+            return False
+    
+    def get_or_generate_learning_path(self, subject_name: str, user_id: str = "0001") -> Optional[Dict]:
+        """获取或生成学科的学习路径图"""
+        print(f"🌳 开始获取/生成学科 '{subject_name}' 的学习路径")
+        
+        # 先尝试从缓存获取
+        cached_path = self._get_cached_learning_path(subject_name, user_id)
+        if cached_path:
+            print(f"✅ 找到缓存学习路径")
+            return cached_path
+        
+        # 缓存不存在，生成新的学习路径
+        print(f"🔍 缓存不存在，开始生成新的学习路径")
+        
+        # 获取学科的所有知识点
+        knowledge_points = self._get_knowledge_points_by_subject(subject_name)
+        if not knowledge_points:
+            print(f"⚠️ 学科 '{subject_name}' 没有知识点，无法生成学习路径")
+            return None
+        
+        print(f"📊 获取到 {len(knowledge_points)} 个知识点")
+        
+        # 使用LLM生成学习路径
+        learning_path_data = self._generate_learning_path_with_llm(subject_name, knowledge_points)
+        if not learning_path_data:
+            print(f"❌ LLM生成学习路径失败")
+            return None
+        
+        # 保存到缓存
+        success = self._save_learning_path_cache(subject_name, learning_path_data, user_id)
+        if success:
+            print(f"✅ 学习路径已保存到缓存")
+        else:
+            print(f"⚠️ 学习路径保存失败，但仍返回生成的数据")
+        
+        return {
+            "data": learning_path_data,
+            "cache_status": "newly_generated",
+            "version": 1,
+            "updated_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    
+    def _get_cached_learning_path(self, subject_name: str, user_id: str = "0001") -> Optional[Dict]:
+        """从缓存获取学习路径"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT path_data, version, updated_time FROM learning_paths WHERE user_id = ? AND subject_name = ?",
+            (user_id, subject_name)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            path_data_json, version, updated_time = result
+            try:
+                path_data = json.loads(path_data_json)
+                return {
+                    "data": path_data,
+                    "cache_status": "from_cache",
+                    "version": version,
+                    "updated_time": updated_time
+                }
+            except json.JSONDecodeError as e:
+                print(f"❌ 学习路径缓存数据解析失败: {e}")
+                return None
+        
+        return None
+    
+    def _generate_learning_path_with_llm(self, subject_name: str, knowledge_points: List[Dict]) -> Optional[Dict]:
+        """使用LLM生成学习路径图"""
+        print(f"🤖 使用LLM生成 '{subject_name}' 的学习路径图")
+        
+        # 构建知识点列表（包含ID信息）
+        kp_list = []
+        kp_id_map = {}  # 保存ID映射关系
+        for i, kp in enumerate(knowledge_points, 1):
+            kp_id = f"kp_{kp['id']}"  # 使用数据库ID生成节点ID
+            kp_info = f"{i}. {kp['point_name']} (ID: {kp_id}): {kp['core_description']}"
+            kp_list.append(kp_info)
+            kp_id_map[kp_id] = kp  # 保存ID到知识点的映射
+        
+        kp_text = "\n".join(kp_list)
+        
+        prompt = f"""作为一名{subject_name}领域的专家教师，请为学生制定一个**详细的线性学习计划**，类似鱼骨图结构。
+
+**学生现有知识点：**
+{kp_text}
+
+**任务要求：**
+1. **设计详细主线**：制定10-20个学习阶段，形成详细的线性路径，每个阶段专注一个具体学习目标
+2. **细化学习进程**：将学习过程分解为更多细粒度的阶段，确保循序渐进
+3. **知识点归类**：将学生的现有知识点归类到相应的学习阶段中
+4. **补充缺失知识**：为每个阶段补充必要的前置知识或核心概念
+5. **鱼骨图结构**：主线是学习阶段，知识点作为每个阶段的子节点
+
+**设计原则：**
+- **详细主线**：设计10-20个学习阶段，确保主线足够长，覆盖完整学习路径
+- **细粒度阶段**：每个阶段专注1-2个核心概念，避免阶段过于宽泛
+- **渐进式学习**：从最基础到最高级，每个阶段都是前一阶段的自然延续
+- **知识归类**：现有知识点必须归属到某个stage
+- **查漏补缺**：为缺少知识点的阶段补充必要内容
+- **鱼骨结构**：主干是阶段，分支是具体知识点
+
+**阶段设计建议：**
+- 基础准备阶段可以分为：数学基础、编程基础、统计基础等多个阶段
+- 核心概念可以分为：监督学习基础、无监督学习基础、深度学习基础等
+- 算法学习可以分为：线性模型、树模型、集成方法、神经网络等多个阶段
+- 实践应用可以分为：数据预处理、模型训练、模型评估、模型部署等阶段
+
+**节点类型说明：**
+- **stage**: 学习阶段（主线节点，如"基础阶段"、"核心阶段"）
+- **existing_kp**: 学生已有知识点（归类到某个阶段下）
+- **supplement_kp**: LLM补充的知识点（填补阶段缺失）
+- **start**: 学习起点
+- **end**: 学习终点
+
+**输出格式：**
+请返回鱼骨图结构的JSON，包含：
+1. 线性主线：start → stage1 → stage2 → ... → end
+2. 知识点分支：每个stage下挂载相关的知识点
+3. 现有知识点归类：标注为existing_kp类型
+4. 补充知识点：标注为supplement_kp类型
+
+JSON格式示例：
+{{
+  "nodes": [
+    {{"id": "start", "name": "开始学习{subject_name}", "type": "start", "level": 0, "description": "学习起点"}},
+    {{"id": "stage1", "name": "基础准备阶段", "type": "stage", "level": 1, "description": "掌握必要的基础知识"}},
+    {{"id": "stage2", "name": "核心概念阶段", "type": "stage", "level": 2, "description": "学习核心理论和方法"}},
+    {{"id": "stage3", "name": "实践应用阶段", "type": "stage", "level": 3, "description": "动手实践和项目应用"}},
+    {{"id": "end", "name": "掌握{subject_name}", "type": "end", "level": 4, "description": "完成学习目标"}},
+    
+    {{"id": "kp_math", "name": "数学基础", "type": "supplement_kp", "level": 1, "parent_stage": "stage1", "description": "LLM补充：线性代数、概率统计"}},
+    {{"id": "kp_123", "name": "现有知识点名称", "type": "existing_kp", "level": 2, "parent_stage": "stage2", "description": "学生已掌握的概念"}},
+    {{"id": "kp_project", "name": "项目实践", "type": "supplement_kp", "level": 3, "parent_stage": "stage3", "description": "LLM补充：综合项目练习"}}
+  ],
+  "edges": [
+    {{"source": "start", "target": "stage1", "relationship": "开始学习"}},
+    {{"source": "stage1", "target": "stage2", "relationship": "进入下一阶段"}},
+    {{"source": "stage2", "target": "stage3", "relationship": "进入下一阶段"}},
+    {{"source": "stage3", "target": "end", "relationship": "完成学习"}},
+    
+    {{"source": "stage1", "target": "kp_math", "relationship": "包含知识点"}},
+    {{"source": "stage2", "target": "kp_123", "relationship": "包含知识点"}},
+    {{"source": "stage3", "target": "kp_project", "relationship": "包含知识点"}}
+  ]
+}}
+
+**重要要求：**
+1. **主线必须线性**：start → stage1 → stage2 → ... → end
+2. **知识点归类**：每个现有知识点必须归属到某个stage
+3. **使用正确ID**：现有知识点必须使用提供的ID（如kp_123），不要自己编造
+4. **补充缺失**：从严谨的学习路径设计角度，必须掌握的知识点必须要补充
+5. **鱼骨结构**：stage是主干，knowledge_point是分支
+6. **只返回JSON**：不要其他说明文字
+
+请确保学习计划具有清晰的线性进阶路径！"""
+
+        try:
+            # 使用LLM提供者工厂（和知识脑图相同的机制）
+            from llm_provider_factory import call_llm
+            
+            response = call_llm(prompt, context="generate_learning_path")
+            
+            if not response:
+                print(f"❌ LLM返回空响应")
+                return None
+            
+            print(f"🤖 LLM原始响应: {response[:500]}...")
+            
+            # 解析JSON响应（和知识脑图相同的解析逻辑）
+            try:
+                # 提取JSON部分
+                json_start = response.find('{')
+                json_end = response.rfind('}') + 1
+                
+                if json_start == -1 or json_end == 0:
+                    print(f"❌ 响应中未找到JSON格式")
+                    return None
+                
+                json_str = response[json_start:json_end]
+                learning_path_data = json.loads(json_str)
+                
+                # 验证数据格式
+                if not self._validate_learning_path_data(learning_path_data):
+                    print(f"❌ 学习路径数据格式验证失败")
+                    return None
+                
+                # 将原始知识点信息合并到生成的节点中
+                self._merge_knowledge_point_info(learning_path_data, knowledge_points, kp_id_map)
+                
+                print(f"✅ 学习路径生成成功: {len(learning_path_data.get('nodes', []))}个节点, {len(learning_path_data.get('edges', []))}条路径")
+                return learning_path_data
+                
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON解析失败: {e}")
+                return None
+                
+        except Exception as e:
+            print(f"❌ LLM调用失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _validate_learning_path_data(self, data: Dict) -> bool:
+        """验证学习路径数据格式"""
+        if not isinstance(data, dict):
+            return False
+        
+        if 'nodes' not in data or 'edges' not in data:
+            return False
+        
+        nodes = data['nodes']
+        edges = data['edges']
+        
+        if not isinstance(nodes, list) or not isinstance(edges, list):
+            return False
+        
+        # 验证节点格式
+        for node in nodes:
+            if not isinstance(node, dict):
+                return False
+            required_fields = ['id', 'name', 'type']
+            if not all(field in node for field in required_fields):
+                return False
+        
+        # 验证边格式
+        for edge in edges:
+            if not isinstance(edge, dict):
+                return False
+            required_fields = ['source', 'target']
+            if not all(field in edge for field in required_fields):
+                return False
+        
+        return True
+    
+    def _save_learning_path_cache(self, subject_name: str, path_data: Dict, user_id: str = "0001") -> bool:
+        """保存学习路径到缓存"""
+        try:
+            conn = self.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            path_json = json.dumps(path_data, ensure_ascii=False)
+            
+            # 尝试更新现有记录
+            cursor.execute(
+                """UPDATE learning_paths 
+                   SET path_data = ?, version = version + 1, updated_time = CURRENT_TIMESTAMP 
+                   WHERE user_id = ? AND subject_name = ?""",
+                (path_json, user_id, subject_name)
+            )
+            
+            # 如果没有更新任何记录，则插入新记录
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    "INSERT INTO learning_paths (user_id, subject_name, path_data) VALUES (?, ?, ?)",
+                    (user_id, subject_name, path_json)
+                )
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"❌ 保存学习路径缓存失败: {e}")
+            return False
+    
+    def clear_learning_path_cache(self, subject_name: str, user_id: str = "0001") -> bool:
+        """清除学科的学习路径缓存"""
+        print(f"🗑️ 开始清除学科 '{subject_name}' 的学习路径缓存...")
+        
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 先检查是否存在缓存
+            cursor.execute(
+                "SELECT COUNT(*) FROM learning_paths WHERE user_id = ? AND subject_name = ?",
+                (user_id, subject_name)
+            )
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                print(f"⚠️ 没有找到学科 '{subject_name}' 的学习路径缓存")
+                conn.close()
+                return False
+            
+            # 删除缓存
+            cursor.execute(
+                "DELETE FROM learning_paths WHERE user_id = ? AND subject_name = ?",
+                (user_id, subject_name)
+            )
+            
+            deleted_count = cursor.rowcount
+            conn.commit()
+            conn.close()
+            
+            if deleted_count > 0:
+                print(f"✅ 成功删除 {deleted_count} 条学习路径缓存记录")
+                return True
+            else:
+                print(f"⚠️ 没有删除任何学习路径缓存记录")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 清除学习路径缓存失败: {e}")
+            conn.close()
+            return False
+    
+    def _get_knowledge_points_by_subject(self, subject_name: str, user_id: str = "0001") -> List[Dict]:
+        """获取学科下的知识点（内部方法）"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT id, point_name, core_description, mastery_score, created_time
+                   FROM knowledge_points
+                   WHERE user_id = ? AND subject_name = ?
+                   ORDER BY created_time DESC""",
+            (user_id, subject_name)
+        )
+        points: List[Dict] = []
+        for row in cursor.fetchall():
+            points.append({
+                "id": row[0],
+                "point_name": row[1],
+                "core_description": row[2],
+                "mastery_score": row[3],
+                "created_time": row[4]
+            })
+        conn.close()
+        return points
+    
+    def _merge_knowledge_point_info(self, learning_path_data: Dict, knowledge_points: List[Dict], kp_id_map: Dict) -> None:
+        """将原始知识点信息合并到学习路径节点中"""
+        print(f"📊 开始合并知识点信息，共有{len(kp_id_map)}个已有知识点")
+        merged_count = 0
+        
+        # 更新学习路径中的知识点节点
+        for node in learning_path_data.get('nodes', []):
+            # 处理已有知识点和补充知识点
+            if node.get('type') in ['existing_kp', 'supplement_kp', 'knowledge_point']:
+                node_id = node.get('id', '')
+                node_name = node.get('name', '')
+                print(f"🔍 处理节点: {node_name} (ID: {node_id}, 类型: {node.get('type')})")
+                
+                # 优先通过ID匹配
+                if node_id in kp_id_map:
+                    kp_info = kp_id_map[node_id]
+                    # 保存原始类型
+                    original_type = node.get('type')
+                    # 更新节点信息
+                    node['original_kp_id'] = kp_info.get('id')
+                    node['mastery_score'] = kp_info.get('mastery_score', 50)
+                    node['point_name'] = kp_info.get('point_name')
+                    if not node.get('description') or len(node.get('description', '')) < 20:
+                        node['description'] = kp_info.get('core_description', '')[:100]
+                    
+                    # 如果是LLM补充的知识点，保持其supplement_kp类型，但添加标记
+                    if original_type == 'supplement_kp':
+                        node['is_llm_supplement'] = True
+                        print(f"  ✅ ID匹配成功(LLM补充): {node_name} (ID: {node_id}) → 保持淡绿色显示")
+                    else:
+                        print(f"  ✅ ID匹配成功: {node_name} (ID: {node_id}) → 熟练度: {kp_info.get('mastery_score', 50)}")
+                    merged_count += 1
+                else:
+                    # 如果ID匹配失败，尝试名称匹配（兼容性）
+                    matched = False
+                    for kp_id, kp_info in kp_id_map.items():
+                        kp_name = kp_info.get('point_name', '')
+                        
+                        # 清理特殊字符的函数
+                        def clean_text(text):
+                            import re
+                            # 移除常见特殊字符：反引号、斜杠、空格等
+                            cleaned = re.sub(r'[`/\s\-_()（）【】\[\]{}]', '', text.lower())
+                            return cleaned
+                        
+                        # 清理后的文本进行匹配
+                        clean_kp_name = clean_text(kp_name)
+                        clean_node_name = clean_text(node_name)
+                        
+                        # 多种匹配策略
+                        if (kp_name.lower() in node_name.lower() or 
+                            node_name.lower() in kp_name.lower() or
+                            clean_kp_name in clean_node_name or
+                            clean_node_name in clean_kp_name or
+                            kp_name.replace(' ', '').lower() in node_name.replace(' ', '').lower()):
+                            
+                            # 保存原始类型
+                            original_type = node.get('type')
+                            # 更新节点信息
+                            node['original_kp_id'] = kp_info.get('id')
+                            node['mastery_score'] = kp_info.get('mastery_score', 50)
+                            node['point_name'] = kp_info.get('point_name')
+                            if not node.get('description') or len(node.get('description', '')) < 20:
+                                node['description'] = kp_info.get('core_description', '')[:100]
+                            
+                            # 如果是LLM补充的知识点，保持其supplement_kp类型，但添加标记
+                            if original_type == 'supplement_kp':
+                                node['is_llm_supplement'] = True
+                                print(f"  ✅ 名称匹配成功(LLM补充): {node_name} → {kp_name} → 保持淡绿色显示")
+                            else:
+                                print(f"  ✅ 名称匹配成功: {node_name} → {kp_name} (熟练度: {kp_info.get('mastery_score', 50)})")
+                            merged_count += 1
+                            matched = True
+                            break
+                    
+                    if not matched:
+                        # 对于已有知识点类型但没有匹配到的，设置默认熟练度
+                        if node.get('type') == 'existing_kp':
+                            node['mastery_score'] = 50  # 默认中等熟练度
+                            print(f"  ⚠️ 未匹配到具体信息，设置默认熟练度: {node_name} (熟练度: 50)")
+                        else:
+                            node['mastery_score'] = -1  # 补充知识点默认未评估
+                            print(f"  ℹ️ 补充知识点，设置未评估: {node_name} (熟练度: -1)")
+        
+        print(f"🔗 已合并知识点信息到学习路径节点，成功匹配 {merged_count} 个节点")

@@ -81,7 +81,10 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtCore import Qt, QTimer, QUrl, QThread, Signal, Slot, QObject, QRect, QPoint, QByteArray, QRegularExpression
-from PySide6.QtGui import QFont, QMouseEvent, QCursor, QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import (
+    QFont, QMouseEvent, QCursor, QIcon, QKeySequence, QShortcut,
+    QImage, QPainter, QPen, QBrush, QColor, QPixmap
+)
 
 class CorgiWebBridge(QObject):
     """Python与JavaScript通信桥梁"""
@@ -102,7 +105,7 @@ class CorgiWebBridge(QObject):
         self.menu_state = {
             "dashboard": {"expanded": False, "children": []},
             "learn": {"expanded": False, "children": ["learn_from_materials", "online_course_notes"]},
-            "practice": {"expanded": False, "children": ["practice_materials", "practice_knowledge", "practice_errors"]},
+            "practice": {"expanded": False, "children": ["practice_materials", "practice_knowledge", "practice_errors", "api_test"]},
             "memory": {"expanded": False, "children": ["memory_knowledge", "memory_errors"]},
             "knowledge_base": {"expanded": False, "children": []},
             "settings": {"expanded": False, "children": []}
@@ -188,8 +191,28 @@ class CorgiWebBridge(QObject):
     @Slot(str)
     def logFrontendMessage(self, message):
         """记录前端发送的日志消息"""
-        # 直接写入日志，因为前端已经包含了时间戳和级别
-        self.logger.handlers[0].stream.write(message + '\n')
+        # 创建专门的前端日志文件
+        import os
+        from datetime import datetime
+        
+        # 确保logs目录存在
+        if not os.path.exists('logs'):
+            os.makedirs('logs')
+            
+        # 创建前端日志文件名
+        today = datetime.now().strftime('%Y%m%d')
+        frontend_log_file = f'logs/frontend_debug_{today}.log'
+        
+        # 写入前端日志文件
+        with open(frontend_log_file, 'a', encoding='utf-8') as f:
+            f.write(message + '\n')
+            f.flush()
+        
+        # 同时输出到控制台
+        print(f"[FRONTEND] {message}")
+        
+        # 也写入主日志
+        self.logger.info(f"[FRONTEND] {message}")
         self.logger.handlers[0].stream.flush()
 
     @Slot()
@@ -303,8 +326,9 @@ class CorgiWebBridge(QObject):
                 "practice_errors": "基于错题练习",
                 "memory_knowledge": "基于知识点记忆",
                 "memory_errors": "基于错题记忆",
+                "api_test": "API测试",
                 "knowledge_base": "知识库管理",
-                "settings": "设置"
+                "settings": "系统设置"
             }
             page_title = title_map.get(content_id, "柯基学习小助手")
             self.main_window.web_view.page().runJavaScript(f"""
@@ -472,6 +496,10 @@ class CorgiWebBridge(QObject):
         self.logger.info("【文件加载】loadMarkdownRaw 开始")
         self.logger.info(f"文件路径: {file_path}")
         
+        # 保存当前文件路径，用于截图等功能
+        self.current_file_path = file_path
+        self.logger.info(f"已保存当前文件路径: {self.current_file_path}")
+        
         try:
             path = Path(file_path)
             self.logger.info(f"解析路径: {path.absolute()}")
@@ -569,34 +597,28 @@ class CorgiWebBridge(QObject):
             self.logger.info(f"答案长度: {len(answer)}")
             self.logger.info(f"练习ID: {practice_id}")
             
-            # 构建评估提示词 - 使用不会与内容中的花括号冲突的方式
-            prompt_template = """请对以下练习答案进行专业评估：
+            # 构建评估提示词 - 与原版practice_panel.py保持一致
+            prompt_template = """请作为专业技术面试官，对以下"技术练习答卷"进行严格的逐题评估，并务必按规定的结构化纯文本格式输出。
 
-**练习题目：**
+【试卷原题（严格按原文逐条列出）】
 {question}
 
-**学生答案：**
+【用户作答（按题号或题目前缀对应）】
 {answer}
 
-**评估要求：**
-1. 对答案的准确性、完整性和深度进行评估
-2. 给出具体的改进建议
-3. 评估学生对知识点的掌握程度
-4. 给出0-100分的数值评分
-5. 提供鼓励性的反馈和学习建议
+【重要的输出要求——务必完全遵守】
+1) 全部输出使用纯文本，不要使用任何HTML或Markdown标记。
+2) 严格按"逐题报告"结构列出每一道题，且每题包含以下小节，并使用这些准确的小节标题：
+   - 原题：
+   - 用户答案：
+   - 判定：（只能是"正确"/"错误"/"无法判断"三选一）
+   - 分析与要点：
+3) 每题之间使用一行仅包含"----"的分隔线。
+4) 在所有题目之后，给出"整体评价"与"知识点掌握程度评估"，掌握程度评估需包含：
+   基础概念理解、实际应用能力、深度思考能力、综合运用能力 四项，各用1-5分表示，并给出一句简要说明。
 
-**评估维度：**
-- 概念理解：对基本概念的理解程度
-- 应用能力：将知识应用到实际情况的能力
-- 分析深度：分析问题的深度和广度
-- 表达清晰：答案表达的清晰度和逻辑性
-
-请生成详细的评估结果，并以JSON格式返回：
-{{
-  "score": 85,
-  "feedback": "详细的反馈内容",
-  "suggestions": ["建议1", "建议2"]
-}}"""
+【请输出】
+先输出逐题报告（每题按照"原题/用户答案/判定/分析与要点"的顺序完整展示原题文本），然后输出整体评价与知识点掌握程度评估。"""
             
             # 使用.format()方法来避免花括号冲突
             prompt = prompt_template.format(question=question, answer=answer)
@@ -605,40 +627,30 @@ class CorgiWebBridge(QObject):
             response = call_llm(prompt, "评估练习答案")
             
             if response:
-                try:
-                    # 尝试解析JSON格式的回答
-                    import re
-                    json_match = re.search(r'\{[^}]*"score"[^}]*\}', response, re.DOTALL)
-                    if json_match:
-                        evaluation_result = json.loads(json_match.group())
-                        self.logger.info(f"✅ 评估结果解析成功: {evaluation_result}")
-                    else:
-                        # 如果不是JSON格式，创建默认的评估结果
-                        evaluation_result = {
-                            "score": 75,
-                            "feedback": response,
-                            "suggestions": ["继续加油，加深理解", "多练习相关问题"]
-                        }
-                        
-                    result = {
-                        "success": True,
-                        "data": evaluation_result
+                # 与原版保持一致，返回纯文本评估结果
+                # 尝试从评估结果中提取分数
+                import re
+                score = 75  # 默认分数
+                score_match = re.search(r'基础概念理解[：:]\s*(\d+)', response)
+                if score_match:
+                    try:
+                        concept_score = int(score_match.group(1))
+                        # 基于基础概念理解分数计算总分
+                        score = min(100, concept_score * 20)  # 1-5分转换为20-100分
+                    except:
+                        pass
+                
+                result = {
+                    "success": True,
+                    "data": {
+                        "score": score,
+                        "feedback": response,
+                        "evaluation_text": response,  # 保存完整的评估文本用于错题入库
+                        "suggestions": ["根据评估结果进行针对性学习", "重点关注错误题目的知识点"]
                     }
-                    self.logger.info(f"✅ 答案评估完成，得分: {evaluation_result.get('score', 'N/A')}")
-                    return json.dumps(result, ensure_ascii=False)
-                    
-                except Exception as parse_error:
-                    self.logger.error(f"❗ 解析评估结果失败: {parse_error}")
-                    # 使用原始回答作为反馈
-                    result = {
-                        "success": True,
-                        "data": {
-                            "score": 75,
-                            "feedback": response,
-                            "suggestions": ["继续加油，加深理解", "多练习相关问题"]
-                        }
-                    }
-                    return json.dumps(result, ensure_ascii=False)
+                }
+                self.logger.info(f"✅ 答案评估完成，得分: {score}")
+                return json.dumps(result, ensure_ascii=False)
             else:
                 self.logger.error("❌ LLM API返回空结果")
                 result = {
@@ -652,6 +664,326 @@ class CorgiWebBridge(QObject):
             result = {
                 "success": False,
                 "error": str(e)
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def addToErrorBank(self, error_data_json):
+        """错题入库 - 与原版practice_panel.py的错题入库逻辑保持一致"""
+        self.logger.info("=" * 60)
+        self.logger.info("【错题入库】addToErrorBank 开始")
+        
+        try:
+            import json
+            error_data = json.loads(error_data_json)
+            
+            practice_content = error_data.get('practice_content', '')
+            evaluation_result = error_data.get('evaluation_result', '')
+            selected_text = error_data.get('selected_text', '')
+            questions = error_data.get('questions', '')
+            answers = error_data.get('answers', '')
+            
+            self.logger.info(f"练习内容长度: {len(practice_content)}")
+            self.logger.info(f"评估结果长度: {len(evaluation_result)}")
+            self.logger.info(f"选中文本长度: {len(selected_text)}")
+            
+            # 组装用于切片的 practice_content：包含学习内容与用户答案
+            if not practice_content:
+                practice_content = (
+                    f"学习内容: {selected_text}\n\n"
+                    f"题目:\n{questions}\n\n"
+                    f"题目和答案:\n{answers}"
+                )
+            
+            # 完全复制原版的错题切片和入库逻辑
+            try:
+                # 导入原版的错题处理模块
+                try:
+                    from enhanced_practice_integration import ErrorQuestionSlicer, KnowledgePointMatcher
+                    from knowledge_management import KnowledgeManagementSystem
+                    from similarity_matcher import rank_matches
+                    
+                    # 初始化处理器
+                    km_system = KnowledgeManagementSystem(self.config)
+                    slicer = ErrorQuestionSlicer(self.config)
+                    matcher = KnowledgePointMatcher(self.config)
+                    
+                    # 1. 错题切片
+                    error_questions = slicer.slice_error_questions(practice_content, evaluation_result)
+                    self.logger.info(f"✅ 错题切片完成，共找到 {len(error_questions)} 道错题")
+                    
+                    # 2. 获取所有学科列表
+                    available_subjects = []
+                    try:
+                        subjects = km_system.get_subjects()
+                        for subject in subjects:
+                            points = km_system.get_knowledge_points_by_subject(subject)
+                            if points:  # 只显示有知识点的学科
+                                available_subjects.append({
+                                    "name": subject,
+                                    "point_count": len(points)
+                                })
+                    except Exception as e:
+                        self.logger.error(f"❌ 加载学科列表失败: {e}")
+                    
+                    # 3. 预处理错题，但不进行知识点匹配（等用户选择学科后再匹配）
+                    processed_errors = []
+                    for i, err in enumerate(error_questions):
+                        processed_errors.append({
+                            "question_index": err.get("question_index", i),
+                            "question_content": err.get("question_content", ""),
+                            "user_answer": err.get("user_answer", ""),
+                            "correct_answer": err.get("correct_answer", ""),
+                            "explanation": err.get("explanation", ""),
+                            "knowledge_point_hint": err.get("knowledge_point_hint", ""),
+                            "knowledge_options": [],  # 暂时为空，等用户选择学科后填充
+                            "default_knowledge_point": None
+                        })
+                    
+                    result = {
+                        "success": True,
+                        "message": "错题切片完成",
+                        "data": {
+                            "error_questions": processed_errors,
+                            "available_subjects": available_subjects,
+                            "practice_content": practice_content,
+                            "evaluation_result": evaluation_result,
+                            "selected_text": selected_text
+                        }
+                    }
+                    
+                    self.logger.info("✅ 错题切片和知识点匹配完成")
+                    return json.dumps(result, ensure_ascii=False)
+                    
+                except ImportError as import_error:
+                    self.logger.error(f"❌ 导入错题处理模块失败: {import_error}")
+                    result = {
+                        "success": False,
+                        "error": f"错题处理模块不可用: {import_error}"
+                    }
+                    return json.dumps(result, ensure_ascii=False)
+                
+            except Exception as process_error:
+                self.logger.error(f"❌ 错题处理失败: {process_error}")
+                result = {
+                    "success": False,
+                    "error": f"错题处理失败: {process_error}"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 错题入库异常: {e}")
+            result = {
+                "success": False,
+                "error": f"错题入库失败: {e}"
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def matchKnowledgePointsForSubject(self, match_data_json):
+        """为选定学科的错题匹配知识点 - 使用原版相似度计算方法"""
+        self.logger.info("=" * 60)
+        self.logger.info("【知识点匹配】matchKnowledgePointsForSubject 开始")
+        
+        try:
+            import json
+            match_data = json.loads(match_data_json)
+            
+            selected_subject = match_data.get('selected_subject', '')
+            error_questions = match_data.get('error_questions', [])
+            evaluation_result = match_data.get('evaluation_result', '')
+            
+            self.logger.info(f"选定学科: {selected_subject}")
+            self.logger.info(f"错题数量: {len(error_questions)}")
+            
+            # 导入原版的知识点匹配模块
+            try:
+                from knowledge_management import KnowledgeManagementSystem
+                from similarity_matcher import rank_matches
+                
+                # 初始化知识管理系统
+                km_system = KnowledgeManagementSystem(self.config)
+                
+                # 获取选定学科的所有知识点
+                subject_points = km_system.get_knowledge_points_by_subject(selected_subject)
+                self.logger.info(f"学科 {selected_subject} 共有 {len(subject_points)} 个知识点")
+                
+                # 为每道错题匹配知识点
+                matched_errors = []
+                for err in error_questions:
+                    # 直接从评估结果中重新提取完整的题目内容
+                    question_index = err.get("question_index", 0)
+                    
+                    # 尝试从evaluation_result中直接提取题目内容
+                    question_content = self._extract_question_from_evaluation(evaluation_result, question_index + 1)
+                    if not question_content:
+                        question_content = err.get("question_content", f"题目{question_index + 1}")
+                    
+                    # 使用原版的相似度计算方法
+                    try:
+                        ranked = rank_matches(question_content, subject_points, cfg=self.config, min_score=0.0)
+                        self.logger.info(f"题目 {err.get('question_index', 0)+1} 匹配到 {len(ranked)} 个知识点")
+                    except Exception as rank_error:
+                        self.logger.error(f"❌ 相似度计算失败: {rank_error}")
+                        ranked = []
+                    
+                    # 构建知识点选项（按相似度排序）
+                    score_map = {r["id"]: r["score"] for r in ranked}
+                    ordered_points = sorted(subject_points, key=lambda p: score_map.get(p["id"], -1.0), reverse=True)
+                    
+                    knowledge_options = []
+                    for kp in ordered_points:
+                        pid = kp["id"]
+                        score = score_map.get(pid, 0.0)
+                        display_name = f"{selected_subject} - {kp['point_name']} ({score:.3f})"
+                        knowledge_options.append({
+                            "id": pid,
+                            "display": display_name,
+                            "subject": selected_subject,
+                            "point_name": kp["point_name"],
+                            "score": score,
+                            "core_description": kp.get("core_description", "")
+                        })
+                    
+                    # 更新错题信息，使用提取的完整题目内容
+                    matched_error = err.copy()
+                    matched_error.update({
+                        "question_content": question_content,  # 使用重新提取的完整题目内容
+                        "knowledge_options": knowledge_options,
+                        "default_knowledge_point": knowledge_options[0] if knowledge_options else None
+                    })
+                    matched_errors.append(matched_error)
+                
+                result = {
+                    "success": True,
+                    "message": f"已为学科 {selected_subject} 匹配知识点",
+                    "data": {
+                        "matched_errors": matched_errors,
+                        "selected_subject": selected_subject
+                    }
+                }
+                
+                self.logger.info(f"✅ 知识点匹配完成，学科: {selected_subject}")
+                return json.dumps(result, ensure_ascii=False)
+                
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入知识点匹配模块失败: {import_error}")
+                result = {
+                    "success": False,
+                    "error": f"知识点匹配模块不可用: {import_error}"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 知识点匹配异常: {e}")
+            result = {
+                "success": False,
+                "error": f"知识点匹配失败: {e}"
+            }
+            return json.dumps(result, ensure_ascii=False)
+    
+    def _extract_question_from_evaluation(self, evaluation_result: str, question_number: int) -> str:
+        """从评估结果中直接提取指定题目的完整内容"""
+        try:
+            import re
+            
+            # 多种正则表达式模式来匹配题目
+            patterns = [
+                # 标准格式：数字. 原题：...到下一题或分隔线
+                rf"(?ms){question_number}\.[ \t]*原题[：:][ \t]*\n?(.*?)(?=(?:\n----|\n{question_number+1}\.[ \t]*原题[：:]|\n整体评价|\Z))",
+                # 备用格式
+                rf"(?ms){question_number}\.[ \t]*原题[：:][ \t]*(.*?)(?=(?:\n{question_number+1}\.[ \t]*原题[：:]|\n整体评价|\Z))",
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, evaluation_result)
+                if match:
+                    content = match.group(1).strip()
+                    # 提取原题内容（到"用户答案："之前）
+                    question_match = re.search(r"(.*?)(?=\n用户答案[：:]|$)", content, re.DOTALL)
+                    if question_match:
+                        question_text = question_match.group(1).strip()
+                        self.logger.info(f"✅ 成功提取题目 {question_number} 内容，长度: {len(question_text)}")
+                        return question_text
+                    else:
+                        # 如果没有找到"用户答案："，返回全部内容
+                        self.logger.info(f"✅ 提取题目 {question_number} 全部内容，长度: {len(content)}")
+                        return content
+            
+            self.logger.warning(f"❌ 未能提取题目 {question_number} 的内容")
+            return ""
+            
+        except Exception as e:
+            self.logger.error(f"❌ 提取题目内容失败: {e}")
+            return ""
+    
+    @Slot(str, result=str)
+    def saveErrorsToKnowledgeBase(self, save_data_json):
+        """保存选中的错题到知识库 - 与原版ErrorImportDialog._import_rows保持一致"""
+        self.logger.info("=" * 60)
+        self.logger.info("【错题保存】saveErrorsToKnowledgeBase 开始")
+        
+        try:
+            import json
+            save_data = json.loads(save_data_json)
+            
+            selected_errors = save_data.get('selected_errors', [])
+            self.logger.info(f"准备保存 {len(selected_errors)} 道错题")
+            
+            # 导入知识管理系统
+            try:
+                from knowledge_management import KnowledgeManagementSystem
+                km_system = KnowledgeManagementSystem(self.config)
+                
+                # 构建保存记录
+                records = []
+                for error in selected_errors:
+                    knowledge_point = error.get('selected_knowledge_point', {})
+                    if not knowledge_point.get('id'):
+                        continue
+                    
+                    records.append({
+                        "subject_name": knowledge_point.get('subject', '通用学科'),
+                        "knowledge_point_id": knowledge_point.get('id'),
+                        "question_content": error.get('question_content', ''),
+                        "user_answer": error.get('user_answer', ''),
+                        "is_correct": False,
+                        "correct_answer": error.get('correct_answer'),
+                        "explanation": error.get('explanation'),
+                    })
+                
+                if not records:
+                    result = {
+                        "success": False,
+                        "error": "无有效记录可入库"
+                    }
+                    return json.dumps(result, ensure_ascii=False)
+                
+                # 保存到知识库
+                saved_ids = km_system.save_practice_results(records)
+                
+                result = {
+                    "success": True,
+                    "message": f"已保存 {len(saved_ids) if saved_ids else 0} 条错题到知识库",
+                    "saved_count": len(saved_ids) if saved_ids else 0
+                }
+                
+                self.logger.info(f"✅ 错题保存完成，保存了 {len(saved_ids) if saved_ids else 0} 条记录")
+                return json.dumps(result, ensure_ascii=False)
+                
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入知识管理模块失败: {import_error}")
+                result = {
+                    "success": False,
+                    "error": f"知识管理模块不可用: {import_error}"
+                }
+                return json.dumps(result, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 保存错题异常: {e}")
+            result = {
+                "success": False,
+                "error": f"保存错题失败: {e}"
             }
             return json.dumps(result, ensure_ascii=False)
     
@@ -795,6 +1127,10 @@ class CorgiWebBridge(QObject):
         self.logger.info("【文件保存】saveMarkdownFile 开始")
         self.logger.info(f"文件路径: {file_path}")
         self.logger.info(f"内容长度: {len(content)} 字符")
+        
+        # 保存当前文件路径，用于截图等功能
+        self.current_file_path = file_path
+        self.logger.info(f"已更新当前文件路径: {self.current_file_path}")
         
         try:
             path = Path(file_path)
@@ -1056,6 +1392,515 @@ class CorgiWebBridge(QObject):
             import traceback
             self.logger.error(f"详细错误信息: {traceback.format_exc()}")
             return {"success": False, "error": str(e)}
+    
+    # ==================== 知识脑图功能 ====================
+    
+    @Slot(result=str)
+    def getSubjectsWithKnowledgeCount(self):
+        """获取学科列表及其知识点数量"""
+        self.logger.info("=" * 60)
+        self.logger.info("【知识脑图】getSubjectsWithKnowledgeCount 开始")
+        
+        try:
+            self.logger.info("正在导入知识管理系统...")
+            from knowledge_management import KnowledgeManagementSystem
+            
+            self.logger.info("正在初始化知识管理系统...")
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            self.logger.info("正在调用get_subject_stats()...")
+            # 使用 get_subject_stats 方法获取学科统计信息
+            subject_stats = km_system.get_subject_stats()
+            self.logger.info(f"get_subject_stats()返回: {subject_stats}")
+            
+            subjects_with_count = []
+            
+            for stat in subject_stats:
+                self.logger.info(f"处理学科: {stat}")
+                # 只显示有知识点的学科
+                if stat["kp_count"] > 0:
+                    subject_data = {
+                        "name": stat["subject_name"],
+                        "knowledge_count": stat["kp_count"]
+                    }
+                    subjects_with_count.append(subject_data)
+                    self.logger.info(f"添加学科: {subject_data}")
+            
+            self.logger.info(f"✅ 获取到 {len(subjects_with_count)} 个学科")
+            for subject in subjects_with_count:
+                self.logger.info(f"  - {subject['name']}: {subject['knowledge_count']} 个知识点")
+            
+            result_json = json.dumps(subjects_with_count, ensure_ascii=False)
+            self.logger.info(f"返回JSON: {result_json}")
+            
+            return result_json
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取学科列表失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps([], ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getOrGenerateMindmap(self, subject_name):
+        """获取或生成学科的知识脑图"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】getOrGenerateMindmap 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            mindmap = km_system.generate_or_get_mindmap(subject_name)
+            
+            if mindmap:
+                self.logger.info(f"✅ 成功获取/生成脑图 - 版本: {mindmap.get('version', 1)}")
+                return json.dumps({
+                    "success": True,
+                    "mindmap": mindmap
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 无法生成脑图 - 可能没有知识点数据")
+                return json.dumps({
+                    "success": False,
+                    "error": "该学科暂无知识点数据，无法生成脑图"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 获取/生成脑图失败: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, str, result=bool)
+    def saveMindmap(self, subject_name, mindmap_data_json):
+        """保存知识脑图"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】saveMindmap 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            mindmap_data = json.loads(mindmap_data_json)
+            success = km_system.save_mindmap(subject_name, mindmap_data)
+            
+            if success:
+                self.logger.info("✅ 脑图保存成功")
+            else:
+                self.logger.error("❌ 脑图保存失败")
+                
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存脑图异常: {e}")
+            return False
+    
+    @Slot(str, result=str)
+    def clearMindmapCache(self, subject_name):
+        """清除学科的脑图缓存"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】clearMindmapCache 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 清除缓存
+            success = km_system.clear_mindmap_cache(subject_name)
+            
+            if success:
+                self.logger.info(f"✅ 成功清除脑图缓存")
+                return json.dumps({
+                    "success": True,
+                    "message": f"已清除 {subject_name} 的脑图缓存"
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 缓存清除失败 - 可能缓存不存在")
+                return json.dumps({
+                    "success": False,
+                    "error": "缓存清除失败，可能缓存不存在"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 清除脑图缓存失败: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getKnowledgePointDetail(self, knowledge_point_id):
+        """获取知识点详情"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】getKnowledgePointDetail 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 查询知识点详情
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 先检查表结构
+            cursor.execute("PRAGMA table_info(knowledge_points)")
+            columns = [col[1] for col in cursor.fetchall()]
+            self.logger.info(f"knowledge_points表字段: {columns}")
+            
+            cursor.execute(
+                """SELECT id, point_name, core_description, mastery_score, subject_name, created_time
+                   FROM knowledge_points WHERE id = ?""",
+                (knowledge_point_id,)
+            )
+            result = cursor.fetchone()
+            
+            if not result:
+                conn.close()
+                self.logger.warning(f"⚠️ 未找到知识点: {knowledge_point_id}")
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该知识点"
+                }, ensure_ascii=False)
+            
+            detail = {
+                "id": result[0],
+                "name": result[1],
+                "description": result[2],
+                "mastery_score": result[3],
+                "subject_name": result[4],
+                "created_time": result[5]
+            }
+            
+            # 获取统计信息 - 使用现有连接
+            # 获取错题数量（所有练习记录数）
+            cursor.execute(
+                """SELECT COUNT(*) FROM practice_records 
+                   WHERE knowledge_point_id = ?""",
+                (knowledge_point_id,)
+            )
+            error_count = cursor.fetchone()[0]
+            
+            # 获取收藏题目数量
+            try:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM favorite_questions 
+                       WHERE knowledge_point_id = ?""",
+                    (knowledge_point_id,)
+                )
+                favorite_count = cursor.fetchone()[0]
+            except Exception as favorite_error:
+                self.logger.warning(f"获取收藏题目数量失败: {favorite_error}")
+                favorite_count = 0
+            
+            # 获取关联笔记数量（使用knowledge_point_sources表）
+            try:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM knowledge_point_sources kps
+                       JOIN notes n ON kps.note_id = n.id
+                       WHERE kps.knowledge_point_id = ?""",
+                    (knowledge_point_id,)
+                )
+                notes_count = cursor.fetchone()[0]
+            except Exception as notes_error:
+                self.logger.warning(f"获取关联笔记数量失败: {notes_error}")
+                notes_count = 0
+            
+            # 获取最近的练习记录
+            cursor.execute(
+                """SELECT question_content, user_answer, is_correct, practice_time
+                   FROM practice_records 
+                   WHERE knowledge_point_id = ? 
+                   ORDER BY practice_time DESC LIMIT 5""",
+                (knowledge_point_id,)
+            )
+            recent_practices = cursor.fetchall()
+            
+            conn.close()
+            
+            # 添加统计信息到详情中
+            detail.update({
+                "error_count": error_count,
+                "favorite_count": favorite_count,
+                "notes_count": notes_count,
+                "recent_practices": [
+                    {
+                        "question": practice[0],
+                        "answer": practice[1],
+                        "is_correct": practice[2],
+                        "time": practice[3]
+                    } for practice in recent_practices
+                ]
+            })
+            
+            self.logger.info(f"✅ 获取知识点详情成功: {detail['name']}")
+            self.logger.info(f"   - 练习记录数: {error_count}")
+            self.logger.info(f"   - 收藏题目: {favorite_count}")
+            self.logger.info(f"   - 关联笔记: {notes_count}")
+            
+            return json.dumps({
+                "success": True,
+                "detail": detail
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取知识点详情失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getKnowledgePointNotes(self, knowledge_point_id):
+        """获取知识点关联笔记"""
+        self.logger.info(f"【知识脑图】getKnowledgePointNotes 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 先获取知识点信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """SELECT point_name, subject_name FROM knowledge_points WHERE id = ?""",
+                (knowledge_point_id,)
+            )
+            kp_result = cursor.fetchone()
+            
+            if not kp_result:
+                conn.close()
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该知识点"
+                }, ensure_ascii=False)
+            
+            point_name, subject_name = kp_result
+            
+            # 获取关联笔记（使用knowledge_point_sources表）
+            try:
+                cursor.execute(
+                    """SELECT n.id, n.title, n.file_name, n.created_time, n.updated_time, kps.extraction_time
+                       FROM knowledge_point_sources kps
+                       JOIN notes n ON kps.note_id = n.id
+                       WHERE kps.knowledge_point_id = ?
+                       ORDER BY kps.extraction_time DESC""",
+                    (knowledge_point_id,)
+                )
+            except Exception as e:
+                self.logger.warning(f"查询关联笔记失败: {e}")
+                # 如果关联表查询失败，尝试回退到名称匹配
+                cursor.execute(
+                    """SELECT id, title, file_name, created_time, updated_time, created_time as extraction_time
+                       FROM notes 
+                       WHERE title LIKE ?
+                       ORDER BY updated_time DESC LIMIT 5""",
+                    (f'%{point_name}%',)
+                )
+            notes_results = cursor.fetchall()
+            
+            conn.close()
+            
+            notes = [
+                {
+                    "id": note[0],
+                    "title": note[1],
+                    "content": f"文件: {note[2]}" if note[2] else "笔记内容",
+                    "created_time": note[3],
+                    "updated_time": note[4],
+                    "extraction_time": note[5]  # 关联到知识点的时间
+                } for note in notes_results
+            ]
+            
+            self.logger.info(f"✅ 获取关联笔记成功: 找到 {len(notes)} 篇笔记")
+            
+            return json.dumps({
+                "success": True,
+                "notes": notes
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取关联笔记失败: {str(e)}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getNoteContent(self, note_id):
+        """获取笔记的详细内容"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【知识脑图】getNoteContent 开始 - 笔记ID: {note_id}")
+        
+        try:
+            import os
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 查询笔记信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute(
+                """SELECT id, title, file_name, file_path, created_time, updated_time
+                   FROM notes WHERE id = ?""",
+                (note_id,)
+            )
+            note_result = cursor.fetchone()
+            
+            if not note_result:
+                conn.close()
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该笔记"
+                }, ensure_ascii=False)
+            
+            note_id, title, file_name, file_path, created_time, updated_time = note_result
+            
+            # 尝试读取笔记文件内容
+            content = ""
+            if file_path and os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    self.logger.info(f"✅ 成功读取笔记文件: {file_path}")
+                except Exception as read_error:
+                    self.logger.warning(f"⚠️ 读取笔记文件失败: {read_error}")
+                    content = f"无法读取文件内容: {str(read_error)}"
+            else:
+                content = "笔记文件不存在或路径无效"
+                self.logger.warning(f"⚠️ 笔记文件不存在: {file_path}")
+            
+            # 获取关联的知识点
+            cursor.execute(
+                """SELECT kp.id, kp.point_name, kps.extraction_time
+                   FROM knowledge_point_sources kps
+                   JOIN knowledge_points kp ON kps.knowledge_point_id = kp.id
+                   WHERE kps.note_id = ?
+                   ORDER BY kps.extraction_time DESC""",
+                (note_id,)
+            )
+            related_knowledge_points = cursor.fetchall()
+            
+            conn.close()
+            
+            note_detail = {
+                "id": note_id,
+                "title": title,
+                "file_name": file_name,
+                "file_path": file_path,
+                "content": content[:1000] + "..." if len(content) > 1000 else content,  # 限制内容长度
+                "content_length": len(content),
+                "created_time": created_time,
+                "updated_time": updated_time,
+                "related_knowledge_points": [
+                    {
+                        "id": kp[0],
+                        "name": kp[1],
+                        "extraction_time": kp[2]
+                    } for kp in related_knowledge_points
+                ]
+            }
+            
+            self.logger.info(f"✅ 获取笔记详情成功: {title}")
+            self.logger.info(f"   - 关联知识点数: {len(related_knowledge_points)}")
+            self.logger.info(f"   - 内容长度: {len(content)} 字符")
+            
+            return json.dumps({
+                "success": True,
+                "note": note_detail
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取笔记详情失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getKnowledgePointQuestions(self, knowledge_point_id):
+        """获取知识点关联题目"""
+        self.logger.info(f"【知识脑图】getKnowledgePointQuestions 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 获取练习记录中的题目
+            cursor.execute(
+                """SELECT DISTINCT question_content, 
+                          COUNT(*) as practice_count,
+                          SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct_count,
+                          MAX(practice_time) as last_practice_time,
+                          MAX(is_correct) as last_result
+                   FROM practice_records 
+                   WHERE knowledge_point_id = ? 
+                   GROUP BY question_content
+                   ORDER BY last_practice_time DESC""",
+                (knowledge_point_id,)
+            )
+            questions_results = cursor.fetchall()
+            
+            # 检查收藏状态
+            questions = []
+            for question in questions_results:
+                try:
+                    cursor.execute(
+                        """SELECT COUNT(*) FROM favorite_questions 
+                           WHERE knowledge_point_id = ? AND question_content = ?""",
+                        (knowledge_point_id, question[0])
+                    )
+                    is_favorite = cursor.fetchone()[0] > 0
+                except Exception:
+                    is_favorite = False
+                
+                # 计算熟练度（正确率转换为星级）
+                correct_rate = question[2] / question[1] if question[1] > 0 else 0
+                mastery_stars = min(5, max(1, int(correct_rate * 5) + 1))
+                
+                # 判断题目类型
+                question_type = "选择题"
+                if "填空" in question[0] or "____" in question[0]:
+                    question_type = "填空题"
+                elif "简述" in question[0] or "说明" in question[0] or "解释" in question[0]:
+                    question_type = "简答题"
+                
+                questions.append({
+                    "content": question[0],
+                    "type": question_type,
+                    "practice_count": question[1],
+                    "correct_count": question[2],
+                    "mastery_stars": mastery_stars,
+                    "last_practice_time": question[3],
+                    "last_result": question[4],
+                    "is_favorite": is_favorite
+                })
+            
+            conn.close()
+            
+            self.logger.info(f"✅ 获取关联题目成功: 找到 {len(questions)} 道题目")
+            
+            return json.dumps({
+                "success": True,
+                "questions": questions
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取关联题目失败: {str(e)}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
     
     @Slot(str, result=bool)
     def createNewNote(self, folder_path="vault"):
@@ -1773,7 +2618,7 @@ class CorgiWebBridge(QObject):
             knowledge_point_data = {
                 "point_name": point['name'],
                 "core_description": point['description'],
-                "mastery_score": 50  # 默认掌握度
+                "mastery_score": -1  # 默认掌握度：-1表示未评估
             }
             
             # 保存到数据库
@@ -2209,6 +3054,257 @@ class CorgiWebBridge(QObject):
             self.logger.error(f"获取LLM调用日志失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
     
+    # ==================== 科目管理功能 ====================
+    
+    @Slot(str, result=str)
+    def createSubject(self, subject_name):
+        """创建新科目"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【科目管理】createSubject 开始 - 科目名: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 检查科目是否已存在
+            existing_subjects = km_system.get_subject_stats()
+            for subject in existing_subjects:
+                if subject["subject_name"] == subject_name:
+                    return json.dumps({
+                        "success": False,
+                        "error": f"科目 '{subject_name}' 已存在"
+                    }, ensure_ascii=False)
+            
+            # 创建科目（通过插入一个临时知识点然后删除来创建科目记录）
+            result = km_system.create_subject(subject_name)
+            
+            if result:
+                self.logger.info(f"✅ 科目创建成功: {subject_name}")
+                return json.dumps({
+                    "success": True,
+                    "message": f"科目 '{subject_name}' 创建成功"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "科目创建失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 创建科目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, str, result=str)
+    def updateSubject(self, old_name, new_name):
+        """更新科目名称"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【科目管理】updateSubject 开始 - 旧名称: {old_name}, 新名称: {new_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 检查新名称是否已存在
+            existing_subjects = km_system.get_subject_stats()
+            for subject in existing_subjects:
+                if subject["subject_name"] == new_name and subject["subject_name"] != old_name:
+                    return json.dumps({
+                        "success": False,
+                        "error": f"科目名称 '{new_name}' 已存在"
+                    }, ensure_ascii=False)
+            
+            # 更新科目名称
+            result = km_system.update_subject_name(old_name, new_name)
+            
+            if result:
+                self.logger.info(f"✅ 科目更新成功: {old_name} -> {new_name}")
+                return json.dumps({
+                    "success": True,
+                    "message": f"科目名称已更新为 '{new_name}'"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "科目更新失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 更新科目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def deleteSubject(self, subject_name):
+        """删除科目（仅当知识点数量为0时）"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【科目管理】deleteSubject 开始 - 科目名: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 检查科目是否存在以及知识点数量
+            subject_stats = km_system.get_subject_stats()
+            target_subject = None
+            for subject in subject_stats:
+                if subject["subject_name"] == subject_name:
+                    target_subject = subject
+                    break
+            
+            if not target_subject:
+                return json.dumps({
+                    "success": False,
+                    "error": f"科目 '{subject_name}' 不存在"
+                }, ensure_ascii=False)
+            
+            # 检查知识点数量
+            if target_subject["kp_count"] > 0:
+                return json.dumps({
+                    "success": False,
+                    "error": f"无法删除科目 '{subject_name}'，该科目包含 {target_subject['kp_count']} 个知识点。只有知识点数量为0的科目才能删除。"
+                }, ensure_ascii=False)
+            
+            # 删除科目
+            result = km_system.delete_subject(subject_name)
+            
+            if result:
+                self.logger.info(f"✅ 科目删除成功: {subject_name}")
+                return json.dumps({
+                    "success": True,
+                    "message": f"科目 '{subject_name}' 删除成功"
+                }, ensure_ascii=False)
+            else:
+                return json.dumps({
+                    "success": False,
+                    "error": "科目删除失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 删除科目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(result=str)
+    def getAllSubjects(self):
+        """获取所有科目列表（包括知识点数量为0的科目）"""
+        self.logger.info("=" * 60)
+        self.logger.info("【科目管理】getAllSubjects 开始")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取所有科目统计信息（包括知识点数量为0的）
+            subject_stats = km_system.get_subject_stats()
+            
+            subjects_list = []
+            for stat in subject_stats:
+                subject_data = {
+                    "name": stat["subject_name"],
+                    "knowledge_count": stat["kp_count"],
+                    "can_delete": stat["kp_count"] == 0  # 只有知识点数量为0才能删除
+                }
+                subjects_list.append(subject_data)
+                self.logger.info(f"科目: {subject_data}")
+            
+            self.logger.info(f"✅ 获取到 {len(subjects_list)} 个科目")
+            
+            return json.dumps(subjects_list, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取科目列表失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps([], ensure_ascii=False)
+    
+    # ==================== 学习路径图功能 ====================
+    
+    @Slot(str, result=str)
+    def getOrGenerateLearningPath(self, subject_name):
+        """获取或生成学科的学习路径图"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【学习路径】getOrGenerateLearningPath 开始 - 学科: {subject_name}")
+        
+        try:
+            self.logger.info(f"🔍 导入KnowledgeManagementSystem...")
+            from knowledge_management import KnowledgeManagementSystem
+            self.logger.info(f"✅ KnowledgeManagementSystem导入成功")
+            
+            self.logger.info(f"🔍 创建KnowledgeManagementSystem实例...")
+            km_system = KnowledgeManagementSystem(self.config)
+            self.logger.info(f"✅ KnowledgeManagementSystem实例创建成功")
+            
+            # 获取或生成学习路径（使用真正的LLM）
+            self.logger.info(f"🔍 调用get_or_generate_learning_path方法...")
+            learning_path_result = km_system.get_or_generate_learning_path(subject_name)
+            self.logger.info(f"📊 学习路径结果: {learning_path_result is not None}")
+            
+            if learning_path_result:
+                self.logger.info(f"✅ 成功获取/生成学习路径")
+                return json.dumps({
+                    "success": True,
+                    "learningPath": learning_path_result
+                }, ensure_ascii=False)
+            else:
+                self.logger.error(f"❌ 学习路径生成失败")
+                return json.dumps({
+                    "success": False,
+                    "error": "学习路径生成失败"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 获取学习路径异常: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def clearLearningPathCache(self, subject_name):
+        """清除学科的学习路径缓存"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【学习路径】clearLearningPathCache 开始 - 学科: {subject_name}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 清除缓存
+            success = km_system.clear_learning_path_cache(subject_name)
+            
+            if success:
+                self.logger.info(f"✅ 成功清除学习路径缓存")
+                return json.dumps({
+                    "success": True,
+                    "message": f"已清除 {subject_name} 的学习路径缓存"
+                }, ensure_ascii=False)
+            else:
+                self.logger.warning(f"⚠️ 缓存清除失败 - 可能缓存不存在")
+                return json.dumps({
+                    "success": False,
+                    "error": "缓存清除失败，可能缓存不存在"
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 清除学习路径缓存失败: {e}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
     # ====== 网课笔记录音功能 ======
     
     @Slot()
@@ -2227,91 +3323,211 @@ class CorgiWebBridge(QObject):
     @Slot(result=str)
     def getPracticeHistory(self):
         """获取练习历史列表"""
-        self.logger.info("获取练习历史列表")
+        self.logger.info("=== 开始获取练习历史列表 ===")
+        
+        try:
+            # 导入练习服务
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+            
+            from services.practice_service import PracticeService
+            
+            # 初始化服务
+            practice_service = PracticeService()
+            
+            # 检查是否需要从 JSON 文件迁移数据
+            current_dir = os.getcwd()
+            practice_dir = os.path.join(current_dir, "practice_sessions")
+            
+            self.logger.info(f"📁 检查JSON文件目录: {practice_dir}")
+            
+            if os.path.exists(practice_dir):
+                json_files = [f for f in os.listdir(practice_dir) if f.endswith('.json')]
+                self.logger.info(f"📁 找到JSON文件: {len(json_files)} 个")
+                
+                if json_files:
+                    self.logger.info("🔄 开始数据迁移...")
+                    migration_result = practice_service.migrate_from_json_files(practice_dir)
+                    self.logger.info(f"📦 数据迁移结果: {migration_result}")
+            
+            # 获取练习历史列表
+            self.logger.info("📊 从数据库获取练习历史...")
+            result = practice_service.get_practice_history_list(limit=50)
+            
+            if result["success"]:
+                practices = result["practices"]
+                self.logger.info(f"🎯 成功获取练习历史: {len(practices)} 条")
+                
+                # 记录前3个练习ID
+                if practices:
+                    first3_ids = [p.get('id', 'N/A') for p in practices[:3]]
+                    self.logger.info(f"📋 前3个练习ID: {first3_ids}")
+                
+                # 统一返回格式
+                response_data = {
+                    "success": True,
+                    "practices": practices
+                }
+                
+                result_str = json.dumps(response_data, ensure_ascii=False)
+                
+                # 记录返回数据的概要
+                if len(result_str) > 1000:
+                    self.logger.info(f"📤 返回数据(截断): {result_str[:300]}...{result_str[-200:]}")
+                else:
+                    self.logger.info(f"📤 返回数据: {result_str}")
+                
+                self.logger.info("=== 练习历史获取完成 ===")
+                return result_str
+            else:
+                error_msg = result.get("error", "未知错误")
+                self.logger.error(f"❌ 获取练习历史失败: {error_msg}")
+                return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except ImportError as import_error:
+            self.logger.error(f"❌ 导入模块失败: {import_error}")
+            # 回退到原有的JSON文件读取方式
+            self.logger.info("🔄 回退到JSON文件读取方式...")
+            return self._get_practice_history_from_json()
+            
+        except Exception as e:
+            self.logger.error(f"❌ 获取练习历史异常: {e}")
+            self.logger.error(f"❌ 错误类型: {type(e).__name__}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            
+            # 尝试回退到JSON文件读取
+            self.logger.info("🔄 尝试回退到JSON文件读取...")
+            try:
+                return self._get_practice_history_from_json()
+            except Exception as fallback_error:
+                self.logger.error(f"❌ JSON文件读取也失败: {fallback_error}")
+                return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+    
+    def _get_practice_history_from_json(self):
+        """从 JSON 文件获取练习历史（备用方法）"""
+        self.logger.info("🔄 使用JSON文件读取方式...")
         
         try:
             import os
             import json
             
-            practice_dir = "practice_sessions"
+            current_dir = os.getcwd()
+            practice_dir = os.path.join(current_dir, "practice_sessions")
+            
             if not os.path.exists(practice_dir):
                 return json.dumps({"success": True, "practices": []}, ensure_ascii=False)
             
-            practice_files = [f for f in os.listdir(practice_dir) if f.startswith("practice_") and f.endswith(".json")]
-            practice_files.sort(reverse=True)  # 最新的在前
+            all_files = os.listdir(practice_dir)
+            practice_files = [f for f in all_files if f.endswith('.json') and 'practice' in f]
+            practice_files.sort(reverse=True)
             
             practices = []
-            for filename in practice_files[:20]:  # 最多返回20个最近的练习
+            for filename in practice_files[:20]:
                 filepath = os.path.join(practice_dir, filename)
                 try:
                     with open(filepath, 'r', encoding='utf-8') as f:
                         practice_data = json.load(f)
                     
+                    # 安全处理selected_text字段
+                    selected_text = practice_data.get("selected_text", "")
+                    if selected_text is None:
+                        selected_text = ""
+                    
+                    # 安全截取文本
+                    text_preview = selected_text[:100] if len(selected_text) > 100 else selected_text
+                    if len(selected_text) > 100:
+                        text_preview += "..."
+                    
                     practices.append({
                         "id": practice_data.get("practice_id", ""),
                         "timestamp": practice_data.get("timestamp", ""),
                         "status": practice_data.get("status", "unknown"),
-                        "selected_text": practice_data.get("selected_text", "")[:100] + "...",
+                        "selected_text": text_preview,
                         "has_evaluation": bool(practice_data.get("evaluation_result", ""))
                     })
                 except Exception as e:
-                    self.logger.warning(f"加载练习文件失败 {filename}: {e}")
+                    self.logger.warning(f"⚠️ 跳过文件 {filename}: {e}")
+                    continue
             
-            return json.dumps({"success": True, "practices": practices}, ensure_ascii=False)
+            result = {"success": True, "practices": practices}
+            return json.dumps(result, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"获取练习历史失败: {e}")
+            self.logger.error(f"❌ JSON文件读取失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
-    
-    @Slot(str, result=str)
-    def loadPracticeHistory(self, practice_id):
-        """加载指定的练习历史"""
-        self.logger.info(f"加载练习历史: {practice_id}")
+    def _load_practice_history_from_json(self, practice_id):
+        """从 JSON 文件加载练习历史（备用方法）"""
+        self.logger.info(f"🔄 使用JSON文件加载方式: {practice_id}")
         
         try:
             import os
             import json
             
-            practice_dir = "practice_sessions"
-            filename = f"practice_{practice_id}.json"
-            filepath = os.path.join(practice_dir, filename)
+            current_dir = os.getcwd()
+            practice_dir = os.path.join(current_dir, "practice_sessions")
             
-            if not os.path.exists(filepath):
-                return json.dumps({"success": False, "error": "练习记录不存在"}, ensure_ascii=False)
+            # 清理practice_id
+            clean_practice_id = practice_id
+            if practice_id.startswith('practice_'):
+                clean_practice_id = practice_id[9:]
             
-            with open(filepath, 'r', encoding='utf-8') as f:
-                practice_data = json.load(f)
+            # 尝试多种文件名格式
+            possible_filenames = [
+                f"practice_{clean_practice_id}.json",
+                f"practice_practice_{clean_practice_id}.json",
+                f"{practice_id}.json"
+            ]
             
-            return json.dumps({"success": True, "practice": practice_data}, ensure_ascii=False)
+            for filename in possible_filenames:
+                filepath = os.path.join(practice_dir, filename)
+                if os.path.exists(filepath):
+                    try:
+                        with open(filepath, 'r', encoding='utf-8') as f:
+                            practice_data = json.load(f)
+                        
+                        result = {"success": True, "practice": practice_data}
+                        return json.dumps(result, ensure_ascii=False)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 读取文件失败 {filename}: {e}")
+                        continue
+            
+            # 所有尝试都失败
+            error_msg = f"练习记录不存在: {practice_id}"
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"加载练习历史失败: {e}")
+            self.logger.error(f"❌ JSON文件加载失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
 
+
     
-    @Slot(str, result=str)
-    def savePracticeEvaluation(self, evaluation_data):
-        """保存练习评估结果"""
-        self.logger.info("保存练习评估结果")
+    def _save_practice_evaluation_to_json(self, data):
+        """保存练习评估到JSON文件（备用方法）"""
+        self.logger.info("🔄 使用JSON文件保存方式...")
         
         try:
             import os
             import json
             from datetime import datetime
             
-            data = json.loads(evaluation_data)
             practice_id = data.get('practice_id')
             
+            # 清理practice_id
+            if practice_id and practice_id.startswith('practice_'):
+                practice_id = practice_id[9:]
+            
             if not practice_id:
-                # 生成新的练习ID
                 practice_id = datetime.now().strftime('%Y%m%d_%H%M%S')
             
-            # 创建练习目录
-            practice_dir = "practice_sessions"
+            # 创建目录
+            current_dir = os.getcwd()
+            practice_dir = os.path.join(current_dir, "practice_sessions")
             os.makedirs(practice_dir, exist_ok=True)
             
-            # 保存练习数据
+            # 保存数据
             practice_data = {
                 "practice_id": practice_id,
                 "timestamp": datetime.now().isoformat(),
@@ -2328,17 +3544,234 @@ class CorgiWebBridge(QObject):
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(practice_data, f, ensure_ascii=False, indent=2)
             
-            self.logger.info(f"练习评估结果已保存: {filepath}")
-            
-            return json.dumps({
-                "success": True, 
+            result = {
+                "success": True,
                 "message": "评估结果已保存",
-                "practice_id": practice_id
-            }, ensure_ascii=False)
+                "practice_id": practice_id,
+                "filepath": filepath
+            }
+            
+            return json.dumps(result, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"保存练习评估失败: {e}")
+            self.logger.error(f"❌ JSON文件保存失败: {e}")
             return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def loadPracticeHistory(self, practice_id):
+        """加载指定的练习历史"""
+        self.logger.info(f"=== 开始加载练习历史: {practice_id} ===")
+        
+        try:
+            # 导入练习服务
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+            
+            from services.practice_service import PracticeService
+            
+            # 初始化服务
+            practice_service = PracticeService()
+            
+            # 加载练习详情
+            self.logger.info(f"📊 从数据库加载练习详情: {practice_id}")
+            result = practice_service.load_practice_detail(practice_id)
+            
+            if result["success"]:
+                practice_detail = result["practice"]
+                self.logger.info(f"✅ 成功加载练习详情: {practice_id}")
+                self.logger.info(f"📄 practice_id: {practice_detail.get('practice_id')}")
+                self.logger.info(f"📄 timestamp: {practice_detail.get('timestamp')}")
+                self.logger.info(f"📄 questions长度: {len(practice_detail.get('questions', ''))}")
+                self.logger.info(f"📄 user_answers长度: {len(practice_detail.get('user_answers', ''))}")
+                self.logger.info(f"📄 evaluation_result长度: {len(practice_detail.get('evaluation_result', ''))}")
+                
+                result_str = json.dumps(result, ensure_ascii=False)
+                self.logger.info("=== 练习历史加载完成 ===")
+                return result_str
+            else:
+                error_msg = result.get("error", "未知错误")
+                self.logger.error(f"❌ 加载练习详情失败: {error_msg}")
+                return json.dumps(result, ensure_ascii=False)
+            
+        except ImportError as import_error:
+            self.logger.error(f"❌ 导入模块失败: {import_error}")
+            # 回退到原有的JSON文件读取方式
+            self.logger.info("🔄 回退到JSON文件读取方式...")
+            return self._load_practice_history_from_json(practice_id)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 加载练习历史异常: {e}")
+            self.logger.error(f"❌ 错误类型: {type(e).__name__}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            
+            # 尝试回退到JSON文件读取
+            self.logger.info("🔄 尝试回退到JSON文件读取...")
+            try:
+                return self._load_practice_history_from_json(practice_id)
+            except Exception as fallback_error:
+                self.logger.error(f"❌ JSON文件读取也失败: {fallback_error}")
+                return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    
+    @Slot(str, result=str)
+    def savePracticeEvaluation(self, evaluation_data):
+        """保存练习评估结果"""
+        self.logger.info("=== 开始保存练习评估结果 ===")
+        
+        try:
+            import json
+            
+            self.logger.info(f"📥 接收到评估数据长度: {len(evaluation_data)} 字符")
+            data = json.loads(evaluation_data)
+            
+            # 尝试使用数据库方式
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                from services.practice_service import PracticeService
+                
+                # 初始化服务
+                practice_service = PracticeService()
+                
+                # 保存完整的练习数据
+                self.logger.info("💾 使用数据库方式保存...")
+                result = practice_service.save_complete_practice_data(data)
+                
+                if result["success"]:
+                    self.logger.info(f"✅ 数据库保存成功: {result.get('practice_id')}")
+                    return json.dumps(result, ensure_ascii=False)
+                else:
+                    raise Exception(result.get("error", "数据库保存失败"))
+                    
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入模块失败: {import_error}")
+                # 回退到JSON文件保存方式
+                self.logger.info("🔄 回退到JSON文件保存方式...")
+                return self._save_practice_evaluation_to_json(data)
+                
+            except Exception as db_error:
+                self.logger.error(f"❌ 数据库保存失败: {db_error}")
+                # 回退到JSON文件保存方式
+                self.logger.info("🔄 回退到JSON文件保存方式...")
+                return self._save_practice_evaluation_to_json(data)
+            
+        except json.JSONDecodeError as json_error:
+            error_msg = f"JSON解析错误: {json_error}"
+            self.logger.error(f"❌ {error_msg}")
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存练习评估发生严重错误: {e}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str, result=str)
+    def savePracticeHistory(self, practice_data):
+        """保存练习历史（用户提交答案时调用）"""
+        self.logger.info("=== 开始保存练习历史 ===")
+        
+        try:
+            import json
+            
+            self.logger.info(f"📥 接收到练习数据长度: {len(practice_data)} 字符")
+            data = json.loads(practice_data)
+            
+            # 尝试使用数据库方式
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                from services.practice_service import PracticeService
+                
+                # 初始化服务
+                practice_service = PracticeService()
+                
+                # 保存练习历史
+                self.logger.info("💾 使用数据库方式保存练习历史...")
+                result = practice_service.save_practice_history(data)
+                
+                if result["success"]:
+                    self.logger.info(f"✅ 练习历史保存成功: {result.get('practice_id')}")
+                    return json.dumps(result, ensure_ascii=False)
+                else:
+                    raise Exception(result.get("error", "练习历史保存失败"))
+                    
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入模块失败: {import_error}")
+                return json.dumps({"success": False, "error": f"模块导入失败: {import_error}"}, ensure_ascii=False)
+                
+            except Exception as db_error:
+                self.logger.error(f"❌ 数据库保存失败: {db_error}")
+                return json.dumps({"success": False, "error": f"数据库操作失败: {db_error}"}, ensure_ascii=False)
+            
+        except json.JSONDecodeError as json_error:
+            error_msg = f"JSON解析错误: {json_error}"
+            self.logger.error(f"❌ {error_msg}")
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存练习历史发生严重错误: {e}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str, str, result=str)
+    def updatePracticeEvaluation(self, practice_id, evaluation_data):
+        """更新练习评估结果（AI评估完成时调用）"""
+        self.logger.info(f"=== 开始更新练习评估: {practice_id} ===")
+        
+        try:
+            import json
+            
+            self.logger.info(f"📥 接收到评估数据长度: {len(evaluation_data)} 字符")
+            data = json.loads(evaluation_data)
+            
+            # 尝试使用数据库方式
+            try:
+                import sys
+                import os
+                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                
+                from services.practice_service import PracticeService
+                
+                # 初始化服务
+                practice_service = PracticeService()
+                
+                # 更新练习评估
+                self.logger.info("💾 使用数据库方式更新练习评估...")
+                result = practice_service.update_practice_evaluation(practice_id, data)
+                
+                if result["success"]:
+                    self.logger.info(f"✅ 练习评估更新成功: {practice_id}")
+                    return json.dumps(result, ensure_ascii=False)
+                else:
+                    raise Exception(result.get("error", "练习评估更新失败"))
+                    
+            except ImportError as import_error:
+                self.logger.error(f"❌ 导入模块失败: {import_error}")
+                return json.dumps({"success": False, "error": f"模块导入失败: {import_error}"}, ensure_ascii=False)
+                
+            except Exception as db_error:
+                self.logger.error(f"❌ 数据库操作失败: {db_error}")
+                return json.dumps({"success": False, "error": f"数据库操作失败: {db_error}"}, ensure_ascii=False)
+            
+        except json.JSONDecodeError as json_error:
+            error_msg = f"JSON解析错误: {json_error}"
+            self.logger.error(f"❌ {error_msg}")
+            return json.dumps({"success": False, "error": error_msg}, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 更新练习评估发生严重错误: {e}")
+            import traceback
+            self.logger.error(f"❌ 错误堆栈: {traceback.format_exc()}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
     
     @Slot(str, result=str)
     def importPracticeErrors(self, error_data):
@@ -3073,13 +4506,138 @@ class CorgiWebBridge(QObject):
         self.logger.info("截图笔记请求")
         
         try:
-            # 这里可以实现截图功能
-            # 暂时返回占位符
-            return json.dumps({"success": True, "message": "截图功能开发中..."}, ensure_ascii=False)
+            # 获取主屏幕
+            screen = QApplication.primaryScreen()
+            if not screen:
+                raise RuntimeError("无法获取屏幕来进行截图")
+            
+            # 创建截图覆盖层
+            self._shot_overlay = ScreenshotOverlay(screen)
+            self._shot_overlay.captured.connect(self._on_screenshot_captured)
+            self._shot_overlay.showFullScreen()
+            
+            # 返回成功状态，实际的截图结果会通过信号处理
+            return json.dumps({"success": True, "message": "截图工具已打开，请选择截图区域"}, ensure_ascii=False)
             
         except Exception as e:
             self.logger.error(f"截图笔记失败: {e}")
             return json.dumps({"success": False, "error": f"截图笔记失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(str, result=str)
+    def getImageAsBase64(self, image_path):
+        """将图片转换为Base64格式供前端显示"""
+        try:
+            self.logger.info(f"请求图片Base64: {image_path}")
+            
+            # 如果是相对路径，转换为绝对路径
+            if not os.path.isabs(image_path) and hasattr(self, 'current_file_path') and self.current_file_path:
+                doc_dir = os.path.dirname(self.current_file_path)
+                full_path = os.path.join(doc_dir, image_path)
+            else:
+                full_path = image_path
+            
+            self.logger.info(f"完整图片路径: {full_path}")
+            
+            if not os.path.exists(full_path):
+                self.logger.error(f"图片文件不存在: {full_path}")
+                return json.dumps({"success": False, "error": "图片文件不存在"}, ensure_ascii=False)
+            
+            # 读取图片并转换为Base64
+            import base64
+            with open(full_path, 'rb') as f:
+                image_data = f.read()
+            
+            # 获取文件扩展名以确定MIME类型
+            _, ext = os.path.splitext(full_path)
+            mime_type = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.gif': 'image/gif',
+                '.bmp': 'image/bmp',
+                '.webp': 'image/webp'
+            }.get(ext.lower(), 'image/png')
+            
+            base64_data = base64.b64encode(image_data).decode('utf-8')
+            data_url = f"data:{mime_type};base64,{base64_data}"
+            
+            self.logger.info(f"图片转换成功，Base64长度: {len(base64_data)}")
+            
+            return json.dumps({
+                "success": True,
+                "dataUrl": data_url,
+                "mimeType": mime_type,
+                "size": len(image_data)
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"图片Base64转换失败: {e}")
+            return json.dumps({"success": False, "error": f"图片转换失败: {str(e)}"}, ensure_ascii=False)
+    
+    @Slot(QImage)
+    def _on_screenshot_captured(self, img: QImage):
+        """截图完成回调：保存图片并返回路径"""
+        try:
+            if img and not img.isNull():
+                # 获取当前文档路径，确定attachments目录
+                current_file_path = getattr(self, 'current_file_path', None)
+                self.logger.info(f"当前文件路径: {current_file_path}")
+                
+                if current_file_path:
+                    # 获取文档所在目录
+                    doc_dir = os.path.dirname(current_file_path)
+                    attachments_dir = os.path.join(doc_dir, 'attachments')
+                    self.logger.info(f"文档目录: {doc_dir}")
+                    self.logger.info(f"attachments目录: {attachments_dir}")
+                else:
+                    # 如果没有当前文档，使用默认的course_notes目录
+                    course_notes_dir = os.path.join(os.getcwd(), 'course_notes')
+                    if not os.path.exists(course_notes_dir):
+                        os.makedirs(course_notes_dir)
+                    attachments_dir = os.path.join(course_notes_dir, 'attachments')
+                    self.logger.warning(f"没有当前文件路径，使用默认目录: {attachments_dir}")
+                
+                # 创建attachments目录
+                if not os.path.exists(attachments_dir):
+                    os.makedirs(attachments_dir)
+                    self.logger.info(f"创建attachments目录: {attachments_dir}")
+                
+                # 生成唯一的文件名
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"screenshot_{timestamp}.png"
+                image_path = os.path.join(attachments_dir, filename)
+                
+                # 保存图片
+                if img.save(image_path, "PNG"):
+                    self.logger.info(f"截图保存成功: {image_path}")
+                    
+                    # 生成相对路径用于Markdown
+                    relative_path = f"attachments/{filename}"
+                    
+                    # 通过JavaScript插入到编辑器
+                    js_code = f"""
+                    if (typeof insertScreenshotToDocument === 'function') {{
+                        insertScreenshotToDocument('{relative_path}');
+                    }} else {{
+                        console.error('insertScreenshotToDocument function not found');
+                    }}
+                    """
+                    if self.main_window and self.main_window.web_view:
+                        self.main_window.web_view.page().runJavaScript(js_code)
+                    
+                else:
+                    self.logger.error(f"截图保存失败: {image_path}")
+                    
+        except Exception as e:
+            self.logger.error(f"截图处理失败: {e}")
+        finally:
+            # 清理截图覆盖层
+            try:
+                if hasattr(self, '_shot_overlay'):
+                    self._shot_overlay.close()
+                    delattr(self, '_shot_overlay')
+            except Exception:
+                pass
     
     @Slot(result=str)
     def getTranscriptionText(self):
@@ -3517,6 +5075,460 @@ class CorgiWebBridge(QObject):
         """清理转写线程"""
         self._tr_thread = None
         self._tr_worker = None
+    
+    # ==================== 转写历史记录功能 ====================
+    
+    @Slot(str, result=str)
+    def saveTranscriptSession(self, session_data_json):
+        """保存转写会话到文件"""
+        self.logger.info("=" * 60)
+        self.logger.info("【转写会话保存】开始")
+        
+        try:
+            # 解析会话数据
+            session_data = json.loads(session_data_json)
+            session_id = session_data.get('sessionId', 'unknown')
+            
+            # 创建audio_text文件夹
+            audio_text_dir = os.path.join(os.getcwd(), 'audio_text')
+            os.makedirs(audio_text_dir, exist_ok=True)
+            self.logger.info(f"音频文本目录: {audio_text_dir}")
+            
+            # 确定文件路径：载入文件使用原路径，新会话使用sessionId生成固定路径
+            if 'originalFilePath' in session_data and session_data['originalFilePath']:
+                # 如果有原始文件路径，直接使用（载入的文件）
+                file_path = session_data['originalFilePath']
+                self.logger.info(f"使用原始文件路径: {file_path}")
+            else:
+                # 新会话或没有原始路径，从sessionId生成固定文件名
+                session_id = session_data.get('sessionId', 'unknown')
+                if session_id.startswith('transcript_'):
+                    timestamp_str = session_id.replace('transcript_', '')
+                    try:
+                        # 尝试解析时间戳
+                        timestamp = int(timestamp_str)
+                        dt = datetime.fromtimestamp(timestamp / 1000)  # JavaScript时间戳是毫秒
+                        filename = f"transcript_{dt.strftime('%Y%m%d_%H%M%S')}.json"
+                        self.logger.info(f"从sessionId生成文件名: {filename}")
+                    except Exception as e:
+                        # 如果解析失败，使用当前时间
+                        self.logger.warning(f"解析sessionId失败: {e}，使用当前时间")
+                        now = datetime.now()
+                        filename = f"transcript_{now.strftime('%Y%m%d_%H%M%S')}.json"
+                else:
+                    # 如果sessionId格式不对，使用当前时间
+                    self.logger.warning(f"sessionId格式不正确: {session_id}，使用当前时间")
+                    now = datetime.now()
+                    filename = f"transcript_{now.strftime('%Y%m%d_%H%M%S')}.json"
+                file_path = os.path.join(audio_text_dir, filename)
+            
+            # 保存到文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, ensure_ascii=False, indent=2)
+            
+            self.logger.info(f"✅ 转写会话已保存: {file_path}")
+            self.logger.info(f"会话ID: {session_id}")
+            self.logger.info(f"转写条目数: {len(session_data.get('transcripts', []))}")
+            
+            return file_path
+            
+        except Exception as e:
+            self.logger.error(f"❌ 保存转写会话失败: {e}")
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            return ""
+    
+    @Slot()
+    def loadTranscriptHistory(self):
+        """载入历史转写记录"""
+        self.logger.info("=" * 60)
+        self.logger.info("【转写历史载入】开始")
+        
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            from PySide6.QtCore import QTimer
+            
+            # 创建audio_text文件夹（如果不存在）
+            audio_text_dir = os.path.join(os.getcwd(), 'audio_text')
+            os.makedirs(audio_text_dir, exist_ok=True)
+            
+            def on_file_selected():
+                # 打开文件选择对话框
+                file_path, _ = QFileDialog.getOpenFileName(
+                    self.main_window,
+                    "选择转写历史记录",
+                    audio_text_dir,
+                    "JSON文件 (*.json);;所有文件 (*.*)"
+                )
+                
+                result = ""
+                if file_path:
+                    try:
+                        # 读取文件内容
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            session_data = json.load(f)
+                        
+                        self.logger.info(f"✅ 历史记录载入成功: {file_path}")
+                        self.logger.info(f"会话ID: {session_data.get('sessionId', 'unknown')}")
+                        self.logger.info(f"转写条目数: {len(session_data.get('transcripts', []))}")
+                        
+                        # 添加原始文件路径信息
+                        session_data['originalFilePath'] = file_path
+                        session_data['originalFileName'] = os.path.basename(file_path)
+                        
+                        result = json.dumps(session_data, ensure_ascii=False)
+                        
+                    except Exception as e:
+                        self.logger.error(f"❌ 读取文件失败: {e}")
+                        result = ""
+                else:
+                    self.logger.info("用户取消文件选择")
+                    result = ""
+                
+                # 通知前端结果
+                if self.main_window and self.main_window.web_view:
+                    js_code = f"""
+                    try {{
+                        if (typeof window.onTranscriptHistoryLoaded === 'function') {{
+                            window.onTranscriptHistoryLoaded({json.dumps(result, ensure_ascii=False)});
+                        }}
+                    }} catch(e) {{
+                        console.error('载入历史记录回调出错:', e);
+                    }}
+                    """
+                    self.main_window.web_view.page().runJavaScript(js_code)
+            
+            # 使用QTimer延迟执行，避免阻塞UI
+            QTimer.singleShot(100, on_file_selected)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 载入历史记录失败: {e}")
+            self.logger.error(f"详细错误: {traceback.format_exc()}")
+            
+            # 通知前端失败
+            if self.main_window and self.main_window.web_view:
+                js_code = """
+                try {
+                    if (typeof window.onTranscriptHistoryLoaded === 'function') {
+                        window.onTranscriptHistoryLoaded("");
+                    }
+                } catch(e) {
+                    console.error('载入历史记录失败回调出错:', e);
+                }
+                """
+                self.main_window.web_view.page().runJavaScript(js_code)
+
+    # ====== 熟练度评估功能 ======
+    
+    @Slot(str, result=str)
+    def generateAssessmentQuestions(self, knowledge_point_id):
+        """为知识点生成评估题目"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【熟练度评估】generateAssessmentQuestions 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取知识点信息
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT point_name, core_description, subject_name
+                FROM knowledge_points 
+                WHERE id = ?
+            """, (knowledge_point_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                conn.close()
+                return json.dumps({
+                    "success": False,
+                    "error": "未找到该知识点"
+                }, ensure_ascii=False)
+            
+            point_name, core_description, subject_name = result
+            conn.close()
+            
+            # 构建生成题目的提示词
+            prompt = f"""请为以下知识点生成10道选择题，用于评估学生的掌握程度。
+
+知识点信息：
+- 名称：{point_name}
+- 描述：{core_description}
+- 学科：{subject_name}
+
+要求：
+1. 生成10道选择题，难度从容易到困难递增
+2. 每道题有4个选项（A、B、C、D）
+3. 题目要准确测试对该知识点的理解
+4. 包含不同层次的认知要求：记忆、理解、应用、分析
+5. 返回JSON格式，包含以下字段：
+   - question: 题目内容
+   - options: 选项数组（4个选项）
+   - correct_answer: 正确答案（A/B/C/D）
+   - difficulty: 难度等级（容易/中等/困难）
+   - explanation: 答案解释
+
+请直接返回JSON数组格式，不要包含其他文字：
+[
+  {{
+    "question": "题目内容",
+    "options": ["选项A", "选项B", "选项C", "选项D"],
+    "correct_answer": "A",
+    "difficulty": "容易",
+    "explanation": "答案解释"
+  }}
+]"""
+
+            # 调用LLM生成题目
+            from llm_provider_factory import call_llm
+            response = call_llm(prompt, "熟练度评估题目生成")
+            
+            if not response:
+                return json.dumps({
+                    "success": False,
+                    "error": "LLM调用失败"
+                }, ensure_ascii=False)
+            
+            # 解析JSON响应
+            try:
+                # 清理响应内容
+                response = response.strip()
+                if response.startswith('```json'):
+                    response = response[7:]
+                if response.endswith('```'):
+                    response = response[:-3]
+                response = response.strip()
+                
+                questions = json.loads(response)
+                
+                # 验证题目格式
+                if not isinstance(questions, list) or len(questions) != 10:
+                    raise ValueError("题目数量不正确")
+                
+                for i, q in enumerate(questions):
+                    if not all(key in q for key in ['question', 'options', 'correct_answer', 'difficulty']):
+                        raise ValueError(f"题目{i+1}格式不完整")
+                    if len(q['options']) != 4:
+                        raise ValueError(f"题目{i+1}选项数量不正确")
+                
+                self.logger.info(f"✅ 成功生成 {len(questions)} 道评估题目")
+                
+                return json.dumps({
+                    "success": True,
+                    "questions": questions
+                }, ensure_ascii=False)
+                
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ JSON解析失败: {e}")
+                self.logger.error(f"原始响应: {response[:500]}...")
+                return json.dumps({
+                    "success": False,
+                    "error": "题目格式解析失败"
+                }, ensure_ascii=False)
+            except ValueError as e:
+                self.logger.error(f"❌ 题目验证失败: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": str(e)
+                }, ensure_ascii=False)
+                
+        except Exception as e:
+            self.logger.error(f"❌ 生成评估题目失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    @Slot(str, str, str, result=str)
+    def submitMasteryAssessment(self, knowledge_point_id, questions_json, answers_json):
+        """提交熟练度评估结果"""
+        self.logger.info("=" * 60)
+        self.logger.info(f"【熟练度评估】submitMasteryAssessment 开始 - ID: {knowledge_point_id}")
+        
+        try:
+            questions = json.loads(questions_json)
+            answers = json.loads(answers_json)
+            
+            if len(questions) != len(answers):
+                return json.dumps({
+                    "success": False,
+                    "error": "题目和答案数量不匹配"
+                }, ensure_ascii=False)
+            
+            # 计算正确答案数量
+            correct_count = 0
+            detailed_results = []
+            
+            for i, (question, user_answer) in enumerate(zip(questions, answers)):
+                correct_answer = question['correct_answer']
+                is_correct = user_answer == correct_answer
+                if is_correct:
+                    correct_count += 1
+                
+                detailed_results.append({
+                    "question_index": i,
+                    "question": question['question'],
+                    "user_answer": user_answer,
+                    "correct_answer": correct_answer,
+                    "is_correct": is_correct,
+                    "difficulty": question['difficulty'],
+                    "explanation": question.get('explanation', '')
+                })
+            
+            # 计算熟练度分数
+            total_questions = len(questions)
+            accuracy = correct_count / total_questions
+            
+            # 根据正确率和题目难度计算最终分数
+            difficulty_weights = {"容易": 1.0, "中等": 1.2, "困难": 1.5}
+            weighted_score = 0
+            total_weight = 0
+            
+            for result in detailed_results:
+                weight = difficulty_weights.get(result['difficulty'], 1.0)
+                if result['is_correct']:
+                    weighted_score += weight
+                total_weight += weight
+            
+            # 计算最终熟练度分数 (0-100)
+            if total_weight > 0:
+                mastery_score = int((weighted_score / total_weight) * 100)
+            else:
+                mastery_score = int(accuracy * 100)
+            
+            # 确保分数在合理范围内
+            mastery_score = max(0, min(100, mastery_score))
+            
+            # 更新数据库中的熟练度
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                UPDATE knowledge_points 
+                SET mastery_score = ?, updated_time = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (mastery_score, knowledge_point_id))
+            
+            conn.commit()
+            conn.close()
+            
+            # 更新脑图缓存中的熟练度信息
+            self._update_mindmap_cache_mastery_score(knowledge_point_id, mastery_score)
+            
+            self.logger.info(f"✅ 熟练度评估完成")
+            self.logger.info(f"   - 正确题数: {correct_count}/{total_questions}")
+            self.logger.info(f"   - 正确率: {accuracy:.1%}")
+            self.logger.info(f"   - 熟练度分数: {mastery_score}")
+            
+            return json.dumps({
+                "success": True,
+                "mastery_score": mastery_score,
+                "correct_count": correct_count,
+                "total_count": total_questions,
+                "accuracy": accuracy,
+                "detailed_results": detailed_results
+            }, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ 提交熟练度评估失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return json.dumps({
+                "success": False,
+                "error": str(e)
+            }, ensure_ascii=False)
+    
+    def _update_mindmap_cache_mastery_score(self, knowledge_point_id, new_mastery_score):
+        """更新脑图缓存中指定知识点的熟练度分数"""
+        self.logger.info(f"🔄 开始更新脑图缓存中的熟练度 - 知识点ID: {knowledge_point_id}, 新分数: {new_mastery_score}")
+        
+        try:
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 首先获取该知识点所属的学科
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT subject_name FROM knowledge_points 
+                WHERE id = ?
+            """, (knowledge_point_id,))
+            
+            result = cursor.fetchone()
+            if not result:
+                self.logger.warning(f"⚠️ 未找到知识点ID {knowledge_point_id}")
+                conn.close()
+                return False
+            
+            subject_name = result[0]
+            self.logger.info(f"📚 知识点所属学科: {subject_name}")
+            
+            # 获取该学科的脑图缓存
+            cursor.execute("""
+                SELECT mindmap_data FROM knowledge_mindmaps 
+                WHERE subject_name = ? AND user_id = ?
+            """, (subject_name, "0001"))
+            
+            cache_result = cursor.fetchone()
+            conn.close()
+            
+            if not cache_result:
+                self.logger.info(f"ℹ️ 学科 '{subject_name}' 没有脑图缓存，无需更新")
+                return True
+            
+            # 解析脑图数据
+            try:
+                mindmap_data = json.loads(cache_result[0])
+                self.logger.info(f"📊 成功解析脑图缓存数据")
+            except json.JSONDecodeError as e:
+                self.logger.error(f"❌ 脑图缓存数据解析失败: {e}")
+                return False
+            
+            # 查找并更新对应的知识点节点
+            nodes_updated = 0
+            target_node_ids = [str(knowledge_point_id), f"kp_{knowledge_point_id}"]
+            
+            for node in mindmap_data.get('nodes', []):
+                if node.get('type') == 'knowledge_point' and node.get('id') in target_node_ids:
+                    old_score = node.get('mastery_score', -1)
+                    node['mastery_score'] = new_mastery_score
+                    nodes_updated += 1
+                    self.logger.info(f"✅ 更新节点 {node['id']}: {old_score} → {new_mastery_score}")
+            
+            if nodes_updated == 0:
+                self.logger.warning(f"⚠️ 在脑图缓存中未找到知识点节点 (ID: {knowledge_point_id})")
+                return True  # 不算错误，可能节点ID格式不同
+            
+            # 保存更新后的脑图缓存
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            updated_mindmap_json = json.dumps(mindmap_data, ensure_ascii=False)
+            cursor.execute("""
+                UPDATE knowledge_mindmaps 
+                SET mindmap_data = ?, updated_time = CURRENT_TIMESTAMP
+                WHERE subject_name = ? AND user_id = ?
+            """, (updated_mindmap_json, subject_name, "0001"))
+            
+            conn.commit()
+            conn.close()
+            
+            self.logger.info(f"💾 脑图缓存更新成功 - 更新了 {nodes_updated} 个节点")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ 更新脑图缓存失败: {e}")
+            import traceback
+            self.logger.error(f"详细错误信息: {traceback.format_exc()}")
+            return False
 
 
 class DragOverlay(QWidget):
@@ -3718,12 +5730,260 @@ class OverlayDragCorgiApp(QMainWindow):
         log_shortcut = QShortcut(QKeySequence("Ctrl+L"), self)
         log_shortcut.activated.connect(self.open_log_viewer)
         print("✅ 快捷键 Ctrl+L 已设置 - 打开日志查看器")
+        
+        # F12 打开浏览器控制台
+        console_shortcut = QShortcut(QKeySequence("F12"), self)
+        console_shortcut.activated.connect(self.open_browser_console)
+        print("✅ 快捷键 F12 已设置 - 打开浏览器控制台")
     
     def open_log_viewer(self):
         """打开日志查看器"""
         print("🔍 快捷键触发：打开LLM调用日志查看器")
         if self.bridge:
             self.bridge.loadContent("llm_logs")
+    
+    def open_browser_console(self):
+        """打开浏览器控制台"""
+        print("🔧 快捷键触发：打开浏览器控制台")
+        try:
+            # 通过JavaScript打开开发者工具
+            js_code = """
+            (function() {
+                // 通用方法：执行一个会在控制台显示的命令
+                console.log('='.repeat(50));
+                console.log('🔧 浏览器控制台已激活！');
+                console.log('您现在可以在这里查看调试信息');
+                console.log('='.repeat(50));
+                
+                // 检查practice_welcome.js是否加载
+                console.log('检查JavaScript文件加载状态:');
+                console.log('- createPracticeWelcome函数:', typeof window.createPracticeWelcome);
+                console.log('- showPracticeWelcome函数:', typeof window.showPracticeWelcome);
+                
+                // 移除已存在的提示面板
+                var existingPanel = document.getElementById('debug-console-hint');
+                if (existingPanel) {
+                    existingPanel.remove();
+                }
+                
+                // 创建全局调试面板
+                var globalDebugPanel = document.createElement('div');
+                globalDebugPanel.id = 'global-debug-panel';
+                globalDebugPanel.style.cssText = 
+                    'position: fixed;' +
+                    'bottom: 20px;' +
+                    'left: 20px;' +
+                    'background: rgba(0, 0, 0, 0.9);' +
+                    'color: #00ff00;' +
+                    'padding: 15px;' +
+                    'border-radius: 8px;' +
+                    'font-family: monospace;' +
+                    'font-size: 12px;' +
+                    'z-index: 10000;' +
+                    'max-width: 500px;' +
+                    'max-height: 400px;' +
+                    'overflow-y: auto;' +
+                    'border: 1px solid #333;' +
+                    'resize: both;';
+                    
+                globalDebugPanel.innerHTML = 
+                    '<div style="font-weight: bold; margin-bottom: 10px; color: #ffff00; display: flex; justify-content: space-between; align-items: center;">' +
+                    '<span>🔧 全局调试面板</span>' +
+                    '<div>' +
+                    '<button onclick="document.getElementById(\\'debug-log\\').innerHTML=\\'\\'" style="' +
+                    'background: #333; border: 1px solid #555; color: #fff; cursor: pointer; font-size: 10px; margin-right: 5px; padding: 2px 6px; border-radius: 3px;' +
+                    '">清空</button>' +
+                    '<button onclick="this.parentElement.parentElement.parentElement.remove()" style="' +
+                    'background: none; border: none; color: #ff6666; cursor: pointer; font-size: 14px;' +
+                    '">×</button>' +
+                    '</div>' +
+                    '</div>' +
+                    '<div id="debug-log" style="line-height: 1.4;"></div>';
+                
+                // 添加到页面
+                document.body.appendChild(globalDebugPanel);
+                
+                // 添加初始调试信息
+                var logContainer = globalDebugPanel.querySelector('#debug-log');
+                function addLog(message) {
+                    var timestamp = new Date().toLocaleTimeString();
+                    logContainer.innerHTML += '<div>[' + timestamp + '] ' + message + '</div>';
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+                
+                // 将addLog函数暴露为全局函数，供其他页面使用
+                window.addDebugLog = addLog;
+                
+                addLog('🔄 全局调试面板已创建');
+                addLog('📋 检查当前页面状态...');
+                
+                // 检测当前页面类型
+                var currentPage = 'unknown';
+                if (document.getElementById('practiceTabContent')) {
+                    currentPage = 'practice_assistant';
+                    addLog('📄 当前页面: 练习助手');
+                } else if (document.getElementById('subjectsContainer')) {
+                    currentPage = 'knowledge_mindmap';
+                    addLog('📄 当前页面: 知识脑图练习');
+                } else if (document.getElementById('fileTree')) {
+                    currentPage = 'learn_materials';
+                    addLog('📄 当前页面: 从资料学习');
+                } else {
+                    addLog('📄 当前页面: 未知页面');
+                }
+                
+                // 检查WebChannel状态
+                function checkWebChannelStatus() {
+                    addLog('🔍 WebChannel状态检查:');
+                    addLog('  - window.pybridge: ' + (window.pybridge ? '✅可用' : '❌不可用'));
+                    if (window.pybridge) {
+                        var methodCount = Object.keys(window.pybridge).length;
+                        addLog('  - 可用方法数量: ' + methodCount);
+                        addLog('  - getSubjectsWithKnowledgeCount: ' + (window.pybridge.getSubjectsWithKnowledgeCount ? '✅存在' : '❌不存在'));
+                        return true;
+                    } else {
+                        addLog('  - 正在等待WebChannel初始化...');
+                        return false;
+                    }
+                }
+                
+                // 初始检查
+                var webChannelReady = checkWebChannelStatus();
+                
+                // 如果WebChannel未就绪，定期重新检查
+                if (!webChannelReady) {
+                    var retryCount = 0;
+                    var maxRetries = 10;
+                    var checkInterval = setInterval(function() {
+                        retryCount++;
+                        addLog('🔄 重新检查WebChannel状态 (' + retryCount + '/' + maxRetries + ')');
+                        
+                        if (checkWebChannelStatus()) {
+                            clearInterval(checkInterval);
+                            addLog('✅ WebChannel已就绪！');
+                            
+                            // 如果是知识脑图页面，尝试加载科目
+                            if (currentPage === 'knowledge_mindmap' && window.loadSubjects) {
+                                addLog('🚀 尝试加载科目列表...');
+                                window.loadSubjects();
+                            }
+                        } else if (retryCount >= maxRetries) {
+                            clearInterval(checkInterval);
+                            addLog('❌ WebChannel初始化超时');
+                            addLog('💡 建议：刷新页面重试');
+                        }
+                    }, 1000);
+                }
+                
+                // 根据页面类型进行特定检查
+                if (currentPage === 'practice_assistant') {
+                    // 练习助手页面检查
+                    var practiceTabContent = document.getElementById('practiceTabContent');
+                    var aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                    
+                    addLog('🔧 练习助手元素检查:');
+                    addLog('  - practiceTabContent: ' + (practiceTabContent ? '✅存在' : '❌不存在'));
+                    addLog('  - aiPracticeMessages: ' + (aiPracticeMessages ? '✅存在' : '❌不存在'));
+                    addLog('  - createPracticeWelcome函数: ' + typeof window.createPracticeWelcome);
+                    
+                    // 如果函数存在，尝试调用
+                    if (typeof window.createPracticeWelcome === 'function') {
+                        addLog('🚀 尝试调用createPracticeWelcome...');
+                        try {
+                            window.createPracticeWelcome();
+                            addLog('✅ createPracticeWelcome调用成功');
+                        } catch (error) {
+                            addLog('❌ createPracticeWelcome调用失败: ' + error.message);
+                        }
+                    }
+                } else if (currentPage === 'knowledge_mindmap') {
+                    // 知识脑图页面检查
+                    var subjectsContainer = document.getElementById('subjectsContainer');
+                    var subjectManagerModal = document.getElementById('subjectManagerModal');
+                    
+                    addLog('🧠 知识脑图元素检查:');
+                    addLog('  - subjectsContainer: ' + (subjectsContainer ? '✅存在' : '❌不存在'));
+                    addLog('  - subjectManagerModal: ' + (subjectManagerModal ? '✅存在' : '❌不存在'));
+                    
+                    // 检查科目管理相关API
+                    if (window.pybridge) {
+                        addLog('  - getSubjectsWithKnowledgeCount: ' + (window.pybridge.getSubjectsWithKnowledgeCount ? '✅存在' : '❌不存在'));
+                        addLog('  - getAllSubjects: ' + (window.pybridge.getAllSubjects ? '✅存在' : '❌不存在'));
+                        addLog('  - createSubject: ' + (window.pybridge.createSubject ? '✅存在' : '❌不存在'));
+                    }
+                    
+                    // 检查科目加载状态
+                    if (subjectsContainer) {
+                        var loadingText = subjectsContainer.textContent;
+                        if (loadingText.includes('正在加载')) {
+                            addLog('⏳ 科目列表正在加载中...');
+                        } else if (loadingText.includes('加载失败')) {
+                            addLog('❌ 科目列表加载失败');
+                        } else {
+                            var subjectCards = subjectsContainer.querySelectorAll('.subject-card');
+                            addLog('📊 已加载 ' + subjectCards.length + ' 个科目卡片');
+                        }
+                    }
+                }
+                
+                // 创建右上角的提示面板
+                var debugPanel = document.createElement('div');
+                debugPanel.id = 'debug-console-hint';
+                debugPanel.style.cssText = 
+                    'position: fixed;' +
+                    'top: 20px;' +
+                    'right: 20px;' +
+                    'background: #333;' +
+                    'color: white;' +
+                    'padding: 15px 20px;' +
+                    'border-radius: 8px;' +
+                    'z-index: 10000;' +
+                    'font-family: monospace;' +
+                    'font-size: 14px;' +
+                    'box-shadow: 0 4px 12px rgba(0,0,0,0.3);' +
+                    'max-width: 300px;';
+                    
+                debugPanel.innerHTML = 
+                    '<div style="font-weight: bold; margin-bottom: 8px;">🔧 调试控制台提示</div>' +
+                    '<div style="font-size: 12px; line-height: 1.4;">' +
+                    '• 右键页面选择"检查"<br>' +
+                    '• 点击 Console 标签页<br>' +
+                    '• 查看调试信息<br>' +
+                    '• 左下角有详细调试面板' +
+                    '</div>' +
+                    '<button onclick="this.parentElement.remove()" style="' +
+                    'position: absolute;' +
+                    'top: 5px;' +
+                    'right: 8px;' +
+                    'background: none;' +
+                    'border: none;' +
+                    'color: white;' +
+                    'cursor: pointer;' +
+                    'font-size: 16px;' +
+                    '">×</button>';
+                
+                // 添加到页面
+                document.body.appendChild(debugPanel);
+                
+                // 5秒后自动移除提示
+                setTimeout(function() {
+                    if (debugPanel.parentElement) {
+                        debugPanel.remove();
+                    }
+                }, 8000);
+            })();
+            """
+            
+            # 在WebEngine中执行JavaScript
+            if hasattr(self, 'web_view') and self.web_view:
+                # 直接显示调试提示面板
+                self.web_view.page().runJavaScript(js_code)
+                print("✅ 浏览器控制台提示面板已显示")
+            else:
+                print("❌ 无法访问WebView")
+                
+        except Exception as e:
+            print(f"❌ 打开浏览器控制台失败: {e}")
         
     def showEvent(self, event):
         """窗口显示时设置圆角mask"""
@@ -3769,6 +6029,29 @@ class OverlayDragCorgiApp(QMainWindow):
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessRemoteUrls, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+        
+        # 启用开发者工具 - 允许用户按F12打开调试面板
+        try:
+            # 尝试不同的开发者工具属性名
+            if hasattr(QWebEngineSettings.WebAttribute, 'DeveloperExtrasEnabled'):
+                settings.setAttribute(QWebEngineSettings.WebAttribute.DeveloperExtrasEnabled, True)
+            elif hasattr(QWebEngineSettings.WebAttribute, 'WebAttribute_DeveloperExtrasEnabled'):
+                settings.setAttribute(QWebEngineSettings.WebAttribute.WebAttribute_DeveloperExtrasEnabled, True)
+            else:
+                print("⚠️ 开发者工具属性不可用，跳过设置")
+        except Exception as e:
+            print(f"⚠️ 设置开发者工具失败: {e}")
+        
+        # 启用其他有用的调试功能
+        try:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.ErrorPageEnabled, True)
+        except:
+            pass
+        
+        try:
+            settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
+        except:
+            pass
         
         # 添加WebView到布局
         layout.addWidget(self.web_view)
@@ -3923,6 +6206,7 @@ class OverlayDragCorgiApp(QMainWindow):
                 "practice_errors": self.generate_practice_errors_content,
                 "memory_knowledge": self.generate_memory_knowledge_content,
                 "memory_errors": self.generate_memory_errors_content,
+                "api_test": self.generate_api_test_content,
                 "knowledge_base": self.generate_knowledge_base_content,
                 "settings": self.generate_settings_content
             }
@@ -4213,17 +6497,217 @@ class OverlayDragCorgiApp(QMainWindow):
     
     def generate_practice_materials_content(self):
         """生成基于学习资料练习内容"""
+        try:
+            # 使用重新创建的简化页面
+            self.logger.info("🔄 使用重新创建的简化页面: practice_materials")
+            return self.template_manager.render_page_content('practice_materials')
+        except Exception as e:
+            self.logger.error(f"渲染练习资料页面失败: {e}")
+            return f'''
+            <div class="bg-white rounded-xl shadow-sm p-6">
+                <div class="text-center py-16">
+                    <span class="material-icons-outlined text-6xl text-red-400 mb-4">error</span>
+                    <h3 class="text-xl font-semibold text-text-dark-brown mb-2">页面加载失败</h3>
+                    <p class="text-text-gray mb-6">模板文件可能不存在或有错误</p>
+                    <p class="text-sm text-red-500">错误信息: {str(e)}</p>
+                    <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded">重新加载</button>
+                </div>
+            </div>
+            '''
+    
+    def generate_api_test_content(self):
+        """生成API测试页面内容"""
         return '''
         <div class="bg-white rounded-xl shadow-sm p-6">
-            <div class="text-center py-16">
-                <span class="material-icons-outlined text-6xl text-gray-400 mb-4">quiz</span>
-                <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于学习资料练习</h3>
-                <p class="text-text-gray mb-6">根据你的学习资料自动生成练习题目</p>
-                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600">
-                    开始练习
-                </button>
+            <h1 class="text-2xl font-bold text-text-dark-brown mb-6">知识脑图API测试</h1>
+            
+            <div class="space-y-6">
+                <!-- API可用性检查 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">1. 检查API可用性</h2>
+                    <button onclick="checkAPI()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mr-2">检查API</button>
+                    <div id="apiResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
+                
+                <!-- 获取学科列表 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">2. 获取学科列表</h2>
+                    <button onclick="testGetSubjects()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mr-2">获取学科列表</button>
+                    <div id="subjectsResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
+                
+                <!-- 生成脑图 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">3. 生成脑图</h2>
+                    <div class="flex items-center space-x-2 mb-3">
+                        <input type="text" id="subjectInput" placeholder="输入学科名称" class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="testGenerateMindmap()" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">生成脑图</button>
+                    </div>
+                    <div id="mindmapResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
+                
+                <!-- 获取知识点详情 -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-3">4. 获取知识点详情</h2>
+                    <div class="flex items-center space-x-2 mb-3">
+                        <input type="text" id="kpIdInput" placeholder="输入知识点ID" class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button onclick="testGetKnowledgePoint()" class="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">获取详情</button>
+                    </div>
+                    <div id="kpResult" class="mt-3 p-3 bg-gray-50 rounded text-sm font-mono"></div>
+                </div>
             </div>
         </div>
+
+        <script>
+            function log(elementId, message, isError = false) {
+                const element = document.getElementById(elementId);
+                const timestamp = new Date().toLocaleTimeString();
+                element.textContent = `[${timestamp}] ${message}`;
+                element.className = `mt-3 p-3 rounded text-sm font-mono ${isError ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`;
+            }
+
+            function checkAPI() {
+                console.log('检查API可用性...');
+                
+                if (!window.pywebview) {
+                    log('apiResult', 'ERROR: window.pywebview 不存在', true);
+                    return;
+                }
+                
+                if (!window.pywebview.api) {
+                    log('apiResult', 'ERROR: window.pywebview.api 不存在', true);
+                    return;
+                }
+                
+                // 列出可用的API方法
+                const methods = Object.keys(window.pywebview.api);
+                console.log('可用的API方法:', methods);
+                
+                const mindmapMethods = methods.filter(m => 
+                    m.toLowerCase().includes('subject') || 
+                    m.toLowerCase().includes('mindmap') || 
+                    m.toLowerCase().includes('knowledge')
+                );
+                
+                log('apiResult', `SUCCESS: pywebview API 可用\\n脑图相关方法: ${mindmapMethods.join(', ')}`);
+            }
+
+            async function testGetSubjects() {
+                console.log('测试获取学科列表...');
+                
+                try {
+                    if (!window.pywebview || !window.pywebview.api) {
+                        throw new Error('pywebview API 不可用');
+                    }
+                    
+                    if (!window.pywebview.api.getSubjectsWithKnowledgeCount) {
+                        throw new Error('getSubjectsWithKnowledgeCount 方法不存在');
+                    }
+                    
+                    log('subjectsResult', '正在调用 getSubjectsWithKnowledgeCount...');
+                    
+                    const result = await window.pywebview.api.getSubjectsWithKnowledgeCount();
+                    console.log('API返回结果:', result);
+                    
+                    const subjects = JSON.parse(result);
+                    console.log('解析后的数据:', subjects);
+                    
+                    if (subjects.length === 0) {
+                        log('subjectsResult', 'SUCCESS: API调用成功，但没有学科数据\\n返回: []');
+                    } else {
+                        log('subjectsResult', `SUCCESS: 获取到 ${subjects.length} 个学科\\n${JSON.stringify(subjects, null, 2)}`);
+                    }
+                    
+                } catch (error) {
+                    console.error('获取学科列表失败:', error);
+                    log('subjectsResult', `ERROR: ${error.message}`, true);
+                }
+            }
+
+            async function testGenerateMindmap() {
+                const subjectName = document.getElementById('subjectInput').value.trim();
+                
+                if (!subjectName) {
+                    log('mindmapResult', 'ERROR: 请输入学科名称', true);
+                    return;
+                }
+                
+                console.log('测试生成脑图...', subjectName);
+                
+                try {
+                    if (!window.pywebview || !window.pywebview.api) {
+                        throw new Error('pywebview API 不可用');
+                    }
+                    
+                    if (!window.pywebview.api.getOrGenerateMindmap) {
+                        throw new Error('getOrGenerateMindmap 方法不存在');
+                    }
+                    
+                    log('mindmapResult', `正在为学科 "${subjectName}" 生成脑图...`);
+                    
+                    const result = await window.pywebview.api.getOrGenerateMindmap(subjectName);
+                    console.log('脑图生成结果:', result);
+                    
+                    const data = JSON.parse(result);
+                    
+                    if (data.success) {
+                        log('mindmapResult', `SUCCESS: 脑图生成成功\\n节点数: ${data.mindmap.data.nodes?.length || 0}\\n边数: ${data.mindmap.data.edges?.length || 0}\\n版本: ${data.mindmap.version}`);
+                    } else {
+                        log('mindmapResult', `ERROR: 脑图生成失败\\n${data.error}`, true);
+                    }
+                    
+                } catch (error) {
+                    console.error('生成脑图失败:', error);
+                    log('mindmapResult', `ERROR: ${error.message}`, true);
+                }
+            }
+
+            async function testGetKnowledgePoint() {
+                const kpId = document.getElementById('kpIdInput').value.trim();
+                
+                if (!kpId) {
+                    log('kpResult', 'ERROR: 请输入知识点ID', true);
+                    return;
+                }
+                
+                console.log('测试获取知识点详情...', kpId);
+                
+                try {
+                    if (!window.pywebview || !window.pywebview.api) {
+                        throw new Error('pywebview API 不可用');
+                    }
+                    
+                    if (!window.pywebview.api.getKnowledgePointDetail) {
+                        throw new Error('getKnowledgePointDetail 方法不存在');
+                    }
+                    
+                    log('kpResult', `正在获取知识点 "${kpId}" 的详情...`);
+                    
+                    const result = await window.pywebview.api.getKnowledgePointDetail(kpId);
+                    console.log('知识点详情结果:', result);
+                    
+                    const data = JSON.parse(result);
+                    
+                    if (data.success) {
+                        log('kpResult', `SUCCESS: 获取知识点详情成功\\n${JSON.stringify(data.detail, null, 2)}`);
+                    } else {
+                        log('kpResult', `ERROR: 获取知识点详情失败\\n${data.error}`, true);
+                    }
+                    
+                } catch (error) {
+                    console.error('获取知识点详情失败:', error);
+                    log('kpResult', `ERROR: ${error.message}`, true);
+                }
+            }
+
+            // 页面加载完成后自动检查API
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('API测试页面加载完成');
+                setTimeout(() => {
+                    checkAPI();
+                }, 1000);
+            });
+        </script>
         '''
     
     def generate_practice_knowledge_content(self):
@@ -4302,34 +6786,78 @@ class OverlayDragCorgiApp(QMainWindow):
         '''
     
     def generate_settings_content(self):
-        """生成设置内容 - 备用方案，实际使用模板系统"""
+        """生成设置内容"""
         return '''
         <div class="bg-white rounded-xl shadow-sm p-6">
-            <h3 class="text-xl font-semibold text-text-dark-brown mb-6">设置</h3>
-            <div class="space-y-6">
-                <div>
-                    <label class="block text-sm font-medium text-text-dark-brown mb-2">LLM模型选择</label>
-                    <select class="w-full p-3 border border-gray-300 rounded-lg">
-                        <option>Gemini Pro</option>
-                        <option>Ollama</option>
-                        <option>通义千问</option>
-                        <option>规则匹配</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-text-dark-brown mb-2">API Key</label>
-                    <input type="password" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="输入你的API Key">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-text-dark-brown mb-2">学习提醒</label>
-                    <div class="flex items-center">
-                        <input type="checkbox" class="mr-2">
-                        <span class="text-sm text-text-gray">启用每日学习提醒</span>
+            <h1 class="text-2xl font-bold text-text-dark-brown mb-6">系统设置</h1>
+            
+            <div class="space-y-8">
+                <!-- LLM配置 -->
+                <div class="border border-gray-200 rounded-lg p-6">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-4 flex items-center">
+                        <span class="material-icons-outlined mr-2">smart_toy</span>
+                        LLM模型配置
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">当前模型</label>
+                            <select class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option>Ollama (本地)</option>
+                                <option>OpenAI GPT-4</option>
+                                <option>Google Gemini</option>
+                                <option>DeepSeek</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">API密钥</label>
+                            <input type="password" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" placeholder="输入API密钥">
+                        </div>
                     </div>
                 </div>
-                <button class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-600">
-                    保存设置
-                </button>
+
+                <!-- 语音设置 -->
+                <div class="border border-gray-200 rounded-lg p-6">
+                    <h2 class="text-lg font-semibold text-text-dark-brown mb-4 flex items-center">
+                        <span class="material-icons-outlined mr-2">mic</span>
+                        语音识别设置
+                    </h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">识别精度</label>
+                            <div class="flex space-x-6">
+                                <label class="flex items-center">
+                                    <input type="radio" name="accuracy" class="mr-2">
+                                    <span class="text-sm">快速</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="accuracy" class="mr-2" checked>
+                                    <span class="text-sm">平衡</span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="radio" name="accuracy" class="mr-2">
+                                    <span class="text-sm">精确</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-text-dark-brown mb-2">音频设备</label>
+                            <select class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option>默认设备</option>
+                                <option>Microsoft 声音映射器</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 保存按钮 -->
+                <div class="flex justify-end space-x-4">
+                    <button class="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                        重置默认
+                    </button>
+                    <button class="px-6 py-2 bg-primary text-white rounded-lg hover:bg-green-600">
+                        保存设置
+                    </button>
+                </div>
             </div>
         </div>
         '''
@@ -4436,6 +6964,10 @@ class OverlayDragCorgiApp(QMainWindow):
                         <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_errors')">
                             <span class="material-icons-outlined mr-2 text-sm">error_outline</span>
                             <span class="menu-text">基于错题练习</span>
+                        </a>
+                        <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('api_test')">
+                            <span class="material-icons-outlined mr-2 text-sm">bug_report</span>
+                            <span class="menu-text">API测试</span>
                         </a>
                     </div>
                 </div>
@@ -4595,6 +7127,19 @@ class OverlayDragCorgiApp(QMainWindow):
                 return;
             }
             
+            if (bridge && bridge.loadContent) {
+                bridge.loadContent(menuId);
+            }
+        }
+        
+        // 处理菜单展开/收缩
+        function toggleMenu(menuId) {
+            if (sidebarCollapsed) {
+                // 如果侧边栏收缩，先展开
+                toggleSidebar();
+                return;
+            }
+            
             if (bridge && bridge.toggleMenu) {
                 bridge.toggleMenu(menuId).then(function(menuStateJson) {
                     const menuState = JSON.parse(menuStateJson);
@@ -4606,7 +7151,12 @@ class OverlayDragCorgiApp(QMainWindow):
         // 更新菜单显示状态
         function updateMenuDisplay(menuState) {
             Object.keys(menuState).forEach(menuId => {
-                const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+                // 尝试两种选择器：handleMenuClick 和 toggleMenu
+                let menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+                if (!menuItem) {
+                    menuItem = document.querySelector(`[onclick="toggleMenu('${menuId}')"]`);
+                }
+                
                 if (menuItem) {
                     const submenu = menuItem.parentElement.querySelector('.submenu');
                     const expandIcon = menuItem.querySelector('.expand-icon');
@@ -7384,6 +9934,101 @@ class TranscriberWorker(QObject):
 
     def stop(self):
         self._stop = True
+
+
+class ScreenshotOverlay(QWidget):
+    """截图覆盖层 - 基于app_qt.py的实现"""
+    captured = Signal(QImage)
+
+    def __init__(self, screen):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self._screen = screen
+        self._screen_geo = screen.geometry()
+        self._pixmap: QPixmap = screen.grabWindow(0)
+        # HiDPI awareness
+        self._dpr = float(self._pixmap.devicePixelRatio()) if hasattr(self._pixmap, 'devicePixelRatio') else 1.0
+        self._origin: QPoint | None = None
+        self._current: QPoint | None = None
+        self._selection: QRect | None = None
+        self._double_clicked = False
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        # Draw the captured screen scaled to the widget's rect to match logical coordinates
+        painter.drawPixmap(self.rect(), self._pixmap)
+        # Dim the whole screen
+        painter.fillRect(self.rect(), QBrush(QColor(0, 0, 0, 100)))
+        # Draw selection area: undim + border
+        if self._selection and not self._selection.isNull():
+            sel = self._selection.normalized()
+            # Re-draw original content inside selection to undim
+            # Map logical selection rect to device pixels when copying from pixmap
+            dev_sel = QRect(int(sel.x() * self._dpr), int(sel.y() * self._dpr), int(sel.width() * self._dpr), int(sel.height() * self._dpr))
+            crop = self._pixmap.copy(dev_sel)
+            painter.drawPixmap(sel, crop.scaled(sel.size()))
+            # Border
+            pen = QPen(QColor(0, 153, 255), 2, Qt.PenStyle.SolidLine)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(sel)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._origin = e.position().toPoint()
+            self._current = self._origin
+            self._update_selection()
+            self.update()
+
+    def mouseMoveEvent(self, e):
+        if self._origin is not None:
+            self._current = e.position().toPoint()
+            self._update_selection()
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self._origin is not None:
+            self._current = e.position().toPoint()
+            self._update_selection()
+            self.update()
+
+    def mouseDoubleClickEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._double_clicked = True
+            self._confirm_capture()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._confirm_capture()
+        elif e.key() == Qt.Key.Key_Escape:
+            self.close()
+
+    def resizeEvent(self, e):
+        # Ensure overlay covers the target screen
+        self.setGeometry(self._screen_geo)
+        super().resizeEvent(e)
+
+    def showEvent(self, e):
+        # Fit overlay to screen geometry
+        self.setGeometry(self._screen_geo)
+        super().showEvent(e)
+
+    def _update_selection(self):
+        if self._origin is None or self._current is None:
+            self._selection = None
+            return
+        x1, y1 = self._origin.x(), self._origin.y()
+        x2, y2 = self._current.x(), self._current.y()
+        self._selection = QRect(min(x1, x2), min(y1, y2), abs(x2 - x1), abs(y2 - y1))
+
+    def _confirm_capture(self):
+        if self._selection and not self._selection.isNull():
+            sel = self._selection.normalized()
+            dev_sel = QRect(int(sel.x() * self._dpr), int(sel.y() * self._dpr), int(sel.width() * self._dpr), int(sel.height() * self._dpr))
+            img = self._pixmap.copy(dev_sel).toImage()
+            self.captured.emit(img)
+        self.close()
 
 
 if __name__ == "__main__":

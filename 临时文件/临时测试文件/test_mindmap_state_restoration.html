@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>脑图状态恢复测试</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">脑图状态恢复功能测试</h1>
+        
+        <!-- 问题描述 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">问题描述</h2>
+            <p class="text-gray-700 mb-4">
+                用户完成熟练度评估后，重新进入脑图页面时显示不了任何脑图，只有点击刷新后才会出来并且更新。
+            </p>
+            
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">原因分析</h3>
+            <ul class="list-disc list-inside space-y-1 text-gray-700 mb-4">
+                <li>页面重新加载后，用户的浏览状态丢失</li>
+                <li>没有自动恢复到之前查看的学科和知识点</li>
+                <li>缓存更新逻辑中数据结构访问错误</li>
+            </ul>
+        </div>
+        
+        <!-- 修复方案 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">修复方案</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-lg font-semibold text-green-600 mb-3">✅ 状态保存机制</h3>
+                    <ul class="list-disc list-inside space-y-1 text-gray-700 text-sm">
+                        <li>选择学科时保存到localStorage</li>
+                        <li>查看知识点时保存节点ID</li>
+                        <li>页面加载时自动恢复状态</li>
+                        <li>返回学科选择时清除状态</li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold text-blue-600 mb-3">🔧 缓存更新修复</h3>
+                    <ul class="list-disc list-inside space-y-1 text-gray-700 text-sm">
+                        <li>修正数据结构访问路径</li>
+                        <li>确保节点ID匹配逻辑正确</li>
+                        <li>完善错误处理和日志记录</li>
+                        <li>验证缓存数据格式一致性</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 测试流程 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">测试流程</h2>
+            
+            <div class="space-y-4">
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">进入脑图页面</h4>
+                        <p class="text-gray-600 text-sm">选择任意学科，查看知识脑图</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">点击知识点</h4>
+                        <p class="text-gray-600 text-sm">选择任意知识点，查看详细信息</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">进行熟练度评估</h4>
+                        <p class="text-gray-600 text-sm">点击"熟练度评估"按钮，完成评估</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center font-bold text-sm">4</div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">重新进入页面</h4>
+                        <p class="text-gray-600 text-sm">刷新页面或重新打开脑图功能</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-start space-x-3">
+                    <div class="w-8 h-8 bg-purple-500 text-white rounded-full flex items-center justify-center font-bold text-sm">5</div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">验证自动恢复</h4>
+                        <p class="text-gray-600 text-sm">检查是否自动显示之前的脑图和更新后的颜色</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 预期效果 -->
+        <div class="bg-white rounded-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">预期效果对比</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="border-l-4 border-red-500 pl-4">
+                    <h3 class="text-lg font-semibold text-red-600 mb-2">❌ 修复前</h3>
+                    <ul class="space-y-1 text-gray-700 text-sm">
+                        <li>• 重新进入页面显示学科选择界面</li>
+                        <li>• 需要重新选择学科</li>
+                        <li>• 需要重新点击知识点</li>
+                        <li>• 看不到评估后的颜色更新</li>
+                        <li>• 用户体验断裂</li>
+                    </ul>
+                </div>
+                
+                <div class="border-l-4 border-green-500 pl-4">
+                    <h3 class="text-lg font-semibold text-green-600 mb-2">✅ 修复后</h3>
+                    <ul class="space-y-1 text-gray-700 text-sm">
+                        <li>• 自动恢复到之前查看的学科</li>
+                        <li>• 自动显示脑图</li>
+                        <li>• 自动恢复知识点详情（如果有）</li>
+                        <li>• 立即看到评估后的颜色更新</li>
+                        <li>• 无缝的用户体验</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 技术实现 -->
+        <div class="bg-white rounded-lg p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">技术实现细节</h2>
+            
+            <div class="space-y-4">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">1. 状态保存</h3>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <pre class="text-sm text-gray-700"><code>// 选择学科时保存状态
+localStorage.setItem('lastViewedSubject', subjectName);
+
+// 查看知识点时保存状态
+localStorage.setItem('lastViewedKnowledgePoint', node.id);</code></pre>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">2. 状态恢复</h3>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <pre class="text-sm text-gray-700"><code>// 页面加载时恢复状态
+function restorePreviousMindmapState() {
+    const lastViewedSubject = localStorage.getItem('lastViewedSubject');
+    if (lastViewedSubject) {
+        setTimeout(() => selectSubject(lastViewedSubject), 500);
+    }
+}</code></pre>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">3. 缓存更新修复</h3>
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <pre class="text-sm text-gray-700"><code>// 修复数据结构访问
+// 修复前: mindmap_data.get('data', {}).get('nodes', [])
+// 修复后: mindmap_data.get('nodes', [])</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 模拟localStorage操作，用于演示
+        function simulateStateManagement() {
+            console.log('🧪 模拟状态管理功能');
+            
+            // 模拟保存状态
+            localStorage.setItem('lastViewedSubject', '机器学习');
+            localStorage.setItem('lastViewedKnowledgePoint', 'kp_6');
+            
+            console.log('💾 已保存状态:', {
+                subject: localStorage.getItem('lastViewedSubject'),
+                knowledgePoint: localStorage.getItem('lastViewedKnowledgePoint')
+            });
+            
+            // 模拟恢复状态
+            setTimeout(() => {
+                const subject = localStorage.getItem('lastViewedSubject');
+                const kp = localStorage.getItem('lastViewedKnowledgePoint');
+                
+                if (subject) {
+                    console.log(`🔄 恢复学科: ${subject}`);
+                    if (kp) {
+                        console.log(`🔄 恢复知识点: ${kp}`);
+                    }
+                }
+            }, 1000);
+        }
+
+        // 页面加载时运行演示
+        document.addEventListener('DOMContentLoaded', function() {
+            simulateStateManagement();
+        });
+    </script>
+</body>
+</html>

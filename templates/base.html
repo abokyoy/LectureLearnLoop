@@ -245,21 +245,35 @@
             display: flex;
             flex-direction: column;
             background: #F5F7F9; /* bg-light-blue-gray */
-            height: 100%;
+            max-height: calc(100vh - 160px); /* 限制最大高度，预留头部和边距空间 */
             overflow-y: auto; /* 启用垂直滚动 */
             overflow-x: hidden; /* 隐藏水平滚动 */
+            min-height: 0; /* 允许flex收缩 */
+        }
+        
+        /* 在最大化模式下进一步优化练习面板高度 */
+        .ai-chat-window.maximized .practice-main-container {
+            max-height: calc(100vh - 200px); /* 最大化模式下的高度限制 */
         }
         
         /* 练习面板内容区域滚动优化 */
         .practice-main-container > div {
             min-height: 0; /* 允许flex子元素收缩 */
+            max-height: 100%; /* 确保不超出父容器 */
+            overflow-y: auto; /* 启用滚动 */
         }
         
         /* 题目展示区域滚动 */
         .practice-main-container .flex-grow.mb-4.overflow-y-auto {
-            max-height: 400px; /* 限制题目区域最大高度 */
+            max-height: 300px; /* 减少题目区域最大高度，为其他内容留出空间 */
             overflow-y: auto;
             overflow-x: hidden;
+        }
+        
+        /* 练习面板主内容区域优化 */
+        .practice-main-container .flex-grow.flex.flex-col.bg-white {
+            max-height: calc(100vh - 300px); /* 限制主内容区域高度 */
+            overflow-y: auto; /* 启用滚动 */
         }
         
         /* 练习.html中的颜色变量 */
@@ -426,7 +440,6 @@
             justify-content: center;
             z-index: 10000;
         }
-
         .ai-history-modal.show {
             display: flex;
         }
@@ -434,8 +447,9 @@
         .ai-history-content {
             background: white;
             border-radius: 12px;
-            width: 600px;
-            max-height: 80vh;
+            width: 800px;
+            max-width: 90vw;
+            max-height: 85vh;
             display: flex;
             flex-direction: column;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
@@ -457,7 +471,7 @@
         .ai-history-list {
             flex: 1;
             overflow-y: auto;
-            max-height: 400px;
+            min-height: 500px;
             padding: 10px;
         }
 
@@ -556,6 +570,320 @@
             51%, 100% { opacity: 0; }
         }
     </style>
+    <script>
+        // 直接内联practice_welcome.js的内容，避免路径问题
+        // 练习助手欢迎界面功能
+
+        // 创建练习欢迎界面
+        function createPracticeWelcome() {
+            // 检查是否已经存在欢迎界面
+            const existingWelcome = document.getElementById('practiceWelcomePanel');
+            if (existingWelcome) {
+                addDebugLog('欢迎界面已存在，跳过创建');
+                return;
+            }
+            
+            const practiceTabContent = document.getElementById('practiceTabContent');
+            const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+            
+            addDebugLog(`创建练习欢迎界面 - practiceTabContent: ${!!practiceTabContent}, aiPracticeMessages: ${!!aiPracticeMessages}`);
+            
+            if (practiceTabContent && aiPracticeMessages) {
+                const welcomeHTML = `
+                <div class="practice-welcome-panel" id="practiceWelcomePanel" style="display: block;">
+                    <div class="flex flex-col items-center justify-center h-full p-8 text-center">
+                        <div class="mb-8">
+                            <span class="material-icons-outlined text-6xl text-primary mb-4 block">quiz</span>
+                            <h2 class="text-2xl font-bold text-text-dark-brown mb-2">AI练习助手</h2>
+                            <p class="text-text-medium-brown mb-6">智能生成练习题目，提升学习效果</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md">
+                            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomeNewPracticeBtn">
+                                <span class="material-icons-outlined text-3xl text-primary mb-2">add_circle_outline</span>
+                                <span class="font-medium text-text-dark-brown">开始新练习</span>
+                                <span class="text-sm text-text-medium-brown mt-1">生成新的练习题目</span>
+                            </button>
+                            
+                            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomePracticeHistoryBtn">
+                                <span class="material-icons-outlined text-3xl text-blue-500 mb-2">history</span>
+                                <span class="font-medium text-text-dark-brown">练习历史</span>
+                                <span class="text-sm text-text-medium-brown mt-1">查看历史练习记录</span>
+                            </button>
+                        </div>
+                        
+                        <div class="mt-8 text-sm text-text-medium-brown">
+                            <p>💡 提示：您可以通过AI对话生成个性化练习题目</p>
+                        </div>
+                    </div>
+                </div>
+                `;
+                
+                // 在消息面板前插入欢迎界面
+                addDebugLog('📝 插入欢迎界面HTML');
+                aiPracticeMessages.insertAdjacentHTML('beforebegin', welcomeHTML);
+                
+                // 隐藏消息面板，显示欢迎界面
+                addDebugLog('👁️ 隐藏消息面板，显示欢迎界面');
+                aiPracticeMessages.style.display = 'none';
+                
+                // 验证欢迎界面是否成功创建
+                const createdWelcome = document.getElementById('practiceWelcomePanel');
+                addDebugLog(`✅ 欢迎界面创建结果: ${!!createdWelcome}`);
+                
+                if (createdWelcome) {
+                    addDebugLog(`🎨 欢迎界面样式: display=${createdWelcome.style.display}`);
+                }
+                
+                // 绑定按钮事件
+                bindPracticeWelcomeEvents();
+            }
+        }
+
+        // 绑定练习欢迎界面的事件
+        function bindPracticeWelcomeEvents() {
+            const welcomeNewPracticeBtn = document.getElementById('welcomeNewPracticeBtn');
+            const welcomePracticeHistoryBtn = document.getElementById('welcomePracticeHistoryBtn');
+            
+            if (welcomeNewPracticeBtn) {
+                welcomeNewPracticeBtn.addEventListener('click', function() {
+                    addDebugLog('点击开始新练习');
+                    // 隐藏欢迎界面，显示消息面板
+                    showPracticeMessages();
+                    // 添加提示消息
+                    if (typeof addPracticeMessage === 'function') {
+                        addPracticeMessage('请通过AI对话描述您想要练习的内容，我将为您生成个性化的练习题目。\\n\\n例如：\\n• "请为我生成5道关于机器学习的选择题"\\n• "帮我出几道Python编程练习题"\\n• "生成一些数学应用题"', 'ai');
+                    }
+                });
+            }
+            
+            if (welcomePracticeHistoryBtn) {
+                welcomePracticeHistoryBtn.addEventListener('click', function() {
+                    addDebugLog('点击练习历史按钮');
+                    
+                    // 检查全局的showPracticeHistory函数是否存在
+                    if (typeof window.showPracticeHistory === 'function') {
+                        addDebugLog('✅ 找到全局showPracticeHistory函数，调用中...');
+                        try {
+                            window.showPracticeHistory();
+                        } catch (error) {
+                            addDebugLog('❌ 调用showPracticeHistory出错: ' + error.message);
+                            // 显示错误信息
+                            showPracticeMessages();
+                            if (typeof addPracticeMessage === 'function') {
+                                addPracticeMessage('练习历史加载失败：' + error.message, 'ai');
+                            }
+                        }
+                    } else {
+                        addDebugLog('❌ 未找到showPracticeHistory函数，显示提示信息');
+                        // 隐藏欢迎界面，显示消息面板
+                        showPracticeMessages();
+                        if (typeof addPracticeMessage === 'function') {
+                            addPracticeMessage('正在加载练习历史...', 'ai');
+                            
+                            // 模拟加载练习历史
+                            setTimeout(() => {
+                                addPracticeMessage('练习历史功能正在开发中！\\n\\n目前您可以：\\n• 通过对话生成新的练习题目\\n• 完成练习后查看评估结果\\n• 将错题添加到错题库', 'ai');
+                            }, 1000);
+                        }
+                    }
+                });
+            }
+        }
+
+        // 显示练习消息面板
+        function showPracticeMessages() {
+            const welcomePanel = document.getElementById('practiceWelcomePanel');
+            const messagesPanel = document.getElementById('aiPracticeMessages');
+            
+            if (welcomePanel) welcomePanel.style.display = 'none';
+            if (messagesPanel) messagesPanel.style.display = 'block';
+        }
+
+        // 显示练习欢迎界面
+        function showPracticeWelcome() {
+            // 更严格的状态检测：如果有练习数据或练习面板正在显示，不显示欢迎界面
+            if (typeof currentPracticeId !== 'undefined' && currentPracticeId) {
+                addDebugLog('⚠️ 有当前练习数据，跳过显示欢迎界面');
+                return;
+            }
+            
+            const practiceContainer = document.getElementById('practiceContainer');
+            if (practiceContainer && practiceContainer.style.display === 'flex') {
+                addDebugLog('⚠️ 练习面板正在显示，跳过显示欢迎界面');
+                return;
+            }
+            
+            const welcomePanel = document.getElementById('practiceWelcomePanel');
+            const messagesPanel = document.getElementById('aiPracticeMessages');
+            
+            addDebugLog('📋 显示练习欢迎界面');
+            
+            if (welcomePanel) {
+                welcomePanel.style.display = 'block';
+            } else {
+                // 如果欢迎界面不存在，创建它
+                createPracticeWelcome();
+                return;
+            }
+            
+            if (messagesPanel) messagesPanel.style.display = 'none';
+            if (practiceContainer) practiceContainer.style.display = 'none';
+        }
+
+        // 初始化练习欢迎界面
+        function initPracticeWelcome() {
+            // 检查是否已经存在欢迎界面
+            const existingWelcome = document.getElementById('practiceWelcomePanel');
+            if (!existingWelcome) {
+                createPracticeWelcome();
+            }
+        }
+
+        // 创建可见的调试面板
+        function createDebugPanel() {
+            // 移除已存在的调试面板
+            const existingDebug = document.getElementById('practice-debug-panel');
+            if (existingDebug) {
+                existingDebug.remove();
+            }
+            
+            const debugPanel = document.createElement('div');
+            debugPanel.id = 'practice-debug-panel';
+            debugPanel.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                background: rgba(0, 0, 0, 0.9);
+                color: #00ff00;
+                padding: 15px;
+                border-radius: 8px;
+                font-family: monospace;
+                font-size: 12px;
+                z-index: 10000;
+                max-width: 400px;
+                max-height: 300px;
+                overflow-y: auto;
+                border: 1px solid #333;
+            `;
+            
+            debugPanel.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 10px; color: #ffff00;">
+                    🔧 练习助手调试面板
+                    <button onclick="this.parentElement.parentElement.remove()" style="
+                        float: right;
+                        background: none;
+                        border: none;
+                        color: #ff6666;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">×</button>
+                </div>
+                <div id="debug-log" style="line-height: 1.4;"></div>
+            `;
+            
+            document.body.appendChild(debugPanel);
+            return debugPanel;
+        }
+
+        // 添加调试日志
+        function addDebugLog(message) {
+            console.log(message);
+            
+            let debugPanel = document.getElementById('practice-debug-panel');
+            if (!debugPanel) {
+                debugPanel = createDebugPanel();
+            }
+            
+            const logContainer = debugPanel.querySelector('#debug-log');
+            if (logContainer) {
+                const timestamp = new Date().toLocaleTimeString();
+                logContainer.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+        }
+
+        // 更积极的初始化策略
+        function forceInitPracticeWelcome() {
+            addDebugLog('🔄 强制初始化练习欢迎界面');
+            const practiceTabContent = document.getElementById('practiceTabContent');
+            const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+            
+            addDebugLog(`📋 元素检查: practiceTabContent=${!!practiceTabContent}, aiPracticeMessages=${!!aiPracticeMessages}`);
+            
+            if (practiceTabContent) {
+                addDebugLog('✅ 找到practiceTabContent，开始创建欢迎界面');
+                createPracticeWelcome();
+            } else {
+                addDebugLog('❌ 未找到practiceTabContent，1秒后重试');
+                setTimeout(forceInitPracticeWelcome, 1000);
+            }
+        }
+
+        // 当页面加载完成时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 延迟初始化，确保其他组件已加载
+            setTimeout(initPracticeWelcome, 1000);
+        });
+
+        // 立即尝试初始化
+        setTimeout(forceInitPracticeWelcome, 500);
+
+        // 导出函数到全局作用域
+        window.createPracticeWelcome = createPracticeWelcome;
+        window.showPracticeWelcome = showPracticeWelcome;
+        window.showPracticeMessages = showPracticeMessages;
+        window.initPracticeWelcome = initPracticeWelcome;
+        
+        // 按照正确版本实现：直接点击原有按钮的简单方式
+        function createSimpleShowPracticeHistory() {
+            window.showPracticeHistory = function() {
+                addDebugLog('📆 练习历史功能被调用（正确版本实现）');
+                
+                // 直接点击原有的练习历史按钮（正确版本的方式）
+                const practiceHistoryBtn = document.getElementById('practiceHistoryBtn');
+                if (practiceHistoryBtn) {
+                    addDebugLog('🚀 找到practiceHistoryBtn，直接点击');
+                    practiceHistoryBtn.click();
+                } else {
+                    addDebugLog('❌ 未找到practiceHistoryBtn，尝试其他方式');
+                    // 如果找不到按钮，尝试直接调用原有的练习历史显示函数
+                    if (typeof showPracticeHistoryModal === 'function') {
+                        addDebugLog('🔄 尝试调用showPracticeHistoryModal');
+                        // 先获取数据
+                        if (window.bridge && window.bridge.getPracticeHistory) {
+                            try {
+                                const response = window.bridge.getPracticeHistory();
+                                let result;
+                                if (typeof response === 'string') {
+                                    result = JSON.parse(response);
+                                } else {
+                                    result = response;
+                                }
+                                
+                                if (result && result.success && result.practices) {
+                                    showPracticeHistoryModal(result.practices);
+                                } else {
+                                    alert('暂无练习历史');
+                                }
+                            } catch (error) {
+                                alert('获取练习历史失败: ' + error.message);
+                            }
+                        } else {
+                            alert('练习历史功能暂时不可用');
+                        }
+                    } else {
+                        alert('练习历史功能暂时不可用');
+                    }
+                }
+            };
+            
+            addDebugLog('✅ 练习历史功能已创建（正确版本实现）');
+        }
+        
+        // 立即创建练习历史功能
+        createSimpleShowPracticeHistory();
+    </script>
 </head>
 <body class="bg-bg-light-blue-gray font-sans">
     <!-- AI助手浮窗 -->
@@ -665,6 +993,10 @@
                         <!-- 顶部工具栏 - 对应练习.html的94-121行 -->
                         <div class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
                             <div class="flex items-center space-x-4">
+                                <button class="flex items-center text-text-gray hover:text-primary" id="backToWelcomeBtn">
+                                    <span class="material-icons-outlined mr-1">home</span>
+                                    <span>返回欢迎页</span>
+                                </button>
                                 <button class="flex items-center text-text-gray hover:text-primary" id="practiceHistoryBtn">
                                     <span class="material-icons-outlined mr-1">history</span>
                                     <span>练习历史</span>
@@ -770,6 +1102,91 @@
             </div>
         </div>
     </div>
+
+    <!-- 练习历史弹窗 - 完全独立的弹窗系统 -->
+    <div class="ai-history-modal" id="practiceHistoryModal">
+        <div class="ai-history-content" style="width: 800px; max-width: 90vw; max-height: 85vh;">
+            <div class="ai-history-header">
+                <h3 class="text-lg font-semibold">练习历史</h3>
+                <button id="closePracticeHistoryBtn" class="text-gray-500 hover:text-gray-700">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+            
+            <!-- 练习历史控件区域 -->
+            <div class="practice-history-controls mb-4 p-3 bg-gray-50 rounded-lg">
+                <div class="flex flex-col gap-2">
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-2 flex-1">
+                            <input type="text" id="practiceHistorySearchInput" placeholder="搜索题目内容..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        </div>
+                        <select id="practiceTimeFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                            <option value="all">全部时间</option>
+                            <option value="today">今天</option>
+                            <option value="week">本周</option>
+                            <option value="month">本月</option>
+                            <option value="custom">自定义日期</option>
+                        </select>
+                        <select id="practiceStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                            <option value="all">全部状态</option>
+                            <option value="evaluated">已评估</option>
+                            <option value="unevaluated">未评估</option>
+                        </select>
+                        <input type="date" id="practiceCustomDateInput" class="hidden px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    </div>
+                    
+                    <!-- 统计信息和日历切换 -->
+                    <div class="flex justify-between items-center">
+                        <div id="practiceHistoryStats" class="text-sm text-gray-600">
+                            显示 0 项练习历史
+                        </div>
+                        <button id="togglePracticeCalendarBtn" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                            <span class="material-icons-outlined text-sm">calendar_today</span>
+                            <span>显示日历</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 练习日历视图 -->
+            <div id="practiceCalendarView" class="hidden mb-4 p-2 bg-white border border-gray-200 rounded-lg">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="text-sm font-medium text-gray-700">练习日历（点击日期筛选）</div>
+                    <div class="flex items-center gap-2">
+                        <button id="prevMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800">
+                            <span class="material-icons-outlined text-sm">chevron_left</span>
+                        </button>
+                        <span id="currentMonthDisplay" class="text-sm font-medium text-gray-700 min-w-20 text-center"></span>
+                        <button id="nextMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800">
+                            <span class="material-icons-outlined text-sm">chevron_right</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="practiceCalendarGrid" class="grid grid-cols-7 gap-0.5">
+                    <!-- 日历格子将在这里动态生成 -->
+                </div>
+            </div>
+            
+            <div class="ai-history-list" id="practiceHistoryList" style="flex: 1; overflow-y: auto; min-height: 500px; padding: 10px;">
+                <!-- 练习历史列表将在这里动态生成 -->
+            </div>
+            
+            <!-- 分页控件 -->
+            <div id="practiceHistoryPagination" class="mt-4 flex justify-center items-center gap-2">
+                <!-- 分页按钮将在这里动态生成 -->
+            </div>
+            
+            <div class="ai-history-actions">
+                <button id="loadPracticeBtn" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    加载选中练习
+                </button>
+                <button id="cancelPracticeHistoryBtn" class="ml-2 px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors">
+                    取消
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <!-- 全局调试面板 -->
     <div id="global-debug-panel" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
         <div class="absolute right-4 top-4 bottom-4 w-1/3 bg-white rounded-lg shadow-2xl flex flex-col">
@@ -934,7 +1351,7 @@
             const historyModal = document.getElementById('aiHistoryModal');
             const closeHistoryBtn = document.getElementById('closeHistoryBtn');
             const historySearchInput = document.getElementById('historySearchInput');
-            const historyList = document.getElementById('aiHistoryList');
+            let historyList = document.getElementById('aiHistoryList');
             const loadHistoryBtn = document.getElementById('loadHistoryBtn');
             const cancelHistoryBtn = document.getElementById('cancelHistoryBtn');
             
@@ -959,23 +1376,67 @@
             const aiPracticeMessages = document.getElementById('aiPracticeMessages');
             
             // 练习按钮元素
+            const backToWelcomeBtn = document.getElementById('backToWelcomeBtn');
             const practiceHistoryBtn = document.getElementById('practiceHistoryBtn');
             const newPracticeBtn = document.getElementById('newPracticeBtn');
             const startPracticeBtn = document.getElementById('startPracticeBtn');
             const saveResultBtn = document.getElementById('saveResultBtn');
             const addToErrorsBtn = document.getElementById('addToErrorsBtn');
             const submitAnswerBtn = document.getElementById('submitAnswerBtn');
-            const aiEvaluateBtn = document.getElementById('aiEvaluateBtn');
             
+            // 智能滚动相关变量
+            let userScrolledUp = false;
+            let scrollCheckTimeout = null;
+            
+            // 拖拽相关变量
             let isDragging = false;
-            let dragOffset = { x: 0, y: 0 };
             let dragStartTime = 0;
-            let dragStartPos = { x: 0, y: 0 };
             let hasMoved = false;
+            let dragStartPos = { x: 0, y: 0 };
+            let dragOffset = { x: 0, y: 0 };
             
-            // 拖拽功能
-            aiAvatar.addEventListener('mousedown', function(e) {
-                dragStartTime = Date.now();
+            // 智能滚动功能函数
+            function isAtBottom(container, threshold = 50) {
+                if (!container) return false;
+                return container.scrollTop + container.clientHeight >= container.scrollHeight - threshold;
+            }
+            
+            function smartScrollToBottom(container) {
+                if (!container) return;
+                
+                // 直接检查用户是否在底部附近（50px容差）
+                const isUserAtBottom = isAtBottom(container, 50);
+                console.log('smartScrollToBottom调用 - 用户是否在底部:', isUserAtBottom);
+                
+                // 只有当用户在底部附近时，才自动滚动
+                if (isUserAtBottom) {
+                    console.log('用户在底部，执行自动滚动');
+                    container.scrollTop = container.scrollHeight;
+                } else {
+                    console.log('用户不在底部，跳过自动滚动');
+                }
+            }
+            
+            function setupScrollListener(container) {
+                if (!container) return;
+                
+                container.addEventListener('scroll', function() {
+                    // 清除之前的定时器
+                    if (scrollCheckTimeout) {
+                        clearTimeout(scrollCheckTimeout);
+                    }
+                    
+                    // 延迟检查用户是否停止滚动
+                    scrollCheckTimeout = setTimeout(() => {
+                        userScrolledUp = !isAtBottom(container);
+                        console.log('用户滚动状态:', userScrolledUp ? '已上滑' : '在底部');
+                    }, 150);
+                });
+            }
+        
+        // 拖拽功能
+        aiAvatar.addEventListener('mousedown', function(e) {
+            dragStartTime = Date.now();
                 dragStartPos.x = e.clientX;
                 dragStartPos.y = e.clientY;
                 isDragging = true;
@@ -1068,6 +1529,34 @@
                 historySearchInput.addEventListener('input', filterHistoryList);
             }
             
+            // 练习历史弹窗事件
+            const practiceHistoryModal = document.getElementById('practiceHistoryModal');
+            const closePracticeHistoryBtn = document.getElementById('closePracticeHistoryBtn');
+            const cancelPracticeHistoryBtn = document.getElementById('cancelPracticeHistoryBtn');
+            const loadPracticeBtn = document.getElementById('loadPracticeBtn');
+            
+            if (closePracticeHistoryBtn) {
+                closePracticeHistoryBtn.addEventListener('click', function() {
+                    if (practiceHistoryModal) {
+                        practiceHistoryModal.classList.remove('show');
+                    }
+                });
+            }
+            
+            if (cancelPracticeHistoryBtn) {
+                cancelPracticeHistoryBtn.addEventListener('click', function() {
+                    if (practiceHistoryModal) {
+                        practiceHistoryModal.classList.remove('show');
+                    }
+                });
+            }
+            
+            if (loadPracticeBtn) {
+                loadPracticeBtn.addEventListener('click', function() {
+                    loadSelectedPractice();
+                });
+            }
+            
             // Tab切换事件
             if (learningTabBtn) {
                 learningTabBtn.addEventListener('click', () => switchTab('learning'));
@@ -1078,6 +1567,27 @@
             }
             
             // 练习按钮事件绑定
+            if (backToWelcomeBtn) {
+                backToWelcomeBtn.addEventListener('click', function() {
+                    // 清除当前练习数据
+                    currentPracticeId = null;
+                    currentPracticeQuestions = null;
+                    currentPracticeAnswer = '';
+                    currentEvaluationResult = null;
+                    practiceAnswerHistory = [];
+                    
+                    // 隐藏练习容器，显示欢迎界面
+                    if (practiceContainer) {
+                        practiceContainer.style.display = 'none';
+                    }
+                    if (typeof showPracticeWelcome === 'function') {
+                        showPracticeWelcome();
+                    }
+                    
+                    globalDebugLog('🏠 已返回练习欢迎页面');
+                });
+            }
+            
             if (practiceHistoryBtn) {
                 practiceHistoryBtn.addEventListener('click', showPracticeHistory);
             }
@@ -1119,6 +1629,16 @@
                 conversationHistory.push({role: 'user', content: message});
                 addMessage(message, 'user');
                 chatInput.value = '';
+                
+                // 用户发送消息时强制滚动到底部
+                const smallMessagesContainer = document.getElementById('aiChatMessages');
+                const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
+                if (smallMessagesContainer) {
+                    smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                }
+                if (maxMessagesContainer) {
+                    maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                }
                 
                 // 立即显示AI正在思考的消息
                 const thinkingMessageId = addThinkingMessage();
@@ -1198,6 +1718,22 @@
                 if (isWindowOpen) {
                     chatWindow.classList.add('show');
                     chatInput.focus();
+                    
+                    // 初始化智能滚动监听器
+                    const smallMessagesContainer = document.getElementById('aiChatMessages');
+                    const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
+                    
+                    if (smallMessagesContainer && !smallMessagesContainer.hasScrollListener) {
+                        setupScrollListener(smallMessagesContainer);
+                        smallMessagesContainer.hasScrollListener = true;
+                    }
+                    if (maxMessagesContainer && !maxMessagesContainer.hasScrollListener) {
+                        setupScrollListener(maxMessagesContainer);
+                        maxMessagesContainer.hasScrollListener = true;
+                    }
+                    
+                    // 重置滚动状态
+                    userScrolledUp = false;
                 } else {
                     chatWindow.classList.remove('show');
                     // 保存对话
@@ -1332,10 +1868,10 @@
                             
                             showDebug(`✅ 同步后 - 最大化窗口: ${maxMessages.children.length} 条消息`);
                             
-                            // 滚动到底部
+                            // 智能滚动到底部
                             setTimeout(() => {
-                                maxMessages.scrollTop = maxMessages.scrollHeight;
-                                showDebug('📜 已滚动到底部');
+                                smartScrollToBottom(maxMessages);
+                                showDebug('📜 已智能滚动到底部');
                             }, 100);
                         } else {
                             showDebug('❌ 无法找到消息容器');
@@ -1353,9 +1889,9 @@
                     // 复制最大化窗口的所有消息到小窗口
                     smallWindowMessages.innerHTML = maximizedMessages.innerHTML;
                     
-                    // 滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        smallWindowMessages.scrollTop = smallWindowMessages.scrollHeight;
+                        smartScrollToBottom(smallWindowMessages);
                     }, 100);
                 }
             }
@@ -1377,10 +1913,10 @@
                     
                     showDebug(`✅ 同步完成，最大化窗口消息数: ${maximizedMessages.children.length}`);
                     
-                    // 滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        maximizedMessages.scrollTop = maximizedMessages.scrollHeight;
-                        showDebug('📜 滚动到底部完成');
+                        smartScrollToBottom(maximizedMessages);
+                        showDebug('📜 智能滚动到底部完成');
                     }, 50);
                 } else {
                     showDebug('❌ 无法找到消息容器进行同步');
@@ -1513,9 +2049,9 @@
                 if (smallMessagesContainer) {
                     const smallMessageElement = createMessageElement();
                     smallMessagesContainer.appendChild(smallMessageElement);
-                    // 强制滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                        smartScrollToBottom(smallMessagesContainer);
                     }, 10);
                     showDebug(`✅ 消息已添加到小窗口，当前消息数: ${smallMessagesContainer.children.length}`);
                 } else {
@@ -1526,9 +2062,9 @@
                 if (maxMessagesContainer) {
                     const maxMessageElement = createMessageElement();
                     maxMessagesContainer.appendChild(maxMessageElement);
-                    // 强制滚动到底部
+                    // 智能滚动到底部
                     setTimeout(() => {
-                        maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                        smartScrollToBottom(maxMessagesContainer);
                     }, 10);
                     showDebug(`✅ 消息已添加到最大化窗口，当前消息数: ${maxMessagesContainer.children.length}`);
                 } else {
@@ -1568,7 +2104,7 @@
                     thinkingElement = createThinkingElement();
                     smallMessagesContainer.appendChild(thinkingElement);
                     setTimeout(() => {
-                        smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                        smartScrollToBottom(smallMessagesContainer);
                     }, 10);
                 }
                 
@@ -1577,7 +2113,7 @@
                     const maxThinkingElement = createThinkingElement();
                     maxMessagesContainer.appendChild(maxThinkingElement);
                     setTimeout(() => {
-                        maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                        smartScrollToBottom(maxMessagesContainer);
                     }, 10);
                 }
                 
@@ -1685,12 +2221,12 @@
                         
                         index++;
                         
-                        // 滚动到底部
+                        // 智能滚动到底部
                         if (smallMessagesContainer) {
-                            smallMessagesContainer.scrollTop = smallMessagesContainer.scrollHeight;
+                            smartScrollToBottom(smallMessagesContainer);
                         }
                         if (maxMessagesContainer) {
-                            maxMessagesContainer.scrollTop = maxMessagesContainer.scrollHeight;
+                            smartScrollToBottom(maxMessagesContainer);
                         }
                         
                         setTimeout(typeWriter, speed);
@@ -1841,16 +2377,31 @@
                 }
             }
             
-            // 过滤历史对话列表
+            // 过滤历史对话列表（兼容练习历史和对话历史）
             function filterHistoryList() {
                 const searchTerm = historySearchInput.value.toLowerCase();
                 const items = historyList.querySelectorAll('.history-item');
                 
-                items.forEach(item => {
-                    const title = item.querySelector('.history-item-title').textContent.toLowerCase();
-                    const visible = title.includes(searchTerm);
-                    item.style.display = visible ? 'block' : 'none';
-                });
+                // 检查是否在练习历史模式
+                const historyTitle = historyModal ? historyModal.querySelector('.ai-history-header h3') : null;
+                const isPracticeHistoryMode = historyTitle && historyTitle.textContent.includes('练习历史');
+                
+                if (isPracticeHistoryMode) {
+                    // 练习历史模式：搜索题目内容
+                    items.forEach(item => {
+                        const questionText = item.dataset.questionText || '';
+                        const title = item.querySelector('.history-item-title').textContent.toLowerCase();
+                        const visible = questionText.includes(searchTerm) || title.includes(searchTerm);
+                        item.style.display = visible ? 'block' : 'none';
+                    });
+                } else {
+                    // 对话历史模式：搜索标题
+                    items.forEach(item => {
+                        const title = item.querySelector('.history-item-title').textContent.toLowerCase();
+                        const visible = title.includes(searchTerm);
+                        item.style.display = visible ? 'block' : 'none';
+                    });
+                }
             }
             
             // Tab切换功能
@@ -1876,7 +2427,24 @@
                     const practiceTabBtn = document.getElementById('practiceTabBtn');
                     const practiceTabContent = document.getElementById('practiceTabContent');
                     if (practiceTabBtn) practiceTabBtn.classList.add('active');
-                    if (practiceTabContent) practiceTabContent.classList.add('active');
+                    if (practiceTabContent) { 
+                        practiceTabContent.classList.add('active'); 
+                        // 智能显示欢迎界面或练习内容
+                        setTimeout(() => { 
+                            if (currentPracticeId || currentPracticeQuestions) {
+                                // 有练习数据时，隐藏欢迎界面
+                                const welcomePanel = document.getElementById('practiceWelcomePanel');
+                                if (welcomePanel) {
+                                    welcomePanel.style.display = 'none';
+                                    globalDebugLog('✅ Tab切换：隐藏欢迎界面（有练习数据）');
+                                }
+                            } else if (typeof showPracticeWelcome === 'function') {
+                                // 没有练习数据时，显示欢迎界面
+                                showPracticeWelcome(); 
+                                globalDebugLog('✅ Tab切换：显示欢迎界面（无练习数据）');
+                            }
+                        }, 100); 
+                    }
                 }
             }
             
@@ -1900,13 +2468,12 @@
                 } else {
                     messageContent.textContent = content;
                 }
-                
                 messageDiv.appendChild(avatar);
                 messageDiv.appendChild(messageContent);
                 aiPracticeMessages.appendChild(messageDiv);
                 
-                // 滚动到底部
-                aiPracticeMessages.scrollTop = aiPracticeMessages.scrollHeight;
+                // 智能滚动到底部
+                smartScrollToBottom(aiPracticeMessages);
             }
             
             // 显示练习面板
@@ -1931,10 +2498,16 @@
                 // 切换到练习Tab
                 switchTab('practice');
                 
-                // 隐藏消息区域，显示练习面板
+                // 隐藏消息区域和欢迎页面，显示练习面板
                 const aiPracticeMessages = document.getElementById('aiPracticeMessages');
+                const practiceWelcomePanel = document.getElementById('practiceWelcomePanel');
+                
                 if (aiPracticeMessages) {
                     aiPracticeMessages.style.display = 'none';
+                }
+                if (practiceWelcomePanel) {
+                    practiceWelcomePanel.style.display = 'none';
+                    globalDebugLog('✅ 隐藏练习欢迎页面');
                 }
                 
                 // 显示练习面板
@@ -1942,7 +2515,7 @@
                     practiceContainer.style.display = 'flex';
                     
                     // 加载练习数据
-                    loadPracticeData(practiceData);
+                    loadNewPracticeData(practiceData);
                 }
                 
                 // 打开AI助手窗口
@@ -1983,11 +2556,11 @@
                     toggleChatWindow();
                 }
                 
-                // 滚动到最新消息
+                // 智能滚动到最新消息
                 setTimeout(() => {
                     const messagesContainer = document.getElementById('aiChatMessages');
                     if (messagesContainer) {
-                        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        smartScrollToBottom(messagesContainer);
                     }
                 }, 100);
             };
@@ -2048,6 +2621,9 @@
                 globalDebugLog('📆 显示练习历史按钮被点击');
                 
                 if (!window.bridge || !window.bridge.getPracticeHistory) {
+                    globalDebugLog('❌ bridge对象检查失败');
+                    globalDebugLog('🎯 window.bridge存在: ' + (window.bridge ? '是' : '否'));
+                    globalDebugLog('🎯 getPracticeHistory方法存在: ' + (window.bridge && window.bridge.getPracticeHistory ? '是' : '否'));
                     alert('练习历史功能暂时不可用');
                     return;
                 }
@@ -2069,10 +2645,16 @@
                             return;
                         }
                         
-                        // 如果是Promise对象，说明WebChannel异步问题
+                        // 如果是Promise对象，等待其完成
                         if (response && typeof response.then === 'function') {
-                            globalDebugError('❌ 检测到Promise对象，WebChannel异步问题');
-                            alert('获取练习历史失败: 数据传输异常，请重试');
+                            globalDebugLog('🔄 检测到Promise对象，等待异步响应...');
+                            response.then(function(actualResponse) {
+                                globalDebugLog('✅ Promise resolved，处理实际响应');
+                                handlePracticeHistoryResponse(actualResponse);
+                            }).catch(function(error) {
+                                globalDebugError('❌ Promise rejected: ' + error.message);
+                                alert('获取练习历史失败: 数据传输异常');
+                            });
                             return;
                         }
                         
@@ -2174,39 +2756,38 @@
                                     globalDebugError('❌ Promise rejected: ' + error.message);
                                     
                                     // Promise失败，尝试第二次同步调用
-                                    globalDebugLog('🔄 Promise失败，延迟后重试同步调用...');
                                     setTimeout(() => {
                                         try {
-                                            const retryResponse = window.bridge.getPracticeHistory();
-                                            handlePracticeHistoryResponse(retryResponse);
-                                        } catch (retryError) {
-                                            globalDebugError('❌ 重试调用失败: ' + retryError.message);
+                                            globalDebugLog('🔄 Promise失败，尝试第二次同步调用...');
+                                            const secondResponse = window.bridge.getPracticeHistory();
+                                            handlePracticeHistoryResponse(secondResponse);
+                                        } catch (secondError) {
+                                            globalDebugError('❌ 第二次调用也失败: ' + secondError.message);
                                             alert('获取练习历史失败: 多次尝试均失败');
                                         }
-                                    }, 200);
+                                    }, 100);
                                 });
                             } else {
                                 // 直接处理同步响应
-                                globalDebugLog('✅ 第一次调用返回同步结果');
+                                globalDebugLog('✅ 第一次调用返回同步响应');
                                 handlePracticeHistoryResponse(response);
                             }
+                        } catch (firstError) {
+                            globalDebugError('❌ 第一次调用异常: ' + firstError.message);
                             
-                        } catch (callError) {
-                            globalDebugError('❌ 调用getPracticeHistory异常: ' + callError.message);
-                            
-                            // 第一次调用异常，尝试第二次
-                            globalDebugLog('🔄 第一次调用异常，延迟后重试...');
+                            // 第一次调用失败，尝试第二次
                             setTimeout(() => {
                                 try {
-                                    const retryResponse = window.bridge.getPracticeHistory();
-                                    handlePracticeHistoryResponse(retryResponse);
-                                } catch (retryError) {
-                                    globalDebugError('❌ 重试调用也失败: ' + retryError.message);
-                                    alert('获取练习历史失败: 连接异常');
+                                    globalDebugLog('🔄 第一次调用异常，尝试第二次调用...');
+                                    const secondResponse = window.bridge.getPracticeHistory();
+                                    handlePracticeHistoryResponse(secondResponse);
+                                } catch (secondError) {
+                                    globalDebugError('❌ 第二次调用也异常: ' + secondError.message);
+                                    alert('获取练习历史失败: 连接异常，请重试');
                                 }
-                            }, 300);
+                            }, 200);
                         }
-                    }, 100);
+                    }, 50);
                     
                 } catch (error) {
                     globalDebugError('❌ 外部异常: ' + error.message);
@@ -2262,11 +2843,14 @@
                 }
                 
                 try {
+                    // 构建完整的练习状态数据
                     const evaluationData = {
                         practice_id: currentPracticeId,
-                        question: currentPracticeQuestions,
-                        answer: currentPracticeAnswer,
-                        evaluation: currentEvaluationResult,
+                        questions: currentPracticeQuestions,              // 题目
+                        user_answers: currentPracticeAnswer,              // 当前最终答案
+                        evaluation_result: JSON.stringify(currentEvaluationResult), // 最终评估结果
+                        answer_history: JSON.stringify(practiceAnswerHistory),      // 完整的答案历史
+                        selected_text: '',                               // 选中文本（如果有的话）
                         timestamp: new Date().toISOString()
                     };
                     
@@ -2328,21 +2912,24 @@
             function addToErrorBankWithPromiseHandling() {
                 globalDebugLog('📁 错题入库');
                 
-                if (!window.bridge || !window.bridge.importPracticeErrors) {
+                if (!window.bridge || !window.bridge.addToErrorBank) {
                     alert('错题入库功能暂时不可用');
                     return;
                 }
                 
                 try {
+                    // 构建与原版practice_panel.py一致的错题数据
                     const errorData = {
-                        question: currentPracticeQuestions,
-                        user_answer: currentPracticeAnswer,
-                        evaluation: currentEvaluationResult,
+                        practice_content: '', // 将在后端组装
+                        evaluation_result: currentEvaluationResult?.evaluation_text || currentEvaluationResult?.feedback || '',
+                        selected_text: '', // 如果有选中文本的话
+                        questions: currentPracticeQuestions,
+                        answers: currentPracticeAnswer,
                         practice_id: currentPracticeId,
                         timestamp: new Date().toISOString()
                     };
                     
-                    let response = window.bridge.importPracticeErrors(JSON.stringify(errorData));
+                    let response = window.bridge.addToErrorBank(JSON.stringify(errorData));
                     
                     // 处理可能的Promise对象
                     if (response && typeof response.then === 'function') {
@@ -2375,14 +2962,485 @@
                     const result = JSON.parse(response);
                     
                     if (result.success) {
-                        alert('错题已入库');
-                        closeEvaluationDetailsModal();
+                        // 如果有错题数据，显示错题入库弹窗
+                        if (result.data && result.data.error_questions && result.data.error_questions.length > 0) {
+                            showErrorImportDialog(result.data);
+                        } else {
+                            alert('没有找到错题');
+                        }
                     } else {
                         alert('错题入库失败: ' + (result.error || '未知错误'));
                     }
                 } catch (error) {
                     globalDebugError('错题入库响应处理失败: ' + error.message);
                     alert('错题入库失败: 响应处理错误');
+                }
+            }
+            
+            // 显示错题入库弹窗 - 与原版ErrorImportDialog保持一致
+            function showErrorImportDialog(errorData) {
+                const { error_questions, available_subjects } = errorData;
+                closeEvaluationDetailsModal();
+                // 先显示学科选择界面
+                const modalHtml = `
+                    <div id="errorImportModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style="z-index: 10100;">
+                        <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
+                            <div class="px-6 py-4 border-b border-gray-200">
+                                <h2 class="text-xl font-semibold text-gray-900">错题入库</h2>
+                                <p class="text-sm text-gray-600 mt-1">请先选择学科，然后系统将为错题匹配该学科下的知识点</p>
+                            </div>
+                            
+                            <div id="subjectSelectionStep" class="flex-1 px-6 py-8">
+                                <div class="text-center">
+                                    <div class="mb-6">
+                                        <h3 class="text-lg font-medium text-gray-900 mb-4">选择学科</h3>
+                                        <p class="text-sm text-gray-600 mb-6">找到 ${error_questions.length} 道错题，请选择要归类的学科：</p>
+                                    </div>
+                                    
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                                        ${available_subjects.map((subject, index) => `
+                                            <button data-subject-name="${subject.name}" data-subject-index="${index}"
+                                                    class="subject-select-btn p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                                                <div class="text-lg font-medium text-gray-900">${subject.name}</div>
+                                                <div class="text-sm text-gray-500">${subject.point_count} 个知识点</div>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                    
+                                    ${available_subjects.length === 0 ? `
+                                        <div class="text-center py-8">
+                                            <p class="text-gray-500">暂无可用学科，请先在知识管理中添加学科和知识点</p>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                            
+                            <div id="errorMatchingStep" class="flex-1 overflow-auto px-6 py-4" style="display: none;">
+                                <div class="mb-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <span class="text-sm text-gray-600">已选择学科：</span>
+                                            <span id="selectedSubjectName" class="font-medium text-blue-600"></span>
+                                        </div>
+                                        <button onclick="backToSubjectSelection()" class="text-sm text-blue-600 hover:text-blue-800">
+                                            重新选择学科
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div class="overflow-x-auto">
+                                    <table class="w-full border-collapse border border-gray-300">
+                                        <thead>
+                                            <tr class="bg-gray-50">
+                                                <th class="border border-gray-300 px-4 py-2 text-left">
+                                                    <input type="checkbox" id="selectAllErrors" class="mr-2">
+                                                    序号
+                                                </th>
+                                                <th class="border border-gray-300 px-4 py-2 text-left">题目片段</th>
+                                                <th class="border border-gray-300 px-4 py-2 text-left">用户答案</th>
+                                                <th class="border border-gray-300 px-4 py-2 text-left">匹配知识点</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="errorTableBody">
+                                            <!-- 动态填充 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div class="border-t border-gray-200 px-6 py-4">
+                                <div class="flex justify-between">
+                                    <div id="importButtons" class="space-x-3" style="display: none;">
+                                        <button onclick="window.importSelectedErrors()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                            入库选中
+                                        </button>
+                                        <button onclick="window.importAllErrors()" class="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+                                            全部入库
+                                        </button>
+                                    </div>
+                                    <button onclick="window.closeErrorImportModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                                        关闭
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // 移除旧弹窗
+                const existingModal = document.getElementById('errorImportModal');
+                if (existingModal) {
+                    existingModal.remove();
+                }
+                
+                // 添加新弹窗
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                
+                // 绑定全选事件
+                const selectAllCheckbox = document.getElementById('selectAllErrors');
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.addEventListener('change', function() {
+                        const checkboxes = document.querySelectorAll('.error-checkbox');
+                        checkboxes.forEach(cb => cb.checked = this.checked);
+                    });
+                }
+                
+                // 绑定学科选择按钮事件
+                const subjectButtons = document.querySelectorAll('.subject-select-btn');
+                subjectButtons.forEach(button => {
+                    button.addEventListener('click', function() {
+                        const subjectName = this.dataset.subjectName;
+                        selectSubjectForErrors(subjectName);
+                    });
+                });
+                
+                // 存储错题数据供后续使用
+                window.currentErrorData = errorData;
+                
+                globalDebugLog('✅ 错题入库弹窗已显示');
+            }
+            
+            // 选择学科并匹配知识点
+            function selectSubjectForErrors(subjectName) {
+                if (!window.currentErrorData) {
+                    alert('错题数据丢失，请重新操作');
+                    return;
+                }
+                
+                globalDebugLog('🎯 用户选择学科: ' + subjectName);
+                
+                // 显示加载状态
+                const subjectStep = document.getElementById('subjectSelectionStep');
+                if (subjectStep) {
+                    subjectStep.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                            <p class="mt-4 text-gray-600">正在为学科 "${subjectName}" 匹配知识点...</p>
+                        </div>
+                    `;
+                }
+                
+                // 调用后端API匹配知识点
+                if (!window.bridge || !window.bridge.matchKnowledgePointsForSubject) {
+                    alert('知识点匹配功能暂时不可用');
+                    return;
+                }
+                
+                try {
+                    const matchData = {
+                        selected_subject: subjectName,
+                        error_questions: window.currentErrorData.error_questions,
+                        evaluation_result: window.currentErrorData.evaluation_result || ""
+                    };
+                    
+                    let response = window.bridge.matchKnowledgePointsForSubject(JSON.stringify(matchData));
+                    
+                    // 处理可能的Promise对象
+                    if (response && typeof response.then === 'function') {
+                        globalDebugLog('🔄 检测到Promise对象，等待知识点匹配结果...');
+                        response.then(function(actualResponse) {
+                            handleKnowledgePointMatchResponse(actualResponse, subjectName);
+                        }).catch(function(error) {
+                            globalDebugError('🚒 知识点匹配Promise解析失败: ' + error.message);
+                            alert('知识点匹配失败: Promise解析错误');
+                            backToSubjectSelection();
+                        });
+                        return;
+                    }
+                    
+                    // 如果不是Promise，直接处理
+                    handleKnowledgePointMatchResponse(response, subjectName);
+                    
+                } catch (error) {
+                    globalDebugError('知识点匹配失败: ' + error.message);
+                    alert('知识点匹配失败: ' + error.message);
+                    backToSubjectSelection();
+                }
+            }
+            
+            // 处理知识点匹配响应
+            function handleKnowledgePointMatchResponse(response, subjectName) {
+                try {
+                    if (typeof response !== 'string') {
+                        throw new Error('后端返回的不是字符串: ' + typeof response);
+                    }
+                    
+                    const result = JSON.parse(response);
+                    
+                    if (result.success) {
+                        // 更新错题数据
+                        window.currentErrorData.error_questions = result.data.matched_errors;
+                        window.currentErrorData.selected_subject = subjectName;
+                        
+                        // 显示错题匹配界面
+                        showErrorMatchingInterface(result.data.matched_errors, subjectName);
+                        
+                        globalDebugLog('✅ 知识点匹配完成，学科: ' + subjectName);
+                    } else {
+                        alert('知识点匹配失败: ' + (result.error || '未知错误'));
+                        backToSubjectSelection();
+                    }
+                } catch (error) {
+                    globalDebugError('知识点匹配响应处理失败: ' + error.message);
+                    alert('知识点匹配失败: 响应处理错误');
+                    backToSubjectSelection();
+                }
+            }
+            
+            // 显示错题匹配界面
+            function showErrorMatchingInterface(matchedErrors, subjectName) {
+                // 隐藏学科选择界面
+                const subjectStep = document.getElementById('subjectSelectionStep');
+                if (subjectStep) {
+                    subjectStep.style.display = 'none';
+                }
+                
+                // 显示错题匹配界面
+                const matchingStep = document.getElementById('errorMatchingStep');
+                if (matchingStep) {
+                    matchingStep.style.display = 'block';
+                }
+                
+                // 更新学科名称
+                const subjectNameSpan = document.getElementById('selectedSubjectName');
+                if (subjectNameSpan) {
+                    subjectNameSpan.textContent = subjectName;
+                }
+                
+                // 填充错题表格
+                const tableBody = document.getElementById('errorTableBody');
+                if (tableBody) {
+                    tableBody.innerHTML = matchedErrors.map((error, index) => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="border border-gray-300 px-4 py-2">
+                                <input type="checkbox" class="error-checkbox mr-2" data-index="${index}">
+                                ${error.question_index + 1}
+                            </td>
+                            <td class="border border-gray-300 px-4 py-2">
+                                <div class="max-w-md overflow-hidden">
+                                    <div class="text-sm whitespace-pre-wrap">${error.question_content || ''}</div>
+                                </div>
+                            </td>
+                            <td class="border border-gray-300 px-4 py-2">
+                                <div class="max-w-xs overflow-hidden">
+                                    <div class="text-sm">${error.user_answer || ''}</div>
+                                </div>
+                            </td>
+                            <td class="border border-gray-300 px-4 py-2">
+                                <select class="knowledge-point-select w-full p-2 border border-gray-300 rounded text-sm" data-index="${index}">
+                                    ${error.knowledge_options.map(option => `
+                                        <option value="${option.id}" data-subject="${option.subject}" data-point-name="${option.point_name}">
+                                            ${option.display}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+                
+                // 绑定全选事件
+                const selectAllCheckbox = document.getElementById('selectAllErrors');
+                if (selectAllCheckbox) {
+                    selectAllCheckbox.addEventListener('change', function() {
+                        const checkboxes = document.querySelectorAll('.error-checkbox');
+                        checkboxes.forEach(cb => cb.checked = this.checked);
+                    });
+                }
+                
+                // 显示入库按钮
+                const importButtons = document.getElementById('importButtons');
+                if (importButtons) {
+                    importButtons.style.display = 'block';
+                }
+                
+                globalDebugLog('✅ 错题匹配界面已显示');
+            }
+            
+            // 返回学科选择界面
+            function backToSubjectSelection() {
+                const subjectStep = document.getElementById('subjectSelectionStep');
+                const matchingStep = document.getElementById('errorMatchingStep');
+                const importButtons = document.getElementById('importButtons');
+                
+                if (subjectStep) subjectStep.style.display = 'block';
+                if (matchingStep) matchingStep.style.display = 'none';
+                if (importButtons) importButtons.style.display = 'none';
+                
+                // 恢复学科选择界面的原始内容
+                if (window.currentErrorData && window.currentErrorData.available_subjects) {
+                    const { error_questions, available_subjects } = window.currentErrorData;
+                    subjectStep.innerHTML = `
+                        <div class="text-center">
+                            <div class="mb-6">
+                                <h3 class="text-lg font-medium text-gray-900 mb-4">选择学科</h3>
+                                <p class="text-sm text-gray-600 mb-6">找到 ${error_questions.length} 道错题，请选择要归类的学科：</p>
+                            </div>
+                            
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-2xl mx-auto">
+                                ${available_subjects.map((subject, index) => `
+                                    <button data-subject-name="${subject.name}" data-subject-index="${index}"
+                                            class="subject-select-btn p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors">
+                                        <div class="text-lg font-medium text-gray-900">${subject.name}</div>
+                                        <div class="text-sm text-gray-500">${subject.point_count} 个知识点</div>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // 重新绑定学科选择按钮事件
+                    const subjectButtons = document.querySelectorAll('.subject-select-btn');
+                    subjectButtons.forEach(button => {
+                        button.addEventListener('click', function() {
+                            const subjectName = this.dataset.subjectName;
+                            selectSubjectForErrors(subjectName);
+                        });
+                    });
+                }
+            }
+            
+            // 关闭错题入库弹窗
+            window.closeErrorImportModal = function() {
+                const modal = document.getElementById('errorImportModal');
+                if (modal) {
+                    modal.remove();
+                }
+                window.currentErrorData = null;
+            }
+            
+            // 入库选中的错题
+            window.importSelectedErrors = function() {
+                const selectedErrors = collectSelectedErrors();
+                if (selectedErrors.length === 0) {
+                    alert('请先选择需要入库的错题');
+                    return;
+                }
+                saveErrorsToKnowledgeBase(selectedErrors);
+            }
+            
+            // 入库所有错题
+            window.importAllErrors = function() {
+                const allErrors = collectAllErrors();
+                if (allErrors.length === 0) {
+                    alert('没有可入库的错题');
+                    return;
+                }
+                saveErrorsToKnowledgeBase(allErrors);
+            }
+            
+            // 收集选中的错题
+            window.collectSelectedErrors = function() {
+                if (!window.currentErrorData) return [];
+                
+                const selectedErrors = [];
+                const checkboxes = document.querySelectorAll('.error-checkbox:checked');
+                
+                checkboxes.forEach(checkbox => {
+                    const index = parseInt(checkbox.dataset.index);
+                    const error = window.currentErrorData.error_questions[index];
+                    const select = document.querySelector(`.knowledge-point-select[data-index="${index}"]`);
+                    
+                    if (error && select) {
+                        const selectedOption = select.options[select.selectedIndex];
+                        selectedErrors.push({
+                            ...error,
+                            selected_knowledge_point: {
+                                id: parseInt(selectedOption.value),
+                                subject: selectedOption.dataset.subject,
+                                point_name: selectedOption.dataset.pointName,
+                                display: selectedOption.text
+                            }
+                        });
+                    }
+                });
+                
+                return selectedErrors;
+            }
+            
+            // 收集所有错题
+            window.collectAllErrors = function() {
+                if (!window.currentErrorData) return [];
+                
+                const allErrors = [];
+                const selects = document.querySelectorAll('.knowledge-point-select');
+                
+                selects.forEach(select => {
+                    const index = parseInt(select.dataset.index);
+                    const error = window.currentErrorData.error_questions[index];
+                    
+                    if (error) {
+                        const selectedOption = select.options[select.selectedIndex];
+                        allErrors.push({
+                            ...error,
+                            selected_knowledge_point: {
+                                id: parseInt(selectedOption.value),
+                                subject: selectedOption.dataset.subject,
+                                point_name: selectedOption.dataset.pointName,
+                                display: selectedOption.text
+                            }
+                        });
+                    }
+                });
+                
+                return allErrors;
+            }
+            
+            // 保存错题到知识库
+            window.saveErrorsToKnowledgeBase = function(selectedErrors) {
+                if (!window.bridge || !window.bridge.saveErrorsToKnowledgeBase) {
+                    alert('保存功能暂时不可用');
+                    return;
+                }
+                
+                try {
+                    const saveData = {
+                        selected_errors: selectedErrors
+                    };
+                    
+                    let response = window.bridge.saveErrorsToKnowledgeBase(JSON.stringify(saveData));
+                    
+                    // 处理可能的Promise对象
+                    if (response && typeof response.then === 'function') {
+                        globalDebugLog('🔄 检测到Promise对象，等待保存结果...');
+                        response.then(function(actualResponse) {
+                            handleSaveErrorsResponse(actualResponse);
+                        }).catch(function(error) {
+                            globalDebugError('🚒 保存错题Promise解析失败: ' + error.message);
+                            alert('保存失败: Promise解析错误');
+                        });
+                        return;
+                    }
+                    
+                    // 如果不是Promise，直接处理
+                    handleSaveErrorsResponse(response);
+                    
+                } catch (error) {
+                    globalDebugError('保存错题失败: ' + error.message);
+                    alert('保存错题失败: ' + error.message);
+                }
+            }
+            
+            // 处理保存错题响应
+            function handleSaveErrorsResponse(response) {
+                try {
+                    if (typeof response !== 'string') {
+                        throw new Error('后端返回的不是字符串: ' + typeof response);
+                    }
+                    
+                    const result = JSON.parse(response);
+                    
+                    if (result.success) {
+                        alert(result.message || '错题保存成功');
+                        closeErrorImportModal();
+                        // 如果评估详情弹窗还在，也关闭它
+                        closeEvaluationDetailsModal();
+                    } else {
+                        alert('保存失败: ' + (result.error || '未知错误'));
+                    }
+                } catch (error) {
+                    globalDebugError('保存错题响应处理失败: ' + error.message);
+                    alert('保存失败: 响应处理错误');
                 }
             }
             
@@ -2444,6 +3502,9 @@
                 
                 globalDebugLog('✅ 答案已提交成功，提交ID: ' + submissionId + '，当前历史数量: ' + practiceAnswerHistory.length);
                 globalDebugLog('📊 当前状态 - 练习ID: ' + (currentPracticeId || 'null') + ', 题目长度: ' + (currentPracticeQuestions || '').length + ', 答案长度: ' + currentPracticeAnswer.length);
+                
+                // 自动保存练习历史（状态：未评估）
+                savePracticeHistoryToDatabase();
                 
                 alert('答案已提交（第' + practiceAnswerHistory.length + '次）\n提交ID: ' + submissionId + '\n可以点击AI评判进行评估');
             }
@@ -2673,6 +3734,9 @@
                 
                 globalDebugLog('📊 评估结果已保存到对应的提交记录，等待用户点击查看详情');
                 
+                // 自动更新练习历史状态为已评估
+                updatePracticeEvaluationInDatabase(evaluationData);
+                
                 // 显示提示信息
                 const score = evaluationData.score || 0;
                 let scoreEmoji = '🔴'; // 红色
@@ -2688,6 +3752,138 @@
                 if (evaluateBtn) {
                     evaluateBtn.disabled = false;
                     evaluateBtn.textContent = 'AI评判';
+                }
+            }
+            
+            // 保存练习历史到数据库（用户提交答案时调用）
+            function savePracticeHistoryToDatabase() {
+                globalDebugLog('💾 开始保存练习历史到数据库...');
+                
+                try {
+                    // 确保有必要的数据
+                    if (!currentPracticeId) {
+                        // 如果没有练习ID，生成一个
+                        currentPracticeId = 'practice_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                        globalDebugLog('🆔 生成新的练习ID: ' + currentPracticeId);
+                    }
+                    
+                    // 准备练习数据
+                    const practiceData = {
+                        practice_id: currentPracticeId,
+                        timestamp: new Date().toISOString(),
+                        selected_text: currentPracticeData ? (currentPracticeData.selected_text || '') : '',
+                        questions: currentPracticeQuestions || '',
+                        user_answers: currentPracticeAnswer || '',
+                        answer_history: JSON.stringify(practiceAnswerHistory || []),
+                        evaluation_result: currentEvaluationResult || '',
+                        status: 'submitted'
+                    };
+                    
+                    globalDebugLog('📊 准备保存的练习数据: ' + JSON.stringify(practiceData).substring(0, 200));
+                    
+                    // 调用后端API
+                    if (window.bridge && window.bridge.savePracticeHistory) {
+                        const response = window.bridge.savePracticeHistory(JSON.stringify(practiceData));
+                        
+                        // 处理响应
+                        if (response && typeof response.then === 'function') {
+                            // 如果是Promise，等待结果
+                            response.then(function(result) {
+                                handleSavePracticeHistoryResponse(result);
+                            }).catch(function(error) {
+                                globalDebugError('❌ 保存练习历史Promise失败: ' + error.message);
+                            });
+                        } else {
+                            // 如果是同步响应，直接处理
+                            handleSavePracticeHistoryResponse(response);
+                        }
+                    } else {
+                        globalDebugError('❌ savePracticeHistory API不可用');
+                    }
+                    
+                } catch (error) {
+                    globalDebugError('❌ 保存练习历史时出错: ' + error.message);
+                }
+            }
+            
+            // 处理保存练习历史的响应
+            function handleSavePracticeHistoryResponse(response) {
+                try {
+                    if (typeof response === 'string') {
+                        response = JSON.parse(response);
+                    }
+                    
+                    if (response && response.success) {
+                        globalDebugLog('✅ 练习历史保存成功: ' + response.practice_id);
+                    } else {
+                        globalDebugError('❌ 练习历史保存失败: ' + (response ? response.error : '未知错误'));
+                    }
+                } catch (error) {
+                    globalDebugError('❌ 处理保存练习历史响应时出错: ' + error.message);
+                }
+            }
+            
+            // 更新练习评估状态到数据库（AI评估完成时调用）
+            function updatePracticeEvaluationInDatabase(evaluationData) {
+                globalDebugLog('📊 开始更新练习评估状态到数据库...');
+                
+                try {
+                    // 确保有练习ID
+                    if (!currentPracticeId) {
+                        globalDebugError('❌ 无法更新评估状态：缺少练习ID');
+                        return;
+                    }
+                    
+                    // 准备评估数据
+                    const evalData = {
+                        evaluation_result: JSON.stringify(evaluationData),
+                        score: evaluationData.score || 0,
+                        feedback: evaluationData.feedback || '',
+                        answer_history: JSON.stringify(practiceAnswerHistory || []),
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    globalDebugLog('📊 准备更新的评估数据: ' + JSON.stringify(evalData).substring(0, 200));
+                    
+                    // 调用后端API
+                    if (window.bridge && window.bridge.updatePracticeEvaluation) {
+                        const response = window.bridge.updatePracticeEvaluation(currentPracticeId, JSON.stringify(evalData));
+                        
+                        // 处理响应
+                        if (response && typeof response.then === 'function') {
+                            // 如果是Promise，等待结果
+                            response.then(function(result) {
+                                handleUpdateEvaluationResponse(result);
+                            }).catch(function(error) {
+                                globalDebugError('❌ 更新练习评估Promise失败: ' + error.message);
+                            });
+                        } else {
+                            // 如果是同步响应，直接处理
+                            handleUpdateEvaluationResponse(response);
+                        }
+                    } else {
+                        globalDebugError('❌ updatePracticeEvaluation API不可用');
+                    }
+                    
+                } catch (error) {
+                    globalDebugError('❌ 更新练习评估时出错: ' + error.message);
+                }
+            }
+            
+            // 处理更新练习评估的响应
+            function handleUpdateEvaluationResponse(response) {
+                try {
+                    if (typeof response === 'string') {
+                        response = JSON.parse(response);
+                    }
+                    
+                    if (response && response.success) {
+                        globalDebugLog('✅ 练习评估状态更新成功: ' + response.practice_id);
+                    } else {
+                        globalDebugError('❌ 练习评估状态更新失败: ' + (response ? response.error : '未知错误'));
+                    }
+                } catch (error) {
+                    globalDebugError('❌ 处理更新练习评估响应时出错: ' + error.message);
                 }
             }
             
@@ -2770,7 +3966,7 @@
                             question: '请解释什么是机器学习，并举例说明其在日常生活中的应用。',
                             related_content: '最近学习的内容关于机器学习基础概念'
                         };
-                        loadPracticeData(mockPractice);
+                        loadNewPracticeData(mockPractice);
                     }, 2000);
                     return;
                 }
@@ -2780,7 +3976,7 @@
                     const result = JSON.parse(response);
                     
                     if (result.success) {
-                        loadPracticeData(result.data);
+                        loadNewPracticeData(result.data);
                     } else {
                         alert('生成新练习失败: ' + (result.error || '未知错误'));
                         // 恢复默认显示
@@ -2806,9 +4002,11 @@
                 }
             }
             
-            // 加载练习数据
-            function loadPracticeData(practiceData) {
-                globalDebugLog('📁 加载练习数据: ' + JSON.stringify(practiceData).substring(0, 100));
+            // 注意：loadPracticeData函数已移动到文件后面，避免重复定义
+            
+            // 加载新练习数据（用于生成新练习时）
+            function loadNewPracticeData(practiceData) {
+                globalDebugLog('📁 加载新练习数据: ' + JSON.stringify(practiceData).substring(0, 100));
                 
                 currentPracticeId = practiceData.id;
                 currentPracticeQuestions = practiceData.question || practiceData.questions;
@@ -2821,10 +4019,23 @@
                     practiceIdDisplay.textContent = currentPracticeId;
                 }
                 
-                // 更新相关学习内容
+                // 更新相关学习内容 - 显示数据库中的selected_text字段
                 const relatedContentDisplay = document.getElementById('relatedContentDisplay');
                 if (relatedContentDisplay) {
-                    relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">${practiceData.related_content || practiceData.selectedText || '相关学习内容将在这里显示...'}</p>`;
+                    const selectedText = practiceData.selected_text || practiceData.selectedText || practiceData.related_content || '';
+                    if (selectedText && selectedText.trim()) {
+                        relatedContentDisplay.innerHTML = `
+                            <div class="text-text-dark-brown leading-relaxed">
+                                <div class="markdown-content">${formatMarkdownContent(selectedText)}</div>
+                            </div>
+                        `;
+                        globalDebugLog('✅ 已更新相关学习内容（新练习），长度: ' + selectedText.length);
+                    } else {
+                        relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">暂无相关学习内容</p>`;
+                        globalDebugLog('⚠️ 新练习没有找到selected_text字段或内容为空');
+                    }
+                } else {
+                    globalDebugError('❌ relatedContentDisplay元素不存在（新练习）');
                 }
                 
                 // 更新题目显示
@@ -2855,13 +4066,28 @@
                 currentEvaluationResult = null;
                 practiceAnswerHistory = [];
                 
-                globalDebugLog('✅ 练习数据加载完成');
+                globalDebugLog('✅ 新练习数据加载完成');
             }
             
             // 更新答案历史显示 - 改进版本，显示提交ID和分数
             function updateAnswerHistory() {
                 const answerHistoryArea = document.getElementById('answerHistoryArea');
-                if (!answerHistoryArea) return;
+                if (!answerHistoryArea) {
+                    globalDebugError('❌ 找不到answerHistoryArea元素');
+                    return;
+                }
+                
+                globalDebugLog('📊 更新答案历史显示:');
+                globalDebugLog('  - practiceAnswerHistory数组长度: ' + practiceAnswerHistory.length);
+                globalDebugLog('  - practiceAnswerHistory类型: ' + typeof practiceAnswerHistory);
+                globalDebugLog('  - 是否为数组: ' + Array.isArray(practiceAnswerHistory));
+                
+                if (practiceAnswerHistory.length > 0) {
+                    globalDebugLog('📋 答案历史记录详情:');
+                    practiceAnswerHistory.forEach((entry, index) => {
+                        globalDebugLog(`  记录 ${index + 1}: ID=${entry.id}, 答案="${entry.answer}", 状态=${entry.status}, 时间=${entry.timestamp}`);
+                    });
+                }
                 
                 answerHistoryArea.innerHTML = '';
                 
@@ -2927,7 +4153,10 @@
                 
                 // 如果没有任何提交记录，显示提示
                 if (practiceAnswerHistory.length === 0) {
+                    globalDebugLog('⚠️ 显示"暂无提交记录"提示');
                     answerHistoryArea.innerHTML = '<div class="text-center text-gray-500 py-4">暂无提交记录</div>';
+                } else {
+                    globalDebugLog('✅ 成功显示 ' + practiceAnswerHistory.length + ' 条答案历史记录');
                 }
             }
             
@@ -3012,14 +4241,9 @@
                                     <button onclick="window.closeEvaluationDetailsModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
                                         关闭
                                     </button>
-                                    <button onclick="window.saveCurrentEvaluation()" class="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                        保存评估结果
-                                    </button>
-                                    ${score < 80 ? `
                                     <button onclick="window.addCurrentToErrorBank()" class="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700">
-                                        加入错题库
+                                        错题入库
                                     </button>
-                                    ` : ''}
                                 </div>
                             </div>
                         </div>
@@ -3111,36 +4335,19 @@
             globalDebugLog('  - saveCurrentEvaluation: ' + (typeof window.saveCurrentEvaluation));
             globalDebugLog('  - addCurrentToErrorBank: ' + (typeof window.addCurrentToErrorBank));
             
-            // 显示练习历史弹窗的辅助函数
-            function showPracticeHistoryModal(historyData) {
+            // 显示练习历史弹窗的辅助函数 - 定义为全局函数
+            window.showPracticeHistoryModal = function(historyData) {
                 globalDebugLog('📊 将显示练习历史弹窗，数据数量: ' + (historyData ? historyData.length : 0));
                 
-                // 使用对话历史弹窗样式，但修改内容
-                if (!historyModal) {
-                    globalDebugError('❗ 历史弹窗元素未找到');
+                // 使用独立的练习历史弹窗
+                const practiceHistoryModal = document.getElementById('practiceHistoryModal');
+                if (!practiceHistoryModal) {
+                    globalDebugError('❗ 练习历史弹窗元素未找到');
                     return;
                 }
                 
-                // 修改标题
-                const historyTitle = historyModal.querySelector('.ai-history-header h3');
-                if (historyTitle) {
-                    historyTitle.textContent = '📜 练习历史';
-                }
-                
-                // 修改搜索框提示
-                const searchInput = historyModal.querySelector('#historySearchInput');
-                if (searchInput) {
-                    searchInput.placeholder = '搜索练习历史...';
-                }
-                
-                // 修改加载按钮文字
-                const loadBtn = historyModal.querySelector('#loadHistoryBtn');
-                if (loadBtn) {
-                    loadBtn.textContent = '加载选中练习';
-                }
-                
                 // 显示弹窗
-                historyModal.classList.add('show');
+                practiceHistoryModal.classList.add('show');
                 
                 // 填充练习历史数据
                 displayPracticeHistoryList(historyData);
@@ -3148,29 +4355,526 @@
                 globalDebugLog('✅ 练习历史弹窗已显示');
             }
             
-            // 显示练习历史列表
+            // 加载选中的练习 - 定义为全局函数
+            window.loadSelectedPractice = function() {
+                try {
+                    globalDebugLog('🚀 开始加载选中的练习');
+                    
+                    const selectedItems = document.querySelectorAll('#practiceHistoryList .history-item.selected');
+                    globalDebugLog('🔍 找到选中项数量: ' + selectedItems.length);
+                    
+                    if (selectedItems.length === 0) {
+                        alert('请先选择一个练习记录');
+                        return;
+                    }
+                    
+                    const selectedItem = selectedItems[0];
+                    const practiceId = selectedItem.dataset.practiceId || selectedItem.dataset.id;
+                    globalDebugLog('🎯 选中的练习ID: ' + practiceId);
+                    globalDebugLog('🎯 所有数据集属性: ' + JSON.stringify(selectedItem.dataset));
+                    
+                    // 从练习历史数据中找到对应的练习
+                    const practiceData = allPracticeHistory.find(p => (p.id === practiceId || p.practice_id === practiceId));
+                    if (!practiceData) {
+                        globalDebugError('❌ 未找到练习数据，ID: ' + practiceId);
+                        globalDebugLog('📋 可用的练习ID列表: ' + allPracticeHistory.map(p => p.id || p.practice_id).join(', '));
+                        alert('未找到练习数据');
+                        return;
+                    }
+                    
+                    globalDebugLog('📁 找到练习数据: ' + JSON.stringify(practiceData).substring(0, 200));
+                    
+                    // 自动最大化AI助手窗口并切换到练习Tab
+                    if (!isMaximized) {
+                        toggleMaximizeChat();
+                    }
+                    
+                    setTimeout(() => {
+                        globalDebugLog('🔄 开始切换到练习Tab并加载数据');
+                        
+                        // 先加载练习数据（这会设置全局变量）
+                        loadPracticeData(practiceData);
+                        
+                        // 然后切换到练习Tab
+                        switchTab('practice');
+                        
+                        // 确保显示练习内容而不是欢迎界面
+                        setTimeout(() => {
+                            const welcomePanel = document.getElementById('practiceWelcomePanel');
+                            const practiceContainer = document.getElementById('practiceContainer');
+                            
+                            if (welcomePanel) {
+                                welcomePanel.style.display = 'none';
+                                globalDebugLog('✅ 强制隐藏欢迎界面');
+                            }
+                            
+                            if (practiceContainer) {
+                                practiceContainer.style.display = 'flex';
+                                globalDebugLog('✅ 强制显示练习容器');
+                            }
+                            
+                            // 关闭练习历史弹窗
+                            const practiceHistoryModal = document.getElementById('practiceHistoryModal');
+                            if (practiceHistoryModal) {
+                                practiceHistoryModal.classList.remove('show');
+                                globalDebugLog('✅ 关闭练习历史弹窗');
+                            }
+                        }, 100);
+                    }, 300);
+                    
+                } catch (error) {
+                    globalDebugError('❌ 加载选中练习时出错: ' + error.message);
+                    alert('加载练习时出错: ' + error.message);
+                }
+            };
+            
+            // 调试日志确认练习历史函数绑定
+            globalDebugLog('🔧 练习历史弹窗函数已绑定到全局作用域：');
+            globalDebugLog('  - showPracticeHistoryModal: ' + (typeof window.showPracticeHistoryModal));
+            globalDebugLog('  - loadSelectedPractice: ' + (typeof window.loadSelectedPractice));
+            
+            // 练习历史分页和筛选状态
+            let allPracticeHistory = [];
+            let filteredPracticeHistory = [];
+            let currentPage = 1;
+            const itemsPerPage = 10;
+            let currentSearchTerm = '';
+            let currentTimeFilter = 'all'; // all, today, week, month, custom
+            let currentCustomDate = '';
+            let practiceDatesMap = new Map(); // 存储有练习的日期
+            let currentCalendarYear = new Date().getFullYear();
+            let currentCalendarMonth = new Date().getMonth();
+            
+            // 显示练习历史列表（支持分页和筛选）
             function displayPracticeHistoryList(practiceHistory) {
                 globalDebugLog('📋 将显示练习历史列表，数据数量: ' + (practiceHistory ? practiceHistory.length : 0));
                 
-                if (!historyList) {
-                    globalDebugError('❗ 历史列表元素未找到');
+                // 使用新的练习历史列表容器
+                const practiceHistoryList = document.getElementById('practiceHistoryList');
+                if (!practiceHistoryList) {
+                    globalDebugError('❗ 练习历史列表元素未找到');
                     return;
                 }
                 
+                // 更新全局变量，让其他函数也使用新容器
+                historyList = practiceHistoryList;
+                
+                // 存储原始数据
+                allPracticeHistory = practiceHistory || [];
+                
+                // 构建练习日期映射
+                buildPracticeDatesMap();
+                
+                // 创建筛选和分页控件
+                createPracticeHistoryControls();
+                
+                // 应用筛选和分页
+                applyPracticeHistoryFilters();
+            }
+            
+            // 构建练习日期映射
+            function buildPracticeDatesMap() {
+                practiceDatesMap.clear();
+                
+                allPracticeHistory.forEach(practice => {
+                    if (practice.timestamp) {
+                        try {
+                            const date = new Date(practice.timestamp);
+                            // 使用本地时间格式化日期，避免时区偏移问题
+                            const dateStr = formatDateToString(date);
+                            
+                            if (!practiceDatesMap.has(dateStr)) {
+                                practiceDatesMap.set(dateStr, []);
+                            }
+                            practiceDatesMap.get(dateStr).push(practice);
+                        } catch (e) {
+                            globalDebugLog('❌ 解析日期失败: ' + practice.timestamp);
+                        }
+                    }
+                });
+                
+                globalDebugLog('📅 构建练习日期映射完成，共 ' + practiceDatesMap.size + ' 个日期');
+                
+                // 调试：显示前几个日期
+                if (practiceDatesMap.size > 0) {
+                    const dates = Array.from(practiceDatesMap.keys()).slice(0, 3);
+                    globalDebugLog('📅 前3个练习日期: ' + dates.join(', '));
+                }
+            }
+            
+            // 生成练习日历
+            function generatePracticeCalendar() {
+                const calendarContainer = document.getElementById('practiceCalendar');
+                const monthDisplay = document.getElementById('currentMonthDisplay');
+                const prevBtn = document.getElementById('prevMonthBtn');
+                const nextBtn = document.getElementById('nextMonthBtn');
+                
+                if (!calendarContainer) return;
+                
+                const now = new Date();
+                
+                // 更新月份显示
+                if (monthDisplay) {
+                    const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', 
+                                      '7月', '8月', '9月', '10月', '11月', '12月'];
+                    monthDisplay.textContent = `${currentCalendarYear}年${monthNames[currentCalendarMonth]}`;
+                }
+                
+                // 更新按钮状态（只允许往前切换，不允许往后切换到未来月份）
+                if (nextBtn) {
+                    const isCurrentOrFutureMonth = (currentCalendarYear > now.getFullYear()) || 
+                                                  (currentCalendarYear === now.getFullYear() && currentCalendarMonth >= now.getMonth());
+                    nextBtn.disabled = isCurrentOrFutureMonth;
+                    nextBtn.className = isCurrentOrFutureMonth ? 
+                        'p-1 rounded text-gray-400 cursor-not-allowed opacity-50' : 
+                        'p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800';
+                }
+                
+                // 清空日历
+                calendarContainer.innerHTML = '';
+                
+                // 添加星期头
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                weekdays.forEach(day => {
+                    const dayHeader = document.createElement('div');
+                    dayHeader.className = 'text-center font-medium text-gray-500 p-0.5 text-xs min-h-5 flex items-center justify-center';
+                    dayHeader.textContent = day;
+                    calendarContainer.appendChild(dayHeader);
+                });
+                
+                // 获取当前显示月份的第一天
+                const firstDay = new Date(currentCalendarYear, currentCalendarMonth, 1);
+                const lastDay = new Date(currentCalendarYear, currentCalendarMonth + 1, 0);
+                
+                // 计算日历开始日期（从周日开始）
+                const startDate = new Date(firstDay);
+                startDate.setDate(startDate.getDate() - firstDay.getDay());
+                
+                // 生成日历格子
+                for (let i = 0; i < 42; i++) { // 6周 x 7天
+                    const cellDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+                    
+                    // 修复日期计算 - 使用本地时间而不是UTC时间
+                    const localDate = new Date(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate());
+                    const dateStr = formatDateToString(localDate);
+                    
+                    const isCurrentMonth = cellDate.getMonth() === currentCalendarMonth;
+                    const hasPractice = practiceDatesMap.has(dateStr);
+                    const isToday = cellDate.toDateString() === now.toDateString();
+                    
+                    const dayCell = document.createElement('div');
+                    dayCell.className = `text-center p-0.5 cursor-pointer rounded transition-colors text-xs min-h-6 flex flex-col items-center justify-center ${
+                        isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                    } ${
+                        hasPractice ? 'bg-blue-100 hover:bg-blue-200 font-medium' : 'hover:bg-gray-100'
+                    } ${
+                        isToday ? 'ring-1 ring-blue-500' : ''
+                    }`;
+                    
+                    dayCell.textContent = cellDate.getDate();
+                    dayCell.title = hasPractice ? 
+                        `${dateStr} - ${practiceDatesMap.get(dateStr).length}个练习` : 
+                        dateStr;
+                    
+                    // 添加练习标记
+                    if (hasPractice) {
+                        const marker = document.createElement('div');
+                        marker.className = 'w-1 h-1 bg-blue-500 rounded-full mt-0.5';
+                        dayCell.appendChild(marker);
+                    }
+                    
+                    // 点击事件
+                    dayCell.addEventListener('click', function() {
+                        if (hasPractice) {
+                            // 设置自定义日期并筛选
+                            const customDateInput = document.getElementById('practiceCustomDate');
+                            const calendarView = document.getElementById('practiceCalendarView');
+                            
+                            if (customDateInput) {
+                                customDateInput.value = dateStr;
+                                currentCustomDate = dateStr;
+                                currentPage = 1;
+                                applyPracticeHistoryFilters();
+                                
+                                // 点击日期后自动隐藏日历
+                                if (calendarView) {
+                                    calendarView.classList.add('hidden');
+                                    globalDebugLog('📅 点击日期后自动隐藏日历: ' + dateStr);
+                                }
+                            }
+                        }
+                    });
+                    
+                    calendarContainer.appendChild(dayCell);
+                }
+            }
+            
+            // 格式化日期为YYYY-MM-DD字符串（本地时间）
+            function formatDateToString(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            
+            // 切换到上一个月
+            function goToPreviousMonth() {
+                if (currentCalendarMonth === 0) {
+                    currentCalendarYear--;
+                    currentCalendarMonth = 11;
+                } else {
+                    currentCalendarMonth--;
+                }
+                generatePracticeCalendar();
+                globalDebugLog('📅 切换到上一个月: ' + currentCalendarYear + '年' + (currentCalendarMonth + 1) + '月');
+            }
+            
+            // 切换到下一个月（仅限当前月份之前）
+            function goToNextMonth() {
+                const now = new Date();
+                const nextYear = currentCalendarMonth === 11 ? currentCalendarYear + 1 : currentCalendarYear;
+                const nextMonth = currentCalendarMonth === 11 ? 0 : currentCalendarMonth + 1;
+                
+                // 只允许切换到当前月份或之前的月份
+                if (nextYear < now.getFullYear() || (nextYear === now.getFullYear() && nextMonth <= now.getMonth())) {
+                    currentCalendarYear = nextYear;
+                    currentCalendarMonth = nextMonth;
+                    generatePracticeCalendar();
+                    globalDebugLog('📅 切换到下一个月: ' + currentCalendarYear + '年' + (currentCalendarMonth + 1) + '月');
+                }
+            }
+            
+            // 创建练习历史控件（搜索、筛选、分页）
+            function createPracticeHistoryControls() {
+                // 移除已存在的控件
+                const existingControls = document.querySelector('.practice-history-controls');
+                if (existingControls) {
+                    existingControls.remove();
+                }
+                
+                const controlsContainer = document.createElement('div');
+                controlsContainer.className = 'practice-history-controls mb-4 p-3 bg-gray-50 rounded-lg';
+                controlsContainer.innerHTML = `
+                    <div class="flex flex-col gap-2">
+                        <!-- 搜索和筛选行 -->
+                        <div class="flex items-center gap-3">
+                            <!-- 搜索框 -->
+                            <div class="flex items-center gap-2 flex-1">
+                                <span class="material-icons-outlined text-gray-500">search</span>
+                                <input type="text" id="practiceHistorySearch" placeholder="搜索题目内容..." 
+                                       class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            </div>
+                            
+                            <!-- 时间筛选 -->
+                            <select id="practiceTimeFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="all">全部时间</option>
+                                <option value="today">今天</option>
+                                <option value="week">本周</option>
+                                <option value="month">本月</option>
+                                <option value="custom">自定义日期</option>
+                            </select>
+                            
+                            <!-- 状态筛选 -->
+                            <select id="practiceStatusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="all">全部状态</option>
+                                <option value="evaluated">已评估</option>
+                                <option value="unevaluated">未评估</option>
+                            </select>
+                            
+                            <!-- 日期选择器 -->
+                            <input type="date" id="practiceCustomDate" 
+                                   class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 hidden">
+                        </div>
+                        
+                        <!-- 紧凑的日期日历视图 -->
+                        <div id="practiceCalendarView" class="hidden p-2 border border-gray-200 rounded-lg bg-white">
+                            <div class="flex justify-between items-center mb-2">
+                                <div class="text-xs font-medium text-gray-700">练习日历（点击日期筛选）</div>
+                                <div class="flex items-center gap-1">
+                                    <button id="prevMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800">
+                                        <span class="material-icons-outlined text-xs">chevron_left</span>
+                                    </button>
+                                    <span id="currentMonthDisplay" class="text-xs font-medium text-gray-700 min-w-16 text-center"></span>
+                                    <button id="nextMonthBtn" class="p-1 hover:bg-gray-100 rounded text-gray-600 hover:text-gray-800 opacity-50 cursor-not-allowed" disabled>
+                                        <span class="material-icons-outlined text-xs">chevron_right</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="practiceCalendar" class="grid grid-cols-7 gap-0.5 text-xs"></div>
+                        </div>
+                        
+                        <!-- 统计信息 -->
+                        <div id="practiceHistoryStats" class="text-xs text-gray-600"></div>
+                    </div>
+                `;
+                
+                // 插入到历史列表前面
+                historyList.parentNode.insertBefore(controlsContainer, historyList);
+                
+                // 绑定事件
+                const searchInput = document.getElementById('practiceHistorySearch');
+                const timeFilter = document.getElementById('practiceTimeFilter');
+                const statusFilter = document.getElementById('practiceStatusFilter');
+                const customDateInput = document.getElementById('practiceCustomDate');
+                const calendarView = document.getElementById('practiceCalendarView');
+                
+                if (searchInput) {
+                    searchInput.addEventListener('input', function() {
+                        currentSearchTerm = this.value.toLowerCase();
+                        currentPage = 1;
+                        applyPracticeHistoryFilters();
+                    });
+                }
+                
+                if (timeFilter) {
+                    timeFilter.addEventListener('change', function() {
+                        currentTimeFilter = this.value;
+                        currentPage = 1;
+                        
+                        // 显示/隐藏自定义日期选择器和日历
+                        if (this.value === 'custom') {
+                            customDateInput.classList.remove('hidden');
+                            calendarView.classList.remove('hidden');
+                            generatePracticeCalendar();
+                            
+                            // 绑定月份切换按钮事件
+                            const prevBtn = document.getElementById('prevMonthBtn');
+                            const nextBtn = document.getElementById('nextMonthBtn');
+                            
+                            if (prevBtn && !prevBtn.hasAttribute('data-event-bound')) {
+                                prevBtn.addEventListener('click', goToPreviousMonth);
+                                prevBtn.setAttribute('data-event-bound', 'true');
+                            }
+                            
+                            if (nextBtn && !nextBtn.hasAttribute('data-event-bound')) {
+                                nextBtn.addEventListener('click', goToNextMonth);
+                                nextBtn.setAttribute('data-event-bound', 'true');
+                            }
+                        } else {
+                            customDateInput.classList.add('hidden');
+                            calendarView.classList.add('hidden');
+                        }
+                        
+                        applyPracticeHistoryFilters();
+                    });
+                }
+                
+                if (customDateInput) {
+                    customDateInput.addEventListener('change', function() {
+                        currentCustomDate = this.value;
+                        currentPage = 1;
+                        applyPracticeHistoryFilters();
+                    });
+                }
+                
+                if (statusFilter) {
+                    statusFilter.addEventListener('change', function() {
+                        currentStatusFilter = this.value;
+                        currentPage = 1;
+                        applyPracticeHistoryFilters();
+                    });
+                }
+            }
+            
+            // 应用筛选和分页
+            function applyPracticeHistoryFilters() {
+                // 1. 筛选数据
+                filteredPracticeHistory = allPracticeHistory.filter(practice => {
+                    // 搜索题目内容
+                    if (currentSearchTerm) {
+                        const questionText = (practice.questions || practice.selected_text || '').toLowerCase();
+                        if (!questionText.includes(currentSearchTerm)) {
+                            return false;
+                        }
+                    }
+                    
+                    // 时间筛选
+                    if (currentTimeFilter !== 'all' && practice.timestamp) {
+                        const practiceDate = new Date(practice.timestamp);
+                        const now = new Date();
+                        
+                        switch (currentTimeFilter) {
+                            case 'today':
+                                if (practiceDate.toDateString() !== now.toDateString()) {
+                                    return false;
+                                }
+                                break;
+                            case 'week':
+                                const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                                if (practiceDate < weekAgo) {
+                                    return false;
+                                }
+                                break;
+                            case 'month':
+                                const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                                if (practiceDate < monthAgo) {
+                                    return false;
+                                }
+                                break;
+                            case 'custom':
+                                if (currentCustomDate) {
+                                    const customDate = new Date(currentCustomDate);
+                                    if (practiceDate.toDateString() !== customDate.toDateString()) {
+                                        return false;
+                                    }
+                                }
+                                break;
+                        }
+                    }
+                    
+                    // 状态筛选
+                    const statusFilter = document.getElementById('practiceStatusFilter');
+                    if (statusFilter && statusFilter.value !== 'all') {
+                        const hasEvaluation = practice.has_evaluation || practice.evaluation_result;
+                        if (statusFilter.value === 'evaluated' && !hasEvaluation) {
+                            return false;
+                        }
+                        if (statusFilter.value === 'unevaluated' && hasEvaluation) {
+                            return false;
+                        }
+                    }
+                    
+                    return true;
+                });
+                
+                // 2. 分页
+                const totalItems = filteredPracticeHistory.length;
+                const totalPages = Math.ceil(totalItems / itemsPerPage);
+                const startIndex = (currentPage - 1) * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                const pageItems = filteredPracticeHistory.slice(startIndex, endIndex);
+                
+                // 3. 更新统计信息
+                updatePracticeHistoryStats(totalItems, totalPages, currentPage);
+                
+                // 4. 渲染列表
+                renderPracticeHistoryItems(pageItems);
+                
+                // 5. 创建分页控件
+                createPracticeHistoryPagination(totalPages, currentPage);
+            }
+            
+            // 渲染练习历史项目
+            function renderPracticeHistoryItems(items) {
                 historyList.innerHTML = '';
                 
-                if (!practiceHistory || practiceHistory.length === 0) {
-                    historyList.innerHTML = '<div class="text-center text-gray-500 py-4">暂无练习历史</div>';
-                    globalDebugLog('ℹ️ 没有练习历史数据');
+                if (items.length === 0) {
+                    historyList.innerHTML = '<div class="text-center text-gray-500 py-8">没有找到匹配的练习历史</div>';
                     return;
                 }
                 
-                practiceHistory.forEach((practice, index) => {
-                    globalDebugLog('📄 处理练习记录 ' + (index + 1) + ': ID=' + practice.id);
+                items.forEach((practice, index) => {
+                    globalDebugLog('📄 处理练习记录: ID=' + practice.id);
                     
                     const item = document.createElement('div');
                     item.className = 'history-item';
-                    item.dataset.id = practice.id;
+                    item.dataset.id = practice.id || practice.practice_id;
+                    item.dataset.practiceId = practice.id || practice.practice_id;  // 添加专用的练习ID属性
+                    
+                    // 获取题目内容，优先使用questions字段，然后是预览字段
+                    const questionText = practice.questions || practice.selected_text_preview || practice.selected_text || '无题目内容';
+                    const questionPreview = questionText.length > 120 ? 
+                        questionText.substring(0, 120) + '...' : questionText;
                     
                     const title = document.createElement('div');
                     title.className = 'history-item-title';
@@ -3182,12 +4886,21 @@
                     
                     const preview = document.createElement('div');
                     preview.className = 'history-item-preview';
-                    const questionPreview = (practice.selected_text || '无题目预览').substring(0, 50) + '...';
-                    const statusText = practice.has_evaluation ? '已评估' : '未评估';
+                    const statusText = (practice.has_evaluation || practice.evaluation_result) ? '已评估' : '未评估';
+                    const statusColor = (practice.has_evaluation || practice.evaluation_result) ? 'text-green-600' : 'text-orange-600';
+                    
                     preview.innerHTML = `
-                        <div class="text-sm text-gray-600 mb-1">题目: ${questionPreview}</div>
-                        <div class="text-xs text-gray-500">状态: ${statusText}</div>
+                        <div class="text-sm text-gray-700 mb-2 leading-relaxed">
+                            <strong>题目:</strong> ${questionPreview}
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs ${statusColor} font-medium">${statusText}</span>
+                            <span class="text-xs text-gray-400">${practice.id}</span>
+                        </div>
                     `;
+                    
+                    // 存储完整题目文本用于搜索
+                    item.dataset.questionText = questionText.toLowerCase();
                     
                     item.appendChild(title);
                     item.appendChild(time);
@@ -3207,7 +4920,77 @@
                     historyList.appendChild(item);
                 });
                 
-                globalDebugLog('✅ 练习历史列表显示完成，共 ' + practiceHistory.length + ' 个项目');
+                globalDebugLog('✅ 练习历史列表渲染完成，当前页显示 ' + items.length + ' 个项目');
+            }
+            
+            // 更新统计信息
+            function updatePracticeHistoryStats(totalItems, totalPages, currentPage) {
+                const statsElement = document.getElementById('practiceHistoryStats');
+                if (statsElement) {
+                    const startItem = totalItems > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
+                    const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+                    
+                    statsElement.textContent = `显示 ${startItem}-${endItem} 项，共 ${totalItems} 项练习历史 | 第 ${currentPage}/${totalPages} 页`;
+                }
+            }
+            
+            // 创建分页控件
+            function createPracticeHistoryPagination(totalPages, currentPage) {
+                // 移除已存在的分页控件
+                const existingPagination = document.getElementById('practiceHistoryPagination');
+                if (existingPagination) {
+                    existingPagination.remove();
+                }
+                
+                if (totalPages <= 1) return;
+                
+                const paginationContainer = document.createElement('div');
+                paginationContainer.id = 'practiceHistoryPagination';
+                paginationContainer.className = 'flex justify-center items-center gap-2 mt-4 p-3';
+                
+                // 上一页按钮
+                const prevBtn = document.createElement('button');
+                prevBtn.className = `px-3 py-1 rounded text-sm ${currentPage === 1 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`;
+                prevBtn.textContent = '上一页';
+                prevBtn.disabled = currentPage === 1;
+                prevBtn.addEventListener('click', () => {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        applyPracticeHistoryFilters();
+                    }
+                });
+                paginationContainer.appendChild(prevBtn);
+                
+                // 页码按钮
+                const startPage = Math.max(1, currentPage - 2);
+                const endPage = Math.min(totalPages, currentPage + 2);
+                
+                for (let i = startPage; i <= endPage; i++) {
+                    const pageBtn = document.createElement('button');
+                    pageBtn.className = `px-3 py-1 rounded text-sm ${i === currentPage ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+                    pageBtn.textContent = i;
+                    pageBtn.addEventListener('click', () => {
+                        currentPage = i;
+                        applyPracticeHistoryFilters();
+                    });
+                    paginationContainer.appendChild(pageBtn);
+                }
+                
+                // 下一页按钮
+                const nextBtn = document.createElement('button');
+                nextBtn.className = `px-3 py-1 rounded text-sm ${currentPage === totalPages ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-600'}`;
+                nextBtn.textContent = '下一页';
+                nextBtn.disabled = currentPage === totalPages;
+                nextBtn.addEventListener('click', () => {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        applyPracticeHistoryFilters();
+                    }
+                });
+                paginationContainer.appendChild(nextBtn);
+                
+                // 插入到历史列表后面
+                historyList.parentNode.insertBefore(paginationContainer, historyList.nextSibling);
             }
             
             // 加载选中的练习历史
@@ -3240,8 +5023,14 @@
                         
                         // 检查是否为Promise
                         if (response && typeof response.then === 'function') {
-                            globalDebugError('❌ 检测到Promise对象，数据传输异常');
-                            alert('加载练习失败: 数据传输异常，请重试');
+                            globalDebugLog('🔄 检测到Promise对象，等待异步响应...');
+                            response.then(function(actualResponse) {
+                                globalDebugLog('✅ Promise resolved，处理实际响应');
+                                handleLoadResponse(actualResponse);
+                            }).catch(function(error) {
+                                globalDebugError('❌ Promise rejected: ' + error.message);
+                                alert('加载练习失败: 数据传输异常');
+                            });
                             return;
                         }
                         
@@ -3289,18 +5078,25 @@
                             if (historyModal) {
                                 historyModal.classList.remove('show');
                             }
-                            
                             // 自动最大化并切换到练习Tab
                             if (!isMaximized) {
                                 toggleMaximizeChat();
                             }
                             setTimeout(() => {
                                 switchTab('practice');
+                                // 隐藏欢迎界面，显示练习面板
+                                const practiceWelcomePanel = document.getElementById('practiceWelcomePanel');
+                                if (practiceWelcomePanel) {
+                                    practiceWelcomePanel.style.display = 'none';
+                                    globalDebugLog('✅ 已隐藏练习欢迎界面');
+                                }
                                 if (practiceContainer) {
                                     practiceContainer.style.display = 'flex';
+                                    globalDebugLog('✅ 已显示练习容器');
                                 }
                                 if (aiPracticeMessages) {
                                     aiPracticeMessages.style.display = 'none';
+                                    globalDebugLog('✅ 已隐藏练习消息面板');
                                 }
                             }, 300);
                             
@@ -3406,32 +5202,75 @@
                 }
                 
                 // 原有的对话历史加载逻辑
-                if (!selectedHistoryId) return;
+                if (!selectedHistoryId) {
+                    alert('请先选择一个对话记录');
+                    return;
+                }
+                
+                globalDebugLog('🔄 开始加载对话历史: ' + selectedHistoryId);
                 
                 if (window.bridge && window.bridge.loadConversationById) {
-                    window.bridge.loadConversationById(selectedHistoryId, function(response) {
-                        try {
-                            const result = JSON.parse(response);
-                            if (result.success) {
-                                loadConversation(result.conversation);
-                                hideHistoryModal();
-                            }
-                        } catch (e) {
-                            console.error('加载对话内容失败:', e);
+                    try {
+                        const response = window.bridge.loadConversationById(selectedHistoryId);
+                        
+                        // 处理Promise响应
+                        if (response && typeof response.then === 'function') {
+                            response.then(function(result) {
+                                handleLoadConversationResponse(result);
+                            }).catch(function(error) {
+                                globalDebugError('❌ 加载对话Promise失败: ' + error.message);
+                                alert('加载对话失败: ' + error.message);
+                            });
+                        } else {
+                            // 同步响应
+                            handleLoadConversationResponse(response);
                         }
-                    });
+                    } catch (error) {
+                        globalDebugError('❌ 加载对话异常: ' + error.message);
+                        alert('加载对话失败: ' + error.message);
+                    }
+                } else {
+                    alert('对话历史功能暂时不可用');
                 }
             }
             
-            // 加载练习数据到当前界面
+            // 处理加载对话的响应
+            function handleLoadConversationResponse(response) {
+                try {
+                    globalDebugLog('📝 收到对话加载响应: ' + (typeof response === 'string' ? response.substring(0, 100) : JSON.stringify(response).substring(0, 100)));
+                    
+                    if (typeof response === 'string') {
+                        response = JSON.parse(response);
+                    }
+                    
+                    if (response && response.success) {
+                        if (response.conversation) {
+                            globalDebugLog('✅ 对话加载成功，开始载入对话内容');
+                            loadConversation(response.conversation);
+                            hideHistoryModal();
+                        } else {
+                            globalDebugError('❌ 响应中没有对话数据');
+                            alert('加载对话失败: 没有对话数据');
+                        }
+                    } else {
+                        const errorMsg = response ? (response.error || '未知错误') : '响应为空';
+                        globalDebugError('❌ 对话加载失败: ' + errorMsg);
+                        alert('加载对话失败: ' + errorMsg);
+                    }
+                } catch (error) {
+                    globalDebugError('❌ 处理对话加载响应时出错: ' + error.message);
+                    alert('加载对话失败: 响应处理错误');
+                }
+            }
+            
+            // 加载练习数据（旧版本简单实现）
             function loadPracticeData(practiceData) {
-                globalDebugLog('📊 开始加载练习数据: ' + JSON.stringify(practiceData).substring(0, 100));
+                globalDebugLog('📁 加载练习数据: ' + JSON.stringify(practiceData).substring(0, 100));
                 
-                // 设置全局练习状态
-                currentPracticeId = practiceData.practice_id;
-                currentPracticeQuestions = practiceData.questions;
-                currentPracticeAnswer = practiceData.user_answers || '';
-                currentEvaluationResult = practiceData.evaluation_result;
+                currentPracticeId = practiceData.id;
+                currentPracticeQuestions = practiceData.question || practiceData.questions;
+                
+                globalDebugLog('🎯 设置练习状态: ID=' + currentPracticeId + ', 题目长度=' + (currentPracticeQuestions || '').length);
                 
                 // 更新练习ID显示
                 const practiceIdDisplay = document.getElementById('practiceIdDisplay');
@@ -3439,41 +5278,225 @@
                     practiceIdDisplay.textContent = currentPracticeId;
                 }
                 
-                // 更新题目显示
-                const questionContent = document.getElementById('questionContent');
-                if (questionContent) {
-                    questionContent.innerHTML = currentPracticeQuestions || '题目加载中...';
+                // 更新相关学习内容
+                const relatedContentDisplay = document.getElementById('relatedContentDisplay');
+                if (relatedContentDisplay) {
+                    relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">${practiceData.related_content || practiceData.selectedText || '相关学习内容将在这里显示...'}</p>`;
                 }
                 
-                // 更新答案输入框
+                // 更新题目显示
+                const questionDisplayArea = document.querySelector('#questionDisplayArea');
+                if (questionDisplayArea && currentPracticeQuestions) {
+                    questionDisplayArea.innerHTML = `
+                        <p class="text-text-dark-brown leading-relaxed">
+                            <strong>题目：</strong> 
+                            <div class="markdown-content mt-2">${formatMarkdownContent(currentPracticeQuestions)}</div>
+                        </p>
+                    `;
+                }
+                
+                // 清空答案区域
                 const answerInput = document.getElementById('practiceAnswerInput');
                 if (answerInput) {
-                    answerInput.value = currentPracticeAnswer;
+                    answerInput.value = '';
                 }
                 
-                // 重置答案历史（从加载的数据中恢复）
+                // 清空答案历史
+                const answerHistoryArea = document.getElementById('answerHistoryArea');
+                if (answerHistoryArea) {
+                    answerHistoryArea.innerHTML = '';
+                }
+                
+                // 重置状态
+                currentPracticeAnswer = '';
+                currentEvaluationResult = null;
                 practiceAnswerHistory = [];
-                if (currentPracticeAnswer) {
-                    const submissionId = 'loaded_' + Date.now();
-                    const evaluationScore = currentEvaluationResult && typeof currentEvaluationResult === 'object' && currentEvaluationResult.score ? currentEvaluationResult.score : 85;
-                    practiceAnswerHistory.push({
-                        id: submissionId,
-                        answer: currentPracticeAnswer,
-                        timestamp: practiceData.timestamp ? new Date(practiceData.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
-                        status: currentEvaluationResult ? '已评估' : '已提交',
-                        evaluation: currentEvaluationResult,
-                        score: currentEvaluationResult ? evaluationScore : null
-                    });
-                }
-                
-                // 更新答案历史显示
-                updateAnswerHistory();
                 
                 globalDebugLog('✅ 练习数据加载完成');
-                globalDebugLog('🎯 练习ID: ' + currentPracticeId);
-                globalDebugLog('❓ 题目长度: ' + (currentPracticeQuestions || '').length);
-                globalDebugLog('✅ 答案长度: ' + (currentPracticeAnswer || '').length);
-                globalDebugLog('📊 评估结果: ' + (currentEvaluationResult ? '有' : '无'));
+            }
+            
+            // 按照正确版本：覆盖简单版本，使用复杂版本的loadPracticeData
+            function loadPracticeData(practiceData) {
+                globalDebugLog('📊 开始加载练习数据: ' + JSON.stringify(practiceData).substring(0, 200));
+                
+                try {
+                    // 设置全局练习状态
+                    currentPracticeId = practiceData.practice_id || practiceData.id || '';
+                    currentPracticeQuestions = practiceData.questions || practiceData.question || practiceData.selected_text || '';
+                    currentPracticeAnswer = practiceData.user_answers || practiceData.answer || '';
+                    currentEvaluationResult = practiceData.evaluation_result || practiceData.evaluation || null;
+                    
+                    globalDebugLog('🆔 练习ID: ' + currentPracticeId);
+                    globalDebugLog('❓ 题目长度: ' + (currentPracticeQuestions ? currentPracticeQuestions.length : 0));
+                    globalDebugLog('✍️ 答案长度: ' + (currentPracticeAnswer ? currentPracticeAnswer.length : 0));
+                    globalDebugLog('📊 评估结果: ' + (currentEvaluationResult ? '有' : '无'));
+                    
+                    // 检查DOM元素是否存在
+                    const practiceIdDisplay = document.getElementById('practiceIdDisplay');
+                    const questionDisplayArea = document.getElementById('questionDisplayArea');
+                    const answerInput = document.getElementById('practiceAnswerInput');
+                    const answerHistoryArea = document.getElementById('answerHistoryArea');
+                    
+                    globalDebugLog('🔍 DOM元素检查:');
+                    globalDebugLog('  - practiceIdDisplay: ' + (practiceIdDisplay ? '存在' : '不存在'));
+                    globalDebugLog('  - questionDisplayArea: ' + (questionDisplayArea ? '存在' : '不存在'));
+                    globalDebugLog('  - answerInput: ' + (answerInput ? '存在' : '不存在'));
+                    globalDebugLog('  - answerHistoryArea: ' + (answerHistoryArea ? '存在' : '不存在'));
+                    
+                    // 更新练习ID显示
+                    if (practiceIdDisplay) {
+                        practiceIdDisplay.textContent = currentPracticeId;
+                        globalDebugLog('✅ 已更新练习ID显示: ' + currentPracticeId);
+                    } else {
+                        globalDebugError('❌ practiceIdDisplay元素不存在');
+                    }
+                    
+                    // 更新题目显示
+                    if (questionDisplayArea && currentPracticeQuestions) {
+                        questionDisplayArea.innerHTML = `
+                            <p class="text-text-dark-brown leading-relaxed">
+                                <strong>题目：</strong> 
+                                <div class="markdown-content mt-2">${formatMarkdownContent(currentPracticeQuestions)}</div>
+                            </p>
+                        `;
+                    } else if (questionDisplayArea) {
+                        questionDisplayArea.innerHTML = `
+                            <p class="text-text-dark-brown leading-relaxed">
+                                <strong>题目：</strong> <span id="questionContent">题目加载中...</span>
+                            </p>
+                        `;
+                    }
+                    
+                    // 更新答案输入框
+                    if (answerInput) {
+                        answerInput.value = currentPracticeAnswer;
+                    }
+                    
+                    // 重置答案历史（从加载的数据中恢复）
+                    practiceAnswerHistory = [];
+                    
+                    // 尝试从保存的answer_history恢复完整的答案历史
+                    globalDebugLog('🔍 检查answer_history字段:');
+                    globalDebugLog('  - answer_history存在: ' + (practiceData.answer_history ? '是' : '否'));
+                    globalDebugLog('  - answer_history类型: ' + typeof practiceData.answer_history);
+                    globalDebugLog('  - answer_history长度: ' + (practiceData.answer_history ? practiceData.answer_history.length : 0));
+                    globalDebugLog('  - answer_history内容预览: ' + (practiceData.answer_history ? practiceData.answer_history.substring(0, 200) + '...' : '无'));
+                    
+                    if (practiceData.answer_history) {
+                        try {
+                            const savedHistory = JSON.parse(practiceData.answer_history);
+                            globalDebugLog('📋 JSON解析成功:');
+                            globalDebugLog('  - 解析结果类型: ' + typeof savedHistory);
+                            globalDebugLog('  - 是否为数组: ' + Array.isArray(savedHistory));
+                            globalDebugLog('  - 数组长度: ' + (Array.isArray(savedHistory) ? savedHistory.length : 'N/A'));
+                            
+                            if (Array.isArray(savedHistory) && savedHistory.length > 0) {
+                                practiceAnswerHistory = savedHistory;
+                                globalDebugLog('✅ 成功恢复答案历史，共 ' + savedHistory.length + ' 条记录');
+                                
+                                // 显示每条记录的详细信息
+                                savedHistory.forEach((entry, index) => {
+                                    globalDebugLog(`📝 记录 ${index + 1}: ID=${entry.id}, 答案长度=${(entry.answer || '').length}, 状态=${entry.status}`);
+                                });
+                            } else {
+                                globalDebugLog('⚠️ 答案历史数组为空或不是有效数组');
+                            }
+                        } catch (e) {
+                            globalDebugError('❌ 解析答案历史失败: ' + e.message);
+                            globalDebugLog('📄 原始数据: ' + practiceData.answer_history);
+                        }
+                    } else {
+                        globalDebugLog('⚠️ 没有answer_history字段');
+                    }
+                    
+                    // 如果没有保存的历史，但有当前答案，则创建一条记录
+                    if (practiceAnswerHistory.length === 0 && currentPracticeAnswer) {
+                        const submissionId = 'loaded_' + Date.now();
+                        let evaluationScore = null;
+                        let parsedEvaluation = null;
+                        
+                        // 解析评估结果
+                        if (currentEvaluationResult) {
+                            if (typeof currentEvaluationResult === 'object') {
+                                parsedEvaluation = currentEvaluationResult;
+                                evaluationScore = currentEvaluationResult.score || null;
+                            } else if (typeof currentEvaluationResult === 'string') {
+                                try {
+                                    parsedEvaluation = JSON.parse(currentEvaluationResult);
+                                    evaluationScore = parsedEvaluation.score || null;
+                                } catch (e) {
+                                    // 如果不是JSON，尝试从字符串中提取分数
+                                    const scoreMatch = currentEvaluationResult.match(/(\d+)分/);
+                                    if (scoreMatch) {
+                                        evaluationScore = parseInt(scoreMatch[1]);
+                                    }
+                                    parsedEvaluation = {
+                                        feedback: currentEvaluationResult,
+                                        score: evaluationScore
+                                    };
+                                }
+                            }
+                        }
+                        
+                        practiceAnswerHistory.push({
+                            id: submissionId,
+                            answer: currentPracticeAnswer,
+                            timestamp: practiceData.timestamp ? new Date(practiceData.timestamp).toLocaleString('zh-CN') : new Date().toLocaleString('zh-CN'),
+                            status: parsedEvaluation ? '已评估' : '已提交',
+                            evaluation: parsedEvaluation,
+                            score: evaluationScore
+                        });
+                        globalDebugLog('ℹ️ 创建了一条历史答案记录，评估状态: ' + (parsedEvaluation ? '已评估' : '未评估'));
+                    }
+                    
+                    // 更新答案历史显示
+                    updateAnswerHistory();
+                    
+                    // 更新相关学习内容 - 显示数据库中的selected_text字段
+                    const relatedContentDisplay = document.getElementById('relatedContentDisplay');
+                    if (relatedContentDisplay) {
+                        const selectedText = practiceData.selected_text || practiceData.selectedText || '';
+                        if (selectedText && selectedText.trim()) {
+                            relatedContentDisplay.innerHTML = `
+                                <div class="text-text-dark-brown leading-relaxed">
+                                    <div class="markdown-content">${formatMarkdownContent(selectedText)}</div>
+                                </div>
+                            `;
+                            globalDebugLog('✅ 已更新相关学习内容，长度: ' + selectedText.length);
+                        } else {
+                            relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">暂无相关学习内容</p>`;
+                            globalDebugLog('⚠️ 没有找到selected_text字段或内容为空');
+                        }
+                    } else {
+                        globalDebugError('❌ relatedContentDisplay元素不存在');
+                    }
+                    
+                    globalDebugLog('✅ 练习数据加载完成');
+                    globalDebugLog('🎯 练习ID: ' + currentPracticeId);
+                    globalDebugLog('❓ 题目长度: ' + (currentPracticeQuestions || '').length);
+                    globalDebugLog('✅ 答案长度: ' + (currentPracticeAnswer || '').length);
+                    globalDebugLog('📊 评估结果: ' + (currentEvaluationResult ? '有' : '无'));
+                    globalDebugLog('📄 相关内容长度: ' + (practiceData.selected_text || practiceData.selectedText || '').length);
+                    
+                    // 确保显示练习容器（历史加载时）
+                    setTimeout(() => {
+                        const practiceContainer = document.getElementById('practiceContainer');
+                        const welcomePanel = document.getElementById('practiceWelcomePanel');
+                        
+                        if (practiceContainer && practiceContainer.style.display !== 'flex') {
+                            practiceContainer.style.display = 'flex';
+                            globalDebugLog('🔧 loadPracticeData: 强制显示练习容器');
+                        }
+                        
+                        if (welcomePanel && welcomePanel.style.display !== 'none') {
+                            welcomePanel.style.display = 'none';
+                            globalDebugLog('🔧 loadPracticeData: 强制隐藏欢迎界面');
+                        }
+                    }, 50);
+                } catch (error) {
+                    globalDebugError('❌ 加载练习数据时出错: ' + error.message);
+                    alert('加载练习数据时出错: ' + error.message);
+                }
             }
             
             // 加载对话内容
@@ -3612,6 +5635,7 @@ ${cleanContent}
         // 初始化WebChannel
         new QWebChannel(qt.webChannelTransport, function (channel) {
             window.bridge = channel.objects.bridge;
+            window.pybridge = channel.objects.bridge;  // 添加pybridge别名
             console.log("WebChannel连接成功");
             
             // 触发bridge准备就绪事件
@@ -3637,3 +5661,6 @@ ${cleanContent}
     {% block on_bridge_ready %}{% endblock %}
 </body>
 </html>
+
+
+

@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识脑图练习</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+
+<!-- 学科选择页面 -->
+<div id="subjectSelectionPage" class="min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <!-- 标题 -->
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">知识脑图练习</h1>
+            <p class="text-gray-600">选择学科，开始可视化学习</p>
+        </div>
+
+        <!-- 学科卡片 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <!-- Python编程 -->
+            <div class="subject-card bg-white rounded-xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-lg cursor-pointer transition-all duration-300 p-6" 
+                 data-subject="Python编程" onclick="selectSubject('Python编程')">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="material-icons-outlined text-2xl text-blue-600">code</span>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Python编程</h3>
+                    <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                        <span class="material-icons-outlined text-sm">lightbulb</span>
+                        <span>4 个知识点</span>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-100">
+                        <span class="inline-flex items-center text-sm text-blue-600 font-medium">
+                            点击进入脑图
+                            <span class="material-icons-outlined ml-1 text-sm">arrow_forward</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 大语言模型 -->
+            <div class="subject-card bg-white rounded-xl border-2 border-gray-200 hover:border-purple-400 hover:shadow-lg cursor-pointer transition-all duration-300 p-6" 
+                 data-subject="大语言模型" onclick="selectSubject('大语言模型')">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="material-icons-outlined text-2xl text-purple-600">psychology</span>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">大语言模型</h3>
+                    <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                        <span class="material-icons-outlined text-sm">lightbulb</span>
+                        <span>4 个知识点</span>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-100">
+                        <span class="inline-flex items-center text-sm text-purple-600 font-medium">
+                            点击进入脑图
+                            <span class="material-icons-outlined ml-1 text-sm">arrow_forward</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据结构 -->
+            <div class="subject-card bg-white rounded-xl border-2 border-gray-200 hover:border-green-400 hover:shadow-lg cursor-pointer transition-all duration-300 p-6" 
+                 data-subject="数据结构" onclick="selectSubject('数据结构')">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="material-icons-outlined text-2xl text-green-600">account_tree</span>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">数据结构</h3>
+                    <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                        <span class="material-icons-outlined text-sm">lightbulb</span>
+                        <span>11 个知识点</span>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-100">
+                        <span class="inline-flex items-center text-sm text-green-600 font-medium">
+                            点击进入脑图
+                            <span class="material-icons-outlined ml-1 text-sm">arrow_forward</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 机器学习 -->
+            <div class="subject-card bg-white rounded-xl border-2 border-gray-200 hover:border-orange-400 hover:shadow-lg cursor-pointer transition-all duration-300 p-6" 
+                 data-subject="机器学习" onclick="selectSubject('机器学习')">
+                <div class="text-center">
+                    <div class="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="material-icons-outlined text-2xl text-orange-600">smart_toy</span>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">机器学习</h3>
+                    <div class="flex items-center justify-center space-x-2 text-sm text-gray-600">
+                        <span class="material-icons-outlined text-sm">lightbulb</span>
+                        <span>25 个知识点</span>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-gray-100">
+                        <span class="inline-flex items-center text-sm text-orange-600 font-medium">
+                            点击进入脑图
+                            <span class="material-icons-outlined ml-1 text-sm">arrow_forward</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 调试面板 -->
+        <div class="bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-sm">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-green-300 font-bold">🖥️ 调试日志</h3>
+                <button onclick="clearLog()" class="bg-red-600 text-white px-3 py-1 rounded text-xs">清空</button>
+            </div>
+            <div id="debugLog" class="max-h-64 overflow-y-auto">
+                <div class="text-blue-400">等待操作...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 知识脑图页面 -->
+<div id="mindmapPage" class="min-h-screen p-8 hidden">
+    <div class="max-w-6xl mx-auto">
+        <!-- 头部 -->
+        <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center space-x-4">
+                <button onclick="backToSubjects()" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors">
+                    ← 返回
+                </button>
+                <h1 id="mindmapTitle" class="text-2xl font-bold text-gray-800">知识脑图</h1>
+            </div>
+        </div>
+
+        <!-- 脑图容器 -->
+        <div class="bg-white rounded-lg shadow-lg p-8 min-h-96">
+            <div class="text-center text-gray-500">
+                <span class="material-icons-outlined text-6xl mb-4">account_tree</span>
+                <h3 class="text-xl font-semibold mb-2">知识脑图</h3>
+                <p>脑图功能正在开发中...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 简单直接的日志函数
+function log(message) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logMessage = `[${timestamp}] ${message}`;
+    
+    console.log(logMessage);
+    
+    const debugLog = document.getElementById('debugLog');
+    if (debugLog) {
+        if (debugLog.innerHTML.includes('等待操作...')) {
+            debugLog.innerHTML = '';
+        }
+        
+        const logDiv = document.createElement('div');
+        logDiv.className = 'text-green-400 mb-1';
+        logDiv.textContent = logMessage;
+        debugLog.appendChild(logDiv);
+        
+        debugLog.scrollTop = debugLog.scrollHeight;
+    }
+    
+    // 记录到后端
+    if (window.bridge && window.bridge.logFrontendMessage) {
+        try {
+            window.bridge.logFrontendMessage(logMessage);
+        } catch (e) {
+            console.error('后端日志记录失败:', e);
+        }
+    }
+}
+
+// 清空日志
+function clearLog() {
+    const debugLog = document.getElementById('debugLog');
+    if (debugLog) {
+        debugLog.innerHTML = '<div class="text-blue-400">日志已清空...</div>';
+    }
+}
+
+// 选择学科
+function selectSubject(subjectName) {
+    log(`🎯 点击了学科: ${subjectName}`);
+    
+    // 隐藏学科选择页面
+    document.getElementById('subjectSelectionPage').classList.add('hidden');
+    
+    // 显示脑图页面
+    document.getElementById('mindmapPage').classList.remove('hidden');
+    
+    // 更新标题
+    document.getElementById('mindmapTitle').textContent = `${subjectName} - 知识脑图`;
+    
+    log(`✅ 已进入 ${subjectName} 脑图页面`);
+    
+    // 调用后端API生成脑图
+    generateMindmap(subjectName);
+}
+
+// 返回学科选择
+function backToSubjects() {
+    log('🔙 返回学科选择页面');
+    
+    document.getElementById('mindmapPage').classList.add('hidden');
+    document.getElementById('subjectSelectionPage').classList.remove('hidden');
+    
+    log('✅ 已返回学科选择页面');
+}
+
+// 生成脑图
+async function generateMindmap(subjectName) {
+    log(`🧠 开始生成 ${subjectName} 的知识脑图`);
+    
+    try {
+        if (window.bridge && window.bridge.getOrGenerateMindmap) {
+            const response = await window.bridge.getOrGenerateMindmap(subjectName);
+            const result = JSON.parse(response);
+            
+            if (result.success) {
+                log(`✅ 脑图生成成功，节点数: ${result.mindmap.data.nodes?.length || 0}`);
+            } else {
+                log(`❌ 脑图生成失败: ${result.error}`, 'ERROR');
+            }
+        } else {
+            log('⚠️ 后端API不可用，显示模拟脑图');
+        }
+    } catch (error) {
+        log(`❌ 生成脑图时出错: ${error.message}`, 'ERROR');
+    }
+}
+
+// 页面加载完成
+document.addEventListener('DOMContentLoaded', function() {
+    log('🚀 页面加载完成');
+    log('📋 检查环境...');
+    log(`- window.bridge: ${window.bridge ? '可用' : '不可用'}`);
+    log(`- 学科卡片数量: ${document.querySelectorAll('.subject-card').length}`);
+    log('✅ 初始化完成，请点击学科卡片');
+});
+
+// 添加鼠标悬停效果测试
+document.addEventListener('mouseover', function(e) {
+    if (e.target.closest('.subject-card')) {
+        const subjectName = e.target.closest('.subject-card').dataset.subject;
+        log(`🖱️ 鼠标悬停: ${subjectName}`);
+    }
+});
+</script>
+
+</body>
+</html>
