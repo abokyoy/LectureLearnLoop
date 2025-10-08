@@ -1845,6 +1845,19 @@
                     aiTabContents.style.display = 'flex';
                     aiChatTabs.style.display = 'flex';
                     
+                    // 🔥 确保Tab内容正确显示，清除可能的内联样式
+                    const learningTabContent = document.getElementById('learningTabContent');
+                    const practiceTabContent = document.getElementById('practiceTabContent');
+                    
+                    if (learningTabContent) {
+                        learningTabContent.style.display = '';  // 清除内联样式
+                        showDebug('✅ 最大化时清除学习助手Tab的display样式');
+                    }
+                    if (practiceTabContent) {
+                        practiceTabContent.style.display = '';  // 清除内联样式
+                        showDebug('✅ 最大化时清除练习助手Tab的display样式');
+                    }
+                    
                     // 等待DOM更新后再同步消息
                     setTimeout(() => {
                         showDebug('🔄 开始同步消息到最大化窗口...');
@@ -2415,6 +2428,8 @@
                 });
                 document.querySelectorAll('.ai-tab-content').forEach(content => {
                     content.classList.remove('active');
+                    // 🔥 清除可能的内联样式，避免display冲突
+                    content.style.display = '';
                 });
                 
                 // 激活选中的Tab
@@ -2422,13 +2437,22 @@
                     const learningTabBtn = document.getElementById('learningTabBtn');
                     const learningTabContent = document.getElementById('learningTabContent');
                     if (learningTabBtn) learningTabBtn.classList.add('active');
-                    if (learningTabContent) learningTabContent.classList.add('active');
+                    if (learningTabContent) {
+                        learningTabContent.classList.add('active');
+                        // 🔥 清除内联样式，确保输入框正常显示
+                        learningTabContent.style.display = '';
+                        globalDebugLog('✅ Tab切换到学习助手：已清除display样式，确保输入框显示');
+                    }
                 } else if (tabName === 'practice') {
                     const practiceTabBtn = document.getElementById('practiceTabBtn');
                     const practiceTabContent = document.getElementById('practiceTabContent');
                     if (practiceTabBtn) practiceTabBtn.classList.add('active');
                     if (practiceTabContent) { 
-                        practiceTabContent.classList.add('active'); 
+                        practiceTabContent.classList.add('active');
+                        // 🔥 清除内联样式，确保练习界面正常显示
+                        practiceTabContent.style.display = '';
+                        globalDebugLog('✅ Tab切换到练习助手：已清除display样式');
+                        
                         // 智能显示欢迎界面或练习内容
                         setTimeout(() => { 
                             if (currentPracticeId || currentPracticeQuestions) {
