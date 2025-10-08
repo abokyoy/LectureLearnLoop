@@ -2046,35 +2046,95 @@
                 globalDebugLog('🔥 formatMarkdownContent被调用，原始内容: ' + content.substring(0, 100));
                 globalDebugLog('📝 原始内容包含的特殊字符: **=' + (content.includes('**')) + ', *=' + (content.includes('*')) + ', #=' + (content.includes('#')));
                 
-                // 🔥 增强的Markdown格式化
+                // 🔥 增强的Markdown格式化 - 与实时渲染保持一致
                 let formatted = content
-                    // 处理标题 ## 标题
-                    .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
+                    // 处理标题 (必须在行首) - 支持所有级别，从最多#开始处理避免冲突
+                    .replace(/^###### (.*$)/gm, '<h6 style="color: #6b7280; font-size: 0.95em; font-weight: 600; margin: 8px 0 4px 0;">$1</h6>')
+                    .replace(/^##### (.*$)/gm, '<h5 style="color: #6b7280; font-size: 1.0em; font-weight: 600; margin: 8px 0 4px 0;">$1</h5>')
+                    .replace(/^#### (.*$)/gm, '<h4 style="color: #4b5563; font-size: 1.05em; font-weight: 600; margin: 10px 0 5px 0;">$1</h4>')
                     .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
-                    // 处理粗体 **text**
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    // 处理斜体 *text* (避免与列表冲突)
-                    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+                    .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
+                    .replace(/^# (.*$)/gm, '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 20px 0 10px 0;">$1</h1>')
+                    
+                    // 处理水平分隔线
+                    .replace(/^---+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
+                    .replace(/^\*\*\*+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
+                    
+                    // 处理引用块
+                    .replace(/^> (.*)$/gm, '<blockquote style="border-left: 4px solid #d1d5db; padding-left: 16px; margin: 8px 0; color: #6b7280; font-style: italic;">$1</blockquote>')
+                    
+                    // 处理代码块 ```
+                    .replace(/```([\s\S]*?)```/g, '<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 8px 0; overflow-x: auto; border: 1px solid #e9ecef;"><code>$1</code></pre>')
+                    
+                    // 处理粗体 **text** (使用inline样式避免换行)
+                    .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #2563eb; font-weight: 600; display: inline;">$1</strong>')
+                    
+                    // 处理斜体 *text* (避免与列表冲突，使用inline样式)
+                    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em style="color: #7c3aed; font-style: italic; display: inline;">$1</em>')
+                    
                     // 处理行内代码 `code`
-                    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-                    // 处理代码块 ```code```
-                    .replace(/```([\s\S]*?)```/g, '<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 8px 0; overflow-x: auto;"><code>$1</code></pre>')
-                    // 处理题目编号 1. 2. 3.
-                    .replace(/^(\d+\.\s)/gm, '<br><strong style="color: #059669;">$1</strong>')
+                    .replace(/`([^`\n]+)`/g, '<code style="background-color: #f3f4f6; color: #374151; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em;">$1</code>')
+                    
+                    // 处理链接 [text](url)
+                    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color: #2563eb; text-decoration: underline;">$1</a>')
+                    
+                    // 处理题目编号 1. 2. 3. (保持内联，不换行)
+                    .replace(/^(\d+\.\s)(.*)$/gm, '<div style="margin: 6px 0;"><strong style="color: #059669; font-weight: 600; display: inline;">$1</strong><span style="display: inline;">$2</span></div>')
+                    
                     // 处理选择题选项 A) B) C) D) 或 A. B. C. D.
-                    .replace(/^([A-Z][.)]\s)/gm, '<br><span style="color: #2563eb; font-weight: 500;">$1</span>')
+                    .replace(/^([A-Z][.)]\s)/gm, '<br><span style="color: #2563eb; font-weight: 500; margin-left: 8px;">$1</span>')
+                    
                     // 处理无序列表 - 或 *
-                    .replace(/^[-*]\s/gm, '<br>• ')
-                    // 处理有序列表中的子项
-                    .replace(/^\s{2,}[-*]\s/gm, '<br>&nbsp;&nbsp;◦ ')
-                    // 处理换行
-                    .replace(/\n/g, '<br>')
+                    .replace(/^[-*+]\s(.*)$/gm, '<div style="margin: 4px 0;"><span style="color: #059669; font-weight: bold;">• </span>$1</div>')
+                    
+                    // 处理有序列表中的子项 (缩进)
+                    .replace(/^\s{2,}[-*+]\s(.*)$/gm, '<div style="margin: 2px 0; margin-left: 20px;"><span style="color: #7c3aed;">◦ </span>$1</div>')
+                    
+                    // 处理表格 - 先标记表格行，最后统一渲染
+                    .replace(/^\|(.+)\|$/gm, function(match, content) {
+                        // 暂时标记为表格行，不立即渲染
+                        return `__TABLE_ROW__${content}__END_TABLE_ROW__`;
+                    })
+                    
+                    // 处理删除线 ~~text~~
+                    .replace(/~~(.*?)~~/g, '<del style="color: #9ca3af;">$1</del>')
+                    
                     // 处理答案标记
-                    .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626;">答案：</strong>')
-                    .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed;">解析：</strong>')
-                    // 清理多余的<br>
+                    .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626; font-weight: 700; background: #fef2f2; padding: 2px 6px; border-radius: 4px;">答案：</strong>')
+                    .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed; font-weight: 700; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">解析：</strong>')
+                    
+                    // 处理换行 (最后处理)
+                    .replace(/\n/g, '<br>')
+                    
+                    // 统一渲染表格 (在换行处理之后)
+                    .replace(/(__TABLE_ROW__[^_]+__END_TABLE_ROW__<br>?)+/g, function(match) {
+                        // 提取所有表格行
+                        const tableRows = match.match(/__TABLE_ROW__([^_]+)__END_TABLE_ROW__/g);
+                        if (!tableRows || tableRows.length === 0) return match;
+                        
+                        const rows = tableRows
+                            .map(row => {
+                                const content = row.replace(/__TABLE_ROW__([^_]+)__END_TABLE_ROW__/, '$1');
+                                return content;
+                            })
+                            .filter(content => {
+                                // 🔥 过滤掉表格分隔符行 (如 |---|---|)
+                                return !content.match(/^[\s\-|:]+$/);
+                            })
+                            .map(content => {
+                                const cells = content.split('|').map(cell => cell.trim());
+                                const cellsHtml = cells.map(cell => `<td style="padding: 8px 12px; border: 1px solid #d1d5db; text-align: left; vertical-align: top;">${cell}</td>`).join('');
+                                return `<tr>${cellsHtml}</tr>`;
+                            }).join('');
+                        
+                        return `<table style="border-collapse: collapse; margin: 12px 0; width: 100%; max-width: 800px; border: 1px solid #d1d5db;">${rows}</table>`;
+                    })
+                    
+                    // 清理多余的<br>和空白
                     .replace(/^<br>/, '')
-                    .replace(/(<br>\s*){3,}/g, '<br><br>');
+                    .replace(/(<br>\s*){3,}/g, '<br><br>')
+                    .replace(/<br><div/g, '<div')  // 清理列表前的多余换行
+                    .replace(/<\/div><br>/g, '</div>'); // 清理列表后的多余换行
                 
                 globalDebugLog('🔥 formatMarkdownContent渲染结果: ' + formatted.substring(0, 200));
                 return formatted;
@@ -2333,20 +2393,129 @@
                     maxMessageElement.messageContent.innerHTML = '';
                 }
                 
+                // 🔥 实时Markdown渲染函数 - 全覆盖语法
+                function renderCurrentText(currentText, isAI) {
+                    if (!isAI) {
+                        return currentText.replace(/\n/g, '<br>');
+                    }
+                    
+                    // 对AI消息进行实时Markdown渲染 - 完整语法支持
+                    let rendered = currentText
+                        // 🔥 处理标题 (必须在行首) - 支持所有级别，从最多#开始处理避免冲突
+                        .replace(/^###### (.*$)/gm, '<h6 style="color: #6b7280; font-size: 0.95em; font-weight: 600; margin: 8px 0 4px 0;">$1</h6>')
+                        .replace(/^##### (.*$)/gm, '<h5 style="color: #6b7280; font-size: 1.0em; font-weight: 600; margin: 8px 0 4px 0;">$1</h5>')
+                        .replace(/^#### (.*$)/gm, '<h4 style="color: #4b5563; font-size: 1.05em; font-weight: 600; margin: 10px 0 5px 0;">$1</h4>')
+                        .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
+                        .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
+                        .replace(/^# (.*$)/gm, '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 20px 0 10px 0;">$1</h1>')
+                        
+                        // 🔥 处理水平分隔线
+                        .replace(/^---+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
+                        .replace(/^\*\*\*+$/gm, '<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 16px 0;">')
+                        
+                        // 🔥 处理引用块
+                        .replace(/^> (.*)$/gm, '<blockquote style="border-left: 4px solid #d1d5db; padding-left: 16px; margin: 8px 0; color: #6b7280; font-style: italic;">$1</blockquote>')
+                        
+                        // 🔥 处理代码块 ```
+                        .replace(/```([\s\S]*?)```/g, '<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 8px 0; overflow-x: auto; border: 1px solid #e9ecef;"><code>$1</code></pre>')
+                        
+                        // 🔥 处理粗体 **text** (使用inline样式避免换行)
+                        .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #2563eb; font-weight: 600; display: inline;">$1</strong>')
+                        
+                        // 🔥 处理斜体 *text* (避免与列表冲突，使用inline样式)
+                        .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em style="color: #7c3aed; font-style: italic; display: inline;">$1</em>')
+                        
+                        // 🔥 处理行内代码 `code`
+                        .replace(/`([^`\n]+)`/g, '<code style="background-color: #f3f4f6; color: #374151; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.9em;">$1</code>')
+                        
+                        // 🔥 处理链接 [text](url)
+                        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color: #2563eb; text-decoration: underline;">$1</a>')
+                        
+                        // 🔥 处理题目编号 1. 2. 3. (保持内联，不换行)
+                        .replace(/^(\d+\.\s)(.*)$/gm, '<div style="margin: 6px 0;"><strong style="color: #059669; font-weight: 600; display: inline;">$1</strong><span style="display: inline;">$2</span></div>')
+                        
+                        // 🔥 处理选择题选项 A) B) C) D) 或 A. B. C. D.
+                        .replace(/^([A-Z][.)]\s)/gm, '<br><span style="color: #2563eb; font-weight: 500; margin-left: 8px;">$1</span>')
+                        
+                        // 🔥 处理无序列表 - 或 *
+                        .replace(/^[-*+]\s(.*)$/gm, '<div style="margin: 4px 0;"><span style="color: #059669; font-weight: bold;">• </span>$1</div>')
+                        
+                        // 🔥 处理有序列表中的子项 (缩进)
+                        .replace(/^\s{2,}[-*+]\s(.*)$/gm, '<div style="margin: 2px 0; margin-left: 20px;"><span style="color: #7c3aed;">◦ </span>$1</div>')
+                        
+                        // 🔥 处理表格 - 先标记表格行，最后统一渲染
+                        .replace(/^\|(.+)\|$/gm, function(match, content) {
+                            // 暂时标记为表格行，不立即渲染
+                            return `__TABLE_ROW__${content}__END_TABLE_ROW__`;
+                        })
+                        
+                        // 🔥 处理删除线 ~~text~~
+                        .replace(/~~(.*?)~~/g, '<del style="color: #9ca3af;">$1</del>')
+                        
+                        // 🔥 处理答案标记
+                        .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626; font-weight: 700; background: #fef2f2; padding: 2px 6px; border-radius: 4px;">答案：</strong>')
+                        .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed; font-weight: 700; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">解析：</strong>')
+                        
+                        // 🔥 处理换行 (最后处理)
+                        .replace(/\n/g, '<br>')
+                        
+                        // 🔥 统一渲染表格 (在换行处理之后)
+                        .replace(/(__TABLE_ROW__[^_]+__END_TABLE_ROW__<br>?)+/g, function(match) {
+                            // 提取所有表格行
+                            const tableRows = match.match(/__TABLE_ROW__([^_]+)__END_TABLE_ROW__/g);
+                            if (!tableRows || tableRows.length === 0) return match;
+                            
+                            const rows = tableRows
+                                .map(row => {
+                                    const content = row.replace(/__TABLE_ROW__([^_]+)__END_TABLE_ROW__/, '$1');
+                                    return content;
+                                })
+                                .filter(content => {
+                                    // 🔥 过滤掉表格分隔符行 (如 |---|---|)
+                                    return !content.match(/^[\s\-|:]+$/);
+                                })
+                                .map(content => {
+                                    const cells = content.split('|').map(cell => cell.trim());
+                                    const cellsHtml = cells.map(cell => `<td style="padding: 8px 12px; border: 1px solid #d1d5db; text-align: left; vertical-align: top;">${cell}</td>`).join('');
+                                    return `<tr>${cellsHtml}</tr>`;
+                                }).join('');
+                            
+                            return `<table style="border-collapse: collapse; margin: 12px 0; width: 100%; max-width: 800px; border: 1px solid #d1d5db;">${rows}</table>`;
+                        })
+                        
+                        // 🔥 清理多余的<br>和空白
+                        .replace(/^<br>/, '')
+                        .replace(/(<br>\s*){3,}/g, '<br><br>')
+                        .replace(/<br><div/g, '<div')  // 清理列表前的多余换行
+                        .replace(/<\/div><br>/g, '</div>'); // 清理列表后的多余换行
+                    
+                    return rendered;
+                }
+                
                 function typeWriter() {
                     if (index < text.length) {
                         const char = text.charAt(index);
-                        const displayChar = char === '\n' ? '<br>' : char;
+                        index++;
+                        
+                        // 获取当前已输入的文本
+                        const currentText = text.substring(0, index);
+                        
+                        // 实时渲染当前文本
+                        const renderedText = renderCurrentText(currentText, type === 'ai');
                         
                         // 同时更新两个容器的内容
                         if (smallMessageElement) {
-                            smallMessageElement.messageContent.innerHTML += displayChar;
+                            smallMessageElement.messageContent.innerHTML = renderedText;
+                            if (type === 'ai') {
+                                smallMessageElement.messageContent.classList.add('markdown-content');
+                            }
                         }
                         if (maxMessageElement) {
-                            maxMessageElement.messageContent.innerHTML += displayChar;
+                            maxMessageElement.messageContent.innerHTML = renderedText;
+                            if (type === 'ai') {
+                                maxMessageElement.messageContent.classList.add('markdown-content');
+                            }
                         }
-                        
-                        index++;
                         
                         // 智能滚动到底部
                         if (smallMessagesContainer) {
@@ -2358,22 +2527,22 @@
                         
                         setTimeout(typeWriter, speed);
                     } else {
-                        globalDebugLog('🎬 逐字显示完成');
+                        globalDebugLog('🎬 实时Markdown逐字显示完成');
                         
-                        // 🔥 逐字显示完成后，如果是AI消息，进行Markdown渲染
+                        // 🔥 最后进行完整的Markdown渲染以确保所有格式正确
                         if (type === 'ai') {
-                            globalDebugLog('🎬 逐字显示完成，开始Markdown渲染，内容: ' + content.substring(0, 50));
+                            globalDebugLog('🎬 进行最终完整Markdown渲染');
+                            const finalRendered = formatMarkdownContent(content);
+                            
                             if (smallMessageElement) {
-                                smallMessageElement.messageContent.innerHTML = formatMarkdownContent(content);
+                                smallMessageElement.messageContent.innerHTML = finalRendered;
                                 smallMessageElement.messageContent.classList.add('markdown-content');
-                                globalDebugLog('✅ 小窗口Markdown渲染完成');
                             }
                             if (maxMessageElement) {
-                                maxMessageElement.messageContent.innerHTML = formatMarkdownContent(content);
+                                maxMessageElement.messageContent.innerHTML = finalRendered;
                                 maxMessageElement.messageContent.classList.add('markdown-content');
-                                globalDebugLog('✅ 大窗口Markdown渲染完成');
                             }
-                            globalDebugLog('✅ AI消息Markdown渲染完成');
+                            globalDebugLog('✅ 最终Markdown渲染完成');
                         }
                     }
                 }
