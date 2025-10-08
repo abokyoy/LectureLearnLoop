@@ -4018,10 +4018,23 @@
                     practiceIdDisplay.textContent = currentPracticeId;
                 }
                 
-                // 更新相关学习内容
+                // 更新相关学习内容 - 显示数据库中的selected_text字段
                 const relatedContentDisplay = document.getElementById('relatedContentDisplay');
                 if (relatedContentDisplay) {
-                    relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">${practiceData.related_content || practiceData.selectedText || '相关学习内容将在这里显示...'}</p>`;
+                    const selectedText = practiceData.selected_text || practiceData.selectedText || practiceData.related_content || '';
+                    if (selectedText && selectedText.trim()) {
+                        relatedContentDisplay.innerHTML = `
+                            <div class="text-text-dark-brown leading-relaxed">
+                                <div class="markdown-content">${formatMarkdownContent(selectedText)}</div>
+                            </div>
+                        `;
+                        globalDebugLog('✅ 已更新相关学习内容（新练习），长度: ' + selectedText.length);
+                    } else {
+                        relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">暂无相关学习内容</p>`;
+                        globalDebugLog('⚠️ 新练习没有找到selected_text字段或内容为空');
+                    }
+                } else {
+                    globalDebugError('❌ relatedContentDisplay元素不存在（新练习）');
                 }
                 
                 // 更新题目显示
@@ -4857,8 +4870,8 @@
                     item.dataset.id = practice.id || practice.practice_id;
                     item.dataset.practiceId = practice.id || practice.practice_id;  // 添加专用的练习ID属性
                     
-                    // 获取题目内容，优先使用questions字段
-                    const questionText = practice.questions || practice.selected_text || '无题目内容';
+                    // 获取题目内容，优先使用questions字段，然后是预览字段
+                    const questionText = practice.questions || practice.selected_text_preview || practice.selected_text || '无题目内容';
                     const questionPreview = questionText.length > 120 ? 
                         questionText.substring(0, 120) + '...' : questionText;
                     
@@ -5438,11 +5451,31 @@
                     // 更新答案历史显示
                     updateAnswerHistory();
                     
+                    // 更新相关学习内容 - 显示数据库中的selected_text字段
+                    const relatedContentDisplay = document.getElementById('relatedContentDisplay');
+                    if (relatedContentDisplay) {
+                        const selectedText = practiceData.selected_text || practiceData.selectedText || '';
+                        if (selectedText && selectedText.trim()) {
+                            relatedContentDisplay.innerHTML = `
+                                <div class="text-text-dark-brown leading-relaxed">
+                                    <div class="markdown-content">${formatMarkdownContent(selectedText)}</div>
+                                </div>
+                            `;
+                            globalDebugLog('✅ 已更新相关学习内容，长度: ' + selectedText.length);
+                        } else {
+                            relatedContentDisplay.innerHTML = `<p class="text-text-dark-brown">暂无相关学习内容</p>`;
+                            globalDebugLog('⚠️ 没有找到selected_text字段或内容为空');
+                        }
+                    } else {
+                        globalDebugError('❌ relatedContentDisplay元素不存在');
+                    }
+                    
                     globalDebugLog('✅ 练习数据加载完成');
                     globalDebugLog('🎯 练习ID: ' + currentPracticeId);
                     globalDebugLog('❓ 题目长度: ' + (currentPracticeQuestions || '').length);
                     globalDebugLog('✅ 答案长度: ' + (currentPracticeAnswer || '').length);
                     globalDebugLog('📊 评估结果: ' + (currentEvaluationResult ? '有' : '无'));
+                    globalDebugLog('📄 相关内容长度: ' + (practiceData.selected_text || practiceData.selectedText || '').length);
                     
                     // 确保显示练习容器（历史加载时）
                     setTimeout(() => {

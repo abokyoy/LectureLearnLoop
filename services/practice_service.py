@@ -156,7 +156,8 @@ class PracticeService:
                         "practice_id": practice_id,  # 兼容字段
                         "timestamp": timestamp,
                         "status": status or "unknown",
-                        "selected_text": text_preview,  # 保持兼容性
+                        "selected_text": selected_text,  # 完整的原始学习材料内容
+                        "selected_text_preview": text_preview,  # 预览文本（120字符）
                         "questions": questions,         # 完整题目内容
                         "question": questions,          # 兼容字段
                         "user_answers": user_answers,   # 用户答案
