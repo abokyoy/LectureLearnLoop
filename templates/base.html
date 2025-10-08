@@ -245,21 +245,35 @@
             display: flex;
             flex-direction: column;
             background: #F5F7F9; /* bg-light-blue-gray */
-            height: 100%;
+            max-height: calc(100vh - 160px); /* 限制最大高度，预留头部和边距空间 */
             overflow-y: auto; /* 启用垂直滚动 */
             overflow-x: hidden; /* 隐藏水平滚动 */
+            min-height: 0; /* 允许flex收缩 */
+        }
+        
+        /* 在最大化模式下进一步优化练习面板高度 */
+        .ai-chat-window.maximized .practice-main-container {
+            max-height: calc(100vh - 200px); /* 最大化模式下的高度限制 */
         }
         
         /* 练习面板内容区域滚动优化 */
         .practice-main-container > div {
             min-height: 0; /* 允许flex子元素收缩 */
+            max-height: 100%; /* 确保不超出父容器 */
+            overflow-y: auto; /* 启用滚动 */
         }
         
         /* 题目展示区域滚动 */
         .practice-main-container .flex-grow.mb-4.overflow-y-auto {
-            max-height: 400px; /* 限制题目区域最大高度 */
+            max-height: 300px; /* 减少题目区域最大高度，为其他内容留出空间 */
             overflow-y: auto;
             overflow-x: hidden;
+        }
+        
+        /* 练习面板主内容区域优化 */
+        .practice-main-container .flex-grow.flex.flex-col.bg-white {
+            max-height: calc(100vh - 300px); /* 限制主内容区域高度 */
+            overflow-y: auto; /* 启用滚动 */
         }
         
         /* 练习.html中的颜色变量 */
