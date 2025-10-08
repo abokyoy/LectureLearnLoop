@@ -372,6 +372,9 @@ let pybridge = null;
 // 等待全局WebChannel就绪
 let isPageInitialized = false;
 
+// 全局练习数据缓存（用于保存练习的完整数据，包括selected_text）
+let currentPracticeDataCache = {};
+
 function initializePage() {
     if (window.bridge) {
         pybridge = window.bridge;
@@ -4337,15 +4340,21 @@ D. [选项D]
         // 生成练习ID
         const practiceId = 'note_practice_' + Date.now();
         
-        // 创建练习数据
+        // 创建练习数据（添加selected_text字段存储笔记内容）
         const practiceData = {
             id: practiceId,
             type: 'note_based',
             knowledgePoint: knowledgePointName,
             notesCount: result.notes.length,
             questions: null,
-            status: 'generating'
+            status: 'generating',
+            selected_text: notesContent,  // 存储笔记内容作为相关学习资料
+            selectedText: notesContent    // 兼容性字段
         };
+        
+        // 🔥 缓存练习数据（包含selected_text）
+        currentPracticeDataCache[practiceId] = practiceData;
+        log(`💾 已缓存练习数据，ID: ${practiceId}, 包含笔记内容: ${notesContent.length}字符`);
         
         // 显示AI练习面板
         if (window.showAIPracticePanel) {
@@ -4482,15 +4491,21 @@ D. [选项D]
         // 生成练习ID
         const practiceId = 'analogy_practice_' + Date.now();
         
-        // 创建练习数据
+        // 创建练习数据（添加selected_text字段存储错题内容）
         const practiceData = {
             id: practiceId,
             type: 'analogy_based',
             knowledgePoint: knowledgePointName,
             errorQuestionsCount: result.questions.length,
             questions: null,
-            status: 'generating'
+            status: 'generating',
+            selected_text: errorQuestionsContent,  // 存储错题内容作为相关学习资料
+            selectedText: errorQuestionsContent    // 兼容性字段
         };
+        
+        // 🔥 缓存练习数据（包含selected_text）
+        currentPracticeDataCache[practiceId] = practiceData;
+        log(`💾 已缓存练习数据，ID: ${practiceId}, 包含错题内容: ${errorQuestionsContent.length}字符`);
         
         // 显示AI练习面板
         if (window.showAIPracticePanel) {
@@ -4519,12 +4534,19 @@ function generatePracticeQuestionsForAI(promptText, practiceId) {
                         window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + response, 'ai');
                     }
                     
-                    // 更新练习数据
+                    // 🔥 从缓存中获取原始练习数据（包含selected_text）
+                    const cachedData = currentPracticeDataCache[practiceId] || {};
+                    log(`📦 从缓存恢复练习数据，ID: ${practiceId}, 缓存的selected_text长度: ${(cachedData.selected_text || '').length}`);
+                    
+                    // 更新练习数据（合并缓存数据，保留selected_text）
                     const updatedPracticeData = {
+                        ...cachedData,  // 🔥 展开缓存数据，包含selected_text
                         id: practiceId,
                         questions: response,
                         status: 'ready'
                     };
+                    
+                    log(`✅ 更新后的练习数据包含selected_text: ${!!updatedPracticeData.selected_text}, 长度: ${(updatedPracticeData.selected_text || '').length}`);
                     
                     // 更新练习面板
                     if (window.showAIPracticePanel) {
