@@ -345,6 +345,42 @@
             margin-left: 16px;
         }
         
+        /* AI聊天消息中的Markdown内容样式 */
+        .message-content.markdown-content {
+            line-height: 1.6;
+        }
+        
+        .message-content.markdown-content strong {
+            color: #2563eb;
+            font-weight: 600;
+        }
+        
+        .message-content.markdown-content em {
+            color: #7c3aed;
+            font-style: italic;
+        }
+        
+        .message-content.markdown-content code {
+            background-color: #f3f4f6;
+            color: #374151;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .message-content.markdown-content br + strong {
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 4px;
+        }
+        
+        .message-content.markdown-content br + span {
+            display: block;
+            margin-top: 4px;
+            margin-left: 12px;
+        }
+        
         .ai-tab-btn.active {
             color: #32c77b;
             border-bottom-color: #32c77b;
@@ -1878,6 +1914,16 @@
                             // 强制清空最大化窗口并重新复制
                             maxMessages.innerHTML = '';
                             maxMessages.innerHTML = smallMessages.innerHTML;
+                            showDebug('🔄 消息同步完成，检查Markdown渲染状态...');
+                            
+                            // 确保Markdown样式类被正确应用
+                            const markdownElements = maxMessages.querySelectorAll('.message-content');
+                            markdownElements.forEach(element => {
+                                if (element.closest('.message.ai')) {
+                                    element.classList.add('markdown-content');
+                                    showDebug('✅ 重新应用markdown-content样式类');
+                                }
+                            });
                             
                             showDebug(`✅ 同步后 - 最大化窗口: ${maxMessages.children.length} 条消息`);
                             
@@ -1990,6 +2036,64 @@
                 return 'chat_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
             }
             
+            // 格式化Markdown内容 - 提前定义确保在addMessage之前可用
+            function formatMarkdownContent(content) {
+                if (!content) {
+                    showDebug('⚠️ formatMarkdownContent被调用但内容为空');
+                    return '';
+                }
+                
+                globalDebugLog('🔥 formatMarkdownContent被调用，原始内容: ' + content.substring(0, 100));
+                globalDebugLog('📝 原始内容包含的特殊字符: **=' + (content.includes('**')) + ', *=' + (content.includes('*')) + ', #=' + (content.includes('#')));
+                
+                // 🔥 增强的Markdown格式化
+                let formatted = content
+                    // 处理标题 ## 标题
+                    .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
+                    .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
+                    // 处理粗体 **text**
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    // 处理斜体 *text* (避免与列表冲突)
+                    .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+                    // 处理行内代码 `code`
+                    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+                    // 处理代码块 ```code```
+                    .replace(/```([\s\S]*?)```/g, '<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 8px 0; overflow-x: auto;"><code>$1</code></pre>')
+                    // 处理题目编号 1. 2. 3.
+                    .replace(/^(\d+\.\s)/gm, '<br><strong style="color: #059669;">$1</strong>')
+                    // 处理选择题选项 A) B) C) D) 或 A. B. C. D.
+                    .replace(/^([A-Z][.)]\s)/gm, '<br><span style="color: #2563eb; font-weight: 500;">$1</span>')
+                    // 处理无序列表 - 或 *
+                    .replace(/^[-*]\s/gm, '<br>• ')
+                    // 处理有序列表中的子项
+                    .replace(/^\s{2,}[-*]\s/gm, '<br>&nbsp;&nbsp;◦ ')
+                    // 处理换行
+                    .replace(/\n/g, '<br>')
+                    // 处理答案标记
+                    .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626;">答案：</strong>')
+                    .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed;">解析：</strong>')
+                    // 清理多余的<br>
+                    .replace(/^<br>/, '')
+                    .replace(/(<br>\s*){3,}/g, '<br><br>');
+                
+                globalDebugLog('🔥 formatMarkdownContent渲染结果: ' + formatted.substring(0, 200));
+                return formatted;
+            }
+            
+            // 测试Markdown渲染的函数
+            window.testMarkdownRendering = function() {
+                globalDebugLog('🧪 开始测试Markdown渲染功能');
+                const testContent = '这是**粗体**和*斜体*，还有`代码`测试。\n\n## 标题测试\n\n1. 第一项\nA) 选项A';
+                globalDebugLog('🧪 测试内容: ' + testContent);
+                
+                const result = formatMarkdownContent(testContent);
+                globalDebugLog('🧪 渲染结果: ' + result);
+                
+                // 创建一个测试消息
+                addMessageWithTypewriter('这是**粗体**和*斜体*测试', 'ai', 10);
+                globalDebugLog('🧪 测试消息已添加');
+            };
+            
             
             // 添加消息到聊天窗口
             function addMessage(content, type, isSummary = false) {
@@ -2011,7 +2115,16 @@
                     
                     const messageContent = document.createElement('div');
                     messageContent.className = 'message-content';
-                    messageContent.innerHTML = content.replace(/\n/g, '<br>');
+                    
+                    // 🔥 AI消息支持Markdown渲染，用户消息只处理换行
+                    if (type === 'ai') {
+                        globalDebugLog('🤖 AI消息，调用Markdown渲染，内容: ' + content.substring(0, 50));
+                        messageContent.innerHTML = formatMarkdownContent(content);
+                        messageContent.classList.add('markdown-content'); // 添加markdown样式类
+                        globalDebugLog('✅ AI消息渲染完成，HTML: ' + messageContent.innerHTML.substring(0, 100));
+                    } else {
+                        messageContent.innerHTML = content.replace(/\n/g, '<br>');
+                    }
                     
                     // 如果是总结消息，添加"插入到笔记"按钮
                     if (isSummary && type === 'ai') {
@@ -2152,15 +2265,16 @@
             
             // 逐字显示消息
             function addMessageWithTypewriter(content, type, speed = 30) {
-                showDebug(`🎬 addMessageWithTypewriter被调用 - 内容: ${content.substring(0, 50)}... 类型: ${type}`);
+                globalDebugLog(`🎬 addMessageWithTypewriter被调用 - 内容: ${content.substring(0, 50)}... 类型: ${type}`);
+                globalDebugLog(`🔍 消息类型检查: type="${type}", 是否为AI: ${type === 'ai'}`);
                 
                 const smallMessagesContainer = document.getElementById('aiChatMessages');
                 const maxMessagesContainer = document.getElementById('aiChatMessagesMaximized');
                 
-                showDebug(`📋 小窗口容器: ${!!smallMessagesContainer} 最大化容器: ${!!maxMessagesContainer}`);
+                globalDebugLog(`📋 小窗口容器: ${!!smallMessagesContainer} 最大化容器: ${!!maxMessagesContainer}`);
                 
                 if (!smallMessagesContainer && !maxMessagesContainer) {
-                    showDebug('❌ 没有找到任何消息容器');
+                    globalDebugLog('❌ 没有找到任何消息容器');
                     return;
                 }
                 
@@ -2204,12 +2318,12 @@
                     const { messageDiv, messageContent } = createMessageElement();
                     maxMessagesContainer.appendChild(messageDiv);
                     maxMessageElement = { messageDiv, messageContent };
-                    showDebug(`✅ 消息已添加到最大化窗口，当前消息数: ${maxMessagesContainer.children.length}`);
+                    globalDebugLog(`✅ 消息已添加到最大化窗口，当前消息数: ${maxMessagesContainer.children.length}`);
                 }
                 
-                // 逐字显示效果
+                // 🔥 逐字显示原始文本，完成后再渲染Markdown
                 let index = 0;
-                const text = content;
+                const text = content; // 始终使用原始内容进行逐字显示
                 
                 // 初始化两个消息内容区域
                 if (smallMessageElement) {
@@ -2244,7 +2358,23 @@
                         
                         setTimeout(typeWriter, speed);
                     } else {
-                        showDebug('🎬 逐字显示完成');
+                        globalDebugLog('🎬 逐字显示完成');
+                        
+                        // 🔥 逐字显示完成后，如果是AI消息，进行Markdown渲染
+                        if (type === 'ai') {
+                            globalDebugLog('🎬 逐字显示完成，开始Markdown渲染，内容: ' + content.substring(0, 50));
+                            if (smallMessageElement) {
+                                smallMessageElement.messageContent.innerHTML = formatMarkdownContent(content);
+                                smallMessageElement.messageContent.classList.add('markdown-content');
+                                globalDebugLog('✅ 小窗口Markdown渲染完成');
+                            }
+                            if (maxMessageElement) {
+                                maxMessageElement.messageContent.innerHTML = formatMarkdownContent(content);
+                                maxMessageElement.messageContent.classList.add('markdown-content');
+                                globalDebugLog('✅ 大窗口Markdown渲染完成');
+                            }
+                            globalDebugLog('✅ AI消息Markdown渲染完成');
+                        }
                     }
                 }
                 
@@ -2476,6 +2606,8 @@
             function addPracticeMessage(content, type = 'ai') {
                 if (!aiPracticeMessages) return;
                 
+                showDebug('🏃 addPracticeMessage被调用 - 内容: ' + content.substring(0, 50) + '... 类型: ' + type);
+                
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `ai-message ${type}`;
                 
@@ -2488,7 +2620,9 @@
                 
                 if (type === 'ai') {
                     // 支持Markdown渲染
+                    showDebug('🏃 练习消息调用Markdown渲染');
                     messageContent.innerHTML = formatMarkdownContent(content);
+                    showDebug('🏃 练习消息渲染完成: ' + messageContent.innerHTML.substring(0, 100));
                 } else {
                     messageContent.textContent = content;
                 }
@@ -2548,31 +2682,6 @@
                 }
             }
             
-            // 格式化Markdown内容
-            function formatMarkdownContent(content) {
-                if (!content) return '';
-                
-                // 基础Markdown格式化
-                let formatted = content
-                    // 处理换行
-                    .replace(/\n/g, '<br>')
-                    // 处理粗体 **text**
-                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                    // 处理斜体 *text*
-                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-                    // 处理代码块 `code`
-                    .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
-                    // 处理题目编号 1. 2. 3.
-                    .replace(/^(\d+\.\s)/gm, '<br><strong class="text-primary">$1</strong>')
-                    // 处理选择题选项 A) B) C) D)
-                    .replace(/^([A-Z]\)\s)/gm, '<br><span class="text-blue-600 font-medium">$1</span>')
-                    // 处理列表项 -
-                    .replace(/^-\s/gm, '<br>• ')
-                    // 清理开头的<br>
-                    .replace(/^<br>/, '');
-                
-                return formatted;
-            }
             
             // 打开AI聊天窗口的全局函数
             window.openAIChatWindow = function() {

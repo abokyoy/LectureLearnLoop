@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown渲染测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .test-container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .markdown-content strong {
+            color: #2563eb;
+            font-weight: 600;
+        }
+        .markdown-content em {
+            color: #7c3aed;
+            font-style: italic;
+        }
+        .markdown-content code {
+            background-color: #f3f4f6;
+            color: #374151;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        .original {
+            background-color: #f9f9f9;
+            padding: 10px;
+            border-left: 4px solid #ccc;
+            white-space: pre-wrap;
+        }
+        .rendered {
+            background-color: #f0f8ff;
+            padding: 10px;
+            border-left: 4px solid #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <h1>Markdown渲染功能测试</h1>
+    
+    <div class="test-container">
+        <h2>测试1: 基础格式</h2>
+        <h3>原始Markdown:</h3>
+        <div class="original" id="test1-original">这是**粗体文字**和*斜体文字*，还有`行内代码`。</div>
+        <h3>渲染结果:</h3>
+        <div class="rendered markdown-content" id="test1-rendered"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>测试2: 题目格式</h2>
+        <h3>原始Markdown:</h3>
+        <div class="original" id="test2-original">## 练习题目
+
+1. 这是第一道题
+A) 选项A
+B) 选项B
+C) 选项C
+D) 选项D
+
+**答案：** A
+**解析：** 这是解析内容。</div>
+        <h3>渲染结果:</h3>
+        <div class="rendered markdown-content" id="test2-rendered"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>测试3: 代码块</h2>
+        <h3>原始Markdown:</h3>
+        <div class="original" id="test3-original">```python
+def hello_world():
+    print("Hello, World!")
+    return True
+```</div>
+        <h3>渲染结果:</h3>
+        <div class="rendered markdown-content" id="test3-rendered"></div>
+    </div>
+
+    <script>
+        // 复制formatMarkdownContent函数
+        function formatMarkdownContent(content) {
+            if (!content) return '';
+            
+            // 🔥 增强的Markdown格式化
+            let formatted = content
+                // 处理标题 ## 标题
+                .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 16px 0 8px 0;">$1</h2>')
+                .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
+                // 处理粗体 **text**
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                // 处理斜体 *text* (避免与列表冲突)
+                .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>')
+                // 处理行内代码 `code`
+                .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+                // 处理代码块 ```code```
+                .replace(/```([\s\S]*?)```/g, '<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 8px 0; overflow-x: auto;"><code>$1</code></pre>')
+                // 处理题目编号 1. 2. 3.
+                .replace(/^(\d+\.\s)/gm, '<br><strong style="color: #059669;">$1</strong>')
+                // 处理选择题选项 A) B) C) D) 或 A. B. C. D.
+                .replace(/^([A-Z][.)]\s)/gm, '<br><span style="color: #2563eb; font-weight: 500;">$1</span>')
+                // 处理无序列表 - 或 *
+                .replace(/^[-*]\s/gm, '<br>• ')
+                // 处理有序列表中的子项
+                .replace(/^\s{2,}[-*]\s/gm, '<br>&nbsp;&nbsp;◦ ')
+                // 处理换行
+                .replace(/\n/g, '<br>')
+                // 处理答案标记
+                .replace(/\*\*答案[：:]\*\*/g, '<br><strong style="color: #dc2626;">答案：</strong>')
+                .replace(/\*\*解析[：:]\*\*/g, '<br><strong style="color: #7c3aed;">解析：</strong>')
+                // 清理多余的<br>
+                .replace(/^<br>/, '')
+                .replace(/(<br>\s*){3,}/g, '<br><br>');
+            
+            return formatted;
+        }
+
+        // 执行测试
+        document.addEventListener('DOMContentLoaded', function() {
+            // 测试1
+            const test1Original = document.getElementById('test1-original').textContent;
+            document.getElementById('test1-rendered').innerHTML = formatMarkdownContent(test1Original);
+
+            // 测试2
+            const test2Original = document.getElementById('test2-original').textContent;
+            document.getElementById('test2-rendered').innerHTML = formatMarkdownContent(test2Original);
+
+            // 测试3
+            const test3Original = document.getElementById('test3-original').textContent;
+            document.getElementById('test3-rendered').innerHTML = formatMarkdownContent(test3Original);
+
+            console.log('✅ Markdown渲染测试完成');
+        });
+    </script>
+</body>
+</html>
