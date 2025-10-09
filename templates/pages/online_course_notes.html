@@ -1411,168 +1411,32 @@
         }, 3000);
     }
     
-    // 开始录音测试 - 显示测试面板版本
+    // 开始录音测试
     window.startRecordingTest = function() {
-        debugLog('🧪 开始录音测试（显示测试面板版本）');
+        debugLog('开始录音测试');
         
-        // 创建测试面板
-        createTestPanel();
-        
-        // 调用新的测试方法
-        if (window.bridge && window.bridge.testRecordingFlow) {
-            updateTestPanel('准备中', '正在初始化测试...', 'info');
-            
-            window.bridge.testRecordingFlow(function(result) {
-                debugLog('📋 测试录音流程结果: ' + result);
-                
+        // 检查是否已选择设备
+        if (window.bridge && window.bridge.getSelectedDevice) {
+            window.bridge.getSelectedDevice(function(deviceResult) {
                 try {
-                    const data = JSON.parse(result);
-                    if (data.success) {
-                        // 测试完成，显示结果
-                        if (data.transcription && data.transcription.trim()) {
-                            updateTestPanel('测试成功', `转写结果: ${data.transcription}`, 'success');
-                        } else {
-                            updateTestPanel('测试完成', '录音功能正常，但转写结果为空', 'warning');
-                        }
-                        
-                        // 5秒后自动关闭面板
-                        setTimeout(() => {
-                            closeTestPanel();
-                        }, 5000);
-                        
+                    const deviceData = JSON.parse(deviceResult);
+                    if (deviceData.success) {
+                        // 设备已选择，开始测试
+                        performRecordingTest();
                     } else {
-                        // 测试失败
-                        updateTestPanel('测试失败', data.error || '未知错误', 'error');
-                        
-                        // 如果是设备选择问题，提示选择设备
-                        if (data.step === 'device_selection') {
-                            setTimeout(() => {
-                                closeTestPanel();
-                                testAudioSource();
-                            }, 2000);
-                        }
+                        showMessage('请先选择音频输入设备', 'warning');
+                        testAudioSource(); // 打开设备选择界面
                     }
                 } catch (e) {
-                    updateTestPanel('解析失败', '无法解析测试结果', 'error');
-                    debugError('解析测试结果失败: ' + e.message);
+                    showMessage('请先选择音频输入设备', 'warning');
+                    testAudioSource();
                 }
             });
         } else {
-            updateTestPanel('功能不可用', '测试录音功能不可用', 'error');
-            debugError('bridge.testRecordingFlow 方法不可用');
+            showMessage('请先选择音频输入设备', 'warning');
+            testAudioSource();
         }
     };
-    
-    // 创建测试面板
-    function createTestPanel() {
-        // 移除已存在的面板
-        const existingPanel = document.getElementById('test-panel');
-        if (existingPanel) {
-            existingPanel.remove();
-        }
-        
-        // 创建新面板
-        const panel = document.createElement('div');
-        panel.id = 'test-panel';
-        panel.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-        panel.innerHTML = `
-            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-gray-800">🧪 录音转写测试</h3>
-                    <button onclick="closeTestPanel()" class="text-gray-400 hover:text-gray-600">
-                        <span class="material-icons-outlined">close</span>
-                    </button>
-                </div>
-                
-                <div class="text-center">
-                    <div id="test-icon" class="text-4xl mb-3">⏳</div>
-                    <div id="test-title" class="text-lg font-medium text-gray-800 mb-2">准备中</div>
-                    <div id="test-message" class="text-sm text-gray-600 mb-4">正在初始化测试...</div>
-                    
-                    <div id="test-progress" class="w-full bg-gray-200 rounded-full h-2 mb-4">
-                        <div id="test-progress-bar" class="bg-blue-500 h-2 rounded-full transition-all duration-1000" style="width: 0%"></div>
-                    </div>
-                    
-                    <div id="test-steps" class="text-xs text-gray-500 text-left">
-                        <div>📋 步骤说明：</div>
-                        <div>1. 检查设备选择</div>
-                        <div>2. 开始10秒录音</div>
-                        <div>3. 等待转写完成</div>
-                        <div>4. 显示测试结果</div>
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(panel);
-        
-        // 开始进度动画
-        startTestProgress();
-    }
-    
-    // 更新测试面板
-    function updateTestPanel(title, message, type) {
-        const titleEl = document.getElementById('test-title');
-        const messageEl = document.getElementById('test-message');
-        const iconEl = document.getElementById('test-icon');
-        const progressBar = document.getElementById('test-progress-bar');
-        
-        if (titleEl) titleEl.textContent = title;
-        if (messageEl) messageEl.textContent = message;
-        
-        // 更新图标和进度
-        if (iconEl) {
-            switch (type) {
-                case 'success':
-                    iconEl.textContent = '🎉';
-                    if (progressBar) progressBar.style.width = '100%';
-                    break;
-                case 'error':
-                    iconEl.textContent = '❌';
-                    if (progressBar) progressBar.style.width = '100%';
-                    break;
-                case 'warning':
-                    iconEl.textContent = '⚠️';
-                    if (progressBar) progressBar.style.width = '100%';
-                    break;
-                default:
-                    iconEl.textContent = '⏳';
-            }
-        }
-    }
-    
-    // 开始测试进度动画
-    function startTestProgress() {
-        const progressBar = document.getElementById('test-progress-bar');
-        if (!progressBar) return;
-        
-        let progress = 0;
-        const interval = setInterval(() => {
-            progress += 2;
-            progressBar.style.width = Math.min(progress, 90) + '%';
-            
-            // 更新步骤提示
-            if (progress < 20) {
-                updateTestPanel('检查设备', '正在验证音频设备...', 'info');
-            } else if (progress < 60) {
-                updateTestPanel('录音中', '请播放音频或说话（10秒）...', 'info');
-            } else if (progress < 90) {
-                updateTestPanel('转写中', '正在处理音频转文字...', 'info');
-            }
-            
-            if (progress >= 90) {
-                clearInterval(interval);
-            }
-        }, 500); // 每0.5秒更新一次，总共约25秒
-    }
-    
-    // 关闭测试面板
-    function closeTestPanel() {
-        const panel = document.getElementById('test-panel');
-        if (panel) {
-            panel.remove();
-        }
-    }
     
     // 执行录音测试
     function performRecordingTest() {
@@ -1582,29 +1446,11 @@
         const countdownElement = document.getElementById('countdown-number');
         const progressElement = document.getElementById('countdown-progress');
         
-        // 标记为测试模式
-        window.isTestMode = true;
-        
-        // 使用正常的录音方法
+        // 开始录音
         if (window.bridge && window.bridge.startRecording) {
             window.bridge.startRecording(function(result) {
                 debugLog('测试录音开始: ' + result);
-                
-                try {
-                    const res = JSON.parse(result);
-                    if (!res.success) {
-                        updateTestRecordingUI('测试失败', res.error || '启动录音测试失败', 'error');
-                        window.isTestMode = false;
-                        return;
-                    }
-                } catch (e) {
-                    debugLog('解析测试录音结果: ' + result);
-                }
             });
-        } else {
-            updateTestRecordingUI('测试失败', '录音功能不可用', 'error');
-            window.isTestMode = false;
-            return;
         }
         
         // 倒计时
@@ -1618,26 +1464,9 @@
             
             if (countdown <= 0) {
                 clearInterval(countdownInterval);
-                // 10秒后停止录音
-                stopTestRecording();
+                finishRecordingTest();
             }
         }, 1000);
-    }
-    
-    // 停止测试录音
-    function stopTestRecording() {
-        updateTestRecordingUI('录制完成', '文字转换中...', 'hourglass_empty');
-        
-        if (window.bridge && window.bridge.stopRecording) {
-            window.bridge.stopRecording(function(result) {
-                debugLog('测试录音停止: ' + result);
-                
-                // 等待3秒让转写完成
-                setTimeout(() => {
-                    getTestTranscriptionResult();
-                }, 3000);
-            });
-        }
     }
     
     // 完成录音测试
@@ -1663,11 +1492,6 @@
     
     // 获取测试转写结果
     function getTestTranscriptionResult() {
-        debugLog('开始获取测试转写结果');
-        
-        // 结束测试模式
-        window.isTestMode = false;
-        
         // 尝试获取转写内容
         if (window.bridge && window.bridge.getTranscriptionText) {
             window.bridge.getTranscriptionText(function(transcriptionResult) {
@@ -1676,10 +1500,8 @@
                 try {
                     const result = JSON.parse(transcriptionResult);
                     if (result.success && result.transcription && result.transcription.trim()) {
-                        // 提取纯文本内容（去除时间戳）
-                        const pureText = extractPureTextFromTranscription(result.transcription.trim());
-                        debugLog('提取的纯文本: ' + pureText);
-                        displayTestTranscriptionResult(pureText);
+                        // 显示真实的转写结果
+                        displayTestTranscriptionResult(result.transcription.trim());
                     } else {
                         // 转写结果为空
                         displayTestTranscriptionResult('');
@@ -1688,37 +1510,23 @@
                     debugError('解析转写结果失败: ' + e.message);
                     // 解析失败，可能是直接返回的文本
                     if (transcriptionResult && transcriptionResult.trim()) {
-                        const pureText = extractPureTextFromTranscription(transcriptionResult.trim());
-                        displayTestTranscriptionResult(pureText);
+                        displayTestTranscriptionResult(transcriptionResult.trim());
                     } else {
                         displayTestTranscriptionResult('');
                     }
                 }
             });
         } else {
-            displayTestTranscriptionResult('');
-        }
-    }
-    
-    // 从转写文本中提取纯文本（去除时间戳）
-    function extractPureTextFromTranscription(transcriptionText) {
-        if (!transcriptionText) return '';
-        
-        const lines = transcriptionText.split('\n');
-        const pureTextParts = [];
-        
-        for (let line of lines) {
-            line = line.trim();
-            if (!line) continue;
-            
-            // 去除时间戳格式 [HH:MM:SS]
-            const textWithoutTimestamp = line.replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, '');
-            if (textWithoutTimestamp.trim()) {
-                pureTextParts.push(textWithoutTimestamp.trim());
+            // 没有获取转写结果的方法，检查转写区域的内容
+            const transcriptContent = document.getElementById('transcript-content');
+            if (transcriptContent) {
+                const textContent = transcriptContent.textContent || transcriptContent.innerText || '';
+                const cleanText = textContent.replace('转写内容将在这里实时显示...', '').trim();
+                displayTestTranscriptionResult(cleanText);
+            } else {
+                displayTestTranscriptionResult('');
             }
         }
-        
-        return pureTextParts.join(' ');
     }
     
     // 显示测试转写结果
@@ -2501,13 +2309,6 @@
     // 后端调用的转写文本更新函数 - 必须定义为全局函数
     window.updateTranscriptionText = function(text) {
         debugLog('收到后端转写文本: ' + text);
-        
-        // 如果是测试模式，不更新主界面的转写显示
-        if (window.isTestMode) {
-            debugLog('测试模式：跳过转写文本更新');
-            return;
-        }
-        
         addTranscriptText(text);
     };
     
@@ -2543,18 +2344,6 @@
         resetTestButton(deviceName);
         
         alert(`设备 ${deviceName} 测试录制失败:\\n${errorMessage}`);
-    };
-    
-    // 后端调用的测试录音完成回调
-    window.onTestRecordingComplete = function(transcriptionText) {
-        debugLog('测试录音完成，转写结果: ' + transcriptionText);
-        
-        // 显示转写结果
-        if (transcriptionText && transcriptionText.trim()) {
-            displayTestTranscriptionResult(transcriptionText.trim());
-        } else {
-            displayTestTranscriptionResult('');
-        }
     };
     
     // 重置测试按钮状态
@@ -6486,40 +6275,30 @@
             submitBtn.onclick = submitPracticeAnswer;
         }
         
-        // 评估练习按钮
+        // AI评判按钮
         const evaluateBtn = document.getElementById('evaluateBtn');
         if (evaluateBtn) {
             evaluateBtn.onclick = evaluatePracticeAnswer;
         }
         
-        // 练习历史按钮
-        const historyBtn = document.getElementById('practiceHistoryBtn');
-        if (historyBtn) {
-            historyBtn.onclick = showPracticeHistory;
-        }
-        
-        // 新练习按钮
-        const newPracticeBtn = document.getElementById('newPracticeBtn');
-        if (newPracticeBtn) {
-            newPracticeBtn.onclick = startNewPractice;
-        }
-        
-        // 保存评估结果按钮
-        const savePracticeBtn = document.getElementById('savePracticeBtn');
-        if (savePracticeBtn) {
-            savePracticeBtn.onclick = savePracticeEvaluation;
-        }
-        
-        // 错题入库按钮
-        const errorBankBtn = document.getElementById('errorBankBtn');
-        if (errorBankBtn) {
-            errorBankBtn.onclick = importPracticeErrors;
-        }
-        
         // 开始新练习按钮
-        const startPracticeBtn = document.getElementById('startPracticeBtn');
-        if (startPracticeBtn) {
-            startPracticeBtn.onclick = startNewPractice;
+        const startBtn = document.getElementById('startPracticeBtn');
+        if (startBtn) {
+            startBtn.onclick = () => {
+                if (currentPracticeData.selectedText) {
+                    generatePracticeQuestions(currentPracticeData.selectedText);
+                }
+            };
+        }
+        
+        // 点击面板外部关闭
+        const practicePanel = document.getElementById('practicePanel');
+        if (practicePanel) {
+            practicePanel.onclick = (e) => {
+                if (e.target === practicePanel) {
+                    hidePracticePanel();
+                }
+            };
         }
     }
     
@@ -6527,367 +6306,6 @@
         const practicePanel = document.getElementById('practicePanel');
         if (practicePanel) {
             practicePanel.classList.add('hidden');
-        }
-    }
-    
-    // ====== AI练习助手功能实现 ======
-    
-    function showPracticeHistory() {
-        console.log('📅 显示练习历史');
-        
-        if (window.bridge && window.bridge.getPracticeHistory) {
-            try {
-                const result = window.bridge.getPracticeHistory();
-                
-                // 处理返回结果
-                const handleHistoryResult = (historyData) => {
-                    try {
-                        const data = typeof historyData === 'string' ? JSON.parse(historyData) : historyData;
-                        if (data.success) {
-                            displayPracticeHistoryDialog(data.practices);
-                        } else {
-                            showToast('获取练习历史失败: ' + (data.error || '未知错误'), 'error');
-                        }
-                    } catch (e) {
-                        console.error('解析历史数据失败:', e);
-                        showToast('数据解析失败', 'error');
-                    }
-                };
-                
-                if (result && typeof result.then === 'function') {
-                    result.then(handleHistoryResult).catch(error => {
-                        console.error('获取练习历史失败:', error);
-                        showToast('获取练习历史失败', 'error');
-                    });
-                } else {
-                    handleHistoryResult(result);
-                }
-            } catch (error) {
-                console.error('调用练习历史API失败:', error);
-                showToast('获取练习历史失败', 'error');
-            }
-        } else {
-            showToast('练习历史功能不可用', 'warning');
-        }
-    }
-    
-    function displayPracticeHistoryDialog(practices) {
-        // 创建历史对话框
-        const dialogHtml = `
-            <div id="historyDialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div class="bg-white rounded-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden">
-                    <div class="p-6 border-b">
-                        <div class="flex justify-between items-center">
-                            <h3 class="text-xl font-bold text-text-dark-brown">练习历史</h3>
-                            <button onclick="closeHistoryDialog()" class="text-text-gray hover:text-red-500">
-                                <span class="material-icons-outlined">close</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="p-6 overflow-y-auto max-h-96">
-                        ${practices.length > 0 ? generateHistoryList(practices) : '<p class="text-center text-text-gray">暂无练习历史</p>'}
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        // 添加到页面
-        document.body.insertAdjacentHTML('beforeend', dialogHtml);
-    }
-    
-    function generateHistoryList(practices) {
-        return practices.map(practice => {
-            const date = new Date(practice.timestamp).toLocaleString('zh-CN');
-            const statusText = {
-                'evaluated': '已评估',
-                'completed': '已完成',
-                'in_progress': '进行中'
-            }[practice.status] || practice.status;
-            
-            return `
-                <div class="border rounded-lg p-4 mb-3 hover:bg-gray-50 cursor-pointer" onclick="loadPracticeFromHistory('${practice.id}')">
-                    <div class="flex justify-between items-start mb-2">
-                        <div class="flex-1">
-                            <h4 class="font-semibold text-text-dark-brown">ID: ${practice.id}</h4>
-                            <p class="text-sm text-text-medium-brown">${date}</p>
-                        </div>
-                        <span class="px-2 py-1 text-xs rounded ${
-                            practice.status === 'evaluated' ? 'bg-green-100 text-green-800' :
-                            practice.status === 'completed' ? 'bg-blue-100 text-blue-800' :
-                            'bg-yellow-100 text-yellow-800'
-                        }">${statusText}</span>
-                    </div>
-                    <p class="text-sm text-text-dark-brown">${practice.selected_text}</p>
-                    ${practice.has_evaluation ? '<p class="text-xs text-green-600 mt-1">✓ 包含评估结果</p>' : ''}
-                </div>
-            `;
-        }).join('');
-    }
-    
-    function closeHistoryDialog() {
-        const dialog = document.getElementById('historyDialog');
-        if (dialog) {
-            dialog.remove();
-        }
-    }
-    
-    function loadPracticeFromHistory(practiceId) {
-        console.log('📄 加载练习历史:', practiceId);
-        
-        if (window.bridge && window.bridge.loadPracticeHistory) {
-            try {
-                const result = window.bridge.loadPracticeHistory(practiceId);
-                
-                const handleLoadResult = (practiceData) => {
-                    try {
-                        const data = typeof practiceData === 'string' ? JSON.parse(practiceData) : practiceData;
-                        if (data.success) {
-                            // 关闭对话框
-                            closeHistoryDialog();
-                            // 加载练习数据
-                            loadPracticeData(data.practice);
-                            showToast('练习历史加载成功', 'success');
-                        } else {
-                            showToast('加载失败: ' + (data.error || '未知错误'), 'error');
-                        }
-                    } catch (e) {
-                        console.error('解析练习数据失败:', e);
-                        showToast('数据解析失败', 'error');
-                    }
-                };
-                
-                if (result && typeof result.then === 'function') {
-                    result.then(handleLoadResult).catch(error => {
-                        console.error('加载练习历史失败:', error);
-                        showToast('加载练习历史失败', 'error');
-                    });
-                } else {
-                    handleLoadResult(result);
-                }
-            } catch (error) {
-                console.error('调用加载练习历史API失败:', error);
-                showToast('加载练习历史失败', 'error');
-            }
-        }
-    }
-    
-    function loadPracticeData(practiceData) {
-        // 更新全局练习数据
-        currentPracticeData = {
-            id: practiceData.practice_id,
-            selectedText: practiceData.selected_text,
-            questions: practiceData.questions,
-            answers: practiceData.user_answers ? [{ content: practiceData.user_answers, timestamp: new Date(practiceData.timestamp).toLocaleString('zh-CN') }] : [],
-            evaluation: practiceData.evaluation_result,
-            status: practiceData.status
-        };
-        
-        // 更新UI
-        const practiceIdElement = document.getElementById('practiceId');
-        if (practiceIdElement) {
-            practiceIdElement.textContent = currentPracticeData.id;
-        }
-        
-        // 显示题目或评估结果
-        if (currentPracticeData.evaluation) {
-            displayEvaluationResult(currentPracticeData.evaluation);
-        } else if (currentPracticeData.questions) {
-            displayPracticeQuestions(currentPracticeData.questions);
-        }
-        
-        // 更新答案历史
-        updateAnswerHistory();
-        
-        // 更新相关学习内容
-        const relatedContent = document.getElementById('relatedContent');
-        if (relatedContent) {
-            relatedContent.innerHTML = `
-                <h4 class="font-semibold text-text-dark-brown mb-2">选中的学习内容：</h4>
-                <div class="bg-white p-3 rounded border">
-                    <p class="text-sm text-text-dark-brown">${currentPracticeData.selectedText}</p>
-                </div>
-            `;
-        }
-    }
-    
-    function startNewPractice() {
-        console.log('🎆 开始新练习');
-        
-        if (!selectedText) {
-            showToast('请先选择要练习的文本内容', 'warning');
-            return;
-        }
-        
-        // 重置练习数据
-        currentPracticeData = {
-            id: generatePracticeId(),
-            selectedText: selectedText,
-            questions: null,
-            answers: [],
-            evaluation: null,
-            status: 'generating'
-        };
-        
-        // 更新UI
-        const practiceIdElement = document.getElementById('practiceId');
-        if (practiceIdElement) {
-            practiceIdElement.textContent = currentPracticeData.id;
-        }
-        
-        // 清空答题区域
-        const answerTextarea = document.getElementById('practiceAnswer');
-        if (answerTextarea) {
-            answerTextarea.value = '';
-            answerTextarea.placeholder = '题目生成完成后，请在此输入您的答案...';
-        }
-        
-        // 重置答案历史
-        const answerHistory = document.getElementById('answerHistory');
-        if (answerHistory) {
-            answerHistory.innerHTML = '<p class="text-gray-500">暂无答题记录</p>';
-        }
-        
-        // 更新相关学习内容
-        const relatedContent = document.getElementById('relatedContent');
-        if (relatedContent) {
-            relatedContent.innerHTML = `
-                <h4 class="font-semibold text-text-dark-brown mb-2">选中的学习内容：</h4>
-                <div class="bg-white p-3 rounded border">
-                    <p class="text-sm text-text-dark-brown">${selectedText}</p>
-                </div>
-            `;
-        }
-        
-        // 隐藏评估按钮
-        const evaluateBtn = document.getElementById('evaluateBtn');
-        if (evaluateBtn) {
-            evaluateBtn.classList.add('hidden');
-        }
-        
-        // 开始生成题目
-        generatePracticeQuestions(selectedText);
-        showToast('开始新练习', 'success');
-    }
-    
-    function savePracticeEvaluation() {
-        console.log('💾 保存评估结果');
-        
-        if (!currentPracticeData.evaluation) {
-            showToast('没有评估结果可保存', 'warning');
-            return;
-        }
-        
-        const evaluationData = {
-            practice_id: currentPracticeData.id,
-            selected_text: currentPracticeData.selectedText,
-            questions: currentPracticeData.questions,
-            user_answers: currentPracticeData.answers.map(a => a.content).join('\n\n'),
-            evaluation_result: currentPracticeData.evaluation
-        };
-        const errorData = {
-            practice_content: `学习内容: ${currentPracticeData.selectedText}\n\n题目:\n${currentPracticeData.questions}\n\n题目和答案:\n${currentPracticeData.answers.map(a => a.content).join('\n\n')}`,
-            evaluation_result: currentPracticeData.evaluation,
-            selected_text: currentPracticeData.selectedText
-        };
-        
-        if (window.bridge && window.bridge.savePracticeEvaluation) {
-            try {
-                const result = window.bridge.savePracticeEvaluation(JSON.stringify(evaluationData));
-                
-                const handleSaveResult = (saveData) => {
-                    try {
-                        const data = typeof saveData === 'string' ? JSON.parse(saveData) : saveData;
-                        if (data.success) {
-                            showToast('评估结果已保存', 'success');
-                            currentPracticeData.id = data.practice_id; // 更新ID
-                            const practiceIdElement = document.getElementById('practiceId');
-                            if (practiceIdElement) {
-                                practiceIdElement.textContent = currentPracticeData.id;
-                            }
-                        } else {
-                            showToast('保存失败: ' + (data.error || '未知错误'), 'error');
-                        }
-                    } catch (e) {
-                        console.error('解析保存结果失败:', e);
-                        showToast('数据解析失败', 'error');
-                    }
-                };
-                
-                if (result && typeof result.then === 'function') {
-                    result.then(handleSaveResult).catch(error => {
-                        console.error('保存评估结果失败:', error);
-                        showToast('保存评估结果失败', 'error');
-                    });
-                } else {
-                    handleSaveResult(result);
-                }
-            } catch (error) {
-                console.error('调用保存评估API失败:', error);
-                showToast('保存评估结果失败', 'error');
-            }
-        } else {
-            showToast('保存功能不可用', 'warning');
-        }
-    }
-    
-    function importPracticeErrors() {
-        console.log('📁 开始错题入库');
-        
-        if (!currentPracticeData.evaluation) {
-            showToast('没有评估结果可以入库', 'warning');
-            return;
-        }
-        
-        const errorData = {
-            practice_content: `学习内容: ${currentPracticeData.selectedText}
-
-题目:
-${currentPracticeData.questions}
-
-题目和答案:
-${currentPracticeData.answers.map(a => a.content).join('
-
-')}`,
-            evaluation_result: currentPracticeData.evaluation,
-            selected_text: currentPracticeData.selectedText
-        };
-        
-        if (window.bridge && window.bridge.importPracticeErrors) {
-            try {
-                const result = window.bridge.importPracticeErrors(JSON.stringify(errorData));
-                
-                const handleImportResult = (importData) => {
-                    try {
-                        const data = typeof importData === 'string' ? JSON.parse(importData) : importData;
-                        if (data.success) {
-                            if (data.action === 'open_error_import_dialog') {
-                                showToast('错题入库功能已在Qt界面中打开', 'info');
-                            } else {
-                                showToast('错题入库成功', 'success');
-                            }
-                        } else {
-                            showToast('入库失败: ' + (data.error || '未知错误'), 'error');
-                        }
-                    } catch (e) {
-                        console.error('解析入库结果失败:', e);
-                        showToast('数据解析失败', 'error');
-                    }
-                };
-                
-                if (result && typeof result.then === 'function') {
-                    result.then(handleImportResult).catch(error => {
-                        console.error('错题入库失败:', error);
-                        showToast('错题入库失败', 'error');
-                    });
-                } else {
-                    handleImportResult(result);
-                }
-            } catch (error) {
-                console.error('调用错题入库API失败:', error);
-                showToast('错题入库失败', 'error');
-            }
-        } else {
-            showToast('错题入库功能不可用', 'warning');
         }
     }
     
@@ -7760,7 +7178,7 @@ ${currentPracticeData.answers.map(a => a.content).join('
                     提交答案
                 </button>
                 <button id="evaluateBtn" class="px-6 py-2 rounded-lg text-white bg-blue-500 hover:bg-blue-600 transition shadow hidden">
-                    评估练习
+                    AI评判
                 </button>
             </div>
         </div>
