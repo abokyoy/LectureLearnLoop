@@ -357,15 +357,8 @@
         align-items: center;
         transition: background-color 0.2s ease;
     }
-    
     .context-menu-item:hover {
         background-color: #f3f4f6;
-    }
-    
-    .context-menu-item .material-icons-outlined {
-        margin-right: 8px;
-        font-size: 18px;
-        color: #32C77F;
     }
     
     .context-menu-separator {
@@ -388,6 +381,28 @@
     .file-item-content.drag-over {
         border: 2px dashed #10b981;
         background-color: rgba(16, 185, 129, 0.1);
+    }
+    
+    /* 拖拽中的样式 */
+    .file-item.dragging {
+        opacity: 0.5;
+        transform: scale(0.95);
+        transition: all 0.2s ease;
+    }
+    
+    .file-item.dragging .file-item-content {
+        background-color: rgba(59, 130, 246, 0.1);
+        border: 1px dashed #3b82f6;
+    }
+    
+    /* 剪切项目的样式 */
+    .file-item.cut-item {
+        opacity: 0.6;
+    }
+    
+    .file-item.cut-item .file-item-content {
+        background-color: rgba(239, 68, 68, 0.1);
+        border: 1px dashed #ef4444;
     }
     .folder-toggle {
         transition: transform 0.2s ease;
@@ -762,21 +777,35 @@
     </div>
 </div>
 
-<!-- 右键菜单 -->
-<div id="context-menu" class="context-menu hidden">
-    <div class="context-menu-item" onclick="contextMenuAction('rename')">
+<!-- 文件管理右键菜单 -->
+<div id="file-context-menu" class="context-menu hidden">
+    <div class="context-menu-item" data-action="copy">
+        <span class="material-icons-outlined">content_copy</span>
+        复制
+    </div>
+    <div class="context-menu-item" data-action="cut">
+        <span class="material-icons-outlined">content_cut</span>
+        剪切
+    </div>
+    <div class="context-menu-item" data-action="paste" id="file-paste-menu-item" style="display: none;">
+        <span class="material-icons-outlined">content_paste</span>
+        粘贴
+    </div>
+    <div class="context-menu-separator"></div>
+    <div class="context-menu-item" data-action="rename">
         <span class="material-icons-outlined">edit</span>
         重命名
     </div>
-    <div class="context-menu-item" onclick="contextMenuAction('delete')">
+    <div class="context-menu-item" data-action="delete">
         <span class="material-icons-outlined">delete</span>
         删除
     </div>
-    <div class="context-menu-item" onclick="contextMenuAction('newNote')">
+    <div class="context-menu-separator"></div>
+    <div class="context-menu-item" data-action="newNote">
         <span class="material-icons-outlined">note_add</span>
         新建笔记
     </div>
-    <div class="context-menu-item" onclick="contextMenuAction('newFolder')">
+    <div class="context-menu-item" data-action="newFolder">
         <span class="material-icons-outlined">create_new_folder</span>
         新建文件夹
     </div>
@@ -1043,9 +1072,9 @@
         
         // 每200ms更新一次电平显示（降低频率避免性能问题）
         audioLevelInterval = setInterval(() => {
-            if (window.bridge && window.bridge.getDeviceLevels) {
+            if (window.pybridge && window.pybridge.getDeviceLevels) {
                 // 获取真实的音频电平
-                window.bridge.getDeviceLevels(function(result) {
+                window.pybridge.getDeviceLevels(function(result) {
                     try {
                         const data = JSON.parse(result);
                         if (data.success && typeof data.level === 'number') {
@@ -1113,8 +1142,8 @@
     function scanAudioDevices() {
         debugLog('开始扫描音频设备');
         
-        if (window.bridge && window.bridge.getAudioDevices) {
-            window.bridge.getAudioDevices(function(result) {
+        if (window.pybridge && window.pybridge.getAudioDevices) {
+            window.pybridge.getAudioDevices(function(result) {
                 try {
                     const data = JSON.parse(result);
                     if (data.success && data.devices) {
@@ -1245,8 +1274,8 @@
         if (window.selectedDeviceIndex !== null && window.selectedDeviceIndex !== undefined) {
             debugLog(`选择的设备: ${window.selectedDeviceIndex} - ${window.selectedDeviceName}`);
             
-            if (window.bridge && window.bridge.selectAudioDevice) {
-                window.bridge.selectAudioDevice(window.selectedDeviceIndex, window.selectedDeviceName, function(result) {
+            if (window.pybridge && window.pybridge.selectAudioDevice) {
+                window.pybridge.selectAudioDevice(window.selectedDeviceIndex, window.selectedDeviceName, function(result) {
                     try {
                         const data = JSON.parse(result);
                         if (data.success) {
@@ -1290,8 +1319,8 @@
         
         // 降低更新频率，避免卡死
         deviceMonitoringInterval = setInterval(function() {
-            if (window.bridge && window.bridge.getDeviceLevels) {
-                window.bridge.getDeviceLevels(function(result) {
+            if (window.pybridge && window.pybridge.getDeviceLevels) {
+                window.pybridge.getDeviceLevels(function(result) {
                     try {
                         const data = JSON.parse(result);
                         if (data.success && data.levels) {
@@ -1348,8 +1377,8 @@
     
     // 获取当前选择的设备信息
     function updateSelectedDeviceInfo() {
-        if (window.bridge && window.bridge.getSelectedDevice) {
-            window.bridge.getSelectedDevice(function(result) {
+        if (window.pybridge && window.pybridge.getSelectedDevice) {
+            window.pybridge.getSelectedDevice(function(result) {
                 try {
                     const data = JSON.parse(result);
                     if (data.success) {
@@ -1416,8 +1445,8 @@
         debugLog('开始录音测试');
         
         // 检查是否已选择设备
-        if (window.bridge && window.bridge.getSelectedDevice) {
-            window.bridge.getSelectedDevice(function(deviceResult) {
+        if (window.pybridge && window.pybridge.getSelectedDevice) {
+            window.pybridge.getSelectedDevice(function(deviceResult) {
                 try {
                     const deviceData = JSON.parse(deviceResult);
                     if (deviceData.success) {
@@ -1447,8 +1476,8 @@
         const progressElement = document.getElementById('countdown-progress');
         
         // 开始录音
-        if (window.bridge && window.bridge.startRecording) {
-            window.bridge.startRecording(function(result) {
+        if (window.pybridge && window.pybridge.startRecording) {
+            window.pybridge.startRecording(function(result) {
                 debugLog('测试录音开始: ' + result);
             });
         }
@@ -1472,8 +1501,8 @@
     // 完成录音测试
     function finishRecordingTest() {
         // 停止录音并获取转写结果
-        if (window.bridge && window.bridge.stopRecording) {
-            window.bridge.stopRecording(function(result) {
+        if (window.pybridge && window.pybridge.stopRecording) {
+            window.pybridge.stopRecording(function(result) {
                 debugLog('测试录音停止: ' + result);
                 
                 // 更新界面显示录制完成
@@ -1493,8 +1522,8 @@
     // 获取测试转写结果
     function getTestTranscriptionResult() {
         // 尝试获取转写内容
-        if (window.bridge && window.bridge.getTranscriptionText) {
-            window.bridge.getTranscriptionText(function(transcriptionResult) {
+        if (window.pybridge && window.pybridge.getTranscriptionText) {
+            window.pybridge.getTranscriptionText(function(transcriptionResult) {
                 debugLog('获取测试转写结果: ' + transcriptionResult);
                 
                 try {
@@ -1626,8 +1655,8 @@
         isPaused = false;
         updateRecordingButtons();
         
-        if (window.bridge && window.bridge.resumeRecording) {
-            window.bridge.resumeRecording(function(result) {
+        if (window.pybridge && window.pybridge.resumeRecording) {
+            window.pybridge.resumeRecording(function(result) {
                 debugLog('恢复录音结果: ' + result);
             });
         }
@@ -1694,8 +1723,8 @@
         }
         
         // 检查是否已选择设备
-        if (window.bridge && window.bridge.getSelectedDevice) {
-            window.bridge.getSelectedDevice(function(deviceResult) {
+        if (window.pybridge && window.pybridge.getSelectedDevice) {
+            window.pybridge.getSelectedDevice(function(deviceResult) {
                 try {
                     const deviceData = JSON.parse(deviceResult);
                     if (deviceData.success) {
@@ -1727,8 +1756,8 @@
         startAudioLevelMonitoring();
         
         // 调用后端开始录音
-        if (window.bridge && window.bridge.startRecording) {
-            window.bridge.startRecording(function(result) {
+        if (window.pybridge && window.pybridge.startRecording) {
+            window.pybridge.startRecording(function(result) {
                 try {
                     const res = JSON.parse(result);
                     debugLog('录音开始结果: ' + JSON.stringify(res));
@@ -1767,8 +1796,8 @@
         isPaused = true;
         updateRecordingButtons();
         
-        if (window.bridge && window.bridge.pauseRecording) {
-            window.bridge.pauseRecording(function(result) {
+        if (window.pybridge && window.pybridge.pauseRecording) {
+            window.pybridge.pauseRecording(function(result) {
                 debugLog('暂停录音结果: ' + result);
                 showMessage('录音已暂停', 'info');
             });
@@ -1786,8 +1815,8 @@
         // 停止音频电平监控
         stopAudioLevelMonitoring();
         
-        if (window.bridge && window.bridge.stopRecording) {
-            window.bridge.stopRecording(function(result) {
+        if (window.pybridge && window.pybridge.stopRecording) {
+            window.pybridge.stopRecording(function(result) {
                 debugLog('停止录音结果: ' + result);
                 showMessage('录音已停止', 'info');
                 
@@ -1845,8 +1874,8 @@
         
         debugLog('合并的转写文本: ' + combinedText);
         
-        if (window.bridge && window.bridge.summarizeText) {
-            window.bridge.summarizeText(combinedText, function(response) {
+        if (window.pybridge && window.pybridge.summarizeText) {
+            window.pybridge.summarizeText(combinedText, function(response) {
                 debugLog('AI响应: ' + response);
                 
                 let summaryContent = '';
@@ -2067,7 +2096,7 @@
     
     // 保存转写会话到文件
     function saveTranscriptSession() {
-        if (window.bridge && window.bridge.saveTranscriptSession) {
+        if (window.pybridge && window.pybridge.saveTranscriptSession) {
             const sessionData = {
                 sessionId: currentTranscriptSession.sessionId,
                 startTime: currentTranscriptSession.startTime,
@@ -2077,7 +2106,7 @@
                 originalFilePath: currentTranscriptSession.filePath || null
             };
             
-            window.bridge.saveTranscriptSession(JSON.stringify(sessionData), function(filePath) {
+            window.pybridge.saveTranscriptSession(JSON.stringify(sessionData), function(filePath) {
                 if (filePath) {
                     currentTranscriptSession.filePath = filePath;
                     debugLog('转写会话已保存到: ' + filePath);
@@ -2090,9 +2119,9 @@
     window.loadTranscriptHistory = function() {
         debugLog('载入历史转写记录');
         
-        if (window.bridge && window.bridge.loadTranscriptHistory) {
+        if (window.pybridge && window.pybridge.loadTranscriptHistory) {
             // 调用后端方法（无参数，使用回调机制）
-            window.bridge.loadTranscriptHistory();
+            window.pybridge.loadTranscriptHistory();
         } else {
             alert('载入功能不可用');
         }
@@ -2363,8 +2392,8 @@
     function showAudioDeviceSelector() {
         debugLog('显示音频设备选择界面');
         
-        if (window.bridge && window.bridge.getAudioDevices) {
-            window.bridge.getAudioDevices(function(devicesResult) {
+        if (window.pybridge && window.pybridge.getAudioDevices) {
+            window.pybridge.getAudioDevices(function(devicesResult) {
                 try {
                     const result = JSON.parse(devicesResult);
                     if (result.success) {
@@ -2576,8 +2605,8 @@
         }
         
         // 重新获取设备列表
-        if (window.bridge && window.bridge.getAudioDevices) {
-            window.bridge.getAudioDevices(function(devicesResult) {
+        if (window.pybridge && window.pybridge.getAudioDevices) {
+            window.pybridge.getAudioDevices(function(devicesResult) {
                 try {
                     const result = JSON.parse(devicesResult);
                     if (result.success) {
@@ -2695,8 +2724,8 @@
         }
         
         // 调用后端兼容性测试
-        if (window.bridge && window.bridge.testDeviceCompatibility) {
-            window.bridge.testDeviceCompatibility(deviceIndex, deviceName, function(result) {
+        if (window.pybridge && window.pybridge.testDeviceCompatibility) {
+            window.pybridge.testDeviceCompatibility(deviceIndex, deviceName, function(result) {
                 try {
                     const res = JSON.parse(result);
                     if (res.success) {
@@ -2737,8 +2766,8 @@
         }
         
         // 调用后端测试录制
-        if (window.bridge && window.bridge.testDeviceRecording) {
-            window.bridge.testDeviceRecording(deviceIndex, deviceName, function(result) {
+        if (window.pybridge && window.pybridge.testDeviceRecording) {
+            window.pybridge.testDeviceRecording(deviceIndex, deviceName, function(result) {
                 try {
                     const res = JSON.parse(result);
                     if (!res.success) {
@@ -2798,8 +2827,8 @@
         debugLog(`选择设备: ${deviceName} (索引: ${deviceIndex}, 类型: ${deviceType})`);
         
         // 调用后端选择设备
-        if (window.bridge && window.bridge.selectAudioDevice) {
-            window.bridge.selectAudioDevice(deviceIndex, deviceName, function(result) {
+        if (window.pybridge && window.pybridge.selectAudioDevice) {
+            window.pybridge.selectAudioDevice(deviceIndex, deviceName, function(result) {
                 try {
                     const res = JSON.parse(result);
                     if (res.success) {
@@ -2843,8 +2872,8 @@
     function initializeAudioDevice() {
         debugLog('初始化音频设备');
         
-        if (window.bridge && window.bridge.getAudioDevices) {
-            window.bridge.getAudioDevices(function(devicesResult) {
+        if (window.pybridge && window.pybridge.getAudioDevices) {
+            window.pybridge.getAudioDevices(function(devicesResult) {
                 try {
                     const result = JSON.parse(devicesResult);
                     if (result.success && result.devices && result.devices.length > 0) {
@@ -2852,8 +2881,8 @@
                         const firstDevice = result.devices[0];
                         debugLog('初始化时自动选择音频设备: ' + firstDevice.displayName);
                         
-                        if (window.bridge.selectAudioDevice) {
-                            window.bridge.selectAudioDevice(firstDevice.index, firstDevice.name, function(selectResult) {
+                        if (window.pybridge.selectAudioDevice) {
+                            window.pybridge.selectAudioDevice(firstDevice.index, firstDevice.name, function(selectResult) {
                                 debugLog('设备初始化选择结果: ' + selectResult);
                             });
                         }
@@ -2872,28 +2901,54 @@
         debugLog('页面初始化开始');
         
         // 检查Bridge连接
-        if (window.bridge) {
-            debugLog('Bridge对象已可用');
+        if (window.pybridge) {
+            debugLog('Bridge对象已可用，立即加载文件结构');
             loadFileStructure();
         } else {
             debugLog('Bridge对象不可用，等待连接...');
-            // 等待Bridge连接
-            setTimeout(() => {
-                if (window.bridge) {
+            // 多次重试加载文件结构
+            let retryCount = 0;
+            const maxRetries = 5;
+            
+            const tryLoadFileStructure = () => {
+                retryCount++;
+                debugLog(`第${retryCount}次尝试加载文件结构...`);
+                
+                if (window.pybridge) {
                     debugLog('Bridge连接成功，加载文件结构');
                     loadFileStructure();
+                } else if (retryCount < maxRetries) {
+                    debugLog(`Bridge仍未连接，${1000 * retryCount}ms后重试...`);
+                    setTimeout(tryLoadFileStructure, 1000 * retryCount);
                 } else {
-                    debugError('Bridge连接超时');
+                    debugError('Bridge连接超时，已重试' + maxRetries + '次');
+                    // 显示错误信息给用户
+                    const container = document.getElementById('file-tree-container');
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载失败，请刷新页面重试</div>';
+                    }
                 }
-            }, 1000);
+            };
+            
+            setTimeout(tryLoadFileStructure, 500);
         }
         
         // 添加全局事件监听器
-        document.addEventListener('click', hideContextMenu);
-        document.addEventListener('contextmenu', function(e) {
-            if (!e.target.closest('.file-item-content')) {
-                e.preventDefault();
-                hideContextMenu();
+        document.addEventListener('click', function(e) {
+            console.log('🖱️ 全局点击事件，目标:', e.target);
+            
+            // 点击其他地方时隐藏文件右键菜单
+            const fileContextMenu = document.getElementById('file-context-menu');
+            if (fileContextMenu && !fileContextMenu.contains(e.target)) {
+                console.log('🔒 隐藏文件右键菜单');
+                hideFileContextMenu();
+            }
+            
+            // 隐藏MD编辑器右键菜单
+            const mdContextMenu = document.getElementById('contextMenu');
+            if (mdContextMenu && !mdContextMenu.contains(e.target)) {
+                console.log('🔒 隐藏MD编辑器右键菜单');
+                hideTextContextMenu();
             }
         });
         
@@ -2938,24 +2993,50 @@
     function loadFileStructure() {
         debugLog('开始加载文件结构');
         
-        if (!window.bridge || typeof window.bridge.getFileStructure !== 'function') {
+        if (!window.pybridge || typeof window.pybridge.getFileStructure !== 'function') {
             debugError('Bridge对象或getFileStructure方法不可用');
+            // 显示错误状态
+            const container = document.getElementById('file-tree-container');
+            if (container) {
+                container.innerHTML = '<div class="text-center py-8 text-red-500">Bridge连接异常，请刷新页面</div>';
+            }
             return;
         }
         
+        // 显示加载状态
+        const container = document.getElementById('file-tree-container');
+        if (container) {
+            container.innerHTML = '<div class="text-center py-8 text-gray-500"><div class="animate-spin inline-block w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full mr-2"></div>正在加载文件结构...</div>';
+        }
+        
         try {
-            window.bridge.getFileStructure(function(jsonString) {
-                debugLog('收到文件结构数据: ' + jsonString.substring(0, 100) + '...');
+            window.pybridge.getFileStructure(function(jsonString) {
+                debugLog('收到文件结构数据: ' + (jsonString ? jsonString.substring(0, 100) + '...' : '空数据'));
+                
+                if (!jsonString) {
+                    debugError('收到空的文件结构数据');
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构数据为空</div>';
+                    }
+                    return;
+                }
                 
                 try {
                     const structure = JSON.parse(jsonString);
+                    debugLog('文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
                     renderFileTree(structure);
                 } catch (parseError) {
                     debugError('解析文件结构JSON失败: ' + parseError.message);
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构数据解析失败</div>';
+                    }
                 }
             });
         } catch (error) {
             debugError('调用getFileStructure时发生错误: ' + error.message);
+            if (container) {
+                container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载异常: ' + error.message + '</div>';
+            }
         }
     }
 
@@ -3006,7 +3087,11 @@
                      draggable="true">
                     ${isFolder ? '<span class="material-icons-outlined text-sm mr-1 folder-toggle">chevron_right</span>' : '<span class="w-5"></span>'}
                     <span class="material-icons-outlined text-sm mr-2 text-text-gray">${icon}</span>
-                    <span class="text-sm text-text-dark-brown flex-1 file-name">${item.name}</span>
+                    <span class="text-sm text-text-dark-brown flex-1 file-name" ondblclick="startInlineRename(this)">${item.name}</span>
+                    <input type="text" class="text-sm text-text-dark-brown flex-1 file-name-input hidden border border-blue-500 rounded px-1" 
+                           value="${item.name}" 
+                           onblur="finishInlineRename(this)" 
+                           onkeydown="handleRenameKeydown(event, this)">
                 </div>
         `;
         
@@ -3041,13 +3126,21 @@
             
             // 右键菜单
             content.addEventListener('contextmenu', function(e) {
+                console.log('文件右键菜单事件触发，目标元素:', e.target);
                 e.preventDefault();
+                e.stopPropagation();
                 const item = this.closest('li');
+                if (!item) {
+                    console.error('无法找到父级li元素');
+                    return;
+                }
                 const path = item.getAttribute('data-path');
                 const type = item.getAttribute('data-type');
                 const name = item.getAttribute('data-name');
                 
-                showContextMenu(e, path, type, name);
+                console.log('文件信息:', { path, type, name });
+                console.log('调用showFileContextMenu...');
+                showFileContextMenu(e, path, type, name);
             });
             
             // 拖拽事件
@@ -3056,6 +3149,20 @@
             content.addEventListener('drop', handleDrop);
             content.addEventListener('dragenter', handleDragEnter);
             content.addEventListener('dragleave', handleDragLeave);
+            
+            // 键盘事件
+            content.addEventListener('keydown', function(e) {
+                const item = this.closest('li');
+                const path = item.getAttribute('data-path');
+                const type = item.getAttribute('data-type');
+                const name = item.getAttribute('data-name');
+                
+                handleFileKeydown(e, path, type, name, this);
+            });
+            
+            // 使文件项可聚焦
+            content.tabIndex = 0;
+            content.setAttribute('tabindex', '0');
         });
         
         // 文件夹切换事件
@@ -3066,6 +3173,9 @@
                 toggleFolder(this);
             });
         });
+        
+        // 添加全局键盘快捷键
+        addGlobalKeyboardShortcuts();
     }
 
     // 处理文件点击
@@ -3108,7 +3218,7 @@
         currentFilePath = filePath;
         currentFileName = fileName;
         
-        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+        if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
             debugError('Bridge对象或loadMarkdownRaw方法不可用');
             return;
         }
@@ -3127,7 +3237,7 @@
         
         // 调用后端加载原始Markdown内容
         try {
-            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+            window.pybridge.loadMarkdownRaw(filePath, function(markdownContent) {
                 debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
                 
                 if (previewContent) {
@@ -3190,7 +3300,7 @@
         currentFilePath = filePath;
         currentFileName = fileName;
         
-        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+        if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
             debugError('Bridge对象或loadMarkdownRaw方法不可用');
             return;
         }
@@ -3210,7 +3320,7 @@
         
         // 调用后端加载原始Markdown内容
         try {
-            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+            window.pybridge.loadMarkdownRaw(filePath, function(markdownContent) {
                 debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
                 
                 if (editContent) {
@@ -3261,12 +3371,12 @@
     function loadNoteKnowledgePoints(filePath) {
         debugLog(`加载笔记相关知识点: ${filePath}`);
         
-        if (!window.bridge || !window.bridge.getNoteKnowledgePoints) {
+        if (!window.pybridge || !window.pybridge.getNoteKnowledgePoints) {
             debugLog('getNoteKnowledgePoints方法不可用');
             return;
         }
         
-        window.bridge.getNoteKnowledgePoints(filePath, function(result) {
+        window.pybridge.getNoteKnowledgePoints(filePath, function(result) {
             try {
                 const existingPoints = JSON.parse(result);
                 debugLog(`找到 ${existingPoints.length} 个相关知识点`);
@@ -3331,7 +3441,7 @@
     function reloadPreviewContent(filePath, fileName) {
         debugLog(`重新加载预览内容: ${fileName}`);
         
-        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+        if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
             debugError('Bridge对象或loadMarkdownRaw方法不可用');
             return;
         }
@@ -3344,7 +3454,7 @@
         
         // 调用后端加载原始Markdown内容
         try {
-            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+            window.pybridge.loadMarkdownRaw(filePath, function(markdownContent) {
                 debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
                 
                 if (previewContent) {
@@ -3435,8 +3545,8 @@
         isEditMode = true;
         
         // 加载原始内容
-        if (window.bridge && window.bridge.loadMarkdownRaw) {
-            window.bridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
+        if (window.pybridge && window.pybridge.loadMarkdownRaw) {
+            window.pybridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
                 debugLog(`原始内容加载完成，长度: ${rawContent.length}`);
                 
                 const editContent = document.getElementById('edit-content');
@@ -3516,7 +3626,7 @@
         const content = editContent.value;
         debugLog(`保存文件: ${currentFileName}, 内容长度: ${content.length}`);
         
-        if (!window.bridge || !window.bridge.saveMarkdownFile) {
+        if (!window.pybridge || !window.pybridge.saveMarkdownFile) {
             debugError('Bridge对象或saveMarkdownFile方法不可用');
             return;
         }
@@ -3528,7 +3638,7 @@
         saveBtn.disabled = true;
         
         try {
-            window.bridge.saveMarkdownFile(currentFilePath, content, function(success) {
+            window.pybridge.saveMarkdownFile(currentFilePath, content, function(success) {
                 debugLog(`文件保存结果: ${success}`);
                 
                 // 恢复按钮状态
@@ -3616,14 +3726,26 @@
         const path = draggedElement.getAttribute('data-path');
         const name = draggedElement.getAttribute('data-name');
         debugLog(`开始拖拽: ${name} - ${path}`);
+        
+        // 添加拖拽状态样式
+        draggedElement.classList.add('dragging');
     }
 
     function handleDragOver(e) {
         e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
+        const targetItem = this.closest('li');
+        const targetType = targetItem.getAttribute('data-type');
+        
+        // 只允许拖拽到文件夹
+        if (targetType === 'folder' && targetItem !== draggedElement) {
+            e.dataTransfer.dropEffect = 'move';
+        } else {
+            e.dataTransfer.dropEffect = 'none';
+        }
     }
 
     function handleDragEnter(e) {
+        e.preventDefault();
         const targetItem = this.closest('li');
         const targetType = targetItem.getAttribute('data-type');
         
@@ -3633,7 +3755,14 @@
     }
 
     function handleDragLeave(e) {
-        this.classList.remove('drag-over');
+        // 检查是否真的离开了目标区域
+        const rect = this.getBoundingClientRect();
+        const x = e.clientX;
+        const y = e.clientY;
+        
+        if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+            this.classList.remove('drag-over');
+        }
     }
 
     function handleDrop(e) {
@@ -3643,56 +3772,124 @@
         const targetItem = this.closest('li');
         const targetType = targetItem.getAttribute('data-type');
         const targetPath = targetItem.getAttribute('data-path');
+        const targetName = targetItem.getAttribute('data-name');
         
         if (targetType === 'folder' && targetItem !== draggedElement && draggedElement) {
             const sourcePath = draggedElement.getAttribute('data-path');
             const sourceName = draggedElement.getAttribute('data-name');
+            const sourceType = draggedElement.getAttribute('data-type');
             
-            debugLog(`拖拽移动: ${sourceName} -> ${targetPath}`);
+            debugLog(`拖拽移动: ${sourceName} (${sourceType}) -> ${targetName} 文件夹`);
+            
+            // 显示移动中状态
+            showFileOperationFeedback(`正在移动 ${sourceName} 到 ${targetName}...`, 'info');
             
             // 调用后端移动文件
-            if (window.bridge && window.bridge.moveFileOrFolder) {
-                window.bridge.moveFileOrFolder(sourcePath, targetPath, function(success) {
+            if (window.pybridge && window.pybridge.moveFileOrFolder) {
+                window.pybridge.moveFileOrFolder(sourcePath, targetPath, function(success) {
                     if (success) {
                         debugLog('文件移动成功');
+                        showFileOperationFeedback(`${sourceName} 已移动到 ${targetName}`, 'success');
                         loadFileStructure(); // 重新加载文件结构
                     } else {
                         debugError('文件移动失败');
+                        showFileOperationFeedback(`移动 ${sourceName} 失败`, 'error');
                     }
                 });
+            } else {
+                showFileOperationFeedback('移动功能不可用', 'error');
             }
         }
         
-        draggedElement = null;
+        // 清理拖拽状态
+        if (draggedElement) {
+            draggedElement.classList.remove('dragging');
+            draggedElement = null;
+        }
     }
 
-    // 右键菜单功能
-    function showContextMenu(e, path, type, name) {
+    // 文件管理右键菜单功能
+    function showFileContextMenu(e, path, type, name) {
+        console.log(' showFileContextMenu被调用，参数:', { path, type, name });
         e.preventDefault();
+        e.stopPropagation(); // 阻止事件冒泡
         
-        const contextMenu = document.getElementById('context-menu');
+        const contextMenu = document.getElementById('file-context-menu');
+        if (!contextMenu) {
+            console.error(' 文件右键菜单元素未找到');
+            debugError('文件右键菜单元素未找到');
+            return;
+        }
+        
+        console.log('✅ 找到文件右键菜单元素，准备显示');
+        console.log('菜单元素当前类名:', contextMenu.className);
+        console.log('菜单元素当前样式:', contextMenu.style.cssText);
+        
         contextMenuTarget = { path, type, name };
+        
+        // 绑定菜单项点击事件
+        const menuItems = contextMenu.querySelectorAll('.context-menu-item[data-action]');
+        menuItems.forEach(item => {
+            // 移除旧的事件监听器
+            item.removeEventListener('click', handleFileMenuClick);
+            // 添加新的事件监听器
+            item.addEventListener('click', handleFileMenuClick);
+        });
+        
+        // 更新粘贴菜单项的显示状态
+        updateFilePasteMenuVisibility();
         
         contextMenu.style.left = e.pageX + 'px';
         contextMenu.style.top = e.pageY + 'px';
         contextMenu.classList.remove('hidden');
         
-        debugLog(`显示右键菜单: ${name} (${type})`);
+        console.log('设置菜单位置:', { x: e.pageX, y: e.pageY });
+        console.log('菜单显示后类名:', contextMenu.className);
+        console.log('菜单显示后样式:', contextMenu.style.cssText);
+        
+        debugLog(`显示文件右键菜单: ${name} (${type})`);
     }
 
-    function hideContextMenu() {
-        const contextMenu = document.getElementById('context-menu');
-        contextMenu.classList.add('hidden');
+    function hideFileContextMenu() {
+        const contextMenu = document.getElementById('file-context-menu');
+        if (contextMenu) {
+            contextMenu.classList.add('hidden');
+        }
         contextMenuTarget = null;
     }
 
-    function contextMenuAction(action) {
+    function handleFileMenuClick(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const action = this.getAttribute('data-action');
+        console.log('🎯 文件菜单项点击:', action);
+        
+        if (action && typeof fileContextMenuAction === 'function') {
+            fileContextMenuAction(action);
+        } else {
+            console.error('❌ fileContextMenuAction函数未定义或action为空:', action);
+        }
+        
+        hideFileContextMenu();
+    }
+
+    function fileContextMenuAction(action) {
         if (!contextMenuTarget) return;
         
         const { path, type, name } = contextMenuTarget;
         debugLog(`右键菜单操作: ${action} - ${name}`);
         
         switch (action) {
+            case 'copy':
+                copyItem(path, name, type);
+                break;
+            case 'cut':
+                cutItem(path, name, type);
+                break;
+            case 'paste':
+                pasteItem(path);
+                break;
             case 'rename':
                 renameItem(path, name);
                 break;
@@ -3707,7 +3904,220 @@
                 break;
         }
         
-        hideContextMenu();
+        hideFileContextMenu();
+    }
+
+    // 剪贴板操作
+    let clipboard = {
+        item: null,
+        operation: null // 'copy' or 'cut'
+    };
+
+    function copyItem(path, name, type) {
+        clipboard.item = { path, name, type };
+        clipboard.operation = 'copy';
+        debugLog(`复制: ${name} (${type})`);
+        showFileOperationFeedback(`已复制 ${name}`, 'success');
+        updateFilePasteMenuVisibility();
+    }
+
+    function cutItem(path, name, type) {
+        clipboard.item = { path, name, type };
+        clipboard.operation = 'cut';
+        debugLog(`剪切: ${name} (${type})`);
+        showFileOperationFeedback(`已剪切 ${name}`, 'success');
+        updateFilePasteMenuVisibility();
+        
+        // 为剪切的项目添加视觉效果
+        const fileElement = document.querySelector(`[data-path="${path}"]`);
+        if (fileElement) {
+            fileElement.classList.add('cut-item');
+        }
+    }
+
+    function pasteItem(targetPath) {
+        if (!clipboard.item) {
+            showFileOperationFeedback('剪贴板为空', 'error');
+            return;
+        }
+
+        const { path: sourcePath, name: sourceName, type: sourceType } = clipboard.item;
+        const operation = clipboard.operation;
+        
+        debugLog(`粘贴: ${sourceName} (${sourceType}) ${operation === 'cut' ? '移动到' : '复制到'} ${targetPath}`);
+        
+        if (operation === 'cut') {
+            // 剪切 = 移动
+            if (window.pybridge && window.pybridge.moveFileOrFolder) {
+                showFileOperationFeedback(`正在移动 ${sourceName}...`, 'info');
+                window.pybridge.moveFileOrFolder(sourcePath, targetPath, function(success) {
+                    if (success) {
+                        showFileOperationFeedback(`${sourceName} 已移动`, 'success');
+                        loadFileStructure();
+                        clearClipboard();
+                    } else {
+                        showFileOperationFeedback(`移动 ${sourceName} 失败`, 'error');
+                    }
+                });
+            }
+        } else {
+            // 复制
+            if (window.pybridge && window.pybridge.copyFileOrFolder) {
+                showFileOperationFeedback(`正在复制 ${sourceName}...`, 'info');
+                window.pybridge.copyFileOrFolder(sourcePath, targetPath, function(success) {
+                    if (success) {
+                        showFileOperationFeedback(`${sourceName} 已复制`, 'success');
+                        loadFileStructure();
+                    } else {
+                        showFileOperationFeedback(`复制 ${sourceName} 失败`, 'error');
+                    }
+                });
+            } else {
+                showFileOperationFeedback('复制功能不可用', 'error');
+            }
+        }
+    }
+
+    function clearClipboard() {
+        // 清除剪切项目的视觉效果
+        if (clipboard.item && clipboard.operation === 'cut') {
+            const fileElement = document.querySelector(`[data-path="${clipboard.item.path}"]`);
+            if (fileElement) {
+                fileElement.classList.remove('cut-item');
+            }
+        }
+        
+        clipboard.item = null;
+        clipboard.operation = null;
+        updateFilePasteMenuVisibility();
+    }
+
+    function updateFilePasteMenuVisibility() {
+        const pasteMenuItem = document.getElementById('file-paste-menu-item');
+        if (pasteMenuItem) {
+            pasteMenuItem.style.display = clipboard.item ? 'flex' : 'none';
+        }
+    }
+
+    function addGlobalClickHandler() {
+        // 避免重复绑定
+        if (window.fileManagerClickBound) return;
+        window.fileManagerClickBound = true;
+
+        document.addEventListener('click', function(e) {
+            // 点击其他地方时隐藏文件右键菜单
+            const fileContextMenu = document.getElementById('file-context-menu');
+            if (fileContextMenu && !fileContextMenu.contains(e.target)) {
+                hideFileContextMenu();
+            }
+        });
+    }
+
+    // 键盘快捷键处理
+    function handleFileKeydown(e, path, type, name, element) {
+        switch (e.key) {
+            case 'F2':
+                e.preventDefault();
+                const nameSpan = element.querySelector('.file-name');
+                if (nameSpan) {
+                    startInlineRename(nameSpan);
+                }
+                break;
+            case 'Delete':
+                e.preventDefault();
+                if (confirm(`确定要删除 "${name}" 吗？此操作不可恢复。`)) {
+                    deleteItem(path, name);
+                }
+                break;
+            case 'c':
+                if (e.ctrlKey) {
+                    e.preventDefault();
+                    copyItem(path, name, type);
+                }
+                break;
+            case 'x':
+                if (e.ctrlKey) {
+                    e.preventDefault();
+                    cutItem(path, name, type);
+                }
+                break;
+            case 'v':
+                if (e.ctrlKey && clipboard.item) {
+                    e.preventDefault();
+                    if (type === 'folder') {
+                        pasteItem(path);
+                    } else {
+                        // 粘贴到父文件夹
+                        const parentPath = path.substring(0, path.lastIndexOf('/')) || 'vault';
+                        pasteItem(parentPath);
+                    }
+                }
+                break;
+            case 'Enter':
+                e.preventDefault();
+                if (type === 'file' && path.endsWith('.md')) {
+                    handleFileClick(path, type, name, element);
+                } else if (type === 'folder') {
+                    const toggle = element.querySelector('.folder-toggle');
+                    if (toggle) {
+                        toggleFolder(toggle);
+                    }
+                }
+                break;
+        }
+    }
+
+    function addGlobalKeyboardShortcuts() {
+        // 避免重复绑定
+        if (window.fileManagerKeyboardBound) return;
+        window.fileManagerKeyboardBound = true;
+
+        document.addEventListener('keydown', function(e) {
+            // 只在文件结构面板有焦点时响应
+            const fileStructure = document.getElementById('file-structure');
+            if (!fileStructure || !fileStructure.contains(document.activeElement)) {
+                return;
+            }
+
+            switch (e.key) {
+                case 'Escape':
+                    // 清除选中状态
+                    document.querySelectorAll('.file-item-content.selected').forEach(el => {
+                        el.classList.remove('selected');
+                    });
+                    // 清除剪贴板
+                    clearClipboard();
+                    break;
+                case 'ArrowUp':
+                case 'ArrowDown':
+                    e.preventDefault();
+                    navigateFileList(e.key === 'ArrowUp' ? -1 : 1);
+                    break;
+            }
+        });
+    }
+
+    function navigateFileList(direction) {
+        const allItems = Array.from(document.querySelectorAll('.file-item-content'));
+        const currentSelected = document.querySelector('.file-item-content.selected');
+        
+        if (!currentSelected) {
+            // 没有选中项，选中第一个
+            if (allItems.length > 0) {
+                allItems[0].classList.add('selected');
+                allItems[0].focus();
+            }
+            return;
+        }
+
+        const currentIndex = allItems.indexOf(currentSelected);
+        const newIndex = currentIndex + direction;
+
+        if (newIndex >= 0 && newIndex < allItems.length) {
+            currentSelected.classList.remove('selected');
+            allItems[newIndex].classList.add('selected');
+            allItems[newIndex].focus();
+        }
     }
 
     // 重命名功能
@@ -3716,8 +4126,8 @@
         if (newName && newName !== currentName) {
             debugLog(`重命名: ${currentName} -> ${newName}`);
             
-            if (window.bridge && window.bridge.renameFileOrFolder) {
-                window.bridge.renameFileOrFolder(path, newName, function(success) {
+            if (window.pybridge && window.pybridge.renameFileOrFolder) {
+                window.pybridge.renameFileOrFolder(path, newName, function(success) {
                     if (success) {
                         debugLog('重命名成功');
                         loadFileStructure();
@@ -3729,14 +4139,79 @@
             }
         }
     }
+    
+    // 内联重命名功能
+    function startInlineRename(nameSpan) {
+        const fileItem = nameSpan.closest('li');
+        const nameInput = fileItem.querySelector('.file-name-input');
+        
+        // 隐藏文件名显示，显示输入框
+        nameSpan.classList.add('hidden');
+        nameInput.classList.remove('hidden');
+        nameInput.focus();
+        nameInput.select();
+        
+        debugLog('开始内联重命名: ' + nameSpan.textContent);
+    }
+    
+    function finishInlineRename(input) {
+        const fileItem = input.closest('li');
+        const nameSpan = fileItem.querySelector('.file-name');
+        const currentPath = fileItem.getAttribute('data-path');
+        const currentName = fileItem.getAttribute('data-name');
+        const newName = input.value.trim();
+        
+        // 恢复显示
+        input.classList.add('hidden');
+        nameSpan.classList.remove('hidden');
+        
+        if (newName && newName !== currentName) {
+            debugLog(`内联重命名: ${currentName} -> ${newName}`);
+            
+            if (window.pybridge && window.pybridge.renameFileOrFolder) {
+                window.pybridge.renameFileOrFolder(currentPath, newName, function(success) {
+                    if (success) {
+                        debugLog('内联重命名成功');
+                        loadFileStructure();
+                        showFileOperationFeedback('重命名成功', 'success');
+                    } else {
+                        debugError('内联重命名失败');
+                        showFileOperationFeedback('重命名失败，请检查名称是否已存在', 'error');
+                        // 恢复原始值
+                        input.value = currentName;
+                    }
+                });
+            }
+        } else {
+            // 恢复原始值
+            input.value = currentName;
+        }
+    }
+    
+    function handleRenameKeydown(event, input) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            input.blur(); // 触发finishInlineRename
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            const fileItem = input.closest('li');
+            const nameSpan = fileItem.querySelector('.file-name');
+            const currentName = fileItem.getAttribute('data-name');
+            
+            // 取消重命名，恢复原始状态
+            input.value = currentName;
+            input.classList.add('hidden');
+            nameSpan.classList.remove('hidden');
+        }
+    }
 
     // 删除功能
     function deleteItem(path, name) {
         if (confirm(`确定要删除 "${name}" 吗？此操作不可恢复。`)) {
             debugLog(`删除: ${name}`);
             
-            if (window.bridge && window.bridge.deleteFileOrFolder) {
-                window.bridge.deleteFileOrFolder(path, function(success) {
+            if (window.pybridge && window.pybridge.deleteFileOrFolder) {
+                window.pybridge.deleteFileOrFolder(path, function(success) {
                     if (success) {
                         debugLog('删除成功');
                         loadFileStructure();
@@ -3752,11 +4227,24 @@
     // 文件操作函数
     function createNewNote(parentPath = 'vault') {
         debugLog('创建新笔记');
-        if (window.bridge && window.bridge.createNewNote) {
-            window.bridge.createNewNote(parentPath, function(result) {
+        if (window.pybridge && window.pybridge.createNewNote) {
+            window.pybridge.createNewNote(parentPath, function(result) {
                 debugLog('新笔记创建结果: ' + result);
                 if (result) {
+                    // 重新加载文件结构，然后进入重命名模式
                     loadFileStructure();
+                    setTimeout(() => {
+                        const newFileElement = findNewlyCreatedFile(result, 'file');
+                        if (newFileElement) {
+                            const nameSpan = newFileElement.querySelector('.file-name');
+                            if (nameSpan) {
+                                startInlineRename(nameSpan);
+                                showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
+                            }
+                        }
+                    }, 200);
+                } else {
+                    showFileOperationFeedback('创建笔记失败', 'error');
                 }
             });
         }
@@ -3764,21 +4252,66 @@
 
     function createNewFolder(parentPath = 'vault') {
         debugLog('创建新文件夹');
-        if (window.bridge && window.bridge.createNewFolder) {
-            window.bridge.createNewFolder(parentPath, function(result) {
+        if (window.pybridge && window.pybridge.createNewFolder) {
+            window.pybridge.createNewFolder(parentPath, function(result) {
                 debugLog('新文件夹创建结果: ' + result);
                 if (result) {
+                    // 重新加载文件结构，然后进入重命名模式
                     loadFileStructure();
+                    setTimeout(() => {
+                        const newFolderElement = findNewlyCreatedFile(result, 'folder');
+                        if (newFolderElement) {
+                            const nameSpan = newFolderElement.querySelector('.file-name');
+                            if (nameSpan) {
+                                startInlineRename(nameSpan);
+                                showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
+                            }
+                        }
+                    }, 200);
+                } else {
+                    showFileOperationFeedback('创建文件夹失败', 'error');
                 }
             });
         }
+    }
+    
+    // 文件操作状态反馈
+    function showFileOperationFeedback(message, type = 'info') {
+        const feedbackDiv = document.createElement('div');
+        feedbackDiv.className = `fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            type === 'success' ? 'bg-green-500 text-white' :
+            type === 'error' ? 'bg-red-500 text-white' :
+            'bg-blue-500 text-white'
+        }`;
+        feedbackDiv.textContent = message;
+        
+        document.body.appendChild(feedbackDiv);
+        
+        // 3秒后自动消失
+        setTimeout(() => {
+            if (feedbackDiv.parentNode) {
+                feedbackDiv.parentNode.removeChild(feedbackDiv);
+            }
+        }, 3000);
+    }
+    
+    // 查找新创建的文件/文件夹元素
+    function findNewlyCreatedFile(fileName, type) {
+        const items = document.querySelectorAll(type === 'folder' ? '.folder-item' : '.file-item');
+        for (let item of items) {
+            const name = item.getAttribute('data-name');
+            if (name === fileName || name.includes('新建') || name.includes('untitled') || name.includes('New')) {
+                return item;
+            }
+        }
+        return null;
     }
 
     // 验证后端功能
     function validateBackendFunctions() {
         debugLog('🔍 开始验证后端功能');
         
-        if (!window.bridge || typeof window.bridge.validateAllFileOperations !== 'function') {
+        if (!window.pybridge || typeof window.pybridge.validateAllFileOperations !== 'function') {
             debugError('❌ Bridge对象或validateAllFileOperations方法不可用');
             alert('❌ 无法连接到后端验证服务');
             return;
@@ -3801,7 +4334,7 @@
         debugLog('调用后端验证功能...');
         
         try {
-            window.bridge.validateAllFileOperations(function(result) {
+            window.pybridge.validateAllFileOperations(function(result) {
                 debugLog('🎯 后端验证完成');
                 debugLog('验证结果: ' + result);
                 
@@ -3854,16 +4387,16 @@
     function testBridgeConnection() {
         debugLog('=== 开始测试Bridge连接 ===');
         
-        // 1. 检查window.bridge
-        if (typeof window.bridge === 'undefined') {
-            debugError('❌ window.bridge 未定义');
-            alert('❌ window.bridge 未定义');
+        // 1. 检查window.pybridge
+        if (typeof window.pybridge === 'undefined') {
+            debugError('❌ window.pybridge 未定义');
+            alert('❌ window.pybridge 未定义');
             return;
         }
-        debugLog('✅ window.bridge 存在');
+        debugLog('✅ window.pybridge 存在');
         
         // 2. 检查extractKnowledgePoints方法
-        if (typeof window.bridge.extractKnowledgePoints !== 'function') {
+        if (typeof window.pybridge.extractKnowledgePoints !== 'function') {
             debugError('❌ extractKnowledgePoints 方法不存在');
             alert('❌ extractKnowledgePoints 方法不存在');
             return;
@@ -3873,7 +4406,7 @@
         // 3. 测试简单调用
         try {
             debugLog('测试调用extractKnowledgePoints...');
-            window.bridge.extractKnowledgePoints('test_path', function(result) {
+            window.pybridge.extractKnowledgePoints('test_path', function(result) {
                 debugLog(`测试调用成功，收到结果: ${result}`);
                 alert(`✅ Bridge连接正常！收到结果长度: ${result ? result.length : 'null'}`);
             });
@@ -3893,13 +4426,13 @@
         // 详细的调试信息
         addToDebugPanel('INFO', `当前文件路径: ${currentFilePath}`);
         addToDebugPanel('INFO', `当前文件名: ${currentFileName}`);
-        addToDebugPanel('INFO', `Bridge对象存在: ${!!window.bridge}`);
-        addToDebugPanel('INFO', `extractKnowledgePoints方法存在: ${!!(window.bridge && window.bridge.extractKnowledgePoints)}`);
+        addToDebugPanel('INFO', `Bridge对象存在: ${!!window.pybridge}`);
+        addToDebugPanel('INFO', `extractKnowledgePoints方法存在: ${!!(window.pybridge && window.pybridge.extractKnowledgePoints)}`);
         
         debugLog(`当前文件路径: ${currentFilePath}`);
         debugLog(`当前文件名: ${currentFileName}`);
-        debugLog(`Bridge对象存在: ${!!window.bridge}`);
-        debugLog(`extractKnowledgePoints方法存在: ${!!(window.bridge && window.bridge.extractKnowledgePoints)}`);
+        debugLog(`Bridge对象存在: ${!!window.pybridge}`);
+        debugLog(`extractKnowledgePoints方法存在: ${!!(window.pybridge && window.pybridge.extractKnowledgePoints)}`);
         
         if (!currentFilePath) {
             addToDebugPanel('ERROR', '没有选中的文件，无法提取知识点');
@@ -3908,13 +4441,13 @@
             return;
         }
         
-        if (!window.bridge || !window.bridge.extractKnowledgePoints) {
+        if (!window.pybridge || !window.pybridge.extractKnowledgePoints) {
             addToDebugPanel('ERROR', 'Bridge对象或extractKnowledgePoints方法不可用');
-            addToDebugPanel('ERROR', `window.bridge: ${window.bridge}`);
-            addToDebugPanel('ERROR', `window.bridge.extractKnowledgePoints: ${window.bridge ? window.bridge.extractKnowledgePoints : 'bridge不存在'}`);
+            addToDebugPanel('ERROR', `window.pybridge: ${window.pybridge}`);
+            addToDebugPanel('ERROR', `window.pybridge.extractKnowledgePoints: ${window.pybridge ? window.pybridge.extractKnowledgePoints : 'bridge不存在'}`);
             debugError('Bridge对象或extractKnowledgePoints方法不可用');
-            debugError(`window.bridge: ${window.bridge}`);
-            debugError(`window.bridge.extractKnowledgePoints: ${window.bridge ? window.bridge.extractKnowledgePoints : 'bridge不存在'}`);
+            debugError(`window.pybridge: ${window.pybridge}`);
+            debugError(`window.pybridge.extractKnowledgePoints: ${window.pybridge ? window.pybridge.extractKnowledgePoints : 'bridge不存在'}`);
             alert('知识点提取功能不可用');
             return;
         }
@@ -3943,7 +4476,7 @@
             addToDebugPanel('INFO', `准备调用bridge.extractKnowledgePoints，文件路径: ${currentFilePath}`);
             debugLog(`调用bridge.extractKnowledgePoints，文件路径: ${currentFilePath}`);
             
-            window.bridge.extractKnowledgePoints(currentFilePath, function(resultJson) {
+            window.pybridge.extractKnowledgePoints(currentFilePath, function(resultJson) {
                 addToDebugPanel('SUCCESS', '知识点提取回调函数被触发');
                 addToDebugPanel('INFO', `回调结果长度: ${resultJson ? resultJson.length : 'null'}`);
                 addToDebugPanel('INFO', `原始结果前200字符: ${resultJson ? resultJson.substring(0, 200) : 'null'}`);
@@ -5087,12 +5620,12 @@
     function loadSubjectsList() {
         addToDebugPanel('INFO', '加载科目列表');
         
-        if (!window.bridge || !window.bridge.getSubjects) {
+        if (!window.pybridge || !window.pybridge.getSubjects) {
             addToDebugPanel('WARN', 'getSubjects方法不可用');
             return;
         }
         
-        window.bridge.getSubjects(function(result) {
+        window.pybridge.getSubjects(function(result) {
             try {
                 const subjects = JSON.parse(result);
                 const subjectSelect = document.getElementById('subject-select');
@@ -5121,13 +5654,13 @@
     function loadSubjectKnowledgeList(subject) {
         addToDebugPanel('INFO', `加载科目知识点列表: ${subject}`);
         
-        if (!window.bridge || !window.bridge.getSubjectKnowledgePoints) {
+        if (!window.pybridge || !window.pybridge.getSubjectKnowledgePoints) {
             addToDebugPanel('WARN', 'getSubjectKnowledgePoints方法不可用');
             return;
         }
         
         // 调用后端获取科目知识点
-        window.bridge.getSubjectKnowledgePoints(subject, function(result) {
+        window.pybridge.getSubjectKnowledgePoints(subject, function(result) {
             try {
                 const knowledgePoints = JSON.parse(result);
                 renderSubjectKnowledgeList(knowledgePoints);
@@ -5192,7 +5725,7 @@
             return;
         }
         
-        if (!window.bridge || !window.bridge.findSimilarKnowledgePoints) {
+        if (!window.pybridge || !window.pybridge.findSimilarKnowledgePoints) {
             addToDebugPanel('WARN', 'findSimilarKnowledgePoints方法不可用');
             showSimilarKnowledgeError('相似度匹配功能不可用');
             return;
@@ -5208,7 +5741,7 @@
             limit: 10 // 最多返回10个相似知识点
         };
         
-        window.bridge.findSimilarKnowledgePoints(JSON.stringify(requestData), function(result) {
+        window.pybridge.findSimilarKnowledgePoints(JSON.stringify(requestData), function(result) {
             try {
                 const similarPoints = JSON.parse(result);
                 renderSimilarKnowledgeList(similarPoints);
@@ -5346,8 +5879,8 @@
             targetKnowledgeId: similarKnowledgeId
         };
         
-        if (window.bridge && window.bridge.mergeKnowledgePoint) {
-            window.bridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
+        if (window.pybridge && window.pybridge.mergeKnowledgePoint) {
+            window.pybridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
                 try {
                     const response = JSON.parse(result);
                     if (response.success) {
@@ -5418,7 +5951,7 @@
         const currentPoint = knowledgePoints[currentPointId];
         const subject = subjectSelect.value;
         
-        if (!window.bridge || !window.bridge.createNewKnowledgePoint) {
+        if (!window.pybridge || !window.pybridge.createNewKnowledgePoint) {
             addToDebugPanel('WARN', 'createNewKnowledgePoint方法不可用');
             return;
         }
@@ -5435,7 +5968,7 @@
         
         addToDebugPanel('INFO', `准备创建知识点: ${currentPoint.name} (科目: ${subject})`);
         
-        window.bridge.createNewKnowledgePoint(JSON.stringify(createData), function(result) {
+        window.pybridge.createNewKnowledgePoint(JSON.stringify(createData), function(result) {
             try {
                 const response = JSON.parse(result);
                 if (response.success) {
@@ -5523,8 +6056,8 @@
         targetKnowledgeId: similarKnowledgeId
     };
             
-    if (window.bridge && window.bridge.mergeKnowledgePoint) {
-        window.bridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
+    if (window.pybridge && window.pybridge.mergeKnowledgePoint) {
+        window.pybridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
             try {
                 const response = JSON.parse(result);
                 if (response.success) {
@@ -5588,7 +6121,7 @@
         }
         
         // 保存笔记映射关系
-        if (window.bridge && window.bridge.saveNoteKnowledgeMapping) {
+        if (window.pybridge && window.pybridge.saveNoteKnowledgeMapping) {
             const mappingData = {
                 noteId: noteId,
                 fileName: currentFileName,
@@ -5596,7 +6129,7 @@
                 processedPoints: knowledgePoints.filter(point => point.processed)
             };
             
-            window.bridge.saveNoteKnowledgeMapping(JSON.stringify(mappingData), function(result) {
+            window.pybridge.saveNoteKnowledgeMapping(JSON.stringify(mappingData), function(result) {
                 try {
                     const response = JSON.parse(result);
                     if (response.success) {
@@ -5685,13 +6218,13 @@
     function addNewSubject(subjectName) {
         addToDebugPanel('INFO', `添加新科目: ${subjectName}`);
         
-        if (!window.bridge || !window.bridge.addSubject) {
+        if (!window.pybridge || !window.pybridge.addSubject) {
             addToDebugPanel('WARN', 'addSubject方法不可用');
             alert('添加科目功能不可用');
             return;
         }
         
-        window.bridge.addSubject(subjectName, function(result) {
+        window.pybridge.addSubject(subjectName, function(result) {
             try {
                 const response = JSON.parse(result);
                 if (response.success) {
@@ -5761,8 +6294,8 @@
 
     // 导航函数（兼容SPA）
     function loadContent(contentId) {
-        if (window.bridge && window.bridge.loadContent) {
-            window.bridge.loadContent(contentId);
+        if (window.pybridge && window.pybridge.loadContent) {
+            window.pybridge.loadContent(contentId);
         }
     }
 
@@ -5775,7 +6308,6 @@
     window.createNewNote = createNewNote;
     window.createNewFolder = createNewFolder;
     window.validateBackendFunctions = validateBackendFunctions;
-    window.contextMenuAction = contextMenuAction;
     window.testBridgeConnection = testBridgeConnection;
     window.toggleDebugPanel = toggleDebugPanel;
     window.clearDebugLog = clearDebugLog;
@@ -5929,7 +6461,7 @@
     // 右键菜单功能
     let selectedText = '';
     let contextMenu = null;
-    
+
     function initContextMenu() {
         console.log('=== 开始初始化右键菜单 ===');
         
@@ -6036,7 +6568,7 @@
         }
         
         // 显示右键菜单
-        contextMenu.style.display = 'block';
+        contextMenu.classList.remove('hidden');
         contextMenu.style.left = e.pageX + 'px';
         contextMenu.style.top = e.pageY + 'px';
         
@@ -6062,67 +6594,19 @@
     
     function hideContextMenu() {
         if (contextMenu) {
-            contextMenu.style.display = 'none';
+            contextMenu.classList.add('hidden');
+            console.log('🔒 MD右键菜单已隐藏（旧版函数）');
         }
     }
     
-    function handleDeepLearning() {
-        if (!selectedText) {
-            showToast('请先选择要深入学习的文本内容', 'warning');
-            return;
+    
+    
+    function handlePractice(e) {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
         }
         
-        hideContextMenu();
-        
-        // 构建深入学习的提示词
-        const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
-
-"${selectedText}"
-
-要求：
-1. 深入浅出地讲解这段内容的核心概念和要点
-2. 提供相关的背景知识和上下文信息  
-3. 举例说明，帮助理解抽象概念
-4. 分析其重要性和实际应用价值
-5. 如果涉及技术概念，请解释其工作原理
-6. 提供进一步学习的建议和相关资源
-
-请用通俗易懂的语言进行详细解释，就像一位耐心的老师在为学生答疑解惑。`;
-        
-        // 打开AI聊天窗口并发送消息
-        openChatWithMessage(deepLearningPrompt);
-        
-        showToast('已将选中内容发送给AI助手进行深入解释', 'success');
-    }
-    
-    function openChatWithMessage(message) {
-        // 使用全局函数打开AI聊天窗口
-        if (window.openAIChatWindow) {
-            window.openAIChatWindow();
-        }
-        
-        // 等待窗口打开后设置消息内容并发送
-        setTimeout(() => {
-            if (window.sendAIMessage) {
-                window.sendAIMessage(message);
-            } else {
-                // 备用方案：直接操作DOM
-                const aiChatInput = document.getElementById('aiChatInput');
-                const sendBtn = document.getElementById('sendChatBtn');
-                
-                if (aiChatInput && sendBtn) {
-                    aiChatInput.value = message;
-                    setTimeout(() => {
-                        sendBtn.click();
-                    }, 100);
-                } else {
-                    showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
-                }
-            }
-        }, 300);
-    }
-    
-    function handlePractice() {
         if (!selectedText) {
             showToast('请先选择要练习的文本内容', 'warning');
             return;
@@ -6166,13 +6650,13 @@
     
     // 为AI助手生成练习题目
     function generatePracticeQuestionsForAI(selectedText, practiceId) {
-        if (window.bridge && window.bridge.generatePracticeQuestions) {
+        if (window.pybridge && window.pybridge.generatePracticeQuestions) {
             try {
                 // 使用setTimeout真正异步执行，避免界面冻结
                 setTimeout(() => {
                     try {
                         console.log('🔄 开始为AI助手生成题目...');
-                        const result = window.bridge.generatePracticeQuestions(selectedText);
+                        const result = window.pybridge.generatePracticeQuestions(selectedText);
                         
                         // 处理可能的Promise返回值
                         const handleResult = (questions) => {
@@ -6437,13 +6921,13 @@
     
     function generateQuestionsAsync(selectedText) {
         // 异步调用后端生成题目
-        if (window.bridge && window.bridge.generatePracticeQuestions) {
+        if (window.pybridge && window.pybridge.generatePracticeQuestions) {
             try {
                 // 使用setTimeout真正异步执行，避免界面冻结
                 setTimeout(() => {
                     try {
                         console.log('🔄 开始调用后端API生成题目...');
-                        const result = window.bridge.generatePracticeQuestions(selectedText);
+                        const result = window.pybridge.generatePracticeQuestions(selectedText);
                         
                         // 处理可能的Promise返回值
                         const handleResult = (questions) => {
@@ -6717,14 +7201,14 @@
     
     function evaluateAnswersAsync(originalContent) {
         // 调用后端AI评判
-        if (window.bridge && window.bridge.evaluatePracticeAnswers) {
+        if (window.pybridge && window.pybridge.evaluatePracticeAnswers) {
             try {
                 // 使用setTimeout真正异步执行，避免界面冻结
                 setTimeout(() => {
                     try {
                         console.log('🔄 开始调用后端API评判答案...');
                         const allAnswers = currentPracticeData.answers.map(a => a.content).join('\n\n---\n\n');
-                        const result = window.bridge.evaluatePracticeAnswers(currentPracticeData.questions, allAnswers);
+                        const result = window.pybridge.evaluatePracticeAnswers(currentPracticeData.questions, allAnswers);
                         
                         // 处理可能的Promise返回值
                         const handleResult = (evaluation) => {
@@ -7005,9 +7489,9 @@
                         
                         // 异步获取真实图片数据
                         setTimeout(() => {
-                            if (window.bridge && window.bridge.getImageAsBase64) {
+                            if (window.pybridge && window.pybridge.getImageAsBase64) {
                                 console.log('备用渲染器请求图片Base64:', src);
-                                window.bridge.getImageAsBase64(src, function(result) {
+                                window.pybridge.getImageAsBase64(src, function(result) {
                                     try {
                                         const response = JSON.parse(result);
                                         const imgElement = document.getElementById(imageId);
@@ -7125,10 +7609,10 @@
                     
                     // 异步获取真实图片数据
                     setTimeout(() => {
-                        if (window.bridge && window.bridge.getImageAsBase64) {
+                        if (window.pybridge && window.pybridge.getImageAsBase64) {
                             console.log('请求图片Base64:', src);
                             console.log('当前文件路径:', currentFilePath);
-                            window.bridge.getImageAsBase64(src, function(result) {
+                            window.pybridge.getImageAsBase64(src, function(result) {
                                 try {
                                     const response = JSON.parse(result);
                                     const imgElement = document.getElementById(imageId);
@@ -7330,7 +7814,7 @@
 </script>
 
 <!-- 右键菜单 -->
-<div id="contextMenu" class="context-menu">
+<div id="contextMenu" class="context-menu hidden">
     <div class="context-menu-item" id="deepLearningMenuItem">
         <span class="material-icons-outlined">psychology</span>
         继续深入学习
@@ -7423,18 +7907,6 @@
     </div>
 </div>
 
-<!-- 右键菜单 -->
-<div id="contextMenu" class="context-menu">
-    <div class="context-menu-item" id="deepLearningMenuItem">
-        <span class="material-icons-outlined">psychology</span>
-        继续深入学习
-    </div>
-    <div class="context-menu-item" id="practiceMenuItem">
-        <span class="material-icons-outlined">quiz</span>
-        练习
-    </div>
-</div>
-
 <style>
 /* 右键菜单样式 */
 .context-menu {
@@ -7446,8 +7918,12 @@
     padding: 4px 0;
     min-width: 160px;
     z-index: 10000;
-    display: none;
+    display: block;
     font-size: 14px;
+}
+
+.context-menu.hidden {
+    display: none !important;
 }
 
 .context-menu-item {
@@ -7476,15 +7952,13 @@
 
 <script>
 // 右键菜单相关变量
-let contextMenu = null;
-let selectedText = '';
 
 // 初始化右键菜单功能
 function initTextContextMenu() {
     console.log('🔧 初始化网课笔记右键菜单功能');
     
     // 获取右键菜单元素
-    contextMenu = document.getElementById('contextMenu');
+    let contextMenu = document.getElementById('contextMenu');
     const deepLearningMenuItem = document.getElementById('deepLearningMenuItem');
     const practiceMenuItem = document.getElementById('practiceMenuItem');
     
@@ -7517,19 +7991,32 @@ function initTextContextMenu() {
     practiceMenuItem.removeEventListener('click', handlePractice);
     practiceMenuItem.addEventListener('click', handlePractice);
     
-    // 添加全局点击事件隐藏菜单
-    document.removeEventListener('click', hideContextMenu);
-    document.addEventListener('click', hideContextMenu);
-    
     console.log('✅ 网课笔记右键菜单功能初始化完成');
+}
+
+// 隐藏MD右键菜单
+function hideTextContextMenu() {
+    const contextMenu = document.getElementById('contextMenu');
+    if (contextMenu) {
+        contextMenu.classList.add('hidden');
+        console.log('🔒 MD右键菜单已隐藏');
+    }
 }
 
 // 暴露为全局函数，供页面切换时重新初始化
 window.initTextContextMenu = initTextContextMenu;
+window.hideTextContextMenu = hideTextContextMenu;
 
 // 处理右键菜单事件
 function handleTextContextMenu(e) {
     console.log('🎯 网课笔记右键菜单事件触发');
+    
+    // 检查是否在文件结构区域，如果是则不处理
+    const fileStructure = document.getElementById('file-structure');
+    if (fileStructure && fileStructure.contains(e.target)) {
+        console.log('❌ 右键事件来自文件结构区域，不处理MD编辑器右键菜单');
+        return;
+    }
     
     // 检查是否在编辑模式或预览模式
     const isInEditMode = !document.getElementById('edit-content').classList.contains('hidden');
@@ -7559,8 +8046,15 @@ function handleTextContextMenu(e) {
     
     console.log('🎯 准备显示右键菜单，位置:', e.pageX, e.pageY);
     
+    // 获取右键菜单元素
+    const contextMenu = document.getElementById('contextMenu');
+    if (!contextMenu) {
+        console.error('❌ 找不到contextMenu元素');
+        return;
+    }
+    
     // 显示右键菜单
-    contextMenu.style.display = 'block';
+    contextMenu.classList.remove('hidden');
     contextMenu.style.left = e.pageX + 'px';
     contextMenu.style.top = e.pageY + 'px';
     
@@ -7576,15 +8070,14 @@ function handleTextContextMenu(e) {
     }
 }
 
-// 隐藏右键菜单
-function hideContextMenu() {
-    if (contextMenu) {
-        contextMenu.style.display = 'none';
-    }
-}
 
 // 处理深入学习
-function handleDeepLearning() {
+function handleDeepLearning(e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    
     if (!selectedText) {
         showToast('请先选择要深入学习的文本内容', 'warning');
         return;
@@ -7613,41 +8106,6 @@ function handleDeepLearning() {
     showToast('已将选中内容发送给AI助手进行深入解释', 'success');
 }
 
-// 处理练习功能
-function handlePractice() {
-    if (!selectedText) {
-        showToast('请先选择要练习的文本内容', 'warning');
-        return;
-    }
-    
-    hideContextMenu();
-    
-    // 首先确保AI聊天窗口打开
-    if (window.openAIChatWindow) {
-        window.openAIChatWindow();
-    }
-    
-    // 生成练习ID和数据
-    const practiceId = 'practice_' + Date.now();
-    const practiceData = {
-        id: practiceId,
-        selectedText: selectedText,
-        questions: null,
-        status: 'generating'
-    };
-    
-    // 显示AI练习面板
-    if (window.showAIPracticePanel) {
-        window.showAIPracticePanel(practiceData);
-    }
-    
-    // 异步生成题目
-    setTimeout(() => {
-        generatePracticeQuestionsForAI(selectedText, practiceId);
-    }, 500);
-    
-    showToast('已切换到AI练习助手', 'success');
-}
 
 // 打开AI聊天窗口并发送消息
 function openChatWithMessage(message) {
