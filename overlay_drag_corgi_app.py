@@ -312,6 +312,25 @@ class CorgiWebBridge(QObject):
             
             self.main_window.web_view.page().runJavaScript(js_code)
             print(f"📄 已加载内容: {content_id}")
+            
+            # 对于网课笔记页面，延迟重新初始化右键菜单
+            if content_id == "online_course_notes":
+                def reinit_context_menu():
+                    reinit_js = """
+                    console.log('🔄 页面切换到网课笔记，重新初始化右键菜单');
+                    setTimeout(function() {
+                        if (typeof window.initTextContextMenu === 'function') {
+                            window.initTextContextMenu();
+                            console.log('✅ 网课笔记右键菜单重新初始化完成');
+                        } else {
+                            console.log('❌ initTextContextMenu函数不存在');
+                        }
+                    }, 1500);
+                    """
+                    self.main_window.web_view.page().runJavaScript(reinit_js)
+                
+                # 延迟执行，确保页面内容完全加载
+                QTimer.singleShot(2000, reinit_context_menu)
         else:
             print(f"❌ main_window不存在")
             

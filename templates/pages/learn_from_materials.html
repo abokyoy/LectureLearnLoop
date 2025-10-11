@@ -4564,7 +4564,29 @@
     
     // 增强的Markdown渲染函数
     function renderMarkdownContent(content) {
-        if (!content || typeof marked === 'undefined') {
+        try {
+            addDebugLog('🔥 renderMarkdownContent被调用');
+            addDebugLog('📊 content长度: ' + (content ? content.length : 0));
+            addDebugLog('🔍 marked类型: ' + typeof marked);
+        } catch(e) {
+            console.log('调试输出失败:', e);
+        }
+        
+        if (!content) {
+            try {
+                addDebugLog('❌ 内容为空，返回原内容');
+            } catch(e) {
+                console.log('调试输出失败:', e);
+            }
+            return content;
+        }
+        
+        if (typeof marked === 'undefined') {
+            try {
+                addDebugLog('❌ marked未定义，返回原内容');
+            } catch(e) {
+                console.log('调试输出失败:', e);
+            }
             return content;
         }
         
@@ -4585,7 +4607,23 @@
             });
             
             // 使用marked渲染
+            try {
+                addDebugLog('🔍 准备调用marked.parse');
+                addDebugLog('📊 预处理后内容长度: ' + content.length);
+                addDebugLog('🔍 内容预览: ' + content.substring(0, 100));
+            } catch(e) {
+                console.log('调试输出失败:', e);
+            }
+            
             let html = marked.parse(content);
+            
+            try {
+                addDebugLog('✅ marked.parse调用成功');
+                addDebugLog('📊 渲染后HTML长度: ' + (html ? html.length : 0));
+                addDebugLog('🔍 HTML预览: ' + (html ? html.substring(0, 100) : 'null'));
+            } catch(e) {
+                console.log('调试输出失败:', e);
+            }
             
             // 后处理：修复任务列表
             html = html.replace(/<li class="task-list-item"><input[^>]*>/g, function(match) {

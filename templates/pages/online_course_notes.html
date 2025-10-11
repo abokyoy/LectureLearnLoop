@@ -1929,11 +1929,11 @@
     
     window.takeScreenshot = function() {
         debugLog('截图笔记');
-        if (window.bridge && window.bridge.takeScreenshot) {
+        if (window.pybridge && window.pybridge.takeScreenshot) {
             try {
                 // 直接调用，因为后端使用@Slot(result=str)
                 debugLog('调用截图功能...');
-                const result = window.bridge.takeScreenshot();
+                const result = window.pybridge.takeScreenshot();
                 debugLog('截图方法返回类型: ' + typeof result);
                 debugLog('截图方法返回值: ' + result);
                 
@@ -3081,8 +3081,23 @@
         element.classList.add('selected');
         
         if (type === 'file' && path.endsWith('.md')) {
-            // 加载Markdown文件
-            loadFileContent(path, name);
+            // 检查是否在编辑模式且有未保存的更改
+            if (isEditMode && hasUnsavedChanges && currentFilePath && currentFilePath !== path) {
+                debugLog('检测到编辑模式下切换文件，先保存当前文件...');
+                
+                // 先保存当前文件，然后加载新文件
+                saveCurrentFile(function() {
+                    debugLog('当前文件保存完成，加载新文件...');
+                    loadFileContentAndSwitchToEdit(path, name);
+                });
+            } else if (isEditMode && currentFilePath && currentFilePath !== path) {
+                // 编辑模式但没有未保存更改，直接切换到新文件的编辑模式
+                debugLog('编辑模式下切换文件，无未保存更改，直接加载...');
+                loadFileContentAndSwitchToEdit(path, name);
+            } else {
+                // 预览模式或同一文件，正常加载
+                loadFileContent(path, name);
+            }
         }
     }
 
@@ -3118,7 +3133,12 @@
                 if (previewContent) {
                     if (markdownContent) {
                         // 使用增强的渲染函数
+                        console.log('🔥 [loadFileContent] 调用renderMarkdownContent，内容长度:', markdownContent.length);
+                        console.log('📝 [loadFileContent] 内容预览:', markdownContent.substring(0, 200));
+                        console.log('🔍 [loadFileContent] marked类型:', typeof marked);
                         const htmlContent = renderMarkdownContent(markdownContent);
+                        console.log('✅ [loadFileContent] 渲染完成，HTML长度:', htmlContent.length);
+                        console.log('🖼️ [loadFileContent] HTML预览:', htmlContent.substring(0, 300));
                         previewContent.innerHTML = htmlContent;
                         
                         // 渲染数学公式
@@ -3159,6 +3179,80 @@
             debugError(`加载文件内容时发生错误: ${error.message}`);
             if (previewContent) {
                 previewContent.innerHTML = '<div class="text-center py-8 text-red-500">加载文件失败</div>';
+            }
+        }
+    }
+    
+    // 加载文件内容并切换到编辑模式（用于编辑模式下的文件切换）
+    function loadFileContentAndSwitchToEdit(filePath, fileName) {
+        debugLog(`加载文件内容并切换到编辑模式: ${fileName}`);
+        
+        currentFilePath = filePath;
+        currentFileName = fileName;
+        
+        if (!window.bridge || !window.bridge.loadMarkdownRaw) {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
+            return;
+        }
+        
+        // 更新文档预览区标题
+        const previewTitle = document.getElementById('preview-title');
+        if (previewTitle) {
+            previewTitle.textContent = fileName;
+        }
+        
+        // 显示加载状态
+        const editContent = document.getElementById('edit-content');
+        if (editContent) {
+            editContent.value = '加载中...';
+            editContent.disabled = true;
+        }
+        
+        // 调用后端加载原始Markdown内容
+        try {
+            window.bridge.loadMarkdownRaw(filePath, function(markdownContent) {
+                debugLog(`Markdown内容加载完成，长度: ${markdownContent.length}`);
+                
+                if (editContent) {
+                    editContent.value = markdownContent || '';
+                    editContent.disabled = false;
+                    
+                    // 重置编辑状态
+                    originalContent = markdownContent || '';
+                    hasUnsavedChanges = false;
+                    hideUnsavedIndicator();
+                    
+                    // 确保处于编辑模式
+                    if (!isEditMode) {
+                        // 切换到编辑模式但不重新加载内容
+                        isEditMode = true;
+                        
+                        // 更新UI显示
+                        document.getElementById('edit-content').classList.remove('hidden');
+                        document.getElementById('preview-content').classList.add('hidden');
+                        document.getElementById('save-btn').classList.remove('hidden');
+                        
+                        // 更新按钮状态
+                        document.getElementById('edit-btn').classList.add('bg-primary', 'text-white');
+                        document.getElementById('edit-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
+                        document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
+                        document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
+                        
+                        debugLog('已切换到编辑模式');
+                    }
+                    
+                    // 聚焦到编辑器
+                    editContent.focus();
+                }
+                
+                // 自动加载该笔记相关的知识点
+                loadNoteKnowledgePoints(filePath);
+            });
+        } catch (error) {
+            debugError(`加载文件内容时发生错误: ${error.message}`);
+            if (editContent) {
+                editContent.value = '加载文件失败';
+                editContent.disabled = false;
             }
         }
     }
@@ -3256,7 +3350,12 @@
                 if (previewContent) {
                     if (markdownContent) {
                         // 使用增强的渲染函数
+                        console.log('🔥 [switchToPreview] 调用renderMarkdownContent，内容长度:', markdownContent.length);
+                        console.log('📝 [switchToPreview] 内容预览:', markdownContent.substring(0, 200));
+                        console.log('🔍 [switchToPreview] marked类型:', typeof marked);
                         const htmlContent = renderMarkdownContent(markdownContent);
+                        console.log('✅ [switchToPreview] 渲染完成，HTML长度:', htmlContent.length);
+                        console.log('🖼️ [switchToPreview] HTML预览:', htmlContent.substring(0, 300));
                         previewContent.innerHTML = htmlContent;
                         
                         // 渲染数学公式
@@ -6847,11 +6946,125 @@
     
     // 增强的Markdown渲染函数
     function renderMarkdownContent(content) {
-        if (!content || typeof marked === 'undefined') {
+        try {
+            debugLog('🔥 renderMarkdownContent被调用');
+            debugLog('📊 content长度: ' + (content ? content.length : 0));
+            debugLog('🔍 marked类型: ' + typeof marked);
+        } catch(e) {
+            console.log('调试输出失败:', e);
+        }
+        
+        if (!content) {
+            try {
+                debugLog('❌ 内容为空，返回原内容');
+            } catch(e) {
+                console.log('调试输出失败:', e);
+            }
             return content;
         }
         
+        if (typeof marked === 'undefined') {
+            try {
+                debugLog('❌ marked未定义，使用备用渲染器');
+                debugLog('🔄 启用备用Markdown渲染器');
+                console.log('🚨 [renderMarkdownContent] marked库未加载，使用备用渲染器');
+                console.log('📊 [renderMarkdownContent] 备用渲染器处理内容长度:', content.length);
+            } catch(e) {
+                console.log('调试输出失败:', e);
+            }
+            
+            // 简单的Markdown渲染作为备用方案
+            try {
+                // 首先处理Obsidian格式的图片
+                let processedContent = content.replace(/!\[\[([^\]]+)\]\]/g, function(match, filename) {
+                    console.log('🖼️ 备用渲染器发现Obsidian格式图片:', filename);
+                    
+                    // 支持带路径的文件名，提取纯文件名
+                    const pureFilename = filename.split('/').pop().split('\\').pop();
+                    console.log('📁 备用渲染器提取纯文件名:', pureFilename);
+                    
+                    // 构建图片路径：图片在当前文档同目录的attachments目录中
+                    const imagePath = 'attachments/' + pureFilename;
+                    const converted = `![${pureFilename}](${imagePath})`;
+                    console.log('🔄 备用渲染器转换为标准Markdown格式:', converted);
+                    return converted;
+                });
+                
+                // 然后处理标准Markdown图片格式
+                processedContent = processedContent.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, src) {
+                    console.log('🖼️ 备用渲染器处理标准图片:', src);
+                    
+                    if (src.startsWith('attachments/')) {
+                        console.log('🔍 备用渲染器检测到attachments图片');
+                        
+                        // 创建一个唯一的ID用于异步更新
+                        const imageId = 'img_' + Math.random().toString(36).substr(2, 9);
+                        
+                        // 先返回占位符图片
+                        const placeholderImg = `<img id="${imageId}" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWKoOi9veS4rS4uLjwvdGV4dD48L3N2Zz4=" alt="${alt || '加载中...'}" style="max-width: 100%; height: auto;">`;
+                        
+                        // 异步获取真实图片数据
+                        setTimeout(() => {
+                            if (window.bridge && window.bridge.getImageAsBase64) {
+                                console.log('备用渲染器请求图片Base64:', src);
+                                window.bridge.getImageAsBase64(src, function(result) {
+                                    try {
+                                        const response = JSON.parse(result);
+                                        const imgElement = document.getElementById(imageId);
+                                        if (response.success && imgElement) {
+                                            console.log('✅ 备用渲染器图片Base64转换成功');
+                                            imgElement.src = response.dataUrl;
+                                            imgElement.alt = alt || src;
+                                            imgElement.title = `图片: ${src}`;
+                                        } else {
+                                            console.error('❌ 备用渲染器图片转换失败:', response.error);
+                                            if (imgElement) {
+                                                imgElement.alt = '图片加载失败: ' + src;
+                                                imgElement.title = response.error || '未知错误';
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.error('❌ 备用渲染器解析图片响应失败:', e);
+                                    }
+                                });
+                            }
+                        }, 100);
+                        
+                        return placeholderImg;
+                    }
+                    return match;
+                });
+                
+                const rendered = processedContent
+                    .replace(/^### (.*$)/gm, '<h3 style="color: #374151; font-size: 1.1em; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
+                    .replace(/^## (.*$)/gm, '<h2 style="color: #1f2937; font-size: 1.25em; font-weight: 600; margin: 14px 0 8px 0;">$1</h2>')
+                    .replace(/^# (.*$)/gm, '<h1 style="color: #111827; font-size: 1.5em; font-weight: 700; margin: 12px 0 8px 0;">$1</h1>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #2563eb; font-weight: 600;">$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/`(.*?)`/g, '<code style="background: #f3f4f6; padding: 0.125rem 0.25rem; border-radius: 0.25rem; font-family: monospace;">$1</code>')
+                    .replace(/\n/g, '<br>');
+                
+                try {
+                    debugLog('✅ 备用渲染完成，长度: ' + rendered.length);
+                } catch(e) {
+                    console.log('调试输出失败:', e);
+                }
+                
+                return rendered;
+            } catch(error) {
+                try {
+                    debugLog('❌ 备用渲染失败: ' + error.message);
+                } catch(e) {
+                    console.log('调试输出失败:', e);
+                }
+                return content.replace(/\n/g, '<br>');
+            }
+        }
+        
         try {
+            console.log('✅ [renderMarkdownContent] marked库可用，使用主渲染器');
+            console.log('📊 [renderMarkdownContent] 主渲染器处理内容长度:', content.length);
+            
             // 预处理：支持任务列表
             content = content.replace(/^\s*- \[([ x])\] /gm, function(match, checked) {
                 const isChecked = checked === 'x' ? 'checked' : '';
@@ -6868,12 +7081,18 @@
             });
             
             // 预处理：支持Obsidian格式的图片 ![[filename]]
+            console.log('🔍 [renderMarkdownContent] 开始处理Obsidian格式图片...');
             content = content.replace(/!\[\[([^\]]+)\]\]/g, function(match, filename) {
-                console.log('发现Obsidian格式图片:', filename);
-                // 构建图片路径：假设图片在attachments目录中
-                const imagePath = 'attachments/' + filename;
-                const converted = `![${filename}](${imagePath})`;
-                console.log('转换为标准格式:', converted);
+                console.log('🖼️ [主渲染器] 发现Obsidian格式图片:', filename);
+                
+                // 支持带路径的文件名，提取纯文件名
+                const pureFilename = filename.split('/').pop().split('\\').pop();
+                console.log('📁 提取纯文件名:', pureFilename);
+                
+                // 构建图片路径：图片在当前文档同目录的attachments目录中
+                const imagePath = 'attachments/' + pureFilename;
+                const converted = `![${pureFilename}](${imagePath})`;
+                console.log('🔄 转换为标准Markdown格式:', converted);
                 return converted;
             });
             
@@ -6887,12 +7106,16 @@
             
             // 后处理：处理图片路径，使用Base64数据URL
             html = html.replace(/<img([^>]*?)src="([^"]*?)"([^>]*?)>/g, function(match, beforeSrc, src, afterSrc) {
-                console.log('处理图片路径:', src);
-                console.log('当前文件路径:', currentFilePath);
+                console.log('🖼️ 处理图片路径:', src);
+                console.log('📄 当前文件路径:', currentFilePath);
                 
                 // 如果是相对路径且指向attachments目录，通过后端获取Base64数据
-                if (src.startsWith('attachments/') && currentFilePath) {
-                    console.log('检测到attachments图片，准备转换为Base64');
+                if (src.startsWith('attachments/')) {
+                    console.log('🔍 检测到attachments图片，准备转换为Base64');
+                    
+                    if (!currentFilePath) {
+                        console.warn('⚠️ 当前文件路径为空，图片可能无法正确加载');
+                    }
                     
                     // 创建一个唯一的ID用于异步更新
                     const imageId = 'img_' + Math.random().toString(36).substr(2, 9);
@@ -6903,27 +7126,42 @@
                     // 异步获取真实图片数据
                     setTimeout(() => {
                         if (window.bridge && window.bridge.getImageAsBase64) {
+                            console.log('请求图片Base64:', src);
+                            console.log('当前文件路径:', currentFilePath);
                             window.bridge.getImageAsBase64(src, function(result) {
                                 try {
                                     const response = JSON.parse(result);
                                     const imgElement = document.getElementById(imageId);
                                     if (response.success && imgElement) {
-                                        console.log('图片Base64转换成功，更新显示');
+                                        console.log('✅ 图片Base64转换成功，更新显示');
                                         imgElement.src = response.dataUrl;
                                         imgElement.alt = src;
+                                        imgElement.title = `图片: ${src}`;
                                     } else {
-                                        console.error('图片Base64转换失败:', response.error);
+                                        console.error('❌ 图片Base64转换失败:', response.error);
                                         if (imgElement) {
                                             imgElement.alt = '图片加载失败: ' + src;
                                             imgElement.title = response.error || '未知错误';
+                                            // 显示错误占位符
+                                            imgElement.src = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmVmMmYyIiBzdHJva2U9IiNmOTI4OTQiIHN0cm9rZS13aWR0aD0iMiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiNmOTI4OTQiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7lm77niYfliqDovb3lpLHotKU8L3RleHQ+PC9zdmc+";
                                         }
                                     }
                                 } catch (e) {
-                                    console.error('解析图片Base64响应失败:', e);
+                                    console.error('❌ 解析图片Base64响应失败:', e);
+                                    const imgElement = document.getElementById(imageId);
+                                    if (imgElement) {
+                                        imgElement.alt = '图片解析失败: ' + src;
+                                        imgElement.title = '响应解析错误: ' + e.message;
+                                    }
                                 }
                             });
                         } else {
-                            console.error('getImageAsBase64方法不可用');
+                            console.error('❌ bridge.getImageAsBase64方法不可用');
+                            const imgElement = document.getElementById(imageId);
+                            if (imgElement) {
+                                imgElement.alt = 'API不可用: ' + src;
+                                imgElement.title = 'bridge.getImageAsBase64方法不可用';
+                            }
                         }
                     }, 100);
                     
@@ -7184,3 +7422,415 @@
         </div>
     </div>
 </div>
+
+<!-- 右键菜单 -->
+<div id="contextMenu" class="context-menu">
+    <div class="context-menu-item" id="deepLearningMenuItem">
+        <span class="material-icons-outlined">psychology</span>
+        继续深入学习
+    </div>
+    <div class="context-menu-item" id="practiceMenuItem">
+        <span class="material-icons-outlined">quiz</span>
+        练习
+    </div>
+</div>
+
+<style>
+/* 右键菜单样式 */
+.context-menu {
+    position: absolute;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+    padding: 4px 0;
+    min-width: 160px;
+    z-index: 10000;
+    display: none;
+    font-size: 14px;
+}
+
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    color: #374151;
+}
+
+.context-menu-item:hover {
+    background-color: #f3f4f6;
+}
+
+.context-menu-item .material-icons-outlined {
+    font-size: 18px;
+    margin-right: 8px;
+    color: #6b7280;
+}
+
+.context-menu-item:hover .material-icons-outlined {
+    color: #4f46e5;
+}
+</style>
+
+<script>
+// 右键菜单相关变量
+let contextMenu = null;
+let selectedText = '';
+
+// 初始化右键菜单功能
+function initTextContextMenu() {
+    console.log('🔧 初始化网课笔记右键菜单功能');
+    
+    // 获取右键菜单元素
+    contextMenu = document.getElementById('contextMenu');
+    const deepLearningMenuItem = document.getElementById('deepLearningMenuItem');
+    const practiceMenuItem = document.getElementById('practiceMenuItem');
+    
+    if (!contextMenu || !deepLearningMenuItem || !practiceMenuItem) {
+        console.error('❌ 右键菜单元素未找到');
+        return;
+    }
+    
+    // 为预览区域和编辑区域添加右键监听
+    const previewContent = document.getElementById('preview-content');
+    const editContent = document.getElementById('edit-content');
+    
+    // 移除旧的事件监听器（如果存在）
+    if (previewContent) {
+        previewContent.removeEventListener('contextmenu', handleTextContextMenu);
+        previewContent.addEventListener('contextmenu', handleTextContextMenu);
+        console.log('✅ 已为预览区域添加右键监听');
+    }
+    
+    if (editContent) {
+        editContent.removeEventListener('contextmenu', handleTextContextMenu);
+        editContent.addEventListener('contextmenu', handleTextContextMenu);
+        console.log('✅ 已为编辑区域添加右键监听');
+    }
+    
+    // 绑定菜单项点击事件（移除旧的再添加新的）
+    deepLearningMenuItem.removeEventListener('click', handleDeepLearning);
+    deepLearningMenuItem.addEventListener('click', handleDeepLearning);
+    
+    practiceMenuItem.removeEventListener('click', handlePractice);
+    practiceMenuItem.addEventListener('click', handlePractice);
+    
+    // 添加全局点击事件隐藏菜单
+    document.removeEventListener('click', hideContextMenu);
+    document.addEventListener('click', hideContextMenu);
+    
+    console.log('✅ 网课笔记右键菜单功能初始化完成');
+}
+
+// 暴露为全局函数，供页面切换时重新初始化
+window.initTextContextMenu = initTextContextMenu;
+
+// 处理右键菜单事件
+function handleTextContextMenu(e) {
+    console.log('🎯 网课笔记右键菜单事件触发');
+    
+    // 检查是否在编辑模式或预览模式
+    const isInEditMode = !document.getElementById('edit-content').classList.contains('hidden');
+    const isInPreviewMode = !document.getElementById('preview-content').classList.contains('hidden');
+    
+    if (!isInEditMode && !isInPreviewMode) {
+        console.log('❌ 不在编辑或预览模式，不显示右键菜单');
+        return;
+    }
+    
+    // 检查是否有选中的文本
+    const selection = window.getSelection();
+    const selectedTextContent = selection.toString().trim();
+    
+    console.log('选中的文本:', selectedTextContent);
+    console.log('选中文本长度:', selectedTextContent.length);
+    console.log('当前模式 - 编辑:', isInEditMode, '预览:', isInPreviewMode);
+    
+    // 必须满足三个条件：1.在编辑或预览模式 2.选中了文字 3.点击右键
+    if (selectedTextContent.length === 0) {
+        console.log('❌ 没有选中文本，不显示右键菜单');
+        return;
+    }
+    
+    e.preventDefault();
+    selectedText = selectedTextContent;
+    
+    console.log('🎯 准备显示右键菜单，位置:', e.pageX, e.pageY);
+    
+    // 显示右键菜单
+    contextMenu.style.display = 'block';
+    contextMenu.style.left = e.pageX + 'px';
+    contextMenu.style.top = e.pageY + 'px';
+    
+    console.log('✅ 右键菜单已显示');
+    
+    // 确保菜单不会超出屏幕
+    const rect = contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+        contextMenu.style.left = (e.pageX - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+        contextMenu.style.top = (e.pageY - rect.height) + 'px';
+    }
+}
+
+// 隐藏右键菜单
+function hideContextMenu() {
+    if (contextMenu) {
+        contextMenu.style.display = 'none';
+    }
+}
+
+// 处理深入学习
+function handleDeepLearning() {
+    if (!selectedText) {
+        showToast('请先选择要深入学习的文本内容', 'warning');
+        return;
+    }
+    
+    hideContextMenu();
+    
+    // 构建深入学习的提示词
+    const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
+
+"${selectedText}"
+
+要求：
+1. 深入浅出地讲解这段内容的核心概念和要点
+2. 提供相关的背景知识和上下文信息  
+3. 举例说明，帮助理解抽象概念
+4. 分析其重要性和实际应用价值
+5. 如果涉及技术概念，请解释其工作原理
+6. 提供进一步学习的建议和相关资源
+
+请用通俗易懂的语言进行详细解释，就像一位耐心的老师在为学生答疑解惑。`;
+    
+    // 打开AI聊天窗口并发送消息
+    openChatWithMessage(deepLearningPrompt);
+    
+    showToast('已将选中内容发送给AI助手进行深入解释', 'success');
+}
+
+// 处理练习功能
+function handlePractice() {
+    if (!selectedText) {
+        showToast('请先选择要练习的文本内容', 'warning');
+        return;
+    }
+    
+    hideContextMenu();
+    
+    // 首先确保AI聊天窗口打开
+    if (window.openAIChatWindow) {
+        window.openAIChatWindow();
+    }
+    
+    // 生成练习ID和数据
+    const practiceId = 'practice_' + Date.now();
+    const practiceData = {
+        id: practiceId,
+        selectedText: selectedText,
+        questions: null,
+        status: 'generating'
+    };
+    
+    // 显示AI练习面板
+    if (window.showAIPracticePanel) {
+        window.showAIPracticePanel(practiceData);
+    }
+    
+    // 异步生成题目
+    setTimeout(() => {
+        generatePracticeQuestionsForAI(selectedText, practiceId);
+    }, 500);
+    
+    showToast('已切换到AI练习助手', 'success');
+}
+
+// 打开AI聊天窗口并发送消息
+function openChatWithMessage(message) {
+    // 使用全局函数打开AI聊天窗口
+    if (window.openAIChatWindow) {
+        window.openAIChatWindow();
+    }
+    
+    // 等待窗口打开后设置消息内容并发送
+    setTimeout(() => {
+        if (window.sendAIMessage) {
+            window.sendAIMessage(message);
+        } else {
+            // 备用方案：直接操作DOM
+            const aiChatInput = document.getElementById('aiChatInput');
+            const sendBtn = document.getElementById('sendChatBtn');
+            
+            if (aiChatInput && sendBtn) {
+                aiChatInput.value = message;
+                setTimeout(() => {
+                    sendBtn.click();
+                }, 100);
+            } else {
+                showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+            }
+        }
+    }, 300);
+}
+
+// 为AI助手生成练习题目
+function generatePracticeQuestionsForAI(selectedText, practiceId) {
+    console.log('🎯 为AI助手生成练习题目:', selectedText.substring(0, 100));
+    
+    // 构建练习生成提示词
+    const practicePrompt = `基于以下学习内容，生成3-5道练习题目：
+
+"${selectedText}"
+
+要求：
+1. 题目类型多样化（选择题、简答题、分析题等）
+2. 难度适中，既要考查理解，也要考查应用
+3. 题目要紧扣学习内容的核心概念
+4. 提供标准答案和详细解析
+5. 格式清晰，便于学习者练习
+
+请按以下格式输出：
+
+**题目1：**
+[题目内容]
+
+**答案：**
+[标准答案]
+
+**解析：**
+[详细解析]
+
+---
+
+**题目2：**
+...`;
+    
+    // 调用后端API生成练习题目
+    if (window.pybridge && window.pybridge.generatePracticeQuestions) {
+        window.pybridge.generatePracticeQuestions(practicePrompt, function(result) {
+            try {
+                const response = JSON.parse(result);
+                if (response.success) {
+                    // 更新AI练习面板的题目内容
+                    if (window.updateAIPracticeQuestions) {
+                        window.updateAIPracticeQuestions(practiceId, response.questions);
+                    }
+                    console.log('✅ 练习题目生成成功');
+                } else {
+                    console.error('❌ 练习题目生成失败:', response.error);
+                    showToast('练习题目生成失败，请重试', 'error');
+                }
+            } catch (e) {
+                console.error('❌ 解析练习题目响应失败:', e);
+                showToast('练习题目生成出错，请重试', 'error');
+            }
+        });
+    } else {
+        // 备用方案：使用模拟数据
+        const mockQuestions = `**题目1：**
+请简述"${selectedText.substring(0, 50)}..."的核心概念。
+
+**答案：**
+[基于选中内容的核心概念解释]
+
+**解析：**
+这道题考查对核心概念的理解和表达能力。
+
+---
+
+**题目2：**
+分析"${selectedText.substring(0, 30)}..."在实际应用中的意义。
+
+**答案：**
+[实际应用意义分析]
+
+**解析：**
+这道题考查理论联系实际的能力。`;
+        
+        setTimeout(() => {
+            if (window.updateAIPracticeQuestions) {
+                window.updateAIPracticeQuestions(practiceId, mockQuestions);
+            }
+        }, 1000);
+    }
+}
+
+// 显示提示消息
+function showToast(message, type = 'info') {
+    // 创建提示元素
+    const toast = document.createElement('div');
+    toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white z-50 ${
+        type === 'success' ? 'bg-green-500' : 
+        type === 'warning' ? 'bg-yellow-500' : 
+        type === 'error' ? 'bg-red-500' : 'bg-blue-500'
+    }`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    // 3秒后自动移除
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.parentNode.removeChild(toast);
+        }
+    }, 3000);
+}
+
+// 在页面加载完成后初始化右键菜单
+document.addEventListener('DOMContentLoaded', function() {
+    // 延迟初始化，确保所有元素都已加载
+    setTimeout(initTextContextMenu, 1000);
+});
+
+// 如果页面已经加载完成，立即初始化
+if (document.readyState === 'complete') {
+    setTimeout(initTextContextMenu, 1000);
+}
+
+// 页面可见性变化时重新初始化（解决页面切换后右键菜单失效问题）
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        console.log('🔄 页面重新可见，重新初始化右键菜单');
+        setTimeout(function() {
+            if (typeof initTextContextMenu === 'function') {
+                initTextContextMenu();
+            }
+        }, 500);
+    }
+});
+
+// 监听窗口焦点事件，确保页面切换后功能正常
+window.addEventListener('focus', function() {
+    console.log('🔄 窗口重新获得焦点，重新初始化右键菜单');
+    setTimeout(function() {
+        if (typeof initTextContextMenu === 'function') {
+            initTextContextMenu();
+        }
+    }, 500);
+});
+
+// 定期检查并重新初始化（作为最后的保障）
+setInterval(function() {
+    // 检查右键菜单元素是否存在且事件监听器是否正常
+    const contextMenu = document.getElementById('contextMenu');
+    const previewContent = document.getElementById('preview-content');
+    const editContent = document.getElementById('edit-content');
+    
+    if (contextMenu && (previewContent || editContent)) {
+        // 简单测试：检查是否有事件监听器
+        const hasPreviewListener = previewContent && previewContent.oncontextmenu !== null;
+        const hasEditListener = editContent && editContent.oncontextmenu !== null;
+        
+        if (!hasPreviewListener && !hasEditListener) {
+            console.log('🔧 检测到右键菜单事件监听器丢失，重新初始化');
+            if (typeof initTextContextMenu === 'function') {
+                initTextContextMenu();
+            }
+        }
+    }
+}, 10000); // 每10秒检查一次
+</script>
