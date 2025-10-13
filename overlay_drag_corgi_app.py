@@ -1921,9 +1921,9 @@ class CorgiWebBridge(QObject):
                 "error": str(e)
             }, ensure_ascii=False)
     
-    @Slot(str, result=bool)
+    @Slot(str, result=str)
     def createNewNote(self, folder_path="vault"):
-        """创建新的Markdown笔记"""
+        """创建新的Markdown笔记，返回文件名"""
         self.logger.info("=" * 60)
         self.logger.info("【文件操作验证】createNewNote 开始")
         self.logger.info(f"目标文件夹: {folder_path}")
@@ -1972,19 +1972,19 @@ class CorgiWebBridge(QObject):
                 self.logger.info(f"文件大小: {file_size} 字节")
                 self.logger.info(f"文件路径: {file_path}")
                 print(f"✅ 成功创建笔记: {file_path}")
-                return True
+                return filename  # 返回文件名而不是True
             else:
                 self.logger.error("❌ 文件创建失败 - 文件不存在")
-                return False
+                return ""  # 返回空字符串表示失败
             
         except Exception as e:
             self.logger.error(f"❌ 创建笔记异常: {e}")
             print(f"❌ 创建笔记失败: {e}")
-            return False
+            return ""  # 返回空字符串表示失败
     
-    @Slot(str, result=bool)
+    @Slot(str, result=str)
     def createNewFolder(self, parent_path="vault"):
-        """创建新文件夹"""
+        """创建新文件夹，返回文件夹名"""
         self.logger.info("=" * 60)
         self.logger.info("【文件操作验证】createNewFolder 开始")
         self.logger.info(f"父级路径: {parent_path}")
@@ -2017,15 +2017,15 @@ class CorgiWebBridge(QObject):
                 self.logger.info(f"✅ 文件夹创建成功")
                 self.logger.info(f"文件夹路径: {new_folder_path}")
                 print(f"✅ 创建新文件夹: {new_folder_path}")
-                return True
+                return new_folder_name  # 返回文件夹名而不是True
             else:
                 self.logger.error("❌ 文件夹创建失败 - 文件夹不存在")
-                return False
+                return ""  # 返回空字符串表示失败
                 
         except Exception as e:
             self.logger.error(f"❌ 创建文件夹异常: {e}")
             print(f"❌ 创建新文件夹失败: {e}")
-            return False
+            return ""  # 返回空字符串表示失败
     
     @Slot(str, str, result=bool)
     def renameFileOrFolder(self, old_path, new_name):

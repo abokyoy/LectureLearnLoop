@@ -812,6 +812,93 @@
 </div>
 
 <script>
+// 全局函数定义 - 确保在页面加载前就可用
+window.startInlineRename = function(nameSpan) {
+    const fileItem = nameSpan.closest('li');
+    const nameInput = fileItem.querySelector('.file-name-input');
+    
+    if (!nameInput) {
+        console.error('未找到重命名输入框');
+        return;
+    }
+    
+    // 隐藏文件名显示，显示输入框
+    nameSpan.classList.add('hidden');
+    nameInput.classList.remove('hidden');
+    nameInput.focus();
+    nameInput.select();
+    
+    console.log('开始内联重命名: ' + nameSpan.textContent);
+};
+
+window.finishInlineRename = function(input) {
+    const fileItem = input.closest('li');
+    const nameSpan = fileItem.querySelector('.file-name');
+    const currentPath = fileItem.getAttribute('data-path');
+    const currentName = fileItem.getAttribute('data-name');
+    const newName = input.value.trim();
+    
+    // 恢复显示
+    input.classList.add('hidden');
+    nameSpan.classList.remove('hidden');
+    
+    if (newName && newName !== currentName) {
+        console.log(`内联重命名: ${currentName} -> ${newName}`);
+        
+        if (window.pybridge && window.pybridge.renameFileOrFolder) {
+            window.pybridge.renameFileOrFolder(currentPath, newName, function(success) {
+                if (success) {
+                    console.log('重命名成功');
+                    // 更新显示
+                    nameSpan.textContent = newName;
+                    fileItem.setAttribute('data-name', newName);
+                    // 更新路径
+                    const pathParts = currentPath.split('/');
+                    pathParts[pathParts.length - 1] = newName;
+                    const newPath = pathParts.join('/');
+                    fileItem.setAttribute('data-path', newPath);
+                } else {
+                    console.error('重命名失败');
+                    // 恢复原始值
+                    input.value = currentName;
+                    nameSpan.textContent = currentName;
+                }
+            });
+        }
+    } else {
+        // 恢复原始值
+        input.value = currentName;
+    }
+};
+
+window.handleRenameKeydown = function(event, input) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        input.blur(); // 触发finishInlineRename
+    } else if (event.key === 'Escape') {
+        event.preventDefault();
+        const fileItem = input.closest('li');
+        const nameSpan = fileItem.querySelector('.file-name');
+        const currentName = fileItem.getAttribute('data-name');
+        
+        // 取消重命名，恢复原始状态
+        input.value = currentName;
+        input.classList.add('hidden');
+        nameSpan.classList.remove('hidden');
+    }
+};
+
+window.handlePractice = function(e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
+    }
+    
+    console.log('handlePractice 函数被调用');
+    // 这里可以添加练习功能的具体实现
+    alert('练习功能已触发');
+};
+
 (function() {
     'use strict';
     
@@ -4140,8 +4227,8 @@
         }
     }
     
-    // 内联重命名功能
-    function startInlineRename(nameSpan) {
+    // 内联重命名功能（暴露为全局函数）
+    window.startInlineRename = function(nameSpan) {
         const fileItem = nameSpan.closest('li');
         const nameInput = fileItem.querySelector('.file-name-input');
         
@@ -4152,9 +4239,9 @@
         nameInput.select();
         
         debugLog('开始内联重命名: ' + nameSpan.textContent);
-    }
+    };
     
-    function finishInlineRename(input) {
+    window.finishInlineRename = function(input) {
         const fileItem = input.closest('li');
         const nameSpan = fileItem.querySelector('.file-name');
         const currentPath = fileItem.getAttribute('data-path');
@@ -4186,9 +4273,9 @@
             // 恢复原始值
             input.value = currentName;
         }
-    }
+    };
     
-    function handleRenameKeydown(event, input) {
+    window.handleRenameKeydown = function(event, input) {
         if (event.key === 'Enter') {
             event.preventDefault();
             input.blur(); // 触发finishInlineRename
@@ -4203,7 +4290,7 @@
             input.classList.add('hidden');
             nameSpan.classList.remove('hidden');
         }
-    }
+    };
 
     // 删除功能
     function deleteItem(path, name) {
@@ -4230,19 +4317,40 @@
         if (window.pybridge && window.pybridge.createNewNote) {
             window.pybridge.createNewNote(parentPath, function(result) {
                 debugLog('新笔记创建结果: ' + result);
-                if (result) {
-                    // 重新加载文件结构，然后进入重命名模式
-                    loadFileStructure();
-                    setTimeout(() => {
-                        const newFileElement = findNewlyCreatedFile(result, 'file');
-                        if (newFileElement) {
+                if (result && result.trim() !== '') {
+                    // 直接通过JS更新树形结构，不重新加载
+                    const newFileElement = addFileToTreeStructure(result, parentPath, 'file');
+                    if (newFileElement) {
+                        // 定位到新创建的文件并进入重命名模式
+                        scrollToElement(newFileElement);
+                        setTimeout(() => {
                             const nameSpan = newFileElement.querySelector('.file-name');
                             if (nameSpan) {
                                 startInlineRename(nameSpan);
                                 showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
                             }
-                        }
-                    }, 200);
+                        }, 100);
+                    } else {
+                        // 如果JS更新失败，不要立即重新加载，先显示错误信息
+                        debugError(`❌ JS更新失败：无法将文件 '${result}' 添加到 '${parentPath}'`);
+                        debugError('❌ 详细信息：请检查控制台日志');
+                        
+                        // 显示错误提示，但不重新加载
+                        showFileOperationFeedback('文件创建成功，但界面更新失败，请手动刷新', 'warning');
+                        
+                        // 临时禁用重新加载，用于调试
+                        // loadFileStructure();
+                        // setTimeout(() => {
+                        //     const newFileElement = findNewlyCreatedFile(result, 'file');
+                        //     if (newFileElement) {
+                        //         const nameSpan = newFileElement.querySelector('.file-name');
+                        //         if (nameSpan) {
+                        //             startInlineRename(nameSpan);
+                        //             showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
+                        //         }
+                        //     }
+                        // }, 200);
+                    }
                 } else {
                     showFileOperationFeedback('创建笔记失败', 'error');
                 }
@@ -4255,19 +4363,34 @@
         if (window.pybridge && window.pybridge.createNewFolder) {
             window.pybridge.createNewFolder(parentPath, function(result) {
                 debugLog('新文件夹创建结果: ' + result);
-                if (result) {
-                    // 重新加载文件结构，然后进入重命名模式
-                    loadFileStructure();
-                    setTimeout(() => {
-                        const newFolderElement = findNewlyCreatedFile(result, 'folder');
-                        if (newFolderElement) {
+                if (result && result.trim() !== '') {
+                    // 直接通过JS更新树形结构，不重新加载
+                    const newFolderElement = addFileToTreeStructure(result, parentPath, 'folder');
+                    if (newFolderElement) {
+                        // 定位到新创建的文件夹并进入重命名模式
+                        scrollToElement(newFolderElement);
+                        setTimeout(() => {
                             const nameSpan = newFolderElement.querySelector('.file-name');
                             if (nameSpan) {
                                 startInlineRename(nameSpan);
                                 showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
                             }
-                        }
-                    }, 200);
+                        }, 100);
+                    } else {
+                        // 如果JS更新失败，回退到重新加载
+                        debugLog('JS更新失败，回退到重新加载文件结构');
+                        loadFileStructure();
+                        setTimeout(() => {
+                            const newFolderElement = findNewlyCreatedFile(result, 'folder');
+                            if (newFolderElement) {
+                                const nameSpan = newFolderElement.querySelector('.file-name');
+                                if (nameSpan) {
+                                    startInlineRename(nameSpan);
+                                    showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
+                                }
+                            }
+                        }, 200);
+                    }
                 } else {
                     showFileOperationFeedback('创建文件夹失败', 'error');
                 }
@@ -4305,6 +4428,178 @@
             }
         }
         return null;
+    }
+
+    // 直接通过JS向树形结构添加新文件/文件夹
+    function addFileToTreeStructure(fileName, parentPath, type) {
+        debugLog(`📁 通过JS添加${type === 'folder' ? '文件夹' : '文件'}: ${fileName} 到 ${parentPath}`);
+        
+        // 统一路径分隔符（后端可能传来\,前端使用/）
+        const normalizedParentPath = parentPath.replace(/\\/g, '/');
+        debugLog(`🔄 路径标准化: '${parentPath}' -> '${normalizedParentPath}'`);
+        
+        try {
+            // 查找父级容器
+            let parentContainer = null;
+            
+            debugLog(`🔍 查找父级容器: ${normalizedParentPath}`);
+            
+            if (normalizedParentPath === 'vault' || normalizedParentPath === '') {
+                // 根目录
+                parentContainer = document.getElementById('file-structure');
+                debugLog('✅ 找到根目录容器');
+            } else {
+                // 查找指定路径的文件夹
+                const folderItems = document.querySelectorAll('.folder-item');
+                debugLog(`📁 找到 ${folderItems.length} 个文件夹元素`);
+                
+                for (let folderItem of folderItems) {
+                    const folderPath = folderItem.getAttribute('data-path');
+                    // 也需要标准化DOM中的路径格式
+                    const normalizedFolderPath = folderPath ? folderPath.replace(/\\/g, '/') : '';
+                    debugLog(`🔍 比较路径: '${folderPath}' -> '${normalizedFolderPath}' vs '${normalizedParentPath}'`);
+                    
+                    if (normalizedFolderPath === normalizedParentPath) {
+                        debugLog(`✅ 找到匹配的文件夹: ${folderPath}`);
+                        
+                        // 确保文件夹是展开的
+                        const toggleIcon = folderItem.querySelector('.folder-toggle');
+                        // 查找子容器：可能是nextElementSibling或者在文件夹内部
+                        let childrenContainer = folderItem.nextElementSibling;
+                        
+                        // 如果没有nextElementSibling，尝试查找.folder-children
+                        if (!childrenContainer || !childrenContainer.classList.contains('folder-children')) {
+                            childrenContainer = folderItem.querySelector('.folder-children');
+                        }
+                        
+                        debugLog(`🔍 toggleIcon: ${!!toggleIcon}, childrenContainer: ${!!childrenContainer}`);
+                        if (childrenContainer) {
+                            debugLog(`🔍 childrenContainer类名: ${childrenContainer.className}`);
+                        }
+                        
+                        if (toggleIcon && childrenContainer) {
+                            toggleIcon.textContent = 'expand_more';
+                            childrenContainer.classList.remove('hidden');
+                            childrenContainer.style.display = 'block';
+                            parentContainer = childrenContainer;
+                            debugLog('✅ 文件夹已展开，找到子容器');
+                        } else {
+                            debugError('❌ 未找到切换图标或子容器');
+                            // 如果没有子容器，创建一个
+                            if (toggleIcon) {
+                                const newChildContainer = document.createElement('ul');
+                                newChildContainer.className = 'folder-children ml-4';
+                                folderItem.parentNode.insertBefore(newChildContainer, folderItem.nextSibling);
+                                parentContainer = newChildContainer;
+                                toggleIcon.textContent = 'expand_more';
+                                debugLog('✅ 创建了新的子容器');
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            if (!parentContainer) {
+                debugError(`❌ 未找到父级容器: ${normalizedParentPath}`);
+                debugError('❌ 所有可用的文件夹路径:');
+                const allFolders = document.querySelectorAll('.folder-item');
+                allFolders.forEach((folder, index) => {
+                    const path = folder.getAttribute('data-path');
+                    debugError(`  ${index + 1}. '${path}'`);
+                });
+                return null;
+            } else {
+                debugLog(`✅ 找到父级容器: ${parentContainer.tagName} ${parentContainer.className}`);
+            }
+            
+            // 计算缩进级别（根据路径深度）
+            const pathParts = normalizedParentPath === 'vault' || normalizedParentPath === '' ? [] : normalizedParentPath.split('/');
+            const level = pathParts.length; // vault为0级，vault/folder1为1级
+            const indent = level * 20;
+            debugLog(`📏 计算缩进: 路径='${normalizedParentPath}', 级别=${level}, 缩进=${indent}px`);
+            
+            // 创建新元素（使用li元素以兼容重命名功能）
+            const newElement = document.createElement('li');
+            const fullPath = normalizedParentPath === 'vault' || normalizedParentPath === '' ? fileName : `${normalizedParentPath}/${fileName}`;
+            
+            if (type === 'folder') {
+                newElement.className = 'folder-item';
+                newElement.setAttribute('data-path', fullPath);
+                newElement.setAttribute('data-name', fileName);
+                newElement.setAttribute('data-type', 'folder');
+                newElement.innerHTML = `
+                    <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer file-item-content" 
+                         style="margin-left: ${indent}px"
+                         onclick="toggleFolder(this)" 
+                         draggable="true">
+                        <span class="material-icons-outlined text-sm mr-1 folder-toggle">chevron_right</span>
+                        <span class="material-icons-outlined text-sm mr-2 text-yellow-600">folder</span>
+                        <span class="text-sm text-text-dark-brown flex-1 file-name" ondblclick="startInlineRename(this)">${fileName}</span>
+                        <input type="text" class="text-sm text-text-dark-brown flex-1 file-name-input hidden border border-blue-500 rounded px-1" 
+                               value="${fileName}" 
+                               onblur="finishInlineRename(this)" 
+                               onkeydown="handleRenameKeydown(event, this)">
+                    </div>`;
+                
+                // 添加文件夹后面的子容器
+                const childContainer = document.createElement('ul');
+                childContainer.className = 'folder-children hidden ml-4';
+                
+                parentContainer.appendChild(newElement);
+                parentContainer.appendChild(childContainer);
+            } else {
+                newElement.className = 'file-item';
+                newElement.setAttribute('data-path', fullPath);
+                newElement.setAttribute('data-name', fileName);
+                newElement.setAttribute('data-type', 'file');
+                newElement.innerHTML = `
+                    <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer file-item-content" 
+                         style="margin-left: ${indent}px"
+                         onclick="selectFile('${fullPath}')" 
+                         draggable="true">
+                        <span class="w-5"></span>
+                        <span class="material-icons-outlined text-sm mr-2 text-blue-600">description</span>
+                        <span class="text-sm text-text-dark-brown flex-1 file-name" ondblclick="startInlineRename(this)">${fileName}</span>
+                        <input type="text" class="text-sm text-text-dark-brown flex-1 file-name-input hidden border border-blue-500 rounded px-1" 
+                               value="${fileName}" 
+                               onblur="finishInlineRename(this)" 
+                               onkeydown="handleRenameKeydown(event, this)">
+                    </div>`;
+                
+                parentContainer.appendChild(newElement);
+                debugLog(`📍 文件添加位置: 父容器 ${parentContainer.tagName}.${parentContainer.className}`);
+                debugLog(`📍 父容器子元素数量: ${parentContainer.children.length}`);
+            }
+            
+            // 添加右键菜单事件
+            newElement.addEventListener('contextmenu', function(e) {
+                e.preventDefault();
+                showContextMenu(e, fullPath, fileName, type);
+            });
+            
+            debugLog(`✅ 成功添加${type === 'folder' ? '文件夹' : '文件'}: ${fileName} 到路径: ${fullPath}`);
+            return newElement;
+            
+        } catch (error) {
+            debugError(`❌ 添加${type === 'folder' ? '文件夹' : '文件'}失败: ${error.message}`);
+            return null;
+        }
+    }
+    
+    // 滚动到指定元素
+    function scrollToElement(element) {
+        if (element) {
+            element.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+            });
+            // 高亮显示新创建的元素
+            element.style.backgroundColor = '#e3f2fd';
+            setTimeout(() => {
+                element.style.backgroundColor = '';
+            }, 2000);
+        }
     }
 
     // 验证后端功能
@@ -6499,7 +6794,7 @@
             // 绑定练习菜单项点击事件
             const practiceMenuItem = document.getElementById('practiceMenuItem');
             if (practiceMenuItem) {
-                practiceMenuItem.addEventListener('click', handlePractice);
+                practiceMenuItem.addEventListener('click', window.handlePractice);
                 console.log('✅ 练习菜单项事件已绑定');
             }
             
@@ -6601,7 +6896,8 @@
     
     
     
-    function handlePractice(e) {
+    // 将handlePractice函数暴露为全局函数
+    window.handlePractice = function(e) {
         if (e) {
             e.stopPropagation();
             e.preventDefault();
@@ -6614,7 +6910,7 @@
         
         hideContextMenu();
         
-        // 首先确保AI聊天窗口打开
+        // 首先确保 AI聊天窗口打开
         if (window.openAIChatWindow) {
             window.openAIChatWindow();
         }
@@ -6642,14 +6938,18 @@
         
         // 异步生成题目
         setTimeout(() => {
-            generatePracticeQuestionsForAI(selectedText, practiceId);
+            if (typeof window.generatePracticeQuestionsForAI === 'function') {
+                window.generatePracticeQuestionsForAI(selectedText, practiceId);
+            } else {
+                console.error('❌ generatePracticeQuestionsForAI函数未定义');
+            }
         }, 500);
         
         showToast('已切换到AI练习助手', 'success');
-    }
+    };
     
-    // 为AI助手生成练习题目
-    function generatePracticeQuestionsForAI(selectedText, practiceId) {
+    // 将generatePracticeQuestionsForAI函数暴露为全局函数
+    window.generatePracticeQuestionsForAI = function(selectedText, practiceId) {
         if (window.pybridge && window.pybridge.generatePracticeQuestions) {
             try {
                 // 使用setTimeout真正异步执行，避免界面冻结
@@ -7988,8 +8288,8 @@ function initTextContextMenu() {
     deepLearningMenuItem.removeEventListener('click', handleDeepLearning);
     deepLearningMenuItem.addEventListener('click', handleDeepLearning);
     
-    practiceMenuItem.removeEventListener('click', handlePractice);
-    practiceMenuItem.addEventListener('click', handlePractice);
+    practiceMenuItem.removeEventListener('click', window.handlePractice);
+    practiceMenuItem.addEventListener('click', window.handlePractice);
     
     console.log('✅ 网课笔记右键菜单功能初始化完成');
 }
@@ -8135,87 +8435,7 @@ function openChatWithMessage(message) {
     }, 300);
 }
 
-// 为AI助手生成练习题目
-function generatePracticeQuestionsForAI(selectedText, practiceId) {
-    console.log('🎯 为AI助手生成练习题目:', selectedText.substring(0, 100));
-    
-    // 构建练习生成提示词
-    const practicePrompt = `基于以下学习内容，生成3-5道练习题目：
-
-"${selectedText}"
-
-要求：
-1. 题目类型多样化（选择题、简答题、分析题等）
-2. 难度适中，既要考查理解，也要考查应用
-3. 题目要紧扣学习内容的核心概念
-4. 提供标准答案和详细解析
-5. 格式清晰，便于学习者练习
-
-请按以下格式输出：
-
-**题目1：**
-[题目内容]
-
-**答案：**
-[标准答案]
-
-**解析：**
-[详细解析]
-
----
-
-**题目2：**
-...`;
-    
-    // 调用后端API生成练习题目
-    if (window.pybridge && window.pybridge.generatePracticeQuestions) {
-        window.pybridge.generatePracticeQuestions(practicePrompt, function(result) {
-            try {
-                const response = JSON.parse(result);
-                if (response.success) {
-                    // 更新AI练习面板的题目内容
-                    if (window.updateAIPracticeQuestions) {
-                        window.updateAIPracticeQuestions(practiceId, response.questions);
-                    }
-                    console.log('✅ 练习题目生成成功');
-                } else {
-                    console.error('❌ 练习题目生成失败:', response.error);
-                    showToast('练习题目生成失败，请重试', 'error');
-                }
-            } catch (e) {
-                console.error('❌ 解析练习题目响应失败:', e);
-                showToast('练习题目生成出错，请重试', 'error');
-            }
-        });
-    } else {
-        // 备用方案：使用模拟数据
-        const mockQuestions = `**题目1：**
-请简述"${selectedText.substring(0, 50)}..."的核心概念。
-
-**答案：**
-[基于选中内容的核心概念解释]
-
-**解析：**
-这道题考查对核心概念的理解和表达能力。
-
----
-
-**题目2：**
-分析"${selectedText.substring(0, 30)}..."在实际应用中的意义。
-
-**答案：**
-[实际应用意义分析]
-
-**解析：**
-这道题考查理论联系实际的能力。`;
-        
-        setTimeout(() => {
-            if (window.updateAIPracticeQuestions) {
-                window.updateAIPracticeQuestions(practiceId, mockQuestions);
-            }
-        }, 1000);
-    }
-}
+// 重复的函数定义已删除，使用上面的全局函数定义
 
 // 显示提示消息
 function showToast(message, type = 'info') {
