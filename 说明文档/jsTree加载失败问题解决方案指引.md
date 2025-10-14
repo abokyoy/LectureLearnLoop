@@ -250,3 +250,263 @@ addDebugLog('❌ jsTree库动态加载失败: ' + error.message);
 - 完善的状态管理和错误处理
 
 通过这种方式，我们将jsTree加载的成功率从不稳定的状态提升到接近100%，彻底解决了文件树加载卡住的问题。
+
+---
+
+# jsTree边框阴影去除问题解决方案
+
+## 🔍 问题现象
+
+### 典型症状
+- 文件树周围显示明显的正方形边框
+- 边框带有阴影效果，视觉突兀
+- 破坏了界面的整体简洁性和统一性
+- 文件树看起来像一个独立的"盒子"，与面板背景不融合
+
+### 问题表现
+用户反馈截图显示：
+- 文件结构面板中的文件树被一个带阴影的正方形边框包围
+- 边框样式与应用整体设计风格不符
+- 影响了用户界面的视觉体验
+
+## ❌ 失败的解决方案分析
+
+### 方案1：基础样式覆盖
+```css
+#file-tree {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+#file-tree .jstree-default {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+```
+**失败原因**：
+- CSS选择器优先级不够高，无法覆盖jsTree默认样式
+- jsTree的默认CSS样式表优先级很高
+- 只覆盖了部分可能的样式来源
+
+### 方案2：单一选择器覆盖
+```css
+.jstree-default {
+    border: none !important;
+    box-shadow: none !important;
+}
+```
+**失败原因**：
+- 选择器特异性不足
+- 没有考虑到jsTree可能在不同层级设置边框
+- 缺少对所有相关元素的覆盖
+
+## ✅ 成功的解决方案
+
+### 核心思路：多层级强制覆盖 + 最高优先级选择器
+
+#### 1. 基础元素覆盖
+```css
+/* jsTree 自定义样式 - 匹配应用风格 */
+#file-tree {
+    font-family: inherit;
+    font-size: 14px;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+```
+
+#### 2. 多选择器组合覆盖
+```css
+/* 去除jsTree默认容器的边框和阴影 - 更强的覆盖 */
+#file-tree .jstree-default,
+#file-tree.jstree-default,
+.jstree-default {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    outline: none !important;
+}
+```
+
+#### 3. 通配符全面覆盖
+```css
+/* 去除jsTree容器的所有可能边框样式 */
+#file-tree *,
+#file-tree .jstree-default *,
+#file-tree .jstree-container-ul,
+#file-tree .jstree-default .jstree-container-ul,
+#file-tree .jstree-default .jstree-wholerow-ul {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+```
+
+#### 4. 主题级别覆盖
+```css
+/* 强制去除jsTree主题的默认样式 */
+.jstree-default .jstree-container-ul,
+.jstree-default .jstree-wholerow-ul,
+.jstree-default {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+```
+
+#### 5. 终极覆盖（最高优先级）
+```css
+/* 终极覆盖 - 确保去除所有jsTree边框和阴影 */
+div#file-tree,
+div#file-tree.jstree,
+div#file-tree .jstree-default,
+#file-structure #file-tree,
+#file-structure #file-tree.jstree,
+#file-structure #file-tree .jstree-default {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    outline: none !important;
+    -webkit-box-shadow: none !important;
+    -moz-box-shadow: none !important;
+}
+```
+
+## 🎯 为什么这个方案有效
+
+### 1. CSS优先级策略
+- **之前**：使用简单的类选择器，优先级不足
+- **现在**：使用ID+类名组合，达到最高优先级
+
+### 2. 多层级全覆盖
+- **元素本身**：`#file-tree`
+- **jsTree容器**：`.jstree-default`
+- **内部容器**：`.jstree-container-ul`, `.jstree-wholerow-ul`
+- **所有子元素**：使用通配符 `*`
+
+### 3. 跨浏览器兼容
+- **标准属性**：`box-shadow: none`
+- **WebKit前缀**：`-webkit-box-shadow: none`
+- **Mozilla前缀**：`-moz-box-shadow: none`
+
+### 4. 渐进式覆盖策略
+- **第一层**：基础覆盖，处理常见情况
+- **第二层**：增强覆盖，处理特殊选择器
+- **第三层**：通配符覆盖，处理所有子元素
+- **第四层**：主题级覆盖，处理jsTree主题样式
+- **第五层**：终极覆盖，使用最高优先级强制覆盖
+
+### 5. 防御性编程
+- 使用 `!important` 确保样式不被覆盖
+- 覆盖所有可能的边框和阴影属性
+- 考虑到不同浏览器的实现差异
+
+## 📋 实施步骤
+
+### 步骤1：识别问题来源
+- 通过浏览器开发者工具检查元素
+- 确定具体是哪个CSS规则在设置边框和阴影
+- 分析CSS选择器的优先级
+
+### 步骤2：渐进式添加覆盖样式
+```css
+/* 从基础覆盖开始 */
+#file-tree {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* 如果不生效，增加更强的覆盖 */
+#file-tree .jstree-default,
+.jstree-default {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+/* 最终使用终极覆盖 */
+div#file-tree,
+#file-structure #file-tree {
+    border: none !important;
+    box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    -moz-box-shadow: none !important;
+}
+```
+
+### 步骤3：测试验证
+- 重新加载页面检查效果
+- 使用浏览器开发者工具确认样式已应用
+- 测试不同浏览器的兼容性
+
+## 🧪 验证方法
+
+### 成功标志：
+1. **视觉检查**：文件树周围不再有任何边框显示
+2. **阴影消除**：所有阴影效果都已去除
+3. **背景融合**：文件树背景与面板背景完全融合
+4. **开发者工具**：在Elements面板中看到自定义样式已应用
+
+### 如果仍然失败，检查：
+1. CSS加载顺序是否正确
+2. 是否有其他更高优先级的样式在覆盖
+3. 浏览器缓存是否已清除
+4. jsTree版本是否与预期一致
+
+## 🔧 故障排除
+
+### 问题1：样式不生效
+**解决方案**：
+- 检查CSS选择器优先级
+- 使用更具体的选择器组合
+- 确保 `!important` 声明正确
+
+### 问题2：部分边框仍然存在
+**解决方案**：
+- 使用浏览器开发者工具定位具体的CSS规则
+- 添加更多的选择器覆盖
+- 检查是否有内联样式在起作用
+
+### 问题3：跨浏览器兼容性问题
+**解决方案**：
+- 添加浏览器前缀属性
+- 测试不同浏览器的表现
+- 使用标准化的CSS重置
+
+## 📚 技术要点总结
+
+### CSS优先级计算
+- **ID选择器**：权重100
+- **类选择器**：权重10
+- **元素选择器**：权重1
+- **!important**：最高优先级
+
+### 选择器策略
+- **组合选择器**：`#file-structure #file-tree` 提高特异性
+- **多选择器**：用逗号分隔，同时覆盖多个目标
+- **通配符**：`*` 覆盖所有子元素
+
+### 防御性CSS
+- **多重保障**：同时覆盖多个可能的样式来源
+- **跨浏览器**：包含所有浏览器前缀
+- **渐进增强**：从基础到高级的覆盖策略
+
+## 🎯 经验总结
+
+### 成功关键因素
+1. **分析问题根源**：准确识别样式来源和优先级
+2. **渐进式解决**：从简单到复杂的覆盖策略
+3. **全面覆盖**：考虑所有可能的样式设置点
+4. **测试验证**：确保在不同环境下都有效
+
+### 可复用的解决模式
+当遇到第三方库样式覆盖问题时：
+1. **识别**：使用开发者工具定位具体样式规则
+2. **分析**：计算CSS选择器优先级
+3. **覆盖**：使用更高优先级的选择器
+4. **验证**：测试效果并确保兼容性
+5. **优化**：清理不必要的样式规则
+
+这个解决方案不仅适用于jsTree，也可以作为处理其他第三方库样式冲突的标准模板。

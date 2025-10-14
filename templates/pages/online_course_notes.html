@@ -81,7 +81,7 @@ window.jsTreeLoading = false;
     }
     
     #file-structure.collapsed .file-structure-text,
-    #file-structure.collapsed .file-tree-container,
+    #file-structure.collapsed #file-tree,
     #file-structure.collapsed .space-x-2 button:not(#collapse-toggle-btn) {
         display: none;
     }
@@ -539,6 +539,39 @@ window.jsTreeLoading = false;
     #file-tree {
         font-family: inherit;
         font-size: 14px;
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+    
+    /* 去除jsTree默认容器的边框和阴影 - 更强的覆盖 */
+    #file-tree .jstree-default,
+    #file-tree.jstree-default,
+    .jstree-default {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        outline: none !important;
+    }
+    
+    /* 去除jsTree容器的所有可能边框样式 */
+    #file-tree *,
+    #file-tree .jstree-default *,
+    #file-tree .jstree-container-ul,
+    #file-tree .jstree-default .jstree-container-ul,
+    #file-tree .jstree-default .jstree-wholerow-ul {
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    
+    /* 强制去除jsTree主题的默认样式 */
+    .jstree-default .jstree-container-ul,
+    .jstree-default .jstree-wholerow-ul,
+    .jstree-default {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
     }
     
     /* jsTree 节点样式 */
@@ -679,6 +712,21 @@ window.jsTreeLoading = false;
     #file-tree::-webkit-scrollbar-thumb:hover {
         background: #a0aec0;
     }
+    
+    /* 终极覆盖 - 确保去除所有jsTree边框和阴影 */
+    div#file-tree,
+    div#file-tree.jstree,
+    div#file-tree .jstree-default,
+    #file-structure #file-tree,
+    #file-structure #file-tree.jstree,
+    #file-structure #file-tree .jstree-default {
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        outline: none !important;
+        -webkit-box-shadow: none !important;
+        -moz-box-shadow: none !important;
+    }
 </style>
 
 <div class="flex h-screen bg-white">
@@ -702,16 +750,14 @@ window.jsTreeLoading = false;
                 </div>
             </div>
             
-            <!-- jsTree 文件树容器 -->
-            <div class="flex-1 overflow-y-auto pr-2 file-tree-container">
-                <div id="loading-indicator" class="flex items-center justify-center py-8">
-                    <div class="animate-spin">
-                        <span class="material-icons-outlined text-primary">refresh</span>
-                    </div>
-                    <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
+            <!-- jsTree 文件树 - 直接显示，无外层容器 -->
+            <div id="loading-indicator" class="flex items-center justify-center py-8">
+                <div class="animate-spin">
+                    <span class="material-icons-outlined text-primary">refresh</span>
                 </div>
-                <div id="file-tree"></div>
+                <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
             </div>
+            <div id="file-tree" class="flex-1 overflow-y-auto"></div>
         </div>
         
         <!-- 中间文档预览/编辑区域 -->
@@ -3192,9 +3238,9 @@ window.handlePractice = function(e) {
                 } else {
                     debugError('Bridge连接超时');
                     // 显示错误信息给用户
-                    const container = document.getElementById('file-tree-container');
-                    if (container) {
-                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载失败，请刷新页面重试</div>';
+                    const fileTree = document.getElementById('file-tree');
+                    if (fileTree) {
+                        fileTree.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载失败，请刷新页面重试</div>';
                     }
                 }
             }, 1000);
@@ -3849,20 +3895,20 @@ window.handlePractice = function(e) {
     function renderFileTree(data) {
         debugLog('渲染文件树，数据项数: ' + (data ? data.length : 0));
         
-        const container = document.getElementById('file-tree-container');
+        const fileTree = document.getElementById('file-tree');
         const loadingIndicator = document.getElementById('loading-indicator');
         
         if (loadingIndicator) {
             loadingIndicator.style.display = 'none';
         }
         
-        if (!container) {
-            debugError('文件树容器未找到');
+        if (!fileTree) {
+            debugError('文件树元素未找到');
             return;
         }
         
         if (!data || data.length === 0) {
-            container.innerHTML = '<div class="text-center py-8 text-text-medium-brown">暂无文件</div>';
+            fileTree.innerHTML = '<div class="text-center py-8 text-text-medium-brown">暂无文件</div>';
             return;
         }
         
@@ -3872,7 +3918,7 @@ window.handlePractice = function(e) {
         });
         html += '</ul>';
         
-        container.innerHTML = html;
+        fileTree.innerHTML = html;
         
         // 添加事件监听器
         addFileTreeEventListeners();
