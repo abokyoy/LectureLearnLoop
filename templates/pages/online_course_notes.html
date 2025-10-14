@@ -612,55 +612,102 @@ window.jsTreeLoading = false;
         background-size: contain;
     }
     
-    /* 文件夹图标 */
+    /* 文件夹图标 - 现代化设计 */
     #file-tree .jstree-default .jstree-icon.jstree-folder {
         background-image: none;
-        color: #f6ad55;
+        color: #fbbf24; /* 更现代的金黄色 */
         font-family: 'Material Icons Outlined';
-        font-size: 18px;
+        font-size: 16px; /* 稍微小一点，更精致 */
         line-height: 18px;
+        transition: color 0.2s ease; /* 添加过渡效果 */
     }
     
     #file-tree .jstree-default .jstree-icon.jstree-folder:before {
-        content: 'folder';
+        content: 'folder'; /* 保持经典文件夹图标 */
     }
     
     #file-tree .jstree-default .jstree-open > .jstree-icon.jstree-folder:before {
-        content: 'folder_open';
+        content: 'folder_open'; /* 打开状态 */
     }
     
-    /* 文件图标 */
+    /* 文件夹悬停效果 */
+    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-folder {
+        color: #f59e0b; /* 悬停时更深的颜色 */
+    }
+    
+    /* 文件图标 - 根据文件类型区分 */
     #file-tree .jstree-default .jstree-icon.jstree-file {
         background-image: none;
-        color: #4299e1;
+        color: #6b7280; /* 默认灰色 */
         font-family: 'Material Icons Outlined';
-        font-size: 18px;
+        font-size: 16px;
         line-height: 18px;
+        transition: color 0.2s ease;
     }
     
+    /* Markdown文件特殊图标 */
     #file-tree .jstree-default .jstree-icon.jstree-file:before {
-        content: 'description';
+        content: 'article'; /* 更现代的文档图标 */
     }
     
-    /* 展开/收缩图标 */
+    /* 根据文件扩展名显示不同图标 */
+    #file-tree .jstree-default a[href$=".md"] .jstree-icon.jstree-file {
+        color: #10b981; /* Markdown文件用绿色 */
+    }
+    
+    #file-tree .jstree-default a[href$=".md"] .jstree-icon.jstree-file:before {
+        content: 'description'; /* Markdown专用图标 */
+    }
+    
+    #file-tree .jstree-default a[href$=".txt"] .jstree-icon.jstree-file {
+        color: #6b7280;
+    }
+    
+    #file-tree .jstree-default a[href$=".txt"] .jstree-icon.jstree-file:before {
+        content: 'text_snippet';
+    }
+    
+    #file-tree .jstree-default a[href$=".json"] .jstree-icon.jstree-file {
+        color: #f59e0b;
+    }
+    
+    #file-tree .jstree-default a[href$=".json"] .jstree-icon.jstree-file:before {
+        content: 'data_object';
+    }
+    
+    /* 文件悬停效果 */
+    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-file {
+        transform: scale(1.1); /* 轻微放大效果 */
+    }
+    
+    /* 展开/收缩图标 - 现代化设计 */
     #file-tree .jstree-default .jstree-ocl {
         width: 18px;
         height: 18px;
         margin-right: 4px;
         background-image: none;
-        color: #718096;
+        color: #9ca3af; /* 更柔和的灰色 */
         font-family: 'Material Icons Outlined';
-        font-size: 16px;
+        font-size: 14px; /* 稍小一点，更精致 */
         line-height: 18px;
         text-align: center;
+        transition: all 0.2s ease; /* 添加过渡效果 */
+        border-radius: 2px; /* 轻微圆角 */
     }
     
     #file-tree .jstree-default .jstree-ocl:before {
-        content: 'chevron_right';
+        content: 'keyboard_arrow_right'; /* 更现代的箭头 */
     }
     
     #file-tree .jstree-default .jstree-open > .jstree-ocl:before {
-        content: 'expand_more';
+        content: 'keyboard_arrow_down'; /* 向下箭头 */
+    }
+    
+    /* 展开/收缩图标悬停效果 */
+    #file-tree .jstree-default .jstree-ocl:hover {
+        color: #4b5563; /* 悬停时更深的颜色 */
+        background-color: #f3f4f6; /* 轻微背景色 */
+        transform: scale(1.1); /* 轻微放大 */
     }
     
     /* 右键菜单样式 */
