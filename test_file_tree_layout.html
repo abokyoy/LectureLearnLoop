@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文件树布局测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 400px;
+        }
+        
+        .file-tree {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .tree-item {
+            display: block;
+            padding: 4px 8px;
+            border-radius: 6px;
+            color: #374151;
+            text-decoration: none;
+            font-size: 14px;
+            line-height: 32px;
+            min-height: 32px;
+            white-space: nowrap;
+            overflow: hidden;
+            margin: 2px 0;
+        }
+        
+        .tree-item:hover {
+            background-color: #f3f4f6;
+        }
+        
+        .expand-icon {
+            width: 20px;
+            height: 32px;
+            background: none;
+            border: none;
+            display: inline-block;
+            font-size: 14px;
+            color: #6b7280;
+            cursor: pointer;
+            margin-right: 4px;
+            vertical-align: top;
+            text-align: center;
+            line-height: 32px;
+        }
+        
+        .file-icon {
+            display: inline-block;
+            vertical-align: top;
+            margin-right: 8px;
+            height: 32px;
+            font-size: 22px;
+            width: 28px;
+            line-height: 32px;
+            text-align: center;
+            color: #6b7280;
+        }
+        
+        .file-name {
+            display: inline-block;
+            vertical-align: top;
+            line-height: 32px;
+        }
+        
+        .child-item {
+            margin-left: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h3>文件树布局测试</h3>
+        <div class="file-tree">
+            <div class="tree-item">
+                <span class="expand-icon">></span>
+                <span class="file-icon">📁</span>
+                <span class="file-name">attachments</span>
+            </div>
+            <div class="tree-item child-item">
+                <span class="expand-icon">></span>
+                <span class="file-icon">📁</span>
+                <span class="file-name">subfolder</span>
+            </div>
+            <div class="tree-item">
+                <span class="expand-icon"></span>
+                <span class="file-icon">📄</span>
+                <span class="file-name">test2.md</span>
+            </div>
+            <div class="tree-item">
+                <span class="expand-icon">></span>
+                <span class="file-icon">📁</span>
+                <span class="file-name">新文件夹1</span>
+            </div>
+            <div class="tree-item">
+                <span class="expand-icon">></span>
+                <span class="file-icon">📁</span>
+                <span class="file-name">新文件夹2</span>
+            </div>
+            <div class="tree-item">
+                <span class="expand-icon">></span>
+                <span class="file-icon">📁</span>
+                <span class="file-name">机器学习</span>
+            </div>
+            <div class="tree-item">
+                <span class="expand-icon"></span>
+                <span class="file-icon">📄</span>
+                <span class="file-name">柯基学习法.md</span>
+            </div>
+            <div class="tree-item">
+                <span class="expand-icon">></span>
+                <span class="file-icon">📁</span>
+                <span class="file-name">项目笔记</span>
+            </div>
+        </div>
+        
+        <h4 style="margin-top: 30px;">预期效果：</h4>
+        <p>每一行应该显示：<code>[展开符号] [图标] [文件名]</code></p>
+        <p>所有元素都在同一行，垂直居中对齐</p>
+    </div>
+</body>
+</html>

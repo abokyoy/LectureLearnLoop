@@ -1,8 +1,54 @@
 <!-- 网课笔记页面 - 基于从资料学习的完整功能 + 录音转写功能 -->
 
-<!-- Markdown增强功能的CSS和JS库 -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<!-- Material Icons 字体 - 直接引用 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined">
+
+<!-- jQuery - 使用CDN加载 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.16/themes/default/style.min.css" />
+
+<!-- jsTree动态加载脚本 -->
+<script>
+// 动态加载jsTree库
+function loadJsTree() {
+    return new Promise((resolve, reject) => {
+        // 检查是否已经加载
+        if (typeof $.fn.jstree !== 'undefined') {
+            resolve();
+            return;
+        }
+        
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.16/jstree.min.js';
+        script.onload = () => {
+            console.log('✅ jsTree库加载成功');
+            resolve();
+        };
+        script.onerror = () => {
+            console.error('❌ jsTree库加载失败，尝试备用CDN');
+            // 尝试备用CDN
+            const backupScript = document.createElement('script');
+            backupScript.src = 'https://cdn.jsdelivr.net/npm/jstree@3.3.16/dist/jstree.min.js';
+            backupScript.onload = () => {
+                console.log('✅ jsTree库(备用CDN)加载成功');
+                resolve();
+            };
+            backupScript.onerror = () => {
+                console.error('❌ jsTree库(备用CDN)也加载失败');
+                reject(new Error('jsTree库加载失败'));
+            };
+            document.head.appendChild(backupScript);
+        };
+        document.head.appendChild(script);
+    });
+}
+
+// 全局jsTree加载状态
+window.jsTreeLoaded = false;
+window.jsTreeLoading = false;
+</script>
+
+<!-- 其他库保持CDN加载（可选优化） -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
@@ -488,6 +534,151 @@
     #device-list::-webkit-scrollbar-thumb:hover {
         background: #a1a1a1;
     }
+
+    /* jsTree 自定义样式 - 匹配应用风格 */
+    #file-tree {
+        font-family: inherit;
+        font-size: 14px;
+    }
+    
+    /* jsTree 节点样式 */
+    #file-tree .jstree-default .jstree-node {
+        min-height: 32px;
+        line-height: 32px;
+        margin: 0;
+        padding: 0;
+    }
+    
+    #file-tree .jstree-default .jstree-anchor {
+        height: 32px;
+        line-height: 32px;
+        padding: 0 8px;
+        color: #4a5568;
+        text-decoration: none;
+        border-radius: 6px;
+        margin: 1px 0;
+        transition: all 0.2s ease;
+    }
+    
+    #file-tree .jstree-default .jstree-anchor:hover {
+        background-color: #f7fafc;
+        color: #2d3748;
+    }
+    
+    #file-tree .jstree-default .jstree-anchor.jstree-clicked {
+        background-color: #e6f3ff;
+        color: #2b6cb0;
+        box-shadow: none;
+    }
+    
+    /* 文件夹和文件图标 */
+    #file-tree .jstree-default .jstree-icon {
+        width: 18px;
+        height: 18px;
+        margin-right: 8px;
+        background-size: contain;
+    }
+    
+    /* 文件夹图标 */
+    #file-tree .jstree-default .jstree-icon.jstree-folder {
+        background-image: none;
+        color: #f6ad55;
+        font-family: 'Material Icons Outlined';
+        font-size: 18px;
+        line-height: 18px;
+    }
+    
+    #file-tree .jstree-default .jstree-icon.jstree-folder:before {
+        content: 'folder';
+    }
+    
+    #file-tree .jstree-default .jstree-open > .jstree-icon.jstree-folder:before {
+        content: 'folder_open';
+    }
+    
+    /* 文件图标 */
+    #file-tree .jstree-default .jstree-icon.jstree-file {
+        background-image: none;
+        color: #4299e1;
+        font-family: 'Material Icons Outlined';
+        font-size: 18px;
+        line-height: 18px;
+    }
+    
+    #file-tree .jstree-default .jstree-icon.jstree-file:before {
+        content: 'description';
+    }
+    
+    /* 展开/收缩图标 */
+    #file-tree .jstree-default .jstree-ocl {
+        width: 18px;
+        height: 18px;
+        margin-right: 4px;
+        background-image: none;
+        color: #718096;
+        font-family: 'Material Icons Outlined';
+        font-size: 16px;
+        line-height: 18px;
+        text-align: center;
+    }
+    
+    #file-tree .jstree-default .jstree-ocl:before {
+        content: 'chevron_right';
+    }
+    
+    #file-tree .jstree-default .jstree-open > .jstree-ocl:before {
+        content: 'expand_more';
+    }
+    
+    /* 右键菜单样式 */
+    .jstree-contextmenu {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        padding: 4px 0;
+        font-size: 14px;
+    }
+    
+    .jstree-contextmenu .jstree-contextmenu-item {
+        padding: 8px 16px;
+        color: #4a5568;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .jstree-contextmenu .jstree-contextmenu-item:hover {
+        background-color: #f7fafc;
+        color: #2d3748;
+    }
+    
+    /* 重命名输入框样式 */
+    #file-tree .jstree-default .jstree-rename-input {
+        border: 2px solid #4299e1;
+        border-radius: 4px;
+        padding: 2px 6px;
+        font-size: 14px;
+        background: white;
+    }
+    
+    /* 滚动条样式 */
+    #file-tree::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    #file-tree::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+    }
+    
+    #file-tree::-webkit-scrollbar-thumb {
+        background: #cbd5e0;
+        border-radius: 3px;
+    }
+    
+    #file-tree::-webkit-scrollbar-thumb:hover {
+        background: #a0aec0;
+    }
 </style>
 
 <div class="flex h-screen bg-white">
@@ -499,10 +690,10 @@
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-semibold text-text-dark-brown file-structure-text">文件结构</h2>
                 <div class="space-x-2">
-                    <button class="text-text-gray hover:text-primary" onclick="createNewFolder()" title="新建文件夹">
+                    <button class="text-text-gray hover:text-primary" onclick="createNewFolderInRoot()" title="新建文件夹">
                         <span class="material-icons-outlined">create_new_folder</span>
                     </button>
-                    <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
+                    <button class="text-text-gray hover:text-primary" onclick="createNewNoteInRoot()" title="新建笔记">
                         <span class="material-icons-outlined">note_add</span>
                     </button>
                     <button class="text-text-gray hover:text-primary" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
@@ -511,7 +702,7 @@
                 </div>
             </div>
             
-            <!-- 文件树容器 -->
+            <!-- jsTree 文件树容器 -->
             <div class="flex-1 overflow-y-auto pr-2 file-tree-container">
                 <div id="loading-indicator" class="flex items-center justify-center py-8">
                     <div class="animate-spin">
@@ -519,7 +710,7 @@
                     </div>
                     <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
                 </div>
-                <div id="file-tree-container"></div>
+                <div id="file-tree"></div>
             </div>
         </div>
         
@@ -2983,41 +3174,30 @@ window.handlePractice = function(e) {
         }
     }
 
-    // 页面初始化
+    // 页面初始化 - 简化版本，提升加载速度
     function initializePage() {
-        debugLog('页面初始化开始');
+        addDebugLog('🔥 网课笔记页面初始化开始');
         
         // 检查Bridge连接
         if (window.pybridge) {
-            debugLog('Bridge对象已可用，立即加载文件结构');
+            addDebugLog('✅ Bridge对象已可用，立即加载文件结构');
             loadFileStructure();
         } else {
-            debugLog('Bridge对象不可用，等待连接...');
-            // 多次重试加载文件结构
-            let retryCount = 0;
-            const maxRetries = 5;
-            
-            const tryLoadFileStructure = () => {
-                retryCount++;
-                debugLog(`第${retryCount}次尝试加载文件结构...`);
-                
+            addDebugLog('⚠️ Bridge对象不可用，等待连接...');
+            // 简单重试机制
+            setTimeout(() => {
                 if (window.pybridge) {
-                    debugLog('Bridge连接成功，加载文件结构');
+                    addDebugLog('✅ Bridge连接成功，加载文件结构');
                     loadFileStructure();
-                } else if (retryCount < maxRetries) {
-                    debugLog(`Bridge仍未连接，${1000 * retryCount}ms后重试...`);
-                    setTimeout(tryLoadFileStructure, 1000 * retryCount);
                 } else {
-                    debugError('Bridge连接超时，已重试' + maxRetries + '次');
+                    debugError('Bridge连接超时');
                     // 显示错误信息给用户
                     const container = document.getElementById('file-tree-container');
                     if (container) {
                         container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载失败，请刷新页面重试</div>';
                     }
                 }
-            };
-            
-            setTimeout(tryLoadFileStructure, 500);
+            }, 1000);
         }
         
         // 添加全局事件监听器
@@ -3076,53 +3256,591 @@ window.handlePractice = function(e) {
         initializeAudioDevice();
     }
 
-    // 加载文件结构
+    // jsTree 文件结构管理
+    let fileTreeInstance = null;
+    
+    // 加载文件结构 - 使用 jsTree
     function loadFileStructure() {
-        debugLog('开始加载文件结构');
+        addDebugLog('🔥 loadFileStructure被调用');
+        addDebugLog('🔍 检查Bridge对象状态...');
         
         if (!window.pybridge || typeof window.pybridge.getFileStructure !== 'function') {
-            debugError('Bridge对象或getFileStructure方法不可用');
-            // 显示错误状态
-            const container = document.getElementById('file-tree-container');
-            if (container) {
-                container.innerHTML = '<div class="text-center py-8 text-red-500">Bridge连接异常，请刷新页面</div>';
-            }
+            addDebugLog('❌ Bridge对象或getFileStructure方法不可用');
+            showFileTreeError('Bridge连接异常，请刷新页面');
             return;
         }
         
+        addDebugLog('✅ Bridge对象检查通过，开始获取文件结构');
+        
         // 显示加载状态
-        const container = document.getElementById('file-tree-container');
-        if (container) {
-            container.innerHTML = '<div class="text-center py-8 text-gray-500"><div class="animate-spin inline-block w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full mr-2"></div>正在加载文件结构...</div>';
-        }
+        showFileTreeLoading();
         
         try {
             window.pybridge.getFileStructure(function(jsonString) {
-                debugLog('收到文件结构数据: ' + (jsonString ? jsonString.substring(0, 100) + '...' : '空数据'));
+                addDebugLog('🔥 getFileStructure回调被调用');
+                addDebugLog('📊 收到数据类型: ' + typeof jsonString);
+                addDebugLog('📋 数据预览: ' + (jsonString ? jsonString.substring(0, 200) + '...' : '空数据'));
                 
                 if (!jsonString) {
-                    debugError('收到空的文件结构数据');
-                    if (container) {
-                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构数据为空</div>';
-                    }
+                    addDebugLog('❌ 收到空的文件结构数据');
+                    showFileTreeError('文件结构数据为空');
+                    return;
+                }
+                
+                // 检查是否是Promise对象
+                if (jsonString && typeof jsonString.then === 'function') {
+                    addDebugLog('🔍 检测到Promise对象，等待解析...');
+                    jsonString.then(function(actualData) {
+                        addDebugLog('✅ Promise解析完成，数据类型: ' + typeof actualData);
+                        try {
+                            const structure = JSON.parse(actualData);
+                            addDebugLog('✅ 文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
+                            initializeJsTree(structure);
+                        } catch (parseError) {
+                            addDebugLog('❌ 解析文件结构JSON失败: ' + parseError.message);
+                            addDebugLog('📋 原始数据: ' + actualData.substring(0, 500));
+                            showFileTreeError('文件结构数据解析失败');
+                        }
+                    }).catch(function(error) {
+                        addDebugLog('❌ Promise解析失败: ' + error.message);
+                        showFileTreeError('文件结构数据解析失败');
+                    });
                     return;
                 }
                 
                 try {
                     const structure = JSON.parse(jsonString);
-                    debugLog('文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
-                    renderFileTree(structure);
+                    addDebugLog('✅ 文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
+                    initializeJsTree(structure);
                 } catch (parseError) {
-                    debugError('解析文件结构JSON失败: ' + parseError.message);
-                    if (container) {
-                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构数据解析失败</div>';
-                    }
+                    addDebugLog('❌ 解析文件结构JSON失败: ' + parseError.message);
+                    addDebugLog('📋 原始数据: ' + jsonString.substring(0, 500));
+                    showFileTreeError('文件结构数据解析失败');
                 }
             });
         } catch (error) {
             debugError('调用getFileStructure时发生错误: ' + error.message);
-            if (container) {
-                container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载异常: ' + error.message + '</div>';
+            showFileTreeError('文件结构加载异常: ' + error.message);
+        }
+    }
+    
+    // 显示加载状态
+    function showFileTreeLoading() {
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const fileTree = document.getElementById('file-tree');
+        
+        if (loadingIndicator) loadingIndicator.style.display = 'flex';
+        if (fileTree) fileTree.style.display = 'none';
+    }
+    
+    // 显示错误状态
+    function showFileTreeError(message) {
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const fileTree = document.getElementById('file-tree');
+        
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        if (fileTree) {
+            fileTree.innerHTML = `<div class="text-center py-8 text-red-500">${message}</div>`;
+            fileTree.style.display = 'block';
+        }
+    }
+    
+    // 隐藏加载状态
+    function hideFileTreeLoading() {
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const fileTree = document.getElementById('file-tree');
+        
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
+        if (fileTree) fileTree.style.display = 'block';
+    }
+    
+    // 将后端数据转换为 jsTree 格式
+    function convertToJsTreeFormat(items) {
+        return items.map(item => {
+            const jsTreeNode = {
+                id: item.path,
+                text: item.name,
+                type: item.type,
+                data: {
+                    path: item.path,
+                    name: item.name,
+                    type: item.type
+                }
+            };
+            
+            if (item.type === 'folder') {
+                jsTreeNode.children = item.children ? convertToJsTreeFormat(item.children) : [];
+                jsTreeNode.state = { opened: false }; // 默认收起
+            }
+            
+            return jsTreeNode;
+        });
+    }
+    
+    // 初始化 jsTree
+    async function initializeJsTree(structure) {
+        addDebugLog('🔥 initializeJsTree被调用');
+        addDebugLog('📊 结构数据项目数: ' + (structure ? structure.length : 0));
+        
+        // 检查jQuery是否加载
+        if (typeof $ === 'undefined') {
+            addDebugLog('⚠️ jQuery未加载，等待jQuery加载...');
+            setTimeout(() => initializeJsTree(structure), 500);
+            return;
+        }
+        
+        // 动态加载jsTree
+        if (typeof $.fn.jstree === 'undefined') {
+            if (window.jsTreeLoading) {
+                addDebugLog('⏳ jsTree正在加载中，等待...');
+                setTimeout(() => initializeJsTree(structure), 1000);
+                return;
+            }
+            
+            addDebugLog('🔄 开始动态加载jsTree库...');
+            window.jsTreeLoading = true;
+            
+            try {
+                await loadJsTree();
+                window.jsTreeLoaded = true;
+                window.jsTreeLoading = false;
+                addDebugLog('✅ jsTree库动态加载成功');
+            } catch (error) {
+                window.jsTreeLoading = false;
+                addDebugLog('❌ jsTree库动态加载失败: ' + error.message);
+                showFileTreeError('jsTree库加载失败，请检查网络连接');
+                return;
+            }
+        }
+        
+        addDebugLog('✅ jQuery已加载，开始初始化jsTree');
+        hideFileTreeLoading();
+        
+        try {
+            addDebugLog('🔄 开始转换数据格式...');
+            const treeData = convertToJsTreeFormat(structure);
+            addDebugLog('✅ 数据格式转换完成，节点数量: ' + (treeData ? treeData.length : 0));
+            
+            // 检查file-tree元素是否存在
+            const fileTreeElement = document.getElementById('file-tree');
+            if (!fileTreeElement) {
+                addDebugLog('❌ file-tree元素不存在！');
+                return;
+            }
+            addDebugLog('✅ file-tree元素检查通过');
+            
+            // 销毁现有的树实例
+            if (fileTreeInstance) {
+                addDebugLog('🔄 销毁现有jsTree实例...');
+                $('#file-tree').jstree('destroy');
+                fileTreeInstance = null;
+                addDebugLog('✅ 现有实例已销毁');
+            }
+            
+            addDebugLog('🔄 开始创建jsTree实例...');
+            // 初始化 jsTree
+            $('#file-tree').jstree({
+            'core': {
+                'data': treeData,
+                'check_callback': true, // 允许编辑操作
+                'themes': {
+                    'name': 'default',
+                    'dots': false,
+                    'icons': true
+                }
+            },
+            'plugins': ['contextmenu', 'dnd', 'types'],
+            'types': {
+                'folder': {
+                    'icon': 'jstree-folder'
+                },
+                'file': {
+                    'icon': 'jstree-file'
+                }
+            },
+            'contextmenu': {
+                'items': function(node) {
+                    return getContextMenuItems(node);
+                }
+            },
+            'dnd': {
+                'is_draggable': function(nodes) {
+                    return true; // 允许拖拽
+                }
+            }
+        });
+        
+            // 绑定事件
+            addDebugLog('🔄 绑定jsTree事件...');
+            bindJsTreeEvents();
+            fileTreeInstance = $('#file-tree').jstree(true);
+            
+            // 设置初始化标志
+            window.fileTreeInitialized = true;
+            
+            addDebugLog('✅ jsTree 初始化完成，文件树已可用');
+        } catch (error) {
+            addDebugLog('❌ jsTree初始化失败: ' + error.message);
+            console.error('jsTree初始化错误:', error);
+            showFileTreeError('文件树初始化失败: ' + error.message);
+        }
+    }
+    
+    // 绑定 jsTree 事件
+    function bindJsTreeEvents() {
+        $('#file-tree')
+            // 节点选中事件
+            .on('select_node.jstree', function(e, data) {
+                const node = data.node;
+                debugLog('选中节点: ' + node.text + ' (' + node.data.type + ')');
+                
+                if (node.data.type === 'file') {
+                    // 打开文件
+                    selectFile(node.data.path);
+                }
+            })
+            // 节点重命名事件
+            .on('rename_node.jstree', function(e, data) {
+                const node = data.node;
+                const oldName = data.old;
+                const newName = data.text;
+                
+                debugLog(`重命名: ${oldName} -> ${newName}`);
+                
+                if (oldName !== newName) {
+                    handleJsTreeRename(node.data.path, newName);
+                }
+            })
+            // 节点移动事件
+            .on('move_node.jstree', function(e, data) {
+                const node = data.node;
+                const parent = data.parent;
+                
+                debugLog(`移动节点: ${node.text} 到 ${parent}`);
+                handleJsTreeMove(node, parent);
+            });
+    }
+    
+    // 获取右键菜单项
+    function getContextMenuItems(node) {
+        const items = {};
+        
+        if (node.data.type === 'folder') {
+            items.createNote = {
+                label: '新建笔记',
+                icon: 'jstree-file',
+                action: function() {
+                    createNewNoteInFolder(node.data.path);
+                }
+            };
+            
+            items.createFolder = {
+                label: '新建文件夹',
+                icon: 'jstree-folder',
+                action: function() {
+                    createNewFolderInFolder(node.data.path);
+                }
+            };
+        }
+        
+        items.rename = {
+            label: '重命名',
+            icon: 'jstree-file',
+            action: function() {
+                $('#file-tree').jstree('edit', node);
+            }
+        };
+        
+        items.delete = {
+            label: '删除',
+            icon: 'jstree-file',
+            action: function() {
+                if (confirm(`确定要删除 "${node.text}" 吗？此操作不可恢复。`)) {
+                    handleJsTreeDelete(node.data.path);
+                }
+            }
+        };
+        
+        return items;
+    }
+    
+    // jsTree 事件处理函数
+    
+    // 处理重命名
+    function handleJsTreeRename(filePath, newName) {
+        if (window.pybridge && window.pybridge.renameFileOrFolder) {
+            window.pybridge.renameFileOrFolder(filePath, newName, function(success) {
+                if (success) {
+                    debugLog('重命名成功');
+                    showFileOperationFeedback('重命名成功', 'success');
+                    // 更新节点数据
+                    const node = fileTreeInstance.get_node(filePath);
+                    if (node) {
+                        const pathParts = filePath.split('/');
+                        pathParts[pathParts.length - 1] = newName;
+                        const newPath = pathParts.join('/');
+                        node.data.path = newPath;
+                        node.data.name = newName;
+                        node.id = newPath;
+                    }
+                } else {
+                    debugError('重命名失败');
+                    showFileOperationFeedback('重命名失败，请检查名称是否已存在', 'error');
+                    // 重新加载文件结构
+                    loadFileStructure();
+                }
+            });
+        }
+    }
+    
+    // 处理删除
+    function handleJsTreeDelete(filePath) {
+        if (window.pybridge && window.pybridge.deleteFileOrFolder) {
+            window.pybridge.deleteFileOrFolder(filePath, function(success) {
+                if (success) {
+                    debugLog('删除成功');
+                    showFileOperationFeedback('删除成功', 'success');
+                    // 从树中移除节点
+                    fileTreeInstance.delete_node(filePath);
+                } else {
+                    debugError('删除失败');
+                    showFileOperationFeedback('删除失败', 'error');
+                }
+            });
+        }
+    }
+    
+    // 处理移动
+    function handleJsTreeMove(node, parentId) {
+        const sourcePath = node.data.path;
+        const targetPath = parentId === '#' ? 'vault' : parentId;
+        
+        if (window.pybridge && window.pybridge.moveFileOrFolder) {
+            window.pybridge.moveFileOrFolder(sourcePath, targetPath, function(success) {
+                if (success) {
+                    debugLog('移动成功');
+                    showFileOperationFeedback(`${node.text} 已移动`, 'success');
+                    // 更新节点路径
+                    const newPath = targetPath === 'vault' ? node.text : `${targetPath}/${node.text}`;
+                    node.data.path = newPath;
+                    node.id = newPath;
+                } else {
+                    debugError('移动失败');
+                    showFileOperationFeedback(`移动 ${node.text} 失败`, 'error');
+                    // 重新加载文件结构
+                    loadFileStructure();
+                }
+            });
+        }
+    }
+    
+    // 在文件夹中创建新笔记
+    function createNewNoteInFolder(folderPath) {
+        if (window.pybridge && window.pybridge.createNewNote) {
+            window.pybridge.createNewNote(folderPath, function(result) {
+                if (result && result.trim() !== '') {
+                    debugLog('新笔记创建成功: ' + result);
+                    showFileOperationFeedback('笔记创建成功', 'success');
+                    
+                    // 添加新节点到 jsTree
+                    const newPath = folderPath === 'vault' ? result : `${folderPath}/${result}`;
+                    const newNode = {
+                        id: newPath,
+                        text: result,
+                        type: 'file',
+                        data: {
+                            path: newPath,
+                            name: result,
+                            type: 'file'
+                        }
+                    };
+                    
+                    const parentId = folderPath === 'vault' ? '#' : folderPath;
+                    const nodeId = fileTreeInstance.create_node(parentId, newNode);
+                    
+                    if (nodeId) {
+                        // 选中新节点并进入重命名模式
+                        fileTreeInstance.select_node(nodeId);
+                        setTimeout(() => {
+                            fileTreeInstance.edit(nodeId);
+                        }, 100);
+                    }
+                } else {
+                    showFileOperationFeedback('创建笔记失败', 'error');
+                }
+            });
+        }
+    }
+    
+    // 在文件夹中创建新文件夹
+    function createNewFolderInFolder(folderPath) {
+        if (window.pybridge && window.pybridge.createNewFolder) {
+            window.pybridge.createNewFolder(folderPath, function(result) {
+                if (result && result.trim() !== '') {
+                    debugLog('新文件夹创建成功: ' + result);
+                    showFileOperationFeedback('文件夹创建成功', 'success');
+                    
+                    // 添加新节点到 jsTree
+                    const newPath = folderPath === 'vault' ? result : `${folderPath}/${result}`;
+                    const newNode = {
+                        id: newPath,
+                        text: result,
+                        type: 'folder',
+                        children: [],
+                        data: {
+                            path: newPath,
+                            name: result,
+                            type: 'folder'
+                        }
+                    };
+                    
+                    const parentId = folderPath === 'vault' ? '#' : folderPath;
+                    const nodeId = fileTreeInstance.create_node(parentId, newNode);
+                    
+                    if (nodeId) {
+                        // 选中新节点并进入重命名模式
+                        fileTreeInstance.select_node(nodeId);
+                        setTimeout(() => {
+                            fileTreeInstance.edit(nodeId);
+                        }, 100);
+                    }
+                } else {
+                    showFileOperationFeedback('创建文件夹失败', 'error');
+                }
+            });
+        }
+    }
+    
+    // 在根目录创建新笔记
+    function createNewNoteInRoot() {
+        createNewNoteInFolder('vault');
+    }
+    
+    // 在根目录创建新文件夹
+    function createNewFolderInRoot() {
+        createNewFolderInFolder('vault');
+    }
+    
+    // 选择并打开文件
+    function selectFile(filePath) {
+        debugLog('选择文件: ' + filePath);
+        debugLog('文件路径类型: ' + typeof filePath);
+        debugLog('文件路径长度: ' + (filePath ? filePath.length : 0));
+        
+        if (!filePath || filePath.trim() === '') {
+            debugError('文件路径为空');
+            return;
+        }
+        
+        // 标准化文件路径 - 确保使用正确的分隔符
+        let normalizedPath = filePath.replace(/\\/g, '/');
+        debugLog('标准化后的路径: ' + normalizedPath);
+        
+        if (!window.pybridge || typeof window.pybridge.getNoteContent !== 'function') {
+            debugError('Bridge对象或getNoteContent方法不可用');
+            debugError('可用的pybridge方法: ' + (window.pybridge ? Object.keys(window.pybridge) : '无'));
+            return;
+        }
+        
+        // 显示加载状态
+        const previewTitle = document.getElementById('preview-title');
+        const previewContent = document.getElementById('preview-content');
+        const editContent = document.getElementById('edit-content');
+        
+        if (previewTitle) {
+            previewTitle.textContent = '加载中...';
+        }
+        
+        if (previewContent) {
+            previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin inline-block w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full mr-2"></div>正在加载文件内容...</div>';
+        }
+        
+        // 调用后端获取文件内容
+        try {
+            debugLog('调用 loadMarkdownRaw，路径: ' + normalizedPath);
+            window.pybridge.loadMarkdownRaw(normalizedPath, function(content) {
+                debugLog('loadMarkdownRaw 返回结果类型: ' + typeof content);
+                debugLog('loadMarkdownRaw 返回内容长度: ' + (content ? content.length : 0));
+                
+                // loadMarkdownRaw 直接返回文件内容字符串
+                if (!content || content.trim() === '') {
+                    debugError('文件内容为空或文件不存在');
+                    if (previewContent) {
+                        previewContent.innerHTML = '<div class="text-center py-8 text-red-500">文件内容为空或文件不存在</div>';
+                    }
+                    if (previewTitle) {
+                        previewTitle.textContent = '加载失败';
+                    }
+                    return;
+                }
+                
+                debugLog('文件内容加载成功，长度: ' + content.length);
+                
+                if (content !== null && content !== undefined) {
+                    // 更新标题
+                    const fileName = filePath.split('/').pop() || filePath;
+                    if (previewTitle) {
+                        previewTitle.textContent = fileName;
+                    }
+                    
+                    // 更新预览内容
+                    if (previewContent) {
+                        // 渲染 Markdown
+                        if (typeof marked !== 'undefined') {
+                            const htmlContent = marked.parse(content);
+                            previewContent.innerHTML = htmlContent;
+                            
+                            // 应用语法高亮
+                            if (typeof hljs !== 'undefined') {
+                                previewContent.querySelectorAll('pre code').forEach((block) => {
+                                    hljs.highlightElement(block);
+                                });
+                            }
+                            
+                            // 渲染数学公式
+                            if (typeof renderMathInElement !== 'undefined') {
+                                renderMathInElement(previewContent, {
+                                    delimiters: [
+                                        {left: '$$', right: '$$', display: true},
+                                        {left: '$', right: '$', display: false}
+                                    ]
+                                });
+                            }
+                        } else {
+                            // 如果 marked 不可用，显示纯文本
+                            previewContent.innerHTML = '<pre>' + content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+                        }
+                    }
+                    
+                    // 更新编辑内容
+                    if (editContent) {
+                        editContent.value = content;
+                    }
+                    
+                    // 设置当前文件路径（用于保存）
+                    window.currentFilePath = filePath;
+                    
+                    // 显示保存按钮
+                    const saveBtn = document.getElementById('save-btn');
+                    if (saveBtn) {
+                        saveBtn.classList.remove('hidden');
+                    }
+                    
+                    debugLog('文件内容加载完成: ' + fileName);
+                } else {
+                    debugError('文件内容为空或获取失败');
+                    if (previewContent) {
+                        previewContent.innerHTML = '<div class="text-center py-8 text-red-500">文件内容获取失败</div>';
+                    }
+                    if (previewTitle) {
+                        previewTitle.textContent = '加载失败';
+                    }
+                }
+            });
+        } catch (error) {
+            debugError('调用getNoteContent时发生错误: ' + error.message);
+            if (previewContent) {
+                previewContent.innerHTML = '<div class="text-center py-8 text-red-500">文件加载异常: ' + error.message + '</div>';
             }
         }
     }
@@ -8104,6 +8822,7 @@ window.handlePractice = function(e) {
         }, 1000);
     }
     
+    // 简化初始化机制，提升加载速度
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initAll);
     } else {
