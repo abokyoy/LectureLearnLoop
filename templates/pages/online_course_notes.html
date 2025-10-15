@@ -1304,18 +1304,18 @@ window.jsTreeLoading = false;
             
             <!-- 面板切换标签 -->
             <div class="flex mb-4 bg-gray-100 rounded-lg p-1">
-                <button id="voice-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-md bg-primary text-white transition-colors" onclick="switchToVoicePanel()">
-                    <span class="material-icons-outlined text-sm mr-1">mic</span>
-                    实时语音
-                </button>
-                <button id="knowledge-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:text-gray-800 transition-colors" onclick="switchToKnowledgePanel()">
+                <button id="knowledge-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-md bg-primary text-white transition-colors" onclick="switchToKnowledgePanel()">
                     <span class="material-icons-outlined text-sm mr-1">psychology</span>
                     知识点
+                </button>
+                <button id="voice-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:text-gray-800 transition-colors" onclick="switchToVoicePanel()">
+                    <span class="material-icons-outlined text-sm mr-1">mic</span>
+                    实时语音
                 </button>
             </div>
             
             <!-- 实时语音面板 -->
-            <div id="voice-panel" class="flex-1 flex flex-col">
+            <div id="voice-panel" class="flex-1 flex flex-col hidden">
                 
                 
                 <!-- 录音控制区域 -->
@@ -1418,7 +1418,7 @@ window.jsTreeLoading = false;
             </div>
             
             <!-- 知识点面板 -->
-            <div id="knowledge-panel" class="flex-1 flex-col hidden">
+            <div id="knowledge-panel" class="flex-1 flex-col">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-lg font-semibold text-text-dark-brown">知识点</h2>
                     <div class="flex gap-2">
@@ -1655,7 +1655,7 @@ window.handlePractice = function(e) {
     let debugLogCount = 0;
     
     // 面板切换变量
-    let currentPanel = 'voice'; // 默认显示实时语音面板
+    let currentPanel = 'knowledge'; // 默认显示知识点面板
     
     // 面板收缩和拖拽变量
     let isFileStructureCollapsed = false;
@@ -3795,6 +3795,11 @@ window.handlePractice = function(e) {
             }, 1000);
         }
         
+        // 初始化面板状态 - 默认显示知识点面板
+        setTimeout(() => {
+            switchToKnowledgePanel();
+        }, 100);
+        
         // 添加全局事件监听器
         document.addEventListener('click', function(e) {
             console.log('🖱️ 全局点击事件，目标:', e.target);
@@ -3834,8 +3839,8 @@ window.handlePractice = function(e) {
             }
         });
         
-        // 初始化面板状态（默认显示实时语音面板）
-        window.switchToVoicePanel();
+        // 初始化面板状态（默认显示知识点面板）
+        window.switchToKnowledgePanel();
         
         // 初始化电平显示为静音状态，等待用户选择设备
         updateAudioLevelDisplay(0);
