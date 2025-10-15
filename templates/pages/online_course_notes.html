@@ -4686,6 +4686,9 @@ window.handlePractice = function(e) {
                     }
                     
                     debugLog('文件内容加载完成: ' + fileName);
+                    
+                    // 自动加载该笔记相关的知识点
+                    loadNoteKnowledgePoints(normalizedPath);
                 } else {
                     debugError('文件内容为空或获取失败');
                     if (previewContent) {
@@ -5159,6 +5162,9 @@ window.handlePractice = function(e) {
                                 hljs.highlightElement(block);
                             });
                         }
+                        
+                        // 自动加载该笔记相关的知识点
+                        loadNoteKnowledgePoints(filePath);
                     } else {
                         previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
                     }
@@ -5320,6 +5326,9 @@ window.handlePractice = function(e) {
                 
                 // 确保编辑器内部也滚动到顶部
                 editContent.scrollTop = 0;
+                
+                // 自动加载该笔记相关的知识点
+                loadNoteKnowledgePoints(currentFilePath);
             });
         }
     }
@@ -6249,13 +6258,33 @@ window.handlePractice = function(e) {
         }
     }
     
-    // 滚动到指定元素
+    // 滚动到指定元素 - 限制在预览容器内
     function scrollToElement(element) {
         if (element) {
-            element.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'center' 
-            });
+            const previewContainer = document.getElementById('preview-content');
+            if (previewContainer) {
+                // 获取元素相对于预览容器的位置
+                const elementRect = element.getBoundingClientRect();
+                const containerRect = previewContainer.getBoundingClientRect();
+                
+                // 计算元素在容器中的相对位置
+                const relativeTop = elementRect.top - containerRect.top + previewContainer.scrollTop;
+                const containerHeight = previewContainer.clientHeight;
+                
+                // 滚动到元素位置，但保持在容器中央，不影响整个页面
+                const targetScrollTop = relativeTop - (containerHeight / 2);
+                
+                previewContainer.scrollTo({
+                    top: Math.max(0, targetScrollTop),
+                    behavior: 'smooth'
+                });
+            } else {
+                // 备用方案：使用原有的scrollIntoView，但设置为不滚动整个页面
+                element.scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'nearest' 
+                });
+            }
             // 高亮显示新创建的元素
             element.style.backgroundColor = '#e3f2fd';
             setTimeout(() => {
@@ -6871,12 +6900,32 @@ window.handlePractice = function(e) {
         const currentElement = currentHighlightElements[index];
         currentElement.classList.add('active-highlight');
         
-        // 滚动到可视区域
-        currentElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-            inline: 'nearest'
-        });
+        // 滚动到可视区域 - 限制在预览容器内，不影响整个页面
+        const previewContainer = document.getElementById('preview-content');
+        if (previewContainer) {
+            // 获取元素相对于预览容器的位置
+            const elementRect = currentElement.getBoundingClientRect();
+            const containerRect = previewContainer.getBoundingClientRect();
+            
+            // 计算元素在容器中的相对位置
+            const relativeTop = elementRect.top - containerRect.top + previewContainer.scrollTop;
+            const containerHeight = previewContainer.clientHeight;
+            
+            // 滚动到元素位置，但保持在容器中央，不影响整个页面
+            const targetScrollTop = relativeTop - (containerHeight / 2);
+            
+            previewContainer.scrollTo({
+                top: Math.max(0, targetScrollTop),
+                behavior: 'smooth'
+            });
+        } else {
+            // 备用方案：使用原有的scrollIntoView，但设置为不滚动整个页面
+            currentElement.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+                inline: 'nearest'
+            });
+        }
         
         addToDebugPanel('INFO', `定位到第 ${index + 1}/${currentHighlightElements.length} 个匹配项`);
     }
@@ -6936,10 +6985,24 @@ window.handlePractice = function(e) {
             parent.replaceChild(wrapper, textNode);
         });
         
-        // 滚动到第一个高亮位置
+        // 滚动到第一个高亮位置 - 限制在预览容器内
         const firstHighlight = previewContent.querySelector('mark[data-highlight-index="0"]');
         if (firstHighlight) {
-            firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // 获取元素相对于预览容器的位置
+            const elementRect = firstHighlight.getBoundingClientRect();
+            const containerRect = previewContent.getBoundingClientRect();
+            
+            // 计算元素在容器中的相对位置
+            const relativeTop = elementRect.top - containerRect.top + previewContent.scrollTop;
+            const containerHeight = previewContent.clientHeight;
+            
+            // 滚动到元素位置，但保持在容器中央，不影响整个页面
+            const targetScrollTop = relativeTop - (containerHeight / 2);
+            
+            previewContent.scrollTo({
+                top: Math.max(0, targetScrollTop),
+                behavior: 'smooth'
+            });
             addToDebugPanel('SUCCESS', '已定位到第一个匹配项');
         }
     }
@@ -7852,7 +7915,11 @@ window.handlePractice = function(e) {
         
         // 调用后端合并知识点
         const mergeData = {
-            noteId: noteId,
+            noteInfo: {
+                fileName: currentFileName || 'unknown.md',
+                filePath: currentFilePath || 'unknown',
+                title: currentFileName ? currentFileName.replace('.md', '') : 'unknown'
+            },
             currentPoint: currentPoint,
             targetKnowledgeId: similarKnowledgeId
         };
@@ -7864,8 +7931,9 @@ window.handlePractice = function(e) {
                     if (response.success) {
                         addToDebugPanel('SUCCESS', '知识点合并成功');
                         
-                        // 标记当前知识点为已处理
+                        // 标记当前知识点为已处理，并保存合并后的知识点ID
                         currentPoint.processed = true;
+                        currentPoint.id = response.merged_knowledge_id; // 保存合并后的知识点ID
                         selectedCurrentItem.dataset.processed = 'true';
                         selectedCurrentItem.classList.add('opacity-50');
                         selectedCurrentItem.querySelector('.flex').insertAdjacentHTML('beforeend', 
@@ -7952,7 +8020,9 @@ window.handlePractice = function(e) {
                 if (response.success) {
                     addToDebugPanel('SUCCESS', `新知识点创建成功: ${response.knowledge_id}`);
                     
-                    // 标记当前知识点为已处理
+                    // 标记当前知识点为已处理，并保存新创建的知识点ID
+                    currentPoint.processed = true;
+                    currentPoint.id = response.knowledge_id; // 保存新创建的知识点ID
                     selectedCurrentItem.dataset.processed = 'true';
                     selectedCurrentItem.classList.add('opacity-50');
                     selectedCurrentItem.classList.remove('ring-2', 'ring-primary');
@@ -7995,94 +8065,6 @@ window.handlePractice = function(e) {
             }
         });
     }
-        
-    // 合并知识点
-    function mergeKnowledgePoint(knowledgePoints, noteId) {
-    addToDebugPanel('INFO', '开始合并知识点');
-            
-    // 获取选中的当前知识点
-    const selectedCurrentItem = document.querySelector('.current-knowledge-item.ring-primary');
-    if (!selectedCurrentItem) {
-        alert('请先选择要合并的当前知识点');
-        return;
-    }
-            
-    // 获取选中的相似知识点
-    const selectedSimilarItem = document.querySelector('.similar-knowledge-item.ring-blue-500');
-    if (!selectedSimilarItem) {
-        alert('请先选择要合并到的相似知识点');
-        return;
-    }
-            
-    const currentPointId = parseInt(selectedCurrentItem.dataset.pointId);
-    const similarKnowledgeId = selectedSimilarItem.dataset.knowledgeId;
-    const currentPoint = knowledgePoints[currentPointId];
-            
-    // 确认合并
-    if (!confirm(`确定要将"${currentPoint.name}"合并到已存在的知识点吗？`)) {
-        return;
-    }
-            
-    // 调用后端合并知识点
-    const mergeData = {
-        noteInfo: {
-            fileName: currentFileName || 'unknown.md',
-            filePath: currentFilePath || 'unknown',
-            title: currentFileName ? currentFileName.replace('.md', '') : 'unknown'
-        },
-        currentPoint: currentPoint,
-        targetKnowledgeId: similarKnowledgeId
-    };
-            
-    if (window.pybridge && window.pybridge.mergeKnowledgePoint) {
-        window.pybridge.mergeKnowledgePoint(JSON.stringify(mergeData), function(result) {
-            try {
-                const response = JSON.parse(result);
-                if (response.success) {
-                    addToDebugPanel('SUCCESS', '知识点合并成功');
-                    
-                    // 标记当前知识点为已处理
-                    currentPoint.processed = true;
-                    selectedCurrentItem.dataset.processed = 'true';
-                    selectedCurrentItem.classList.add('opacity-50');
-                    selectedCurrentItem.querySelector('.flex').insertAdjacentHTML('beforeend', 
-                        '<span class="material-icons-outlined text-green-600 ml-2">check_circle</span>');
-                    
-                    // 清除选中状态
-                    selectedCurrentItem.classList.remove('ring-2', 'ring-primary');
-                    selectedSimilarItem.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
-                    
-                    // 禁用操作按钮
-                    document.getElementById('merge-knowledge-btn').disabled = true;
-                    document.getElementById('create-new-knowledge-btn').disabled = true;
-                    
-                    // 清空相似知识点列表
-                    document.getElementById('similar-knowledge-list').innerHTML = `
-                        <div class="text-center text-text-gray py-8">
-                            <span class="material-icons-outlined text-4xl mb-2">search</span>
-                            <p>请选择左侧知识点查看相似匹配</p>
-                        </div>
-                    `;
-                    
-                    // 刷新科目知识点列表
-                    const subject = document.getElementById('subject-select').value;
-                    if (subject) {
-                        loadSubjectKnowledgeList(subject);
-                    }
-                    
-                } else {
-                    addToDebugPanel('ERROR', `合并失败: ${response.error}`);
-                    alert('合并知识点失败: ' + response.error);
-                }
-            } catch (e) {
-                addToDebugPanel('ERROR', `解析合并结果失败: ${e.message}`);
-                alert('合并知识点失败');
-            }
-        });
-    } else {
-        addToDebugPanel('WARN', 'mergeKnowledgePoint方法不可用');
-    }
-}
     
     // 完成知识点管理
     function finishKnowledgeManagement(knowledgePoints, noteId) {

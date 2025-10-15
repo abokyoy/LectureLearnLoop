@@ -2530,15 +2530,11 @@ class CorgiWebBridge(QObject):
             from knowledge_management import KnowledgeManagementSystem
             km_system = KnowledgeManagementSystem(self.config)
             
-            # 注册笔记到数据库
+            # 注册笔记到数据库（使用文件追踪系统）
             note_id = None
-            if note_info.get('fileName') and note_info.get('filePath'):
-                note_id = km_system.register_note(
-                    file_name=note_info['fileName'],
-                    file_path=note_info['filePath'],
-                    title=note_info.get('title')
-                )
-                self.logger.info(f"笔记注册成功，ID: {note_id}")
+            if note_info.get('filePath'):
+                note_id = self._findOrCreateNoteRecord(km_system, note_info['filePath'])
+                self.logger.info(f"通过文件追踪获取笔记记录，ID: {note_id}")
             
             # 获取目标知识点的详细信息
             conn = km_system.db_manager.get_connection()
@@ -2623,15 +2619,11 @@ class CorgiWebBridge(QObject):
             # 确保科目存在
             km_system.add_subject(subject)
             
-            # 注册笔记到数据库
+            # 注册笔记到数据库（使用文件追踪系统）
             note_id = None
-            if note_info.get('fileName') and note_info.get('filePath'):
-                note_id = km_system.register_note(
-                    file_name=note_info['fileName'],
-                    file_path=note_info['filePath'],
-                    title=note_info.get('title')
-                )
-                self.logger.info(f"笔记注册成功，ID: {note_id}")
+            if note_info.get('filePath'):
+                note_id = self._findOrCreateNoteRecord(km_system, note_info['filePath'])
+                self.logger.info(f"通过文件追踪获取笔记记录，ID: {note_id}")
             
             # 创建知识点数据
             knowledge_point_data = {
@@ -2698,22 +2690,17 @@ class CorgiWebBridge(QObject):
             from knowledge_management import KnowledgeManagementSystem
             km_system = KnowledgeManagementSystem(self.config)
             
-            # 查找该笔记在数据库中的记录
+            # 查找该笔记在数据库中的记录（使用增强的文件追踪）
+            note_id = self._findOrCreateNoteRecord(km_system, file_path)
+            
+            if not note_id:
+                self.logger.info(f"笔记 {file_path} 无法找到或创建记录")
+                return json.dumps([], ensure_ascii=False)
+            
+            # 查询该笔记相关的知识点
             conn = km_system.db_manager.get_connection()
             cursor = conn.cursor()
             
-            # 查询笔记ID
-            cursor.execute("SELECT id FROM notes WHERE file_path = ?", (file_path,))
-            note_record = cursor.fetchone()
-            
-            if not note_record:
-                conn.close()
-                self.logger.info(f"笔记 {file_path} 在数据库中不存在")
-                return json.dumps([], ensure_ascii=False)
-            
-            note_id = note_record[0]
-            
-            # 查询该笔记相关的知识点
             cursor.execute("""
                 SELECT kp.id, kp.point_name, kp.core_description, kp.subject_name, kp.mastery_score, kp.created_time
                 FROM knowledge_points kp
@@ -2742,6 +2729,152 @@ class CorgiWebBridge(QObject):
         except Exception as e:
             self.logger.error(f"获取笔记知识点失败: {e}")
             return json.dumps([], ensure_ascii=False)
+    
+    def _findOrCreateNoteRecord(self, km_system, file_path):
+        """查找或创建笔记记录，支持文件追踪和路径更新"""
+        import os
+        import hashlib
+        from pathlib import Path
+        
+        try:
+            # 标准化文件路径
+            normalized_path = self._normalizePath(file_path)
+            self.logger.info(f"标准化路径: {file_path} -> {normalized_path}")
+            
+            # 检查文件是否存在
+            full_path = Path(normalized_path)
+            if not full_path.exists():
+                # 尝试相对于当前工作目录的路径
+                full_path = Path(os.getcwd()) / normalized_path
+                if not full_path.exists():
+                    self.logger.error(f"文件不存在: {normalized_path}")
+                    return None
+            
+            # 计算文件内容哈希
+            content_hash = self._calculateFileHash(full_path)
+            file_name = full_path.name
+            
+            conn = km_system.db_manager.get_connection()
+            cursor = conn.cursor()
+            
+            try:
+                # 1. 首先尝试通过完全匹配的路径查找
+                cursor.execute("SELECT id, content_hash FROM notes WHERE file_path = ?", (normalized_path,))
+                result = cursor.fetchone()
+                
+                if result:
+                    note_id, stored_hash = result
+                    # 检查内容是否变化
+                    if stored_hash != content_hash:
+                        # 更新内容哈希
+                        cursor.execute(
+                            "UPDATE notes SET content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
+                            (content_hash, note_id)
+                        )
+                        conn.commit()
+                        self.logger.info(f"更新笔记内容哈希: {note_id}")
+                    
+                    self.logger.info(f"通过路径找到笔记: {note_id}")
+                    return note_id
+                
+                # 2. 通过文件名和内容哈希查找（处理文件移动的情况）
+                cursor.execute(
+                    "SELECT id, file_path FROM notes WHERE file_name = ? AND content_hash = ?",
+                    (file_name, content_hash)
+                )
+                result = cursor.fetchone()
+                
+                if result:
+                    note_id, old_path = result
+                    # 更新文件路径
+                    cursor.execute(
+                        "UPDATE notes SET file_path = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
+                        (normalized_path, note_id)
+                    )
+                    conn.commit()
+                    self.logger.info(f"文件已移动，更新路径: {old_path} -> {normalized_path}")
+                    return note_id
+                
+                # 3. 通过文件名查找（内容可能已修改）
+                cursor.execute("SELECT id, file_path, content_hash FROM notes WHERE file_name = ?", (file_name,))
+                results = cursor.fetchall()
+                
+                for note_id, stored_path, stored_hash in results:
+                    # 检查是否是同一个文件（路径相似度）
+                    if self._pathSimilarity(normalized_path, stored_path) > 0.7:
+                        # 更新路径和内容哈希
+                        cursor.execute(
+                            "UPDATE notes SET file_path = ?, content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
+                            (normalized_path, content_hash, note_id)
+                        )
+                        conn.commit()
+                        self.logger.info(f"找到相似文件，更新记录: {note_id}")
+                        return note_id
+                
+                # 4. 如果都没找到，创建新记录
+                note_id = km_system.register_note(
+                    file_name=file_name,
+                    file_path=normalized_path,
+                    title=file_name.replace('.md', '').replace('.txt', ''),
+                    content_hash=content_hash
+                )
+                
+                self.logger.info(f"创建新笔记记录: {note_id}")
+                return note_id
+                
+            finally:
+                conn.close()
+                
+        except Exception as e:
+            self.logger.error(f"查找或创建笔记记录失败: {e}")
+            return None
+    
+    def _normalizePath(self, file_path):
+        """标准化文件路径"""
+        # 统一使用正斜杠
+        normalized = file_path.replace('\\', '/')
+        
+        # 移除开头的 ./
+        if normalized.startswith('./'):
+            normalized = normalized[2:]
+        
+        # 确保使用相对路径（相对于项目根目录）
+        if os.path.isabs(normalized):
+            # 如果是绝对路径，尝试转换为相对路径
+            try:
+                cwd = os.getcwd().replace('\\', '/')
+                if normalized.startswith(cwd):
+                    normalized = normalized[len(cwd):].lstrip('/')
+            except:
+                pass
+        
+        return normalized
+    
+    def _calculateFileHash(self, file_path):
+        """计算文件内容的MD5哈希"""
+        try:
+            hash_md5 = hashlib.md5()
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+        except Exception as e:
+            self.logger.error(f"计算文件哈希失败: {e}")
+            return ""
+    
+    def _pathSimilarity(self, path1, path2):
+        """计算两个路径的相似度"""
+        # 简单的相似度计算：基于路径组件的重叠度
+        parts1 = set(path1.split('/'))
+        parts2 = set(path2.split('/'))
+        
+        if not parts1 or not parts2:
+            return 0.0
+        
+        intersection = len(parts1.intersection(parts2))
+        union = len(parts1.union(parts2))
+        
+        return intersection / union if union > 0 else 0.0
 
     @Slot(str, str, result=str)
     def chatWithAI(self, message, conversation_history_json="[]"):
@@ -2985,29 +3118,46 @@ class CorgiWebBridge(QObject):
             self.logger.info(f"文件路径: {file_path}")
             self.logger.info(f"处理的知识点数量: {len(processed_points)}")
             
-            # 这里应该：
-            # 1. 将笔记信息保存到数据库
-            # 2. 建立笔记与知识点的多对多映射关系
-            # 3. 更新知识点的来源信息
+            # 使用知识管理系统保存映射关系
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
             
-            # 模拟保存映射关系
-            mapping_info = {
-                "note_id": note_id,
-                "file_name": file_name,
-                "file_path": file_path,
-                "processed_count": len(processed_points),
-                "timestamp": time.time()
-            }
+            # 确保笔记在数据库中存在（使用增强的文件追踪）
+            if not note_id:
+                # 使用文件追踪系统查找或创建笔记记录
+                note_id = self._findOrCreateNoteRecord(km_system, file_path or 'unknown')
+                self.logger.info(f"通过文件追踪获取笔记记录，ID: {note_id}")
             
-            # 这里可以保存到文件或数据库
-            # 暂时只记录日志
+            # 保存每个已处理知识点的映射关系
+            saved_count = 0
             for point in processed_points:
-                self.logger.info(f"已处理知识点: {point['name']}")
+                try:
+                    # 获取知识点ID（从point对象中或通过名称查找）
+                    knowledge_point_id = point.get('id')
+                    if not knowledge_point_id:
+                        # 如果没有ID，尝试通过名称和科目查找
+                        subject = point.get('subject', '')
+                        name = point.get('name', '')
+                        # 这里可以添加查找逻辑，暂时跳过
+                        self.logger.warning(f"知识点缺少ID，跳过: {name}")
+                        continue
+                    
+                    # 建立知识点与笔记的关联
+                    if km_system.link_knowledge_point_to_note(knowledge_point_id, note_id):
+                        saved_count += 1
+                        self.logger.info(f"已保存知识点映射: {point['name']} -> 笔记ID {note_id}")
+                    else:
+                        self.logger.warning(f"保存知识点映射失败: {point['name']}")
+                        
+                except Exception as e:
+                    self.logger.error(f"处理知识点映射时出错: {point.get('name', 'unknown')} - {e}")
             
             response = {
                 "success": True,
-                "message": "笔记知识点映射保存成功",
-                "mapping_info": mapping_info
+                "message": f"笔记知识点映射保存成功，共保存 {saved_count} 个映射关系",
+                "note_id": note_id,
+                "saved_count": saved_count,
+                "total_count": len(processed_points)
             }
             
             return json.dumps(response, ensure_ascii=False)
