@@ -510,3 +510,236 @@ div#file-tree,
 5. **优化**：清理不必要的样式规则
 
 这个解决方案不仅适用于jsTree，也可以作为处理其他第三方库样式冲突的标准模板。
+
+---
+
+# jsTree图标现代化完整解决方案
+
+## 🎯 图标优化需求
+
+将jsTree的默认图标替换为现代化的Material Icons，支持不同文件类型显示不同图标和颜色，提升用户界面的视觉体验。
+
+## ❌ 失败方案分析
+
+### 方案1：CSS属性选择器（失败）
+```css
+/* 尝试使用href属性选择器 */
+#file-tree .jstree-default a[href$=".md"] .jstree-icon.jstree-file {
+    color: #10b981 !important;
+}
+```
+**失败原因**：
+- jsTree的链接元素没有href属性
+- 属性选择器无法匹配到目标元素
+
+### 方案2：CSS :contains()伪类（失败）
+```css
+/* 尝试使用:contains()选择器 */
+#file-tree .jstree-default .jstree-anchor:contains(".md") .jstree-icon.jstree-file {
+    color: #10b981 !important;
+}
+```
+**失败原因**：
+- 现代浏览器不支持CSS的`:contains()`伪类
+- 选择器无法正确解析
+
+### 方案3：DOM后处理方式（体验差）
+```javascript
+// 在文件夹展开时动态修改图标
+.on('open_node.jstree', function(e, data) {
+    $('#file-tree .jstree-anchor').each(function() {
+        // 动态添加CSS类
+    });
+})
+```
+**失败原因**：
+- 用户能看到图标变化的过程，体验不流畅
+- 重复处理导致性能问题
+- 有闪烁感，不够专业
+
+## ✅ 成功方案：数据预处理
+
+### 核心思路
+在jsTree创建**之前**，直接在数据结构中设置文件类型属性，而不是创建后再修改DOM。
+
+### 实现步骤
+
+#### 1. 数据预处理函数
+```javascript
+// 基于数据直接设置文件类型 - 在jsTree创建时就确定图标
+function setFileTypeFromData(treeData) {
+    function processNode(node) {
+        if (node.type === 'file') {
+            // 根据文件扩展名设置图标类型
+            if (node.text.endsWith('.md')) {
+                node.icon = 'jstree-file file-md-icon';
+                node.li_attr = node.li_attr || {};
+                node.li_attr.class = 'file-md-node';
+                node.a_attr = node.a_attr || {};
+                node.a_attr.class = 'file-md';
+            } else if (node.text.endsWith('.txt')) {
+                node.icon = 'jstree-file file-txt-icon';
+                node.a_attr = node.a_attr || {};
+                node.a_attr.class = 'file-txt';
+            } else if (node.text.endsWith('.json')) {
+                node.icon = 'jstree-file file-json-icon';
+                node.a_attr = node.a_attr || {};
+                node.a_attr.class = 'file-json';
+            }
+            // ... 其他文件类型
+        } else if (node.type === 'folder') {
+            // 设置文件夹图标
+            node.icon = 'jstree-folder folder-icon';
+            node.a_attr = node.a_attr || {};
+            node.a_attr.class = 'folder-node';
+        }
+        
+        // 递归处理子节点
+        if (node.children && node.children.length > 0) {
+            node.children.forEach(child => processNode(child));
+        }
+    }
+    
+    treeData.forEach(node => processNode(node));
+    return treeData;
+}
+```
+
+#### 2. 集成到初始化流程
+```javascript
+// 在jsTree创建之前调用
+addDebugLog('🔄 开始转换数据格式...');
+let treeData = convertToJsTreeFormat(structure);
+addDebugLog('✅ 数据格式转换完成，节点数量: ' + (treeData ? treeData.length : 0));
+
+// 在创建jsTree之前设置文件类型
+addDebugLog('🎨 设置文件类型图标...');
+treeData = setFileTypeFromData(treeData);
+addDebugLog('✅ 文件类型图标设置完成');
+
+// 创建jsTree
+$('#file-tree').jstree({
+    'core': {
+        'data': treeData
+    }
+});
+```
+
+#### 3. CSS样式定义
+```css
+/* 文件图标样式 */
+#file-tree .jstree-anchor.file-md .jstree-icon:before {
+    content: 'description' !important;
+    font-family: 'Material Icons Outlined' !important;
+    color: #10b981 !important;
+}
+
+#file-tree .jstree-anchor.file-txt .jstree-icon:before {
+    content: 'text_snippet' !important;
+    color: #6b7280 !important;
+}
+
+#file-tree .jstree-anchor.file-json .jstree-icon:before {
+    content: 'data_object' !important;
+    color: #f59e0b !important;
+}
+
+/* 文件夹图标样式 */
+#file-tree .jstree-anchor.folder-node .jstree-icon:before {
+    content: 'folder' !important;
+    font-family: 'Material Icons Outlined' !important;
+    color: #fbbf24 !important;
+}
+
+#file-tree .jstree-open > .jstree-anchor.folder-node .jstree-icon:before {
+    content: 'folder_open' !important;
+}
+```
+
+## 🎯 成功方案的优势
+
+### 1. 用户体验优秀
+- ✅ **无闪烁**：图标从一开始就是正确的
+- ✅ **流畅加载**：文件树展开时图标已经设置好
+- ✅ **专业感**：用户看不到图标变化过程
+
+### 2. 技术实现优雅
+- ✅ **数据驱动**：在数据层面解决问题，而不是DOM层面
+- ✅ **一次设置**：避免重复处理和事件监听
+- ✅ **原生支持**：利用jsTree的原生属性设置功能
+
+### 3. 性能表现优秀
+- ✅ **减少DOM操作**：不需要后期修改DOM
+- ✅ **避免重复处理**：每个节点只处理一次
+- ✅ **内存效率**：不需要额外的事件监听器
+
+## 📊 支持的文件类型
+
+| 文件类型 | CSS类名 | 图标 | 颜色 | 说明 |
+|---------|--------|------|------|------|
+| `.md` | `file-md` | `description` | `#10b981` | Markdown文件（绿色） |
+| `.txt` | `file-txt` | `text_snippet` | `#6b7280` | 文本文件（灰色） |
+| `.json` | `file-json` | `data_object` | `#f59e0b` | JSON数据文件（橙色） |
+| `.py` | `file-py` | `code` | `#3b82f6` | Python文件（蓝色） |
+| `.js` | `file-js` | `javascript` | `#f59e0b` | JavaScript文件（橙色） |
+| `.html` | `file-html` | `html` | `#ef4444` | HTML文件（红色） |
+| 文件夹 | `folder-node` | `folder/folder_open` | `#fbbf24` | 文件夹（金黄色） |
+
+## 🔧 备用机制
+
+### 静默备用检查
+```javascript
+// 简化的类名添加函数 - 只作为备用
+function addFileTypeClasses() {
+    setTimeout(() => {
+        let processedCount = 0;
+        
+        $('#file-tree .jstree-anchor').each(function() {
+            const $anchor = $(this);
+            const text = $anchor.text().trim();
+            
+            // 只处理还没有文件类型类的文件
+            if (!$anchor.attr('class').match(/file-\w+/) && text.includes('.')) {
+                if (text.endsWith('.md')) {
+                    $anchor.addClass('file-md');
+                    processedCount++;
+                }
+                // ... 其他类型
+            }
+        });
+        
+        if (processedCount > 0) {
+            addDebugLog('🔧 备用处理完成，补充了 ' + processedCount + ' 个文件的类型');
+        }
+    }, 100);
+}
+```
+
+## 🧪 验证方法
+
+### 成功的调试输出
+```
+🔄 开始转换数据格式...
+✅ 数据格式转换完成，节点数量: 8
+🎨 设置文件类型图标...
+✅ 文件类型图标设置完成
+🔄 开始创建jsTree实例...
+✅ jsTree 初始化完成，文件树已可用
+🎯 jsTree ready事件触发，检查文件类型类
+```
+
+### 失败标志（应该避免）
+- ❌ 大量的 `🔍 处理节点` 日志
+- ❌ `✅ 添加 file-md 类到` 的重复日志
+- ❌ 文件夹展开时的处理日志
+
+## 🎯 方案对比总结
+
+| 方案 | 实现方式 | 用户体验 | 性能 | 维护性 | 推荐度 |
+|------|----------|----------|------|--------|--------|
+| CSS属性选择器 | CSS | ❌ 不工作 | ✅ 好 | ✅ 简单 | ❌ 不推荐 |
+| CSS :contains() | CSS | ❌ 不工作 | ✅ 好 | ✅ 简单 | ❌ 不推荐 |
+| DOM后处理 | JavaScript | ❌ 有闪烁 | ❌ 差 | ❌ 复杂 | ❌ 不推荐 |
+| **数据预处理** | **JavaScript** | **✅ 完美** | **✅ 优秀** | **✅ 清晰** | **✅ 强烈推荐** |
+
+通过数据预处理的方式，我们实现了最佳的用户体验和技术实现，这是处理jsTree图标自定义的标准解决方案。

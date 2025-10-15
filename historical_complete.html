@@ -1,63 +1,8 @@
 <!-- 网课笔记页面 - 基于从资料学习的完整功能 + 录音转写功能 -->
 
-<!-- Material Icons 字体 - 直接引用 -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined">
-
 <!-- Markdown增强功能的CSS和JS库 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
-
-<!-- jQuery - 使用CDN加载 -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.16/themes/default/style.min.css" />
-
-<!-- jsTree动态加载脚本 -->
-<script>
-// 动态加载jsTree库
-function loadJsTree() {
-    return new Promise((resolve, reject) => {
-        // 检查是否已经加载
-        if (typeof $.fn.jstree !== 'undefined') {
-            resolve();
-            return;
-        }
-        
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.16/jstree.min.js';
-        script.onload = () => {
-            console.log('✅ jsTree库加载成功');
-            resolve();
-        };
-        script.onerror = () => {
-            console.error('❌ jsTree库加载失败，尝试备用CDN');
-            // 尝试备用CDN
-            const backupScript = document.createElement('script');
-            backupScript.src = 'https://cdn.jsdelivr.net/npm/jstree@3.3.16/dist/jstree.min.js';
-            backupScript.onload = () => {
-                console.log('✅ jsTree库(备用CDN)加载成功');
-                resolve();
-            };
-            backupScript.onerror = () => {
-                console.error('❌ jsTree库(备用CDN)也加载失败');
-                reject(new Error('jsTree库加载失败'));
-            };
-            document.head.appendChild(backupScript);
-        };
-        document.head.appendChild(script);
-    });
-}
-
-// 全局jsTree加载状态
-window.jsTreeLoaded = false;
-window.jsTreeLoading = false;
-</script>
-
-<!-- 其他库保持CDN加载（可选优化） -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
@@ -82,15 +27,6 @@ window.jsTreeLoading = false;
     #file-structure {
         transition: all 0.3s ease;
         overflow: hidden;
-        /* 固定宽度，防止内容撑开 */
-        min-width: 300px !important;
-        max-width: 300px !important;
-        width: 300px !important;
-        flex-shrink: 0; /* 防止被压缩 */
-        /* 垂直滚动控制 */
-        display: flex !important;
-        flex-direction: column !important;
-        height: 100vh !important;
     }
     
     #file-structure.collapsed {
@@ -99,7 +35,7 @@ window.jsTreeLoading = false;
     }
     
     #file-structure.collapsed .file-structure-text,
-    #file-structure.collapsed #file-tree,
+    #file-structure.collapsed .file-tree-container,
     #file-structure.collapsed .space-x-2 button:not(#collapse-toggle-btn) {
         display: none;
     }
@@ -552,685 +488,6 @@ window.jsTreeLoading = false;
     #device-list::-webkit-scrollbar-thumb:hover {
         background: #a1a1a1;
     }
-
-    /* jsTree 自定义样式 - 匹配应用风格 */
-    #file-tree {
-        font-family: inherit;
-        font-size: 14px;
-        border: none !important;
-        box-shadow: none !important;
-        background: transparent !important;
-    }
-    
-    /* 去除jsTree默认容器的边框和阴影 - 更强的覆盖 */
-    #file-tree .jstree-default,
-    #file-tree.jstree-default,
-    .jstree-default {
-        border: none !important;
-        box-shadow: none !important;
-        background: transparent !important;
-        outline: none !important;
-    }
-    
-    /* 去除jsTree容器的所有可能边框样式 */
-    #file-tree *,
-    #file-tree .jstree-default *,
-    #file-tree .jstree-container-ul,
-    #file-tree .jstree-default .jstree-container-ul,
-    #file-tree .jstree-default .jstree-wholerow-ul {
-        border: none !important;
-        box-shadow: none !important;
-        outline: none !important;
-    }
-    
-    /* 强制去除jsTree主题的默认样式 */
-    .jstree-default .jstree-container-ul,
-    .jstree-default .jstree-wholerow-ul,
-    .jstree-default {
-        border: none !important;
-        box-shadow: none !important;
-        background: transparent !important;
-    }
-    
-    /* jsTree 节点样式 */
-    #file-tree .jstree-default .jstree-node {
-        min-height: 32px;
-        line-height: 32px;
-        margin: 0;
-        padding: 0;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor {
-        height: 32px;
-        line-height: 32px;
-        padding: 0 8px;
-        color: #4a5568;
-        text-decoration: none;
-        border-radius: 6px;
-        margin: 1px 0;
-        transition: all 0.2s ease;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor:hover {
-        background-color: #f7fafc;
-        color: #2d3748;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.jstree-clicked {
-        background-color: #e6f3ff;
-        color: #2b6cb0;
-        box-shadow: none;
-    }
-    
-    /* 文件夹和文件图标 */
-    #file-tree .jstree-default .jstree-icon {
-        width: 18px;
-        height: 18px;
-        margin-right: 8px;
-        background-size: contain;
-    }
-    
-    /* 文件夹图标 - 现代化设计 */
-    #file-tree .jstree-default .jstree-icon.jstree-folder {
-        background-image: none;
-        color: #fbbf24; /* 更现代的金黄色 */
-        font-family: 'Material Icons Outlined';
-        font-size: 16px; /* 稍微小一点，更精致 */
-        line-height: 18px;
-        transition: color 0.2s ease; /* 添加过渡效果 */
-    }
-    
-    #file-tree .jstree-default .jstree-icon.jstree-folder:before {
-        content: 'folder'; /* 保持经典文件夹图标 */
-    }
-    
-    #file-tree .jstree-default .jstree-open > .jstree-icon.jstree-folder:before {
-        content: 'folder_open'; /* 打开状态 */
-    }
-    
-    /* 文件夹悬停效果 */
-    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-folder {
-        color: #f59e0b; /* 悬停时更深的颜色 */
-    }
-    
-    /* 通过数据预处理设置的文件夹图标样式 */
-    #file-tree .jstree-anchor.folder-node .jstree-icon:before {
-        content: 'folder' !important;
-        font-family: 'Material Icons Outlined' !important;
-        color: #fbbf24 !important;
-        font-size: 16px !important;
-    }
-    
-    /* 展开状态的文件夹图标 */
-    #file-tree .jstree-open > .jstree-anchor.folder-node .jstree-icon:before {
-        content: 'folder_open' !important;
-    }
-    
-    /* 文件夹悬停效果 - 数据预处理版本 */
-    #file-tree .jstree-anchor.folder-node:hover .jstree-icon {
-        color: #f59e0b !important;
-    }
-    
-    /* 文件图标 - 根据文件类型区分 */
-    #file-tree .jstree-default .jstree-icon.jstree-file {
-        background-image: none;
-        color: #6b7280; /* 默认灰色 */
-        font-family: 'Material Icons Outlined';
-        font-size: 16px;
-        line-height: 18px;
-        transition: color 0.2s ease;
-    }
-    
-    /* Markdown文件特殊图标 */
-    #file-tree .jstree-default .jstree-icon.jstree-file:before {
-        content: 'article'; /* 更现代的文档图标 */
-    }
-    
-    /* 根据文件类型显示不同图标 - 简化选择器提高优先级 */
-    #file-tree .jstree-anchor.file-md .jstree-icon {
-        color: #10b981 !important; /* Markdown文件用绿色 */
-        font-family: 'Material Icons Outlined' !important;
-    }
-    
-    #file-tree .jstree-anchor.file-md .jstree-icon:before {
-        content: 'description' !important; /* Markdown专用图标 */
-    }
-    
-    /* 更高优先级的选择器 */
-    div#file-tree .jstree-anchor.file-md .jstree-icon.jstree-file {
-        color: #10b981 !important;
-        font-family: 'Material Icons Outlined' !important;
-    }
-    
-    div#file-tree .jstree-anchor.file-md .jstree-icon.jstree-file:before {
-        content: 'description' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-txt .jstree-icon.jstree-file {
-        color: #6b7280 !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-txt .jstree-icon.jstree-file:before {
-        content: 'text_snippet' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-json .jstree-icon.jstree-file {
-        color: #f59e0b !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-json .jstree-icon.jstree-file:before {
-        content: 'data_object' !important;
-    }
-    
-    /* 新增文件类型 */
-    #file-tree .jstree-default .jstree-anchor.file-py .jstree-icon.jstree-file {
-        color: #3b82f6 !important; /* Python文件用蓝色 */
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-py .jstree-icon.jstree-file:before {
-        content: 'code' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-js .jstree-icon.jstree-file {
-        color: #f59e0b !important; /* JavaScript文件用橙色 */
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-js .jstree-icon.jstree-file:before {
-        content: 'javascript' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-html .jstree-icon.jstree-file {
-        color: #ef4444 !important; /* HTML文件用红色 */
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-html .jstree-icon.jstree-file:before {
-        content: 'html' !important;
-    }
-    
-    /* 文件悬停效果 */
-    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-file {
-        transform: scale(1.1); /* 轻微放大效果 */
-    }
-    
-    /* 展开/收缩图标 - 现代化设计 */
-    #file-tree .jstree-default .jstree-ocl {
-        width: 18px;
-        height: 18px;
-        margin-right: 4px;
-        background-image: none;
-        color: #9ca3af; /* 更柔和的灰色 */
-        font-family: 'Material Icons Outlined';
-        font-size: 14px; /* 稍小一点，更精致 */
-        line-height: 18px;
-        text-align: center;
-        transition: all 0.2s ease; /* 添加过渡效果 */
-        border-radius: 2px; /* 轻微圆角 */
-    }
-    
-    #file-tree .jstree-default .jstree-ocl:before {
-        content: 'keyboard_arrow_right'; /* 更现代的箭头 */
-    }
-    
-    #file-tree .jstree-default .jstree-open > .jstree-ocl:before {
-        content: 'keyboard_arrow_down'; /* 向下箭头 */
-    }
-    
-    /* 展开/收缩图标悬停效果 */
-    #file-tree .jstree-default .jstree-ocl:hover {
-        color: #4b5563; /* 悬停时更深的颜色 */
-        background-color: #f3f4f6; /* 轻微背景色 */
-        transform: scale(1.1); /* 轻微放大 */
-    }
-    
-    /* 右键菜单样式 */
-    .jstree-contextmenu {
-        background: white;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-        padding: 4px 0;
-        font-size: 14px;
-    }
-    
-    .jstree-contextmenu .jstree-contextmenu-item {
-        padding: 8px 16px;
-        color: #4a5568;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    
-    .jstree-contextmenu .jstree-contextmenu-item:hover {
-        background-color: #f7fafc;
-        color: #2d3748;
-    }
-    
-    /* 重命名输入框样式 */
-    #file-tree .jstree-default .jstree-rename-input {
-        border: 2px solid #4299e1;
-        border-radius: 4px;
-        padding: 2px 6px;
-        font-size: 14px;
-        background: white;
-    }
-    
-    /* 文件树容器溢出处理 */
-    #file-tree {
-        overflow-x: auto; /* 水平滚动 */
-        overflow-y: auto; /* 垂直滚动 */
-        max-width: 100%; /* 限制最大宽度 */
-        white-space: nowrap; /* 防止文本换行 */
-        flex: 1 !important; /* 占用剩余空间 */
-        min-height: 0 !important; /* 允许收缩 */
-    }
-    
-    /* jsTree节点文本溢出处理 */
-    #file-tree .jstree-anchor {
-        max-width: 250px; /* 限制节点最大宽度 */
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        display: inline-block;
-        box-sizing: border-box;
-    }
-    
-    /* 深层嵌套节点的宽度限制 */
-    #file-tree .jstree-node {
-        max-width: 100%;
-        overflow: hidden;
-    }
-    
-    /* 确保图标和文本在一行显示 */
-    #file-tree .jstree-anchor .jstree-icon {
-        display: inline-block;
-        vertical-align: middle;
-        flex-shrink: 0; /* 图标不被压缩 */
-    }
-    
-    /* 文本部分的处理 */
-    #file-tree .jstree-anchor > .jstree-icon + * {
-        max-width: calc(100% - 20px); /* 减去图标宽度 */
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        display: inline-block;
-        vertical-align: middle;
-    }
-    
-    /* 确保jsTree容器不会超出面板宽度 */
-    #file-tree .jstree-default {
-        max-width: 100%;
-        overflow-x: auto;
-    }
-    
-    /* 滚动条样式 */
-    #file-tree::-webkit-scrollbar {
-        width: 6px;
-        height: 6px; /* 添加水平滚动条高度 */
-    }
-    
-    #file-tree::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 3px;
-    }
-    
-    #file-tree::-webkit-scrollbar-thumb {
-        background: #cbd5e0;
-        border-radius: 3px;
-    }
-    
-    #file-tree::-webkit-scrollbar-thumb:hover {
-        background: #a0aec0;
-    }
-    
-    /* 终极覆盖 - 确保去除所有jsTree边框和阴影 */
-    div#file-tree,
-    div#file-tree.jstree,
-    div#file-tree .jstree-default,
-    #file-structure #file-tree,
-    #file-structure #file-tree.jstree,
-    #file-structure #file-tree .jstree-default {
-        border: none !important;
-        box-shadow: none !important;
-        background: transparent !important;
-        outline: none !important;
-        -webkit-box-shadow: none !important;
-        -moz-box-shadow: none !important;
-    }
-    
-    /* 最高优先级图标样式覆盖 */
-    #file-structure div#file-tree .jstree-anchor.file-md .jstree-icon:before {
-        content: 'description' !important;
-        font-family: 'Material Icons Outlined' !important;
-        color: #10b981 !important;
-        font-size: 16px !important;
-    }
-    
-    #file-structure div#file-tree .jstree-anchor.file-md .jstree-icon {
-        color: #10b981 !important;
-        font-family: 'Material Icons Outlined' !important;
-    }
-    
-    /* 强制覆盖所有可能的图标样式 */
-    .jstree-anchor.file-md .jstree-icon:before {
-        content: 'description' !important;
-        font-family: 'Material Icons Outlined' !important;
-        color: #10b981 !important;
-    }
-    
-    /* 文档预览区标题宽度限制 - 防止长文件名撑开页面 */
-    #preview-title {
-        max-width: 400px !important;
-        overflow: hidden !important;
-        text-overflow: ellipsis !important;
-        white-space: nowrap !important;
-        flex-shrink: 1 !important;
-    }
-    
-    /* 确保顶部工具栏不会被撑开 */
-    #document-area .border-b.border-gray-200.p-4 {
-        min-width: 0; /* 允许flex子元素收缩 */
-    }
-    
-    /* 工具栏左侧区域的宽度控制 */
-    #document-area .flex.items-center.space-x-2 {
-        min-width: 0; /* 允许收缩 */
-        flex-shrink: 1; /* 允许收缩 */
-        overflow: hidden; /* 隐藏溢出 */
-    }
-    
-    /* 确保整个页面不会出现水平滚动 */
-    body, html {
-        overflow-x: hidden !important;
-    }
-    
-    /* 主容器的溢出控制 */
-    #main-content {
-        min-width: 0 !important;
-        overflow-x: hidden !important;
-    }
-    
-    /* 右侧面板宽度固定 - 防止内容撑开 */
-    #right-panel {
-        min-width: 300px !important;
-        max-width: 300px !important;
-        width: 300px !important;
-        flex-shrink: 0 !important;
-        overflow-x: hidden !important;
-        /* 垂直滚动控制 */
-        overflow-y: auto !important;
-        height: 100vh !important;
-        display: flex !important;
-        flex-direction: column !important;
-    }
-    
-    /* 右侧面板内部内容的溢出处理 */
-    #right-panel * {
-        max-width: 100% !important;
-        word-wrap: break-word !important;
-        overflow-wrap: break-word !important;
-    }
-    
-    /* 中间文档区域的宽度控制 */
-    #document-area {
-        min-width: 0 !important;
-        flex-shrink: 1 !important;
-        overflow-x: hidden !important;
-        /* 垂直滚动控制 */
-        display: flex !important;
-        flex-direction: column !important;
-        height: 100vh !important;
-    }
-    
-    /* Markdown编辑器宽度和溢出控制 */
-    #edit-content {
-        max-width: 100% !important;
-        width: 100% !important;
-        overflow-x: auto !important;
-        overflow-y: auto !important;
-        white-space: pre-wrap !important; /* 保持换行，但允许长行滚动 */
-        word-wrap: break-word !important;
-        overflow-wrap: break-word !important;
-        box-sizing: border-box !important;
-        /* 确保编辑器功能正常，但不覆盖hidden类 */
-        resize: none !important;
-    }
-    
-    /* 编辑器显示时的样式 */
-    #edit-content:not(.hidden) {
-        display: block !important;
-    }
-    
-    /* Markdown预览区域宽度和溢出控制 */
-    #preview-content {
-        max-width: 100% !important;
-        overflow-x: auto !important;
-        overflow-y: auto !important;
-        word-wrap: break-word !important;
-        overflow-wrap: break-word !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* 预览区域显示时的样式 */
-    #preview-content:not(.hidden) {
-        display: block !important;
-    }
-    
-    /* 确保Tailwind CSS的hidden类正常工作 - 提高优先级 */
-    .hidden {
-        display: none !important;
-    }
-    
-    /* 确保编辑器和预览区域的hidden类优先级最高 */
-    #edit-content.hidden,
-    #preview-content.hidden {
-        display: none !important;
-    }
-    
-    /* 右键菜单样式 */
-    .context-menu {
-        position: fixed;
-        background: white;
-        border: 1px solid #e5e7eb;
-        border-radius: 6px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        z-index: 1000;
-        min-width: 150px;
-        display: none;
-    }
-    
-    .context-menu.hidden {
-        display: none !important;
-    }
-    
-    .context-menu-item {
-        padding: 8px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        color: #374151;
-        display: flex;
-        align-items: center;
-        transition: background-color 0.2s ease;
-    }
-    
-    .context-menu-item:hover {
-        background-color: #f3f4f6;
-    }
-    
-    .context-menu-item .material-icons-outlined {
-        font-size: 18px;
-        margin-right: 8px;
-        color: #6b7280;
-    }
-    
-    .context-menu-item:hover .material-icons-outlined {
-        color: #4f46e5;
-    }
-    
-    .context-menu-separator {
-        height: 1px;
-        background-color: #e5e7eb;
-        margin: 4px 0;
-    }
-    
-    /* 预览区域内的代码块溢出处理 */
-    #preview-content pre {
-        max-width: 100% !important;
-        overflow-x: auto !important;
-        white-space: pre !important;
-        word-wrap: normal !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* 预览区域内的代码行处理 */
-    #preview-content code {
-        max-width: 100% !important;
-        word-break: break-all !important;
-        overflow-wrap: break-word !important;
-        white-space: pre-wrap !important;
-    }
-    
-    /* 预览区域内的表格溢出处理 */
-    #preview-content table {
-        max-width: 100% !important;
-        table-layout: fixed !important;
-        overflow-x: auto !important;
-        display: block !important;
-        white-space: nowrap !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* 预览区域内的长链接处理 */
-    #preview-content a {
-        word-break: break-all !important;
-        overflow-wrap: break-word !important;
-        max-width: 100% !important;
-        display: inline-block !important;
-    }
-    
-    /* 预览区域内所有文本元素的强制换行 */
-    #preview-content p,
-    #preview-content div,
-    #preview-content span,
-    #preview-content li,
-    #preview-content td,
-    #preview-content th {
-        word-break: break-word !important;
-        overflow-wrap: break-word !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* 预览区域内的长URL和代码强制换行 */
-    #preview-content {
-        word-break: break-all !important;
-        overflow-wrap: anywhere !important;
-    }
-    
-    /* 内容区域容器的溢出控制 */
-    #document-area .flex-1.p-4.overflow-y-auto {
-        overflow-x: hidden !important;
-        overflow-y: auto !important;
-        min-width: 0 !important;
-        min-height: 0 !important;
-        flex: 1 !important;
-    }
-    
-    /* 终极溢出控制 - 确保任何内容都不能撑开布局，但保护编辑器功能 */
-    #document-area,
-    #document-area *:not(#edit-content):not(#preview-content),
-    #preview-content,
-    #preview-content * {
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* 编辑器特殊处理 */
-    #edit-content {
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        /* 确保编辑器不被其他规则影响 */
-        position: relative !important;
-        z-index: 1 !important;
-    }
-    
-    /* 强制所有文本内容换行，但保护编辑器 */
-    #document-area *:not(#edit-content) {
-        word-wrap: break-word !important;
-        overflow-wrap: break-word !important;
-        word-break: break-word !important;
-    }
-    
-    /* 编辑器文本处理 */
-    #edit-content {
-        word-wrap: normal !important;
-        overflow-wrap: normal !important;
-        word-break: normal !important;
-        white-space: pre-wrap !important;
-    }
-    
-    /* 特殊处理超长的单词和URL */
-    #preview-content * {
-        hyphens: auto !important;
-        -webkit-hyphens: auto !important;
-        -moz-hyphens: auto !important;
-    }
-    
-    /* 确保容器本身不会被撑开 - 但不影响编辑器功能 */
-    .flex-1:not(#edit-content):not(#preview-content) {
-        min-width: 0 !important;
-        overflow: hidden !important;
-    }
-    
-    /* 右侧面板内部滚动区域 */
-    #voice-panel,
-    #knowledge-panel {
-        flex: 1 !important;
-        overflow-y: auto !important;
-        min-height: 0 !important;
-    }
-    
-    /* 语音面板和知识点面板的内容区域 */
-    #voice-panel .flex-1,
-    #knowledge-panel .flex-1 {
-        overflow-y: auto !important;
-        min-height: 0 !important;
-    }
-    
-    /* 滚动条样式统一 */
-    #file-tree::-webkit-scrollbar,
-    #document-area .flex-1::-webkit-scrollbar,
-    #right-panel::-webkit-scrollbar,
-    #voice-panel::-webkit-scrollbar,
-    #knowledge-panel::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-    }
-    
-    #file-tree::-webkit-scrollbar-track,
-    #document-area .flex-1::-webkit-scrollbar-track,
-    #right-panel::-webkit-scrollbar-track,
-    #voice-panel::-webkit-scrollbar-track,
-    #knowledge-panel::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 3px;
-    }
-    
-    #file-tree::-webkit-scrollbar-thumb,
-    #document-area .flex-1::-webkit-scrollbar-thumb,
-    #right-panel::-webkit-scrollbar-thumb,
-    #voice-panel::-webkit-scrollbar-thumb,
-    #knowledge-panel::-webkit-scrollbar-thumb {
-        background: #cbd5e0;
-        border-radius: 3px;
-    }
-    
-    #file-tree::-webkit-scrollbar-thumb:hover,
-    #document-area .flex-1::-webkit-scrollbar-thumb:hover,
-    #right-panel::-webkit-scrollbar-thumb:hover,
-    #voice-panel::-webkit-scrollbar-thumb:hover,
-    #knowledge-panel::-webkit-scrollbar-thumb:hover {
-        background: #a0aec0;
-    }
 </style>
 
 <div class="flex h-screen bg-white">
@@ -1238,14 +495,14 @@ window.jsTreeLoading = false;
     <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
         
         <!-- 左侧文件结构面板 -->
-        <div class="bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
+        <div class="w-1/4 bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-lg font-semibold text-text-dark-brown file-structure-text">文件结构</h2>
                 <div class="space-x-2">
-                    <button class="text-text-gray hover:text-primary" onclick="createNewFolderInRoot()" title="新建文件夹">
+                    <button class="text-text-gray hover:text-primary" onclick="createNewFolder()" title="新建文件夹">
                         <span class="material-icons-outlined">create_new_folder</span>
                     </button>
-                    <button class="text-text-gray hover:text-primary" onclick="createNewNoteInRoot()" title="新建笔记">
+                    <button class="text-text-gray hover:text-primary" onclick="createNewNote()" title="新建笔记">
                         <span class="material-icons-outlined">note_add</span>
                     </button>
                     <button class="text-text-gray hover:text-primary" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
@@ -1254,14 +511,16 @@ window.jsTreeLoading = false;
                 </div>
             </div>
             
-            <!-- jsTree 文件树 - 直接显示，无外层容器 -->
-            <div id="loading-indicator" class="flex items-center justify-center py-8">
-                <div class="animate-spin">
-                    <span class="material-icons-outlined text-primary">refresh</span>
+            <!-- 文件树容器 -->
+            <div class="flex-1 overflow-y-auto pr-2 file-tree-container">
+                <div id="loading-indicator" class="flex items-center justify-center py-8">
+                    <div class="animate-spin">
+                        <span class="material-icons-outlined text-primary">refresh</span>
+                    </div>
+                    <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
                 </div>
-                <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
+                <div id="file-tree-container"></div>
             </div>
-            <div id="file-tree" class="flex-1 overflow-y-auto"></div>
         </div>
         
         <!-- 中间文档预览/编辑区域 -->
@@ -1278,7 +537,7 @@ window.jsTreeLoading = false;
                         保存
                     </button>
                     <button id="preview-btn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm" onclick="switchToPreview()">预览</button>
-                    <button id="edit-btn" class="px-4 py-2 bg-white border border-gray-300 text-text-gray rounded-lg text-sm" onclick="try { addDebugLog('🖱️ 编辑按钮被点击'); } catch(e) { console.log('调试失败:', e); } switchToEdit();">编辑</button>
+                    <button id="edit-btn" class="px-4 py-2 bg-white border border-gray-300 text-text-gray rounded-lg text-sm" onclick="switchToEdit()">编辑</button>
                 </div>
             </div>
             
@@ -1298,7 +557,7 @@ window.jsTreeLoading = false;
         <div class="resizer" id="resizer"></div>
 
         <!-- 右侧知识点/实时语音面板 -->
-        <div class="bg-white p-4 flex flex-col" id="right-panel">
+        <div class="w-1/4 bg-white p-4 flex flex-col" id="right-panel">
             <!-- 🎯 网课笔记功能标识 -->
             
             
@@ -1553,100 +812,13 @@ window.jsTreeLoading = false;
 </div>
 
 <script>
-// 全局函数定义 - 确保在页面加载前就可用
-window.startInlineRename = function(nameSpan) {
-    const fileItem = nameSpan.closest('li');
-    const nameInput = fileItem.querySelector('.file-name-input');
-    
-    if (!nameInput) {
-        console.error('未找到重命名输入框');
-        return;
-    }
-    
-    // 隐藏文件名显示，显示输入框
-    nameSpan.classList.add('hidden');
-    nameInput.classList.remove('hidden');
-    nameInput.focus();
-    nameInput.select();
-    
-    console.log('开始内联重命名: ' + nameSpan.textContent);
-};
-
-window.finishInlineRename = function(input) {
-    const fileItem = input.closest('li');
-    const nameSpan = fileItem.querySelector('.file-name');
-    const currentPath = fileItem.getAttribute('data-path');
-    const currentName = fileItem.getAttribute('data-name');
-    const newName = input.value.trim();
-    
-    // 恢复显示
-    input.classList.add('hidden');
-    nameSpan.classList.remove('hidden');
-    
-    if (newName && newName !== currentName) {
-        console.log(`内联重命名: ${currentName} -> ${newName}`);
-        
-        if (window.pybridge && window.pybridge.renameFileOrFolder) {
-            window.pybridge.renameFileOrFolder(currentPath, newName, function(success) {
-                if (success) {
-                    console.log('重命名成功');
-                    // 更新显示
-                    nameSpan.textContent = newName;
-                    fileItem.setAttribute('data-name', newName);
-                    // 更新路径
-                    const pathParts = currentPath.split('/');
-                    pathParts[pathParts.length - 1] = newName;
-                    const newPath = pathParts.join('/');
-                    fileItem.setAttribute('data-path', newPath);
-                } else {
-                    console.error('重命名失败');
-                    // 恢复原始值
-                    input.value = currentName;
-                    nameSpan.textContent = currentName;
-                }
-            });
-        }
-    } else {
-        // 恢复原始值
-        input.value = currentName;
-    }
-};
-
-window.handleRenameKeydown = function(event, input) {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        input.blur(); // 触发finishInlineRename
-    } else if (event.key === 'Escape') {
-        event.preventDefault();
-        const fileItem = input.closest('li');
-        const nameSpan = fileItem.querySelector('.file-name');
-        const currentName = fileItem.getAttribute('data-name');
-        
-        // 取消重命名，恢复原始状态
-        input.value = currentName;
-        input.classList.add('hidden');
-        nameSpan.classList.remove('hidden');
-    }
-};
-
-window.handlePractice = function(e) {
-    if (e) {
-        e.stopPropagation();
-        e.preventDefault();
-    }
-    
-    console.log('handlePractice 函数被调用');
-    // 这里可以添加练习功能的具体实现
-    alert('练习功能已触发');
-};
-
 (function() {
     'use strict';
     
-    let currentFilePath = null;
-    let currentFileName = null;
+    let currentFilePath = '';
+    let currentFileName = '';
     let isEditMode = false;
-    let contextMenuTarget = null;  // 添加缺失的contextMenuTarget变量
+    let contextMenuTarget = null;
     let originalContent = '';  // 原始文件内容
     let hasUnsavedChanges = false;  // 是否有未保存的更改
 
@@ -1883,51 +1055,6 @@ window.handlePractice = function(e) {
     // 简化的日志函数
     function debugLog(message) {
         console.log(message);
-    }
-    
-    // 调试面板函数
-    function addDebugLog(message) {
-        console.log(message);  // 同时输出到浏览器控制台
-        
-        let debugPanel = document.getElementById('practice-debug-panel');
-        if (!debugPanel) {
-            debugPanel = createDebugPanel();  // 自动创建面板
-        }
-        
-        const logContainer = debugPanel.querySelector('#debug-log');
-        if (logContainer) {
-            const timestamp = new Date().toLocaleTimeString();
-            logContainer.innerHTML += `<div>[${timestamp}] ${message}</div>`;
-            logContainer.scrollTop = logContainer.scrollHeight;  // 自动滚动到底部
-        }
-    }
-    
-    // 创建调试面板
-    function createDebugPanel() {
-        const panel = document.createElement('div');
-        panel.id = 'practice-debug-panel';
-        panel.style.cssText = `
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            width: 400px;
-            height: 300px;
-            background: white;
-            border: 2px solid #ccc;
-            border-radius: 8px;
-            z-index: 10000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
-        
-        panel.innerHTML = `
-            <div style="background: #f0f0f0; padding: 8px; border-bottom: 1px solid #ccc; font-weight: bold;">
-                调试面板 <button onclick="this.parentElement.parentElement.style.display='none'" style="float: right; background: #ff4444; color: white; border: none; border-radius: 3px; padding: 2px 6px;">×</button>
-            </div>
-            <div id="debug-log" style="padding: 8px; height: 250px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.4;"></div>
-        `;
-        
-        document.body.appendChild(panel);
-        return panel;
     }
     
     // 音频电平监控相关变量
@@ -3769,30 +2896,41 @@ window.handlePractice = function(e) {
         }
     }
 
-    // 页面初始化 - 简化版本，提升加载速度
+    // 页面初始化
     function initializePage() {
-        addDebugLog('🔥 网课笔记页面初始化开始');
+        debugLog('页面初始化开始');
         
         // 检查Bridge连接
         if (window.pybridge) {
-            addDebugLog('✅ Bridge对象已可用，立即加载文件结构');
+            debugLog('Bridge对象已可用，立即加载文件结构');
             loadFileStructure();
         } else {
-            addDebugLog('⚠️ Bridge对象不可用，等待连接...');
-            // 简单重试机制
-            setTimeout(() => {
+            debugLog('Bridge对象不可用，等待连接...');
+            // 多次重试加载文件结构
+            let retryCount = 0;
+            const maxRetries = 5;
+            
+            const tryLoadFileStructure = () => {
+                retryCount++;
+                debugLog(`第${retryCount}次尝试加载文件结构...`);
+                
                 if (window.pybridge) {
-                    addDebugLog('✅ Bridge连接成功，加载文件结构');
+                    debugLog('Bridge连接成功，加载文件结构');
                     loadFileStructure();
+                } else if (retryCount < maxRetries) {
+                    debugLog(`Bridge仍未连接，${1000 * retryCount}ms后重试...`);
+                    setTimeout(tryLoadFileStructure, 1000 * retryCount);
                 } else {
-                    debugError('Bridge连接超时');
+                    debugError('Bridge连接超时，已重试' + maxRetries + '次');
                     // 显示错误信息给用户
-                    const fileTree = document.getElementById('file-tree');
-                    if (fileTree) {
-                        fileTree.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载失败，请刷新页面重试</div>';
+                    const container = document.getElementById('file-tree-container');
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载失败，请刷新页面重试</div>';
                     }
                 }
-            }, 1000);
+            };
+            
+            setTimeout(tryLoadFileStructure, 500);
         }
         
         // 添加全局事件监听器
@@ -3851,727 +2989,53 @@ window.handlePractice = function(e) {
         initializeAudioDevice();
     }
 
-    // jsTree 文件结构管理
-    let fileTreeInstance = null;
-    
-    // 加载文件结构 - 使用 jsTree
+    // 加载文件结构
     function loadFileStructure() {
-        addDebugLog('🔥 loadFileStructure被调用');
-        addDebugLog('🔍 检查Bridge对象状态...');
+        debugLog('开始加载文件结构');
         
         if (!window.pybridge || typeof window.pybridge.getFileStructure !== 'function') {
-            addDebugLog('❌ Bridge对象或getFileStructure方法不可用');
-            showFileTreeError('Bridge连接异常，请刷新页面');
+            debugError('Bridge对象或getFileStructure方法不可用');
+            // 显示错误状态
+            const container = document.getElementById('file-tree-container');
+            if (container) {
+                container.innerHTML = '<div class="text-center py-8 text-red-500">Bridge连接异常，请刷新页面</div>';
+            }
             return;
         }
         
-        addDebugLog('✅ Bridge对象检查通过，开始获取文件结构');
-        
         // 显示加载状态
-        showFileTreeLoading();
+        const container = document.getElementById('file-tree-container');
+        if (container) {
+            container.innerHTML = '<div class="text-center py-8 text-gray-500"><div class="animate-spin inline-block w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full mr-2"></div>正在加载文件结构...</div>';
+        }
         
         try {
             window.pybridge.getFileStructure(function(jsonString) {
-                addDebugLog('🔥 getFileStructure回调被调用');
-                addDebugLog('📊 收到数据类型: ' + typeof jsonString);
-                addDebugLog('📋 数据预览: ' + (jsonString ? jsonString.substring(0, 200) + '...' : '空数据'));
+                debugLog('收到文件结构数据: ' + (jsonString ? jsonString.substring(0, 100) + '...' : '空数据'));
                 
                 if (!jsonString) {
-                    addDebugLog('❌ 收到空的文件结构数据');
-                    showFileTreeError('文件结构数据为空');
-                    return;
-                }
-                
-                // 检查是否是Promise对象
-                if (jsonString && typeof jsonString.then === 'function') {
-                    addDebugLog('🔍 检测到Promise对象，等待解析...');
-                    jsonString.then(function(actualData) {
-                        addDebugLog('✅ Promise解析完成，数据类型: ' + typeof actualData);
-                        try {
-                            const structure = JSON.parse(actualData);
-                            addDebugLog('✅ 文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
-                            initializeJsTree(structure);
-                        } catch (parseError) {
-                            addDebugLog('❌ 解析文件结构JSON失败: ' + parseError.message);
-                            addDebugLog('📋 原始数据: ' + actualData.substring(0, 500));
-                            showFileTreeError('文件结构数据解析失败');
-                        }
-                    }).catch(function(error) {
-                        addDebugLog('❌ Promise解析失败: ' + error.message);
-                        showFileTreeError('文件结构数据解析失败');
-                    });
+                    debugError('收到空的文件结构数据');
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构数据为空</div>';
+                    }
                     return;
                 }
                 
                 try {
                     const structure = JSON.parse(jsonString);
-                    addDebugLog('✅ 文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
-                    initializeJsTree(structure);
+                    debugLog('文件结构解析成功，项目数量: ' + (structure ? structure.length : 0));
+                    renderFileTree(structure);
                 } catch (parseError) {
-                    addDebugLog('❌ 解析文件结构JSON失败: ' + parseError.message);
-                    addDebugLog('📋 原始数据: ' + jsonString.substring(0, 500));
-                    showFileTreeError('文件结构数据解析失败');
+                    debugError('解析文件结构JSON失败: ' + parseError.message);
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构数据解析失败</div>';
+                    }
                 }
             });
         } catch (error) {
             debugError('调用getFileStructure时发生错误: ' + error.message);
-            showFileTreeError('文件结构加载异常: ' + error.message);
-        }
-    }
-    
-    // 显示加载状态
-    function showFileTreeLoading() {
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const fileTree = document.getElementById('file-tree');
-        
-        if (loadingIndicator) loadingIndicator.style.display = 'flex';
-        if (fileTree) fileTree.style.display = 'none';
-    }
-    
-    // 显示错误状态
-    function showFileTreeError(message) {
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const fileTree = document.getElementById('file-tree');
-        
-        if (loadingIndicator) loadingIndicator.style.display = 'none';
-        if (fileTree) {
-            fileTree.innerHTML = `<div class="text-center py-8 text-red-500">${message}</div>`;
-            fileTree.style.display = 'block';
-        }
-    }
-    
-    // 隐藏加载状态
-    function hideFileTreeLoading() {
-        const loadingIndicator = document.getElementById('loading-indicator');
-        const fileTree = document.getElementById('file-tree');
-        
-        if (loadingIndicator) loadingIndicator.style.display = 'none';
-        if (fileTree) fileTree.style.display = 'block';
-    }
-    
-    // 将后端数据转换为 jsTree 格式
-    function convertToJsTreeFormat(items) {
-        return items.map(item => {
-            const jsTreeNode = {
-                id: item.path,
-                text: item.name,
-                type: item.type,
-                data: {
-                    path: item.path,
-                    name: item.name,
-                    type: item.type
-                }
-            };
-            
-            if (item.type === 'folder') {
-                jsTreeNode.children = item.children ? convertToJsTreeFormat(item.children) : [];
-                jsTreeNode.state = { opened: false }; // 默认收起
-            }
-            
-            return jsTreeNode;
-        });
-    }
-    
-    // 初始化 jsTree
-    async function initializeJsTree(structure) {
-        addDebugLog('🔥 initializeJsTree被调用');
-        addDebugLog('📊 结构数据项目数: ' + (structure ? structure.length : 0));
-        
-        // 检查jQuery是否加载
-        if (typeof $ === 'undefined') {
-            addDebugLog('⚠️ jQuery未加载，等待jQuery加载...');
-            setTimeout(() => initializeJsTree(structure), 500);
-            return;
-        }
-        
-        // 动态加载jsTree
-        if (typeof $.fn.jstree === 'undefined') {
-            if (window.jsTreeLoading) {
-                addDebugLog('⏳ jsTree正在加载中，等待...');
-                setTimeout(() => initializeJsTree(structure), 1000);
-                return;
-            }
-            
-            addDebugLog('🔄 开始动态加载jsTree库...');
-            window.jsTreeLoading = true;
-            
-            try {
-                await loadJsTree();
-                window.jsTreeLoaded = true;
-                window.jsTreeLoading = false;
-                addDebugLog('✅ jsTree库动态加载成功');
-            } catch (error) {
-                window.jsTreeLoading = false;
-                addDebugLog('❌ jsTree库动态加载失败: ' + error.message);
-                showFileTreeError('jsTree库加载失败，请检查网络连接');
-                return;
-            }
-        }
-        
-        addDebugLog('✅ jQuery已加载，开始初始化jsTree');
-        hideFileTreeLoading();
-        
-        try {
-            addDebugLog('🔄 开始转换数据格式...');
-            let treeData = convertToJsTreeFormat(structure);
-            addDebugLog('✅ 数据格式转换完成，节点数量: ' + (treeData ? treeData.length : 0));
-            
-            // 在创建jsTree之前设置文件类型
-            addDebugLog('🎨 设置文件类型图标...');
-            treeData = setFileTypeFromData(treeData);
-            addDebugLog('✅ 文件类型图标设置完成');
-            
-            // 检查file-tree元素是否存在
-            const fileTreeElement = document.getElementById('file-tree');
-            if (!fileTreeElement) {
-                addDebugLog('❌ file-tree元素不存在！');
-                return;
-            }
-            addDebugLog('✅ file-tree元素检查通过');
-            
-            // 销毁现有的树实例
-            if (fileTreeInstance) {
-                addDebugLog('🔄 销毁现有jsTree实例...');
-                $('#file-tree').jstree('destroy');
-                fileTreeInstance = null;
-                addDebugLog('✅ 现有实例已销毁');
-            }
-            
-            addDebugLog('🔄 开始创建jsTree实例...');
-            // 初始化 jsTree
-            $('#file-tree').jstree({
-            'core': {
-                'data': treeData,
-                'check_callback': true, // 允许编辑操作
-                'themes': {
-                    'name': 'default',
-                    'dots': false,
-                    'icons': true
-                }
-            },
-            'plugins': ['contextmenu', 'dnd', 'types'],
-            'types': {
-                'folder': {
-                    'icon': 'jstree-folder'
-                },
-                'file': {
-                    'icon': 'jstree-file'
-                }
-            },
-            'contextmenu': {
-                'items': function(node) {
-                    return getContextMenuItems(node);
-                }
-            },
-            'dnd': {
-                'is_draggable': function(nodes) {
-                    return true; // 允许拖拽
-                }
-            }
-        });
-        
-            // 绑定事件
-            addDebugLog('🔄 绑定jsTree事件...');
-            bindJsTreeEvents();
-            fileTreeInstance = $('#file-tree').jstree(true);
-            
-            // 设置初始化标志
-            window.fileTreeInitialized = true;
-            
-            // 添加文件类型CSS类
-            addFileTypeClasses();
-            
-            addDebugLog('✅ jsTree 初始化完成，文件树已可用');
-        } catch (error) {
-            addDebugLog('❌ jsTree初始化失败: ' + error.message);
-            console.error('jsTree初始化错误:', error);
-            showFileTreeError('文件树初始化失败: ' + error.message);
-        }
-    }
-    
-    // 基于数据直接设置文件类型 - 在jsTree创建时就确定图标
-    function setFileTypeFromData(treeData) {
-        function processNode(node) {
-            if (node.type === 'file') {
-                // 根据文件扩展名设置图标类型
-                if (node.text.endsWith('.md')) {
-                    node.icon = 'jstree-file file-md-icon';
-                    node.li_attr = node.li_attr || {};
-                    node.li_attr.class = 'file-md-node';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-md';
-                } else if (node.text.endsWith('.txt')) {
-                    node.icon = 'jstree-file file-txt-icon';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-txt';
-                } else if (node.text.endsWith('.json')) {
-                    node.icon = 'jstree-file file-json-icon';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-json';
-                } else if (node.text.endsWith('.py')) {
-                    node.icon = 'jstree-file file-py-icon';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-py';
-                } else if (node.text.endsWith('.js')) {
-                    node.icon = 'jstree-file file-js-icon';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-js';
-                } else if (node.text.endsWith('.html')) {
-                    node.icon = 'jstree-file file-html-icon';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-html';
-                }
-            } else if (node.type === 'folder') {
-                // 设置文件夹图标
-                node.icon = 'jstree-folder folder-icon';
-                node.a_attr = node.a_attr || {};
-                node.a_attr.class = 'folder-node';
-            }
-            
-            // 递归处理子节点
-            if (node.children && node.children.length > 0) {
-                node.children.forEach(child => processNode(child));
-            }
-        }
-        
-        treeData.forEach(node => processNode(node));
-        return treeData;
-    }
-    
-    // 简化的类名添加函数 - 只作为备用
-    function addFileTypeClasses() {
-        setTimeout(() => {
-            let processedCount = 0;
-            
-            $('#file-tree .jstree-anchor').each(function() {
-                const $anchor = $(this);
-                const text = $anchor.text().trim();
-                
-                // 只处理还没有文件类型类的文件
-                if (!$anchor.attr('class').match(/file-\w+/) && text.includes('.')) {
-                    if (text.endsWith('.md')) {
-                        $anchor.addClass('file-md');
-                        processedCount++;
-                    } else if (text.endsWith('.txt')) {
-                        $anchor.addClass('file-txt');
-                        processedCount++;
-                    } else if (text.endsWith('.json')) {
-                        $anchor.addClass('file-json');
-                        processedCount++;
-                    } else if (text.endsWith('.py')) {
-                        $anchor.addClass('file-py');
-                        processedCount++;
-                    } else if (text.endsWith('.js')) {
-                        $anchor.addClass('file-js');
-                        processedCount++;
-                    } else if (text.endsWith('.html')) {
-                        $anchor.addClass('file-html');
-                        processedCount++;
-                    }
-                }
-            });
-            
-            if (processedCount > 0) {
-                addDebugLog('🔧 备用处理完成，补充了 ' + processedCount + ' 个文件的类型');
-            }
-        }, 100);
-    }
-    
-    // 手动测试函数 - 可在浏览器控制台调用
-    window.testFileTypeClasses = function() {
-        console.log('🔧 手动测试文件类型类添加');
-        addFileTypeClasses();
-    }
-    
-    // 手动检查函数 - 可在浏览器控制台调用
-    window.checkFileTypeClasses = function() {
-        console.log('🔍 检查文件类型类');
-        $('#file-tree .jstree-anchor').each(function() {
-            const $anchor = $(this);
-            const text = $anchor.text().trim();
-            const classes = $anchor.attr('class') || '';
-            console.log(`文件: ${text}, 类名: ${classes}`);
-        });
-    }
-    
-    // 绑定 jsTree 事件
-    function bindJsTreeEvents() {
-        $('#file-tree')
-            // jsTree完全加载完成事件
-            .on('ready.jstree', function(e, data) {
-                addDebugLog('🎯 jsTree ready事件触发，检查文件类型类');
-                addFileTypeClasses(); // 只作为备用检查
-            })
-            // 节点选中事件
-            .on('select_node.jstree', function(e, data) {
-                const node = data.node;
-                debugLog('选中节点: ' + node.text + ' (' + node.data.type + ')');
-                
-                if (node.data.type === 'file') {
-                    // 打开文件
-                    selectFile(node.data.path);
-                }
-            })
-            // 节点重命名事件
-            .on('rename_node.jstree', function(e, data) {
-                const node = data.node;
-                const oldName = data.old;
-                const newName = data.text;
-                
-                debugLog(`重命名: ${oldName} -> ${newName}`);
-                
-                if (oldName !== newName) {
-                    handleJsTreeRename(node.data.path, newName);
-                }
-            })
-            // 节点移动事件
-            .on('move_node.jstree', function(e, data) {
-                const node = data.node;
-                const parent = data.parent;
-                
-                debugLog(`移动节点: ${node.text} 到 ${parent}`);
-                handleJsTreeMove(node, parent);
-            });
-    }
-    
-    // 获取右键菜单项
-    function getContextMenuItems(node) {
-        const items = {};
-        
-        if (node.data.type === 'folder') {
-            items.createNote = {
-                label: '新建笔记',
-                icon: 'jstree-file',
-                action: function() {
-                    createNewNoteInFolder(node.data.path);
-                }
-            };
-            
-            items.createFolder = {
-                label: '新建文件夹',
-                icon: 'jstree-folder',
-                action: function() {
-                    createNewFolderInFolder(node.data.path);
-                }
-            };
-        }
-        
-        items.rename = {
-            label: '重命名',
-            icon: 'jstree-file',
-            action: function() {
-                $('#file-tree').jstree('edit', node);
-            }
-        };
-        
-        items.delete = {
-            label: '删除',
-            icon: 'jstree-file',
-            action: function() {
-                if (confirm(`确定要删除 "${node.text}" 吗？此操作不可恢复。`)) {
-                    handleJsTreeDelete(node.data.path);
-                }
-            }
-        };
-        
-        return items;
-    }
-    
-    // jsTree 事件处理函数
-    
-    // 处理重命名
-    function handleJsTreeRename(filePath, newName) {
-        if (window.pybridge && window.pybridge.renameFileOrFolder) {
-            window.pybridge.renameFileOrFolder(filePath, newName, function(success) {
-                if (success) {
-                    debugLog('重命名成功');
-                    showFileOperationFeedback('重命名成功', 'success');
-                    // 更新节点数据
-                    const node = fileTreeInstance.get_node(filePath);
-                    if (node) {
-                        const pathParts = filePath.split('/');
-                        pathParts[pathParts.length - 1] = newName;
-                        const newPath = pathParts.join('/');
-                        node.data.path = newPath;
-                        node.data.name = newName;
-                        node.id = newPath;
-                    }
-                } else {
-                    debugError('重命名失败');
-                    showFileOperationFeedback('重命名失败，请检查名称是否已存在', 'error');
-                    // 重新加载文件结构
-                    loadFileStructure();
-                }
-            });
-        }
-    }
-    
-    // 处理删除
-    function handleJsTreeDelete(filePath) {
-        if (window.pybridge && window.pybridge.deleteFileOrFolder) {
-            window.pybridge.deleteFileOrFolder(filePath, function(success) {
-                if (success) {
-                    debugLog('删除成功');
-                    showFileOperationFeedback('删除成功', 'success');
-                    // 从树中移除节点
-                    fileTreeInstance.delete_node(filePath);
-                } else {
-                    debugError('删除失败');
-                    showFileOperationFeedback('删除失败', 'error');
-                }
-            });
-        }
-    }
-    
-    // 处理移动
-    function handleJsTreeMove(node, parentId) {
-        const sourcePath = node.data.path;
-        const targetPath = parentId === '#' ? 'vault' : parentId;
-        
-        if (window.pybridge && window.pybridge.moveFileOrFolder) {
-            window.pybridge.moveFileOrFolder(sourcePath, targetPath, function(success) {
-                if (success) {
-                    debugLog('移动成功');
-                    showFileOperationFeedback(`${node.text} 已移动`, 'success');
-                    // 更新节点路径
-                    const newPath = targetPath === 'vault' ? node.text : `${targetPath}/${node.text}`;
-                    node.data.path = newPath;
-                    node.id = newPath;
-                } else {
-                    debugError('移动失败');
-                    showFileOperationFeedback(`移动 ${node.text} 失败`, 'error');
-                    // 重新加载文件结构
-                    loadFileStructure();
-                }
-            });
-        }
-    }
-    
-    // 在文件夹中创建新笔记
-    function createNewNoteInFolder(folderPath) {
-        if (window.pybridge && window.pybridge.createNewNote) {
-            window.pybridge.createNewNote(folderPath, function(result) {
-                if (result && result.trim() !== '') {
-                    debugLog('新笔记创建成功: ' + result);
-                    showFileOperationFeedback('笔记创建成功', 'success');
-                    
-                    // 添加新节点到 jsTree
-                    const newPath = folderPath === 'vault' ? result : `${folderPath}/${result}`;
-                    const newNode = {
-                        id: newPath,
-                        text: result,
-                        type: 'file',
-                        data: {
-                            path: newPath,
-                            name: result,
-                            type: 'file'
-                        }
-                    };
-                    
-                    const parentId = folderPath === 'vault' ? '#' : folderPath;
-                    const nodeId = fileTreeInstance.create_node(parentId, newNode);
-                    
-                    if (nodeId) {
-                        // 选中新节点并进入重命名模式
-                        fileTreeInstance.select_node(nodeId);
-                        setTimeout(() => {
-                            fileTreeInstance.edit(nodeId);
-                        }, 100);
-                    }
-                } else {
-                    showFileOperationFeedback('创建笔记失败', 'error');
-                }
-            });
-        }
-    }
-    
-    // 在文件夹中创建新文件夹
-    function createNewFolderInFolder(folderPath) {
-        if (window.pybridge && window.pybridge.createNewFolder) {
-            window.pybridge.createNewFolder(folderPath, function(result) {
-                if (result && result.trim() !== '') {
-                    debugLog('新文件夹创建成功: ' + result);
-                    showFileOperationFeedback('文件夹创建成功', 'success');
-                    
-                    // 添加新节点到 jsTree
-                    const newPath = folderPath === 'vault' ? result : `${folderPath}/${result}`;
-                    const newNode = {
-                        id: newPath,
-                        text: result,
-                        type: 'folder',
-                        children: [],
-                        data: {
-                            path: newPath,
-                            name: result,
-                            type: 'folder'
-                        }
-                    };
-                    
-                    const parentId = folderPath === 'vault' ? '#' : folderPath;
-                    const nodeId = fileTreeInstance.create_node(parentId, newNode);
-                    
-                    if (nodeId) {
-                        // 选中新节点并进入重命名模式
-                        fileTreeInstance.select_node(nodeId);
-                        setTimeout(() => {
-                            fileTreeInstance.edit(nodeId);
-                        }, 100);
-                    }
-                } else {
-                    showFileOperationFeedback('创建文件夹失败', 'error');
-                }
-            });
-        }
-    }
-    
-    // 在根目录创建新笔记
-    function createNewNoteInRoot() {
-        createNewNoteInFolder('vault');
-    }
-    
-    // 在根目录创建新文件夹
-    function createNewFolderInRoot() {
-        createNewFolderInFolder('vault');
-    }
-    
-    // 选择并打开文件
-    function selectFile(filePath) {
-        debugLog('选择文件: ' + filePath);
-        debugLog('文件路径类型: ' + typeof filePath);
-        debugLog('文件路径长度: ' + (filePath ? filePath.length : 0));
-        
-        try {
-            addDebugLog('🖱️ jsTree文件被选中');
-            addDebugLog('📊 文件路径: ' + filePath);
-        } catch(e) {
-            console.log('调试输出失败:', e);
-        }
-        
-        if (!filePath || filePath.trim() === '') {
-            debugError('文件路径为空');
-            return;
-        }
-        
-        // 标准化文件路径 - 确保使用正确的分隔符
-        let normalizedPath = filePath.replace(/\\/g, '/');
-        debugLog('标准化后的路径: ' + normalizedPath);
-        
-        if (!window.pybridge || typeof window.pybridge.getNoteContent !== 'function') {
-            debugError('Bridge对象或getNoteContent方法不可用');
-            debugError('可用的pybridge方法: ' + (window.pybridge ? Object.keys(window.pybridge) : '无'));
-            return;
-        }
-        
-        // 显示加载状态
-        const previewTitle = document.getElementById('preview-title');
-        const previewContent = document.getElementById('preview-content');
-        const editContent = document.getElementById('edit-content');
-        
-        if (previewTitle) {
-            previewTitle.textContent = '加载中...';
-        }
-        
-        if (previewContent) {
-            previewContent.innerHTML = '<div class="flex items-center justify-center py-8"><div class="animate-spin inline-block w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full mr-2"></div>正在加载文件内容...</div>';
-        }
-        
-        // 调用后端获取文件内容
-        try {
-            debugLog('调用 loadMarkdownRaw，路径: ' + normalizedPath);
-            window.pybridge.loadMarkdownRaw(normalizedPath, function(content) {
-                debugLog('loadMarkdownRaw 返回结果类型: ' + typeof content);
-                debugLog('loadMarkdownRaw 返回内容长度: ' + (content ? content.length : 0));
-                
-                // loadMarkdownRaw 直接返回文件内容字符串
-                if (!content || content.trim() === '') {
-                    debugError('文件内容为空或文件不存在');
-                    if (previewContent) {
-                        previewContent.innerHTML = '<div class="text-center py-8 text-red-500">文件内容为空或文件不存在</div>';
-                    }
-                    if (previewTitle) {
-                        previewTitle.textContent = '加载失败';
-                    }
-                    return;
-                }
-                
-                debugLog('文件内容加载成功，长度: ' + content.length);
-                
-                if (content !== null && content !== undefined) {
-                    // 更新标题
-                    const fileName = filePath.split('/').pop() || filePath;
-                    if (previewTitle) {
-                        previewTitle.textContent = fileName;
-                    }
-                    
-                    // 更新预览内容
-                    if (previewContent) {
-                        // 渲染 Markdown
-                        if (typeof marked !== 'undefined') {
-                            const htmlContent = marked.parse(content);
-                            previewContent.innerHTML = htmlContent;
-                            
-                            // 应用语法高亮
-                            if (typeof hljs !== 'undefined') {
-                                previewContent.querySelectorAll('pre code').forEach((block) => {
-                                    hljs.highlightElement(block);
-                                });
-                            }
-                            
-                            // 渲染数学公式
-                            if (typeof renderMathInElement !== 'undefined') {
-                                renderMathInElement(previewContent, {
-                                    delimiters: [
-                                        {left: '$$', right: '$$', display: true},
-                                        {left: '$', right: '$', display: false}
-                                    ]
-                                });
-                            }
-                        } else {
-                            // 如果 marked 不可用，显示纯文本
-                            previewContent.innerHTML = '<pre>' + content.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
-                        }
-                    }
-                    
-                    // 更新编辑内容
-                    if (editContent) {
-                        editContent.value = content;
-                    }
-                    
-                    // 设置当前文件路径（用于保存和编辑）
-                    currentFilePath = normalizedPath;
-                    currentFileName = fileName;
-                    window.currentFilePath = filePath;
-                    
-                    // 添加调试信息确认变量设置
-                    try {
-                        addDebugLog('📁 selectFile设置变量');
-                        addDebugLog('📊 设置currentFilePath: ' + currentFilePath);
-                        addDebugLog('📊 设置currentFileName: ' + fileName);
-                    } catch(e) {
-                        console.log('调试输出失败:', e);
-                    }
-                    
-                    // 显示保存按钮
-                    const saveBtn = document.getElementById('save-btn');
-                    if (saveBtn) {
-                        saveBtn.classList.remove('hidden');
-                    }
-                    
-                    debugLog('文件内容加载完成: ' + fileName);
-                } else {
-                    debugError('文件内容为空或获取失败');
-                    if (previewContent) {
-                        previewContent.innerHTML = '<div class="text-center py-8 text-red-500">文件内容获取失败</div>';
-                    }
-                    if (previewTitle) {
-                        previewTitle.textContent = '加载失败';
-                    }
-                }
-            });
-        } catch (error) {
-            debugError('调用getNoteContent时发生错误: ' + error.message);
-            if (previewContent) {
-                previewContent.innerHTML = '<div class="text-center py-8 text-red-500">文件加载异常: ' + error.message + '</div>';
+            if (container) {
+                container.innerHTML = '<div class="text-center py-8 text-red-500">文件结构加载异常: ' + error.message + '</div>';
             }
         }
     }
@@ -4580,20 +3044,20 @@ window.handlePractice = function(e) {
     function renderFileTree(data) {
         debugLog('渲染文件树，数据项数: ' + (data ? data.length : 0));
         
-        const fileTree = document.getElementById('file-tree');
+        const container = document.getElementById('file-tree-container');
         const loadingIndicator = document.getElementById('loading-indicator');
         
         if (loadingIndicator) {
             loadingIndicator.style.display = 'none';
         }
         
-        if (!fileTree) {
-            debugError('文件树元素未找到');
+        if (!container) {
+            debugError('文件树容器未找到');
             return;
         }
         
         if (!data || data.length === 0) {
-            fileTree.innerHTML = '<div class="text-center py-8 text-text-medium-brown">暂无文件</div>';
+            container.innerHTML = '<div class="text-center py-8 text-text-medium-brown">暂无文件</div>';
             return;
         }
         
@@ -4603,7 +3067,7 @@ window.handlePractice = function(e) {
         });
         html += '</ul>';
         
-        fileTree.innerHTML = html;
+        container.innerHTML = html;
         
         // 添加事件监听器
         addFileTreeEventListeners();
@@ -4718,16 +3182,6 @@ window.handlePractice = function(e) {
     function handleFileClick(path, type, name, element) {
         debugLog(`文件点击: ${name} (${type}) - ${path}`);
         
-        // 添加调试信息
-        try {
-            addDebugLog('🖱️ 文件被点击');
-            addDebugLog('📊 文件路径: ' + path);
-            addDebugLog('📊 文件类型: ' + type);
-            addDebugLog('📊 文件名称: ' + name);
-        } catch(e) {
-            console.log('调试输出失败:', e);
-        }
-        
         // 移除之前的选中状态
         document.querySelectorAll('.file-item-content.selected').forEach(el => {
             el.classList.remove('selected');
@@ -4764,14 +3218,9 @@ window.handlePractice = function(e) {
         currentFilePath = filePath;
         currentFileName = fileName;
         
-        // 添加调试信息确认变量设置
-        try {
-            addDebugLog('📁 loadFileContent被调用');
-            addDebugLog('📊 设置currentFilePath: ' + filePath);
-            addDebugLog('📊 设置currentFileName: ' + fileName);
-            addDebugLog('📊 验证currentFilePath: ' + (currentFilePath || '未设置'));
-        } catch(e) {
-            console.log('调试输出失败:', e);
+        if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
+            return;
         }
         
         // 更新文档预览区标题
@@ -5086,23 +3535,9 @@ window.handlePractice = function(e) {
 
     // 切换到编辑模式
     function switchToEdit() {
-        // 添加详细调试信息
-        try {
-            addDebugLog('🔥 switchToEdit函数被调用');
-            addDebugLog('📊 当前文件路径: ' + (currentFilePath || '无'));
-            addDebugLog('📊 isEditMode状态: ' + isEditMode);
-        } catch(e) {
-            console.log('调试输出失败:', e);
-        }
-        
         debugLog('切换到编辑模式');
         
         if (!currentFilePath) {
-            try {
-                addDebugLog('❌ 没有选中的文件，退出函数');
-            } catch(e) {
-                console.log('调试输出失败:', e);
-            }
             debugLog('没有选中的文件');
             return;
         }
@@ -5110,43 +3545,11 @@ window.handlePractice = function(e) {
         isEditMode = true;
         
         // 加载原始内容
-        try {
-            addDebugLog('🔍 检查pybridge和loadMarkdownRaw函数');
-            addDebugLog('📊 window.pybridge存在: ' + (!!window.pybridge));
-            addDebugLog('📊 loadMarkdownRaw存在: ' + (!!window.pybridge?.loadMarkdownRaw));
-        } catch(e) {
-            console.log('调试输出失败:', e);
-        }
-        
         if (window.pybridge && window.pybridge.loadMarkdownRaw) {
-            try {
-                addDebugLog('✅ 开始调用loadMarkdownRaw');
-                addDebugLog('📊 文件路径: ' + currentFilePath);
-            } catch(e) {
-                console.log('调试输出失败:', e);
-            }
-            
             window.pybridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
-                try {
-                    addDebugLog('✅ loadMarkdownRaw回调被调用');
-                    addDebugLog('📊 原始内容长度: ' + rawContent.length);
-                } catch(e) {
-                    console.log('调试输出失败:', e);
-                }
-                
                 debugLog(`原始内容加载完成，长度: ${rawContent.length}`);
                 
                 const editContent = document.getElementById('edit-content');
-                try {
-                    addDebugLog('🔍 查找edit-content元素');
-                    addDebugLog('📊 edit-content存在: ' + (!!editContent));
-                    if (editContent) {
-                        addDebugLog('📊 edit-content当前类: ' + editContent.className);
-                    }
-                } catch(e) {
-                    console.log('调试输出失败:', e);
-                }
-                
                 if (editContent) {
                     editContent.value = rawContent;
                     originalContent = rawContent;  // 保存原始内容
@@ -5154,17 +3557,6 @@ window.handlePractice = function(e) {
                     
                     // 添加内容变更监听
                     editContent.addEventListener('input', handleContentChange);
-                }
-                
-                try {
-                    addDebugLog('🔄 开始切换显示状态');
-                    const previewContent = document.getElementById('preview-content');
-                    addDebugLog('📊 preview-content存在: ' + (!!previewContent));
-                    if (previewContent) {
-                        addDebugLog('📊 preview-content当前类: ' + previewContent.className);
-                    }
-                } catch(e) {
-                    console.log('调试输出失败:', e);
                 }
                 
                 document.getElementById('preview-content').classList.add('hidden');
@@ -5177,21 +3569,8 @@ window.handlePractice = function(e) {
                 document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
                 document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
                 
-                // 聚焦到编辑器并防止自动滚动
-                // 保存当前滚动位置
-                const currentScrollTop = document.documentElement.scrollTop || document.body.scrollTop;
-                
-                // 将光标设置到文本开头
-                editContent.setSelectionRange(0, 0);
-                
                 // 聚焦到编辑器
-                editContent.focus({ preventScroll: true });
-                
-                // 恢复滚动位置
-                window.scrollTo(0, currentScrollTop);
-                
-                // 确保编辑器内部也滚动到顶部
-                editContent.scrollTop = 0;
+                editContent.focus();
             });
         }
     }
@@ -5761,8 +4140,8 @@ window.handlePractice = function(e) {
         }
     }
     
-    // 内联重命名功能（暴露为全局函数）
-    window.startInlineRename = function(nameSpan) {
+    // 内联重命名功能
+    function startInlineRename(nameSpan) {
         const fileItem = nameSpan.closest('li');
         const nameInput = fileItem.querySelector('.file-name-input');
         
@@ -5773,9 +4152,9 @@ window.handlePractice = function(e) {
         nameInput.select();
         
         debugLog('开始内联重命名: ' + nameSpan.textContent);
-    };
+    }
     
-    window.finishInlineRename = function(input) {
+    function finishInlineRename(input) {
         const fileItem = input.closest('li');
         const nameSpan = fileItem.querySelector('.file-name');
         const currentPath = fileItem.getAttribute('data-path');
@@ -5807,9 +4186,9 @@ window.handlePractice = function(e) {
             // 恢复原始值
             input.value = currentName;
         }
-    };
+    }
     
-    window.handleRenameKeydown = function(event, input) {
+    function handleRenameKeydown(event, input) {
         if (event.key === 'Enter') {
             event.preventDefault();
             input.blur(); // 触发finishInlineRename
@@ -5824,7 +4203,7 @@ window.handlePractice = function(e) {
             input.classList.add('hidden');
             nameSpan.classList.remove('hidden');
         }
-    };
+    }
 
     // 删除功能
     function deleteItem(path, name) {
@@ -5851,40 +4230,19 @@ window.handlePractice = function(e) {
         if (window.pybridge && window.pybridge.createNewNote) {
             window.pybridge.createNewNote(parentPath, function(result) {
                 debugLog('新笔记创建结果: ' + result);
-                if (result && result.trim() !== '') {
-                    // 直接通过JS更新树形结构，不重新加载
-                    const newFileElement = addFileToTreeStructure(result, parentPath, 'file');
-                    if (newFileElement) {
-                        // 定位到新创建的文件并进入重命名模式
-                        scrollToElement(newFileElement);
-                        setTimeout(() => {
+                if (result) {
+                    // 重新加载文件结构，然后进入重命名模式
+                    loadFileStructure();
+                    setTimeout(() => {
+                        const newFileElement = findNewlyCreatedFile(result, 'file');
+                        if (newFileElement) {
                             const nameSpan = newFileElement.querySelector('.file-name');
                             if (nameSpan) {
                                 startInlineRename(nameSpan);
                                 showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
                             }
-                        }, 100);
-                    } else {
-                        // 如果JS更新失败，不要立即重新加载，先显示错误信息
-                        debugError(`❌ JS更新失败：无法将文件 '${result}' 添加到 '${parentPath}'`);
-                        debugError('❌ 详细信息：请检查控制台日志');
-                        
-                        // 显示错误提示，但不重新加载
-                        showFileOperationFeedback('文件创建成功，但界面更新失败，请手动刷新', 'warning');
-                        
-                        // 临时禁用重新加载，用于调试
-                        // loadFileStructure();
-                        // setTimeout(() => {
-                        //     const newFileElement = findNewlyCreatedFile(result, 'file');
-                        //     if (newFileElement) {
-                        //         const nameSpan = newFileElement.querySelector('.file-name');
-                        //         if (nameSpan) {
-                        //             startInlineRename(nameSpan);
-                        //             showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
-                        //         }
-                        //     }
-                        // }, 200);
-                    }
+                        }
+                    }, 200);
                 } else {
                     showFileOperationFeedback('创建笔记失败', 'error');
                 }
@@ -5897,34 +4255,19 @@ window.handlePractice = function(e) {
         if (window.pybridge && window.pybridge.createNewFolder) {
             window.pybridge.createNewFolder(parentPath, function(result) {
                 debugLog('新文件夹创建结果: ' + result);
-                if (result && result.trim() !== '') {
-                    // 直接通过JS更新树形结构，不重新加载
-                    const newFolderElement = addFileToTreeStructure(result, parentPath, 'folder');
-                    if (newFolderElement) {
-                        // 定位到新创建的文件夹并进入重命名模式
-                        scrollToElement(newFolderElement);
-                        setTimeout(() => {
+                if (result) {
+                    // 重新加载文件结构，然后进入重命名模式
+                    loadFileStructure();
+                    setTimeout(() => {
+                        const newFolderElement = findNewlyCreatedFile(result, 'folder');
+                        if (newFolderElement) {
                             const nameSpan = newFolderElement.querySelector('.file-name');
                             if (nameSpan) {
                                 startInlineRename(nameSpan);
                                 showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
                             }
-                        }, 100);
-                    } else {
-                        // 如果JS更新失败，回退到重新加载
-                        debugLog('JS更新失败，回退到重新加载文件结构');
-                        loadFileStructure();
-                        setTimeout(() => {
-                            const newFolderElement = findNewlyCreatedFile(result, 'folder');
-                            if (newFolderElement) {
-                                const nameSpan = newFolderElement.querySelector('.file-name');
-                                if (nameSpan) {
-                                    startInlineRename(nameSpan);
-                                    showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
-                                }
-                            }
-                        }, 200);
-                    }
+                        }
+                    }, 200);
                 } else {
                     showFileOperationFeedback('创建文件夹失败', 'error');
                 }
@@ -5962,178 +4305,6 @@ window.handlePractice = function(e) {
             }
         }
         return null;
-    }
-
-    // 直接通过JS向树形结构添加新文件/文件夹
-    function addFileToTreeStructure(fileName, parentPath, type) {
-        debugLog(`📁 通过JS添加${type === 'folder' ? '文件夹' : '文件'}: ${fileName} 到 ${parentPath}`);
-        
-        // 统一路径分隔符（后端可能传来\,前端使用/）
-        const normalizedParentPath = parentPath.replace(/\\/g, '/');
-        debugLog(`🔄 路径标准化: '${parentPath}' -> '${normalizedParentPath}'`);
-        
-        try {
-            // 查找父级容器
-            let parentContainer = null;
-            
-            debugLog(`🔍 查找父级容器: ${normalizedParentPath}`);
-            
-            if (normalizedParentPath === 'vault' || normalizedParentPath === '') {
-                // 根目录
-                parentContainer = document.getElementById('file-structure');
-                debugLog('✅ 找到根目录容器');
-            } else {
-                // 查找指定路径的文件夹
-                const folderItems = document.querySelectorAll('.folder-item');
-                debugLog(`📁 找到 ${folderItems.length} 个文件夹元素`);
-                
-                for (let folderItem of folderItems) {
-                    const folderPath = folderItem.getAttribute('data-path');
-                    // 也需要标准化DOM中的路径格式
-                    const normalizedFolderPath = folderPath ? folderPath.replace(/\\/g, '/') : '';
-                    debugLog(`🔍 比较路径: '${folderPath}' -> '${normalizedFolderPath}' vs '${normalizedParentPath}'`);
-                    
-                    if (normalizedFolderPath === normalizedParentPath) {
-                        debugLog(`✅ 找到匹配的文件夹: ${folderPath}`);
-                        
-                        // 确保文件夹是展开的
-                        const toggleIcon = folderItem.querySelector('.folder-toggle');
-                        // 查找子容器：可能是nextElementSibling或者在文件夹内部
-                        let childrenContainer = folderItem.nextElementSibling;
-                        
-                        // 如果没有nextElementSibling，尝试查找.folder-children
-                        if (!childrenContainer || !childrenContainer.classList.contains('folder-children')) {
-                            childrenContainer = folderItem.querySelector('.folder-children');
-                        }
-                        
-                        debugLog(`🔍 toggleIcon: ${!!toggleIcon}, childrenContainer: ${!!childrenContainer}`);
-                        if (childrenContainer) {
-                            debugLog(`🔍 childrenContainer类名: ${childrenContainer.className}`);
-                        }
-                        
-                        if (toggleIcon && childrenContainer) {
-                            toggleIcon.textContent = 'expand_more';
-                            childrenContainer.classList.remove('hidden');
-                            childrenContainer.style.display = 'block';
-                            parentContainer = childrenContainer;
-                            debugLog('✅ 文件夹已展开，找到子容器');
-                        } else {
-                            debugError('❌ 未找到切换图标或子容器');
-                            // 如果没有子容器，创建一个
-                            if (toggleIcon) {
-                                const newChildContainer = document.createElement('ul');
-                                newChildContainer.className = 'folder-children ml-4';
-                                folderItem.parentNode.insertBefore(newChildContainer, folderItem.nextSibling);
-                                parentContainer = newChildContainer;
-                                toggleIcon.textContent = 'expand_more';
-                                debugLog('✅ 创建了新的子容器');
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-            
-            if (!parentContainer) {
-                debugError(`❌ 未找到父级容器: ${normalizedParentPath}`);
-                debugError('❌ 所有可用的文件夹路径:');
-                const allFolders = document.querySelectorAll('.folder-item');
-                allFolders.forEach((folder, index) => {
-                    const path = folder.getAttribute('data-path');
-                    debugError(`  ${index + 1}. '${path}'`);
-                });
-                return null;
-            } else {
-                debugLog(`✅ 找到父级容器: ${parentContainer.tagName} ${parentContainer.className}`);
-            }
-            
-            // 计算缩进级别（根据路径深度）
-            const pathParts = normalizedParentPath === 'vault' || normalizedParentPath === '' ? [] : normalizedParentPath.split('/');
-            const level = pathParts.length; // vault为0级，vault/folder1为1级
-            const indent = level * 20;
-            debugLog(`📏 计算缩进: 路径='${normalizedParentPath}', 级别=${level}, 缩进=${indent}px`);
-            
-            // 创建新元素（使用li元素以兼容重命名功能）
-            const newElement = document.createElement('li');
-            const fullPath = normalizedParentPath === 'vault' || normalizedParentPath === '' ? fileName : `${normalizedParentPath}/${fileName}`;
-            
-            if (type === 'folder') {
-                newElement.className = 'folder-item';
-                newElement.setAttribute('data-path', fullPath);
-                newElement.setAttribute('data-name', fileName);
-                newElement.setAttribute('data-type', 'folder');
-                newElement.innerHTML = `
-                    <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer file-item-content" 
-                         style="margin-left: ${indent}px"
-                         onclick="toggleFolder(this)" 
-                         draggable="true">
-                        <span class="material-icons-outlined text-sm mr-1 folder-toggle">chevron_right</span>
-                        <span class="material-icons-outlined text-sm mr-2 text-yellow-600">folder</span>
-                        <span class="text-sm text-text-dark-brown flex-1 file-name" ondblclick="startInlineRename(this)">${fileName}</span>
-                        <input type="text" class="text-sm text-text-dark-brown flex-1 file-name-input hidden border border-blue-500 rounded px-1" 
-                               value="${fileName}" 
-                               onblur="finishInlineRename(this)" 
-                               onkeydown="handleRenameKeydown(event, this)">
-                    </div>`;
-                
-                // 添加文件夹后面的子容器
-                const childContainer = document.createElement('ul');
-                childContainer.className = 'folder-children hidden ml-4';
-                
-                parentContainer.appendChild(newElement);
-                parentContainer.appendChild(childContainer);
-            } else {
-                newElement.className = 'file-item';
-                newElement.setAttribute('data-path', fullPath);
-                newElement.setAttribute('data-name', fileName);
-                newElement.setAttribute('data-type', 'file');
-                newElement.innerHTML = `
-                    <div class="flex items-center py-1 px-2 hover:bg-gray-100 rounded cursor-pointer file-item-content" 
-                         style="margin-left: ${indent}px"
-                         onclick="selectFile('${fullPath}')" 
-                         draggable="true">
-                        <span class="w-5"></span>
-                        <span class="material-icons-outlined text-sm mr-2 text-blue-600">description</span>
-                        <span class="text-sm text-text-dark-brown flex-1 file-name" ondblclick="startInlineRename(this)">${fileName}</span>
-                        <input type="text" class="text-sm text-text-dark-brown flex-1 file-name-input hidden border border-blue-500 rounded px-1" 
-                               value="${fileName}" 
-                               onblur="finishInlineRename(this)" 
-                               onkeydown="handleRenameKeydown(event, this)">
-                    </div>`;
-                
-                parentContainer.appendChild(newElement);
-                debugLog(`📍 文件添加位置: 父容器 ${parentContainer.tagName}.${parentContainer.className}`);
-                debugLog(`📍 父容器子元素数量: ${parentContainer.children.length}`);
-            }
-            
-            // 添加右键菜单事件
-            newElement.addEventListener('contextmenu', function(e) {
-                e.preventDefault();
-                showContextMenu(e, fullPath, fileName, type);
-            });
-            
-            debugLog(`✅ 成功添加${type === 'folder' ? '文件夹' : '文件'}: ${fileName} 到路径: ${fullPath}`);
-            return newElement;
-            
-        } catch (error) {
-            debugError(`❌ 添加${type === 'folder' ? '文件夹' : '文件'}失败: ${error.message}`);
-            return null;
-        }
-    }
-    
-    // 滚动到指定元素
-    function scrollToElement(element) {
-        if (element) {
-            element.scrollIntoView({ 
-                behavior: 'smooth', 
-                block: 'center' 
-            });
-            // 高亮显示新创建的元素
-            element.style.backgroundColor = '#e3f2fd';
-            setTimeout(() => {
-                element.style.backgroundColor = '';
-            }, 2000);
-        }
     }
 
     // 验证后端功能
@@ -8328,7 +6499,7 @@ window.handlePractice = function(e) {
             // 绑定练习菜单项点击事件
             const practiceMenuItem = document.getElementById('practiceMenuItem');
             if (practiceMenuItem) {
-                practiceMenuItem.addEventListener('click', window.handlePractice);
+                practiceMenuItem.addEventListener('click', handlePractice);
                 console.log('✅ 练习菜单项事件已绑定');
             }
             
@@ -8430,8 +6601,7 @@ window.handlePractice = function(e) {
     
     
     
-    // 将handlePractice函数暴露为全局函数
-    window.handlePractice = function(e) {
+    function handlePractice(e) {
         if (e) {
             e.stopPropagation();
             e.preventDefault();
@@ -8444,7 +6614,7 @@ window.handlePractice = function(e) {
         
         hideContextMenu();
         
-        // 首先确保 AI聊天窗口打开
+        // 首先确保AI聊天窗口打开
         if (window.openAIChatWindow) {
             window.openAIChatWindow();
         }
@@ -8472,18 +6642,14 @@ window.handlePractice = function(e) {
         
         // 异步生成题目
         setTimeout(() => {
-            if (typeof window.generatePracticeQuestionsForAI === 'function') {
-                window.generatePracticeQuestionsForAI(selectedText, practiceId);
-            } else {
-                console.error('❌ generatePracticeQuestionsForAI函数未定义');
-            }
+            generatePracticeQuestionsForAI(selectedText, practiceId);
         }, 500);
         
         showToast('已切换到AI练习助手', 'success');
-    };
+    }
     
-    // 将generatePracticeQuestionsForAI函数暴露为全局函数
-    window.generatePracticeQuestionsForAI = function(selectedText, practiceId) {
+    // 为AI助手生成练习题目
+    function generatePracticeQuestionsForAI(selectedText, practiceId) {
         if (window.pybridge && window.pybridge.generatePracticeQuestions) {
             try {
                 // 使用setTimeout真正异步执行，避免界面冻结
@@ -9638,7 +7804,6 @@ window.handlePractice = function(e) {
         }, 1000);
     }
     
-    // 简化初始化机制，提升加载速度
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initAll);
     } else {
@@ -9823,8 +7988,8 @@ function initTextContextMenu() {
     deepLearningMenuItem.removeEventListener('click', handleDeepLearning);
     deepLearningMenuItem.addEventListener('click', handleDeepLearning);
     
-    practiceMenuItem.removeEventListener('click', window.handlePractice);
-    practiceMenuItem.addEventListener('click', window.handlePractice);
+    practiceMenuItem.removeEventListener('click', handlePractice);
+    practiceMenuItem.addEventListener('click', handlePractice);
     
     console.log('✅ 网课笔记右键菜单功能初始化完成');
 }
@@ -9834,7 +7999,7 @@ function hideTextContextMenu() {
     const contextMenu = document.getElementById('contextMenu');
     if (contextMenu) {
         contextMenu.classList.add('hidden');
-        console.log(' MD右键菜单已隐藏');
+        console.log('🔒 MD右键菜单已隐藏');
     }
 }
 
@@ -9844,7 +8009,7 @@ window.hideTextContextMenu = hideTextContextMenu;
 
 // 处理右键菜单事件
 function handleTextContextMenu(e) {
-    console.log(' 网课笔记右键菜单事件触发');
+    console.log('🎯 网课笔记右键菜单事件触发');
     
     // 检查是否在文件结构区域，如果是则不处理
     const fileStructure = document.getElementById('file-structure');
@@ -9970,7 +8135,87 @@ function openChatWithMessage(message) {
     }, 300);
 }
 
-// 重复的函数定义已删除，使用上面的全局函数定义
+// 为AI助手生成练习题目
+function generatePracticeQuestionsForAI(selectedText, practiceId) {
+    console.log('🎯 为AI助手生成练习题目:', selectedText.substring(0, 100));
+    
+    // 构建练习生成提示词
+    const practicePrompt = `基于以下学习内容，生成3-5道练习题目：
+
+"${selectedText}"
+
+要求：
+1. 题目类型多样化（选择题、简答题、分析题等）
+2. 难度适中，既要考查理解，也要考查应用
+3. 题目要紧扣学习内容的核心概念
+4. 提供标准答案和详细解析
+5. 格式清晰，便于学习者练习
+
+请按以下格式输出：
+
+**题目1：**
+[题目内容]
+
+**答案：**
+[标准答案]
+
+**解析：**
+[详细解析]
+
+---
+
+**题目2：**
+...`;
+    
+    // 调用后端API生成练习题目
+    if (window.pybridge && window.pybridge.generatePracticeQuestions) {
+        window.pybridge.generatePracticeQuestions(practicePrompt, function(result) {
+            try {
+                const response = JSON.parse(result);
+                if (response.success) {
+                    // 更新AI练习面板的题目内容
+                    if (window.updateAIPracticeQuestions) {
+                        window.updateAIPracticeQuestions(practiceId, response.questions);
+                    }
+                    console.log('✅ 练习题目生成成功');
+                } else {
+                    console.error('❌ 练习题目生成失败:', response.error);
+                    showToast('练习题目生成失败，请重试', 'error');
+                }
+            } catch (e) {
+                console.error('❌ 解析练习题目响应失败:', e);
+                showToast('练习题目生成出错，请重试', 'error');
+            }
+        });
+    } else {
+        // 备用方案：使用模拟数据
+        const mockQuestions = `**题目1：**
+请简述"${selectedText.substring(0, 50)}..."的核心概念。
+
+**答案：**
+[基于选中内容的核心概念解释]
+
+**解析：**
+这道题考查对核心概念的理解和表达能力。
+
+---
+
+**题目2：**
+分析"${selectedText.substring(0, 30)}..."在实际应用中的意义。
+
+**答案：**
+[实际应用意义分析]
+
+**解析：**
+这道题考查理论联系实际的能力。`;
+        
+        setTimeout(() => {
+            if (window.updateAIPracticeQuestions) {
+                window.updateAIPracticeQuestions(practiceId, mockQuestions);
+            }
+        }, 1000);
+    }
+}
 
 // 显示提示消息
 function showToast(message, type = 'info') {
@@ -10046,6 +8291,4 @@ setInterval(function() {
         }
     }
 }, 10000); // 每10秒检查一次
-
-})(); // 关闭IIFE
 </script>
