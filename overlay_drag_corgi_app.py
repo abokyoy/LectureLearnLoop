@@ -418,17 +418,22 @@ class CorgiWebBridge(QObject):
                         }
                         items.append(folder_data)
                         self.logger.debug(f"{indent}  文件夹已添加: {item.name} (子项目数: {len(folder_data['children'])})")
-                    elif item.suffix == '.md':
+                    else:
+                        # 显示所有文件，但标记是否为md文件
+                        is_markdown = item.suffix == '.md'
                         file_data = {
                             "name": item.name,
                             "type": "file",
                             "path": str(item),
-                            "level": level
+                            "level": level,
+                            "is_markdown": is_markdown,  # 标记是否为md文件
+                            "extension": item.suffix.lower()  # 文件扩展名
                         }
                         items.append(file_data)
-                        self.logger.debug(f"{indent}  Markdown文件已添加: {item.name}")
-                    else:
-                        self.logger.debug(f"{indent}  跳过非Markdown文件: {item.name} (扩展名: {item.suffix})")
+                        if is_markdown:
+                            self.logger.debug(f"{indent}  Markdown文件已添加: {item.name}")
+                        else:
+                            self.logger.debug(f"{indent}  其他文件已添加: {item.name} (扩展名: {item.suffix})")
                         
             except PermissionError as e:
                 self.logger.error(f"{indent}权限错误: {e}")
@@ -2811,7 +2816,33 @@ class CorgiWebBridge(QObject):
                         self.logger.info(f"找到相似文件，更新记录: {note_id}")
                         return note_id
                 
-                # 4. 如果都没找到，创建新记录
+                # 4. 智能文件名匹配（处理扩展名变化的情况）
+                base_name = file_name.rsplit('.', 1)[0]  # 去掉扩展名
+                self.logger.info(f"尝试基础文件名匹配: {base_name}")
+                
+                cursor.execute("""
+                    SELECT id, file_path, content_hash, file_name 
+                    FROM notes 
+                    WHERE file_name LIKE ? OR file_name LIKE ?
+                """, (f"{base_name}.%", f"%{base_name}%"))
+                
+                results = cursor.fetchall()
+                self.logger.info(f"基础文件名匹配找到 {len(results)} 个候选")
+                
+                for note_id, stored_path, stored_hash, stored_name in results:
+                    stored_base = stored_name.rsplit('.', 1)[0]
+                    # 检查基础文件名是否匹配
+                    if stored_base == base_name:
+                        # 更新为当前文件信息
+                        cursor.execute(
+                            "UPDATE notes SET file_name = ?, file_path = ?, content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
+                            (file_name, normalized_path, content_hash, note_id)
+                        )
+                        conn.commit()
+                        self.logger.info(f"通过基础文件名找到并更新记录: {note_id} ({stored_name} -> {file_name})")
+                        return note_id
+                
+                # 5. 如果都没找到，创建新记录
                 note_id = km_system.register_note(
                     file_name=file_name,
                     file_path=normalized_path,

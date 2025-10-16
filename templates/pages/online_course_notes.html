@@ -622,12 +622,76 @@ window.jsTreeLoading = false;
         box-shadow: none;
     }
     
-    /* 文件夹和文件图标 */
-    #file-tree .jstree-default .jstree-icon {
-        width: 18px;
-        height: 18px;
-        margin-right: 8px;
-        background-size: contain;
+    /* 不同文件类型的图标样式 */
+    #file-tree .jstree-anchor.file-md::before {
+        content: "📝";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-txt::before {
+        content: "📄";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-pdf::before {
+        content: "📕";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-doc::before,
+    #file-tree .jstree-anchor.file-docx::before {
+        content: "📘";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-py::before {
+        content: "🐍";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-js::before {
+        content: "🟨";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-html::before {
+        content: "🌐";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    #file-tree .jstree-anchor.file-json::before {
+        content: "📋";
+        margin-right: 6px;
+        font-size: 14px;
+    }
+    
+    /* md文件特殊样式 - 可编辑 */
+    #file-tree .jstree-anchor.file-md {
+        font-weight: 500;
+        color: #2563eb;
+    }
+    
+    #file-tree .jstree-anchor.file-md:hover {
+        background-color: #dbeafe;
+        color: #1d4ed8;
+    }
+    
+    /* 非md文件样式 - 不可编辑 */
+    #file-tree .jstree-anchor:not(.file-md):not(.folder-node) {
+        opacity: 0.7;
+        font-style: italic;
+    }
+    
+    #file-tree .jstree-anchor:not(.file-md):not(.folder-node):hover {
+        background-color: #f3f4f6;
+        cursor: not-allowed;
     }
     
     /* 文件夹图标 - 现代化设计 */
@@ -4129,13 +4193,38 @@ window.handlePractice = function(e) {
                 data: {
                     path: item.path,
                     name: item.name,
-                    type: item.type
+                    type: item.type,
+                    is_markdown: item.is_markdown || false,  // 是否为md文件
+                    extension: item.extension || ''  // 文件扩展名
                 }
             };
             
             if (item.type === 'folder') {
                 jsTreeNode.children = item.children ? convertToJsTreeFormat(item.children) : [];
                 jsTreeNode.state = { opened: false }; // 默认收起
+            } else if (item.type === 'file') {
+                // 根据文件类型设置不同的图标
+                if (item.is_markdown) {
+                    jsTreeNode.icon = 'fas fa-file-alt';  // md文件图标
+                } else {
+                    // 根据扩展名设置不同图标
+                    const ext = item.extension;
+                    if (['.txt', '.log'].includes(ext)) {
+                        jsTreeNode.icon = 'fas fa-file-text';
+                    } else if (['.pdf'].includes(ext)) {
+                        jsTreeNode.icon = 'fas fa-file-pdf';
+                    } else if (['.doc', '.docx'].includes(ext)) {
+                        jsTreeNode.icon = 'fas fa-file-word';
+                    } else if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].includes(ext)) {
+                        jsTreeNode.icon = 'fas fa-file-image';
+                    } else if (['.mp3', '.wav', '.m4a'].includes(ext)) {
+                        jsTreeNode.icon = 'fas fa-file-audio';
+                    } else if (['.mp4', '.avi', '.mov'].includes(ext)) {
+                        jsTreeNode.icon = 'fas fa-file-video';
+                    } else {
+                        jsTreeNode.icon = 'fas fa-file';  // 默认文件图标
+                    }
+                }
             }
             
             return jsTreeNode;
@@ -4263,37 +4352,37 @@ window.handlePractice = function(e) {
     function setFileTypeFromData(treeData) {
         function processNode(node) {
             if (node.type === 'file') {
-                // 根据文件扩展名设置图标类型
-                if (node.text.endsWith('.md')) {
-                    node.icon = 'jstree-file file-md-icon';
-                    node.li_attr = node.li_attr || {};
-                    node.li_attr.class = 'file-md-node';
-                    node.a_attr = node.a_attr || {};
+                // 根据后端传来的扩展名信息设置CSS类
+                const ext = node.data.extension || '';
+                node.a_attr = node.a_attr || {};
+                
+                if (node.data.is_markdown) {
                     node.a_attr.class = 'file-md';
-                } else if (node.text.endsWith('.txt')) {
-                    node.icon = 'jstree-file file-txt-icon';
-                    node.a_attr = node.a_attr || {};
+                } else if (['.txt', '.log'].includes(ext)) {
                     node.a_attr.class = 'file-txt';
-                } else if (node.text.endsWith('.json')) {
-                    node.icon = 'jstree-file file-json-icon';
-                    node.a_attr = node.a_attr || {};
-                    node.a_attr.class = 'file-json';
-                } else if (node.text.endsWith('.py')) {
-                    node.icon = 'jstree-file file-py-icon';
-                    node.a_attr = node.a_attr || {};
+                } else if (['.pdf'].includes(ext)) {
+                    node.a_attr.class = 'file-pdf';
+                } else if (['.doc', '.docx'].includes(ext)) {
+                    node.a_attr.class = 'file-doc';
+                } else if (['.jpg', '.jpeg', '.png', '.gif', '.bmp'].includes(ext)) {
+                    node.a_attr.class = 'file-image';
+                } else if (['.mp3', '.wav', '.m4a'].includes(ext)) {
+                    node.a_attr.class = 'file-audio';
+                } else if (['.mp4', '.avi', '.mov'].includes(ext)) {
+                    node.a_attr.class = 'file-video';
+                } else if (['.py'].includes(ext)) {
                     node.a_attr.class = 'file-py';
-                } else if (node.text.endsWith('.js')) {
-                    node.icon = 'jstree-file file-js-icon';
-                    node.a_attr = node.a_attr || {};
+                } else if (['.js'].includes(ext)) {
                     node.a_attr.class = 'file-js';
-                } else if (node.text.endsWith('.html')) {
-                    node.icon = 'jstree-file file-html-icon';
-                    node.a_attr = node.a_attr || {};
+                } else if (['.html', '.htm'].includes(ext)) {
                     node.a_attr.class = 'file-html';
+                } else if (['.json'].includes(ext)) {
+                    node.a_attr.class = 'file-json';
+                } else {
+                    node.a_attr.class = 'file-other';
                 }
             } else if (node.type === 'folder') {
                 // 设置文件夹图标
-                node.icon = 'jstree-folder folder-icon';
                 node.a_attr = node.a_attr || {};
                 node.a_attr.class = 'folder-node';
             }
@@ -4375,11 +4464,21 @@ window.handlePractice = function(e) {
             // 节点选中事件
             .on('select_node.jstree', function(e, data) {
                 const node = data.node;
-                debugLog('选中节点: ' + node.text + ' (' + node.data.type + ')');
+                addDebugLog('🖱️ jsTree文件被选中');
+                addDebugLog('📊 文件路径: ' + node.data.path);
                 
                 if (node.data.type === 'file') {
-                    // 打开文件
-                    selectFile(node.data.path);
+                    // 检查是否为md文件
+                    if (node.data.is_markdown) {
+                        addDebugLog('✅ 这是md文件，可以打开');
+                        // 只有md文件才能被打开和追踪
+                        selectFile(node.data.path);
+                    } else {
+                        addDebugLog('❌ 这不是md文件，不支持打开');
+                        showToast('只支持打开Markdown文件(.md)，其他文件类型暂不支持编辑', 'warning');
+                        // 取消选中
+                        $('#file-tree').jstree('deselect_node', node);
+                    }
                 }
             })
             // 节点重命名事件
