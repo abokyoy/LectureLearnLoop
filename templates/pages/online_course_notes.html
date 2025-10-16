@@ -1354,6 +1354,44 @@ window.jsTreeLoading = false;
     #knowledge-management-panel #subject-knowledge-list::-webkit-scrollbar-thumb:hover {
         background: #a0aec0;
     }
+
+    /* 右键菜单样式 */
+    .context-menu {
+        position: fixed;
+        background: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+        min-width: 150px;
+        display: none;
+    }
+    
+    .context-menu-item {
+        padding: 8px 16px;
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        color: #374151;
+        transition: background-color 0.2s ease;
+    }
+    
+    .context-menu-item:hover {
+        background-color: #f3f4f6;
+    }
+    
+    .context-menu-item .material-icons-outlined {
+        margin-right: 8px;
+        font-size: 18px;
+        color: #32C77F;
+    }
+    
+    .context-menu-separator {
+        height: 1px;
+        background-color: #e5e7eb;
+        margin: 4px 0;
+    }
 </style>
 
 <div class="flex h-screen bg-white">
@@ -1402,6 +1440,8 @@ window.jsTreeLoading = false;
                     </button>
                     <button id="preview-btn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm" onclick="switchToPreview()">预览</button>
                     <button id="edit-btn" class="px-4 py-2 bg-white border border-gray-300 text-text-gray rounded-lg text-sm" onclick="try { addDebugLog('🖱️ 编辑按钮被点击'); } catch(e) { console.log('调试失败:', e); } switchToEdit();">编辑</button>
+                    <button id="test-menu-btn" class="px-4 py-2 bg-yellow-500 text-white rounded-lg text-sm" onclick="testRightClickMenu()">测试右键菜单</button>
+                    <button id="test-enhance-btn" class="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm" onclick="testEnhanceMenu()">测试增强菜单</button>
                 </div>
             </div>
             
@@ -3934,11 +3974,13 @@ window.handlePractice = function(e) {
                 hideFileContextMenu();
             }
             
-            // 隐藏MD编辑器右键菜单
-            const mdContextMenu = document.getElementById('contextMenu');
-            if (mdContextMenu && !mdContextMenu.contains(e.target)) {
-                console.log('🔒 隐藏MD编辑器右键菜单');
-                hideTextContextMenu();
+            // 隐藏文本选择右键菜单
+            const textContextMenu = document.getElementById('textContextMenu');
+            if (textContextMenu && !textContextMenu.contains(e.target)) {
+                console.log('🔒 隐藏文本选择右键菜单');
+                if (window.hideTextContextMenu) {
+                    window.hideTextContextMenu();
+                }
             }
         });
         
@@ -5216,6 +5258,14 @@ window.handlePractice = function(e) {
         
         // 隐藏未保存指示器
         hideUnsavedIndicator();
+        
+        // 重新初始化右键菜单（切换模式后需要重新绑定事件）
+        setTimeout(() => {
+            if (typeof initTextSelectionContextMenu === 'function') {
+                console.log('🔄 切换到预览模式后重新初始化右键菜单');
+                initTextSelectionContextMenu();
+            }
+        }, 200);
     }
 
     // 切换到编辑模式
@@ -5326,6 +5376,14 @@ window.handlePractice = function(e) {
                 
                 // 确保编辑器内部也滚动到顶部
                 editContent.scrollTop = 0;
+                
+                // 重新初始化右键菜单（切换模式后需要重新绑定事件）
+                setTimeout(() => {
+                    if (typeof initTextSelectionContextMenu === 'function') {
+                        console.log('🔄 切换到编辑模式后重新初始化右键菜单');
+                        initTextSelectionContextMenu();
+                    }
+                }, 200);
                 
                 // 自动加载该笔记相关的知识点
                 loadNoteKnowledgePoints(currentFilePath);
@@ -8297,6 +8355,25 @@ window.handlePractice = function(e) {
     window.createNewFolder = createNewFolder;
     window.validateBackendFunctions = validateBackendFunctions;
     window.testBridgeConnection = testBridgeConnection;
+    
+    // 隐藏文本右键菜单
+    function hideTextContextMenu() {
+        const menu = document.getElementById('textContextMenu');
+        if (menu) {
+            menu.style.display = 'none';
+            console.log('🔒 文本右键菜单已隐藏');
+        }
+    }
+    
+    // 暴露右键菜单相关函数
+    window.hideTextContextMenu = hideTextContextMenu;
+    
+    // 调试：确认函数已暴露
+    setTimeout(() => {
+        console.log('🔧 检查全局函数暴露状态:');
+        console.log('  - window.hideTextContextMenu:', typeof window.hideTextContextMenu);
+        console.log('  - window.initTextSelectionContextMenu:', typeof window.initTextSelectionContextMenu);
+    }, 100);
     window.toggleDebugPanel = toggleDebugPanel;
     window.clearDebugLog = clearDebugLog;
     window.extractKnowledgePoints = extractKnowledgePoints;
@@ -8587,8 +8664,6 @@ window.handlePractice = function(e) {
             console.log('🔒 MD右键菜单已隐藏（旧版函数）');
         }
     }
-    
-    
     
     // 将handlePractice函数暴露为全局函数
     window.handlePractice = function(e) {
@@ -9948,6 +10023,70 @@ window.handlePractice = function(e) {
 <script>
 // 右键菜单相关变量
 
+// 初始化文本选择右键菜单
+function initTextSelectionContextMenu() {
+    console.log('🎯 初始化文本选择右键菜单');
+    
+    // 获取右键菜单元素
+    const textContextMenu = document.getElementById('textContextMenu');
+    if (!textContextMenu) {
+        console.error('❌ textContextMenu元素未找到');
+        return;
+    }
+    
+    // 获取菜单项元素
+    const deepLearningMenuItem = document.getElementById('deepLearningMenuItem');
+    const practiceMenuItem = document.getElementById('practiceMenuItem');
+    
+    if (!deepLearningMenuItem || !practiceMenuItem) {
+        console.error('❌ 菜单项元素未找到');
+        return;
+    }
+    
+    // 为预览和编辑区域添加右键菜单监听器
+    const previewContent = document.getElementById('preview-content');
+    const editContent = document.getElementById('edit-content');
+    
+    if (previewContent) {
+        // 移除旧的事件监听器（如果存在）
+        previewContent.removeEventListener('contextmenu', handleTextContextMenu);
+        previewContent.addEventListener('contextmenu', handleTextContextMenu);
+        console.log('✅ 预览区域右键菜单已绑定');
+    }
+    
+    if (editContent) {
+        // 移除旧的事件监听器（如果存在）
+        editContent.removeEventListener('contextmenu', handleTextContextMenu);
+        editContent.addEventListener('contextmenu', handleTextContextMenu);
+        console.log('✅ 编辑区域右键菜单已绑定');
+    }
+    
+    // 绑定菜单项点击事件
+    deepLearningMenuItem.removeEventListener('click', handleDeepLearning);
+    deepLearningMenuItem.addEventListener('click', handleDeepLearning);
+    
+    practiceMenuItem.removeEventListener('click', handlePractice);
+    practiceMenuItem.addEventListener('click', handlePractice);
+    
+    // 点击其他地方隐藏菜单
+    document.addEventListener('click', function(e) {
+        if (window.hideTextContextMenu) {
+            window.hideTextContextMenu();
+        }
+    });
+    
+    console.log('✅ 文本选择右键菜单初始化完成');
+    
+    // 测试菜单元素是否正确创建
+    setTimeout(() => {
+        const testMenu = document.getElementById('textContextMenu');
+        console.log('🧪 测试菜单元素:', testMenu ? '✅ 找到' : '❌ 未找到');
+        if (testMenu) {
+            console.log('🧪 菜单初始显示状态:', testMenu.style.display);
+        }
+    }, 100);
+}
+
 // 初始化右键菜单功能
 function initTextContextMenu() {
     console.log('🔧 初始化网课笔记右键菜单功能');
@@ -9989,81 +10128,11 @@ function initTextContextMenu() {
     console.log('✅ 网课笔记右键菜单功能初始化完成');
 }
 
-// 隐藏MD右键菜单
-function hideTextContextMenu() {
-    const contextMenu = document.getElementById('contextMenu');
-    if (contextMenu) {
-        contextMenu.classList.add('hidden');
-        console.log(' MD右键菜单已隐藏');
-    }
-}
+// 旧的testContextMenu函数已删除，避免重复定义
 
-// 暴露为全局函数，供页面切换时重新初始化
-window.initTextContextMenu = initTextContextMenu;
-window.hideTextContextMenu = hideTextContextMenu;
+// 旧的simpleTest函数已删除，避免重复定义
 
-// 处理右键菜单事件
-function handleTextContextMenu(e) {
-    console.log(' 网课笔记右键菜单事件触发');
-    
-    // 检查是否在文件结构区域，如果是则不处理
-    const fileStructure = document.getElementById('file-structure');
-    if (fileStructure && fileStructure.contains(e.target)) {
-        console.log('❌ 右键事件来自文件结构区域，不处理MD编辑器右键菜单');
-        return;
-    }
-    
-    // 检查是否在编辑模式或预览模式
-    const isInEditMode = !document.getElementById('edit-content').classList.contains('hidden');
-    const isInPreviewMode = !document.getElementById('preview-content').classList.contains('hidden');
-    
-    if (!isInEditMode && !isInPreviewMode) {
-        console.log('❌ 不在编辑或预览模式，不显示右键菜单');
-        return;
-    }
-    
-    // 检查是否有选中的文本
-    const selection = window.getSelection();
-    const selectedTextContent = selection.toString().trim();
-    
-    console.log('选中的文本:', selectedTextContent);
-    console.log('选中文本长度:', selectedTextContent.length);
-    console.log('当前模式 - 编辑:', isInEditMode, '预览:', isInPreviewMode);
-    
-    // 必须满足三个条件：1.在编辑或预览模式 2.选中了文字 3.点击右键
-    if (selectedTextContent.length === 0) {
-        console.log('❌ 没有选中文本，不显示右键菜单');
-        return;
-    }
-    
-    e.preventDefault();
-    selectedText = selectedTextContent;
-    
-    console.log('🎯 准备显示右键菜单，位置:', e.pageX, e.pageY);
-    
-    // 获取右键菜单元素
-    const contextMenu = document.getElementById('contextMenu');
-    if (!contextMenu) {
-        console.error('❌ 找不到contextMenu元素');
-        return;
-    }
-    
-    // 显示右键菜单
-    contextMenu.classList.remove('hidden');
-    contextMenu.style.left = e.pageX + 'px';
-    contextMenu.style.top = e.pageY + 'px';
-    
-    console.log('✅ 右键菜单已显示');
-    
-    // 确保菜单不会超出屏幕
-    const rect = contextMenu.getBoundingClientRect();
-    if (rect.right > window.innerWidth) {
-        contextMenu.style.left = (e.pageX - rect.width) + 'px';
-    }
-    if (rect.bottom > window.innerHeight) {
-        contextMenu.style.top = (e.pageY - rect.height) + 'px';
-    }
-}
+// 旧的handleTextContextMenu函数已删除，避免重复定义和alert干扰
 
 
 // 处理深入学习
@@ -10073,17 +10142,17 @@ function handleDeepLearning(e) {
         e.preventDefault();
     }
     
-    if (!selectedText) {
+    if (!selectedTextForMenu) {
         showToast('请先选择要深入学习的文本内容', 'warning');
         return;
     }
     
-    hideContextMenu();
+    addDebugLog('🧠 开始深入学习: ' + selectedTextForMenu.substring(0, 30) + '...');
     
     // 构建深入学习的提示词
     const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
 
-"${selectedText}"
+"${selectedTextForMenu}"
 
 要求：
 1. 深入浅出地讲解这段内容的核心概念和要点
@@ -10101,33 +10170,150 @@ function handleDeepLearning(e) {
     showToast('已将选中内容发送给AI助手进行深入解释', 'success');
 }
 
-
-// 打开AI聊天窗口并发送消息
-function openChatWithMessage(message) {
-    // 使用全局函数打开AI聊天窗口
-    if (window.openAIChatWindow) {
-        window.openAIChatWindow();
+// 处理练习功能
+function handlePractice(e) {
+    if (e) {
+        e.stopPropagation();
+        e.preventDefault();
     }
     
-    // 等待窗口打开后设置消息内容并发送
+    if (!selectedTextForMenu) {
+        showToast('请先选择要生成练习的文本内容', 'warning');
+        return;
+    }
+    
+    addDebugLog('📝 开始生成练习: ' + selectedTextForMenu.substring(0, 30) + '...');
+    
+    // 隐藏增强菜单
+    const menu = document.getElementById('enhanced-context-menu');
+    if (menu) {
+        menu.remove();
+    }
+    
+    // 首先确保AI聊天窗口打开
+    if (window.openAIChatWindow) {
+        window.openAIChatWindow();
+        addDebugLog('✅ AI聊天窗口已打开');
+    }
+    
+    // 发送消息到AI练习助手
+    if (window.addAIPracticeMessage) {
+        window.addAIPracticeMessage('正在生成练习题目，请稍候...', 'ai');
+        addDebugLog('✅ 已发送生成提示到AI助手');
+    }
+    
+    // 生成练习ID
+    const practiceId = 'practice_' + Date.now();
+    
+    // 创建练习数据
+    const practiceData = {
+        id: practiceId,
+        selectedText: selectedTextForMenu,
+        questions: null,
+        status: 'generating'
+    };
+    
+    // 显示AI练习面板
+    if (window.showAIPracticePanel) {
+        window.showAIPracticePanel(practiceData);
+        addDebugLog('✅ AI练习面板已显示');
+    }
+    
+    // 异步生成题目
     setTimeout(() => {
-        if (window.sendAIMessage) {
-            window.sendAIMessage(message);
-        } else {
-            // 备用方案：直接操作DOM
-            const aiChatInput = document.getElementById('aiChatInput');
-            const sendBtn = document.getElementById('sendChatBtn');
-            
-            if (aiChatInput && sendBtn) {
-                aiChatInput.value = message;
-                setTimeout(() => {
-                    sendBtn.click();
-                }, 100);
-            } else {
-                showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+        generatePracticeQuestionsForAI(selectedTextForMenu, practiceId);
+    }, 500);
+    
+    showToast('已切换到AI练习助手', 'success');
+}
+
+// 为AI助手生成练习题目
+function generatePracticeQuestionsForAI(selectedText, practiceId) {
+    if (window.bridge && window.bridge.generatePracticeQuestions) {
+        try {
+            addDebugLog('🔄 开始调用bridge生成题目...');
+            // 使用setTimeout真正异步执行，避免界面冻结
+            setTimeout(() => {
+                try {
+                    const result = window.bridge.generatePracticeQuestions(selectedText);
+                    
+                    // 处理可能的Promise返回值
+                    const handleResult = (questions) => {
+                        addDebugLog('📝 收到题目数据: ' + typeof questions);
+                        
+                        // 检查是否是JSON字符串
+                        let actualQuestions = questions;
+                        if (typeof questions === 'string') {
+                            try {
+                                const parsed = JSON.parse(questions);
+                                if (parsed && parsed.message) {
+                                    actualQuestions = parsed.message;
+                                }
+                            } catch (e) {
+                                // 如果不是JSON，直接使用原字符串
+                                actualQuestions = questions;
+                            }
+                        }
+                        
+                        if (actualQuestions && actualQuestions.trim()) {
+                            // 发送成功消息到AI助手
+                            if (window.addAIPracticeMessage) {
+                                window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + actualQuestions, 'ai');
+                                window.addAIPracticeMessage('生成成功！题目已准备就绪。', 'ai');
+                            }
+                            
+                            // 更新练习数据
+                            const updatedPracticeData = {
+                                id: practiceId,
+                                selectedText: selectedText,
+                                questions: actualQuestions,
+                                status: 'ready'
+                            };
+                            
+                            // 更新练习面板
+                            if (window.showAIPracticePanel) {
+                                window.showAIPracticePanel(updatedPracticeData);
+                            }
+                            
+                            addDebugLog('✅ 题目生成成功');
+                        } else {
+                            addDebugLog('❌ 题目生成失败：内容为空');
+                            if (window.addAIPracticeMessage) {
+                                window.addAIPracticeMessage('抱歉，题目生成失败，请重试。', 'ai');
+                            }
+                        }
+                    };
+                    
+                    // 检查是否是Promise
+                    if (result && typeof result.then === 'function') {
+                        result.then(handleResult).catch(error => {
+                            addDebugLog('❌ Promise处理失败: ' + error.message);
+                            if (window.addAIPracticeMessage) {
+                                window.addAIPracticeMessage('题目生成过程中出现错误，请重试。', 'ai');
+                            }
+                        });
+                    } else {
+                        handleResult(result);
+                    }
+                } catch (error) {
+                    addDebugLog('❌ 生成题目失败: ' + error.message);
+                    if (window.addAIPracticeMessage) {
+                        window.addAIPracticeMessage('题目生成失败：' + error.message, 'ai');
+                    }
+                }
+            }, 100);
+        } catch (error) {
+            addDebugLog('❌ 调用bridge失败: ' + error.message);
+            if (window.addAIPracticeMessage) {
+                window.addAIPracticeMessage('无法连接到题目生成服务，请重试。', 'ai');
             }
         }
-    }, 300);
+    } else {
+        addDebugLog('❌ bridge对象不可用');
+        if (window.addAIPracticeMessage) {
+            window.addAIPracticeMessage('题目生成服务不可用，请检查系统状态。', 'ai');
+        }
+    }
 }
 
 // 重复的函数定义已删除，使用上面的全局函数定义
@@ -10153,59 +10339,295 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
-// 在页面加载完成后初始化右键菜单
-document.addEventListener('DOMContentLoaded', function() {
-    // 延迟初始化，确保所有元素都已加载
-    setTimeout(initTextContextMenu, 1000);
-});
+// 复用系统右键菜单的新方案
+try {
+    addDebugLog('🔥 网课笔记页面JavaScript开始加载 - 复用系统菜单方案');
+} catch(e) {
+    console.log('🔥 网课笔记页面JavaScript开始加载 - 复用系统菜单方案');
+}
+
+// 存储选中的文本
+let selectedTextForMenu = '';
+
+// 立即初始化右键菜单功能
+function initializeRightClickMenu() {
+    addDebugLog('🔧 开始初始化右键菜单增强功能');
+        
+        // 监听右键菜单显示事件
+        document.addEventListener('contextmenu', function(e) {
+            addDebugLog('🖱️ 右键事件触发，目标: ' + e.target.tagName + ', ID: ' + (e.target.id || '无') + ', 类名: ' + (e.target.className || '无'));
+            
+            // 检查是否在预览或编辑区域
+            const previewContent = document.getElementById('preview-content');
+            const editContent = document.getElementById('edit-content');
+            
+            addDebugLog('🔍 元素检查 - preview-content存在: ' + (!!previewContent) + ', edit-content存在: ' + (!!editContent));
+            
+            const isInPreview = previewContent && previewContent.contains(e.target);
+            const isInEdit = editContent && editContent.contains(e.target);
+            
+            addDebugLog('🔍 区域检查 - 预览区: ' + isInPreview + ', 编辑区: ' + isInEdit);
+            
+            // 获取选中文本
+            const selection = window.getSelection();
+            const selectedText = selection.toString().trim();
+            
+            addDebugLog('📝 选中文本长度: ' + selectedText.length + ', 内容预览: "' + selectedText.substring(0, 20) + '"');
+            
+            if (isInPreview || isInEdit) {
+                addDebugLog('✅ 在目标区域内右键');
+                
+                if (selectedText.length > 0) {
+                    selectedTextForMenu = selectedText;
+                    
+                    addDebugLog('🖱️ 检测到文本选择右键，准备显示增强菜单');
+                    
+                    // 阻止默认菜单，显示我们的增强菜单
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    addDebugLog('🚫 已阻止默认右键菜单');
+                    
+                    // 立即显示增强菜单
+                    enhanceContextMenu(e.pageX, e.pageY);
+                } else {
+                    selectedTextForMenu = '';
+                    addDebugLog('❌ 在目标区域但没有选中文本，允许默认菜单');
+                }
+            } else {
+                addDebugLog('❌ 不在目标区域，允许默认菜单');
+            }
+        }, true); // 使用捕获阶段
+        
+        // 点击其他地方时清除选中文本
+        document.addEventListener('click', function() {
+            selectedTextForMenu = '';
+        });
+        
+        addDebugLog('✅ 右键菜单增强功能初始化完成');
+}
+
+// 增强系统右键菜单
+function enhanceContextMenu(x, y) {
+    addDebugLog('🔧 开始增强系统右键菜单');
+    
+    // 创建自定义菜单覆盖层
+    const existingMenu = document.getElementById('enhanced-context-menu');
+    if (existingMenu) {
+        existingMenu.remove();
+    }
+    
+    const menuOverlay = document.createElement('div');
+    menuOverlay.id = 'enhanced-context-menu';
+    menuOverlay.style.position = 'fixed';
+    menuOverlay.style.left = x + 'px';
+    menuOverlay.style.top = y + 'px';
+    menuOverlay.style.background = 'white';
+    menuOverlay.style.border = '1px solid #ccc';
+    menuOverlay.style.borderRadius = '4px';
+    menuOverlay.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+    menuOverlay.style.zIndex = '10000';
+    menuOverlay.style.minWidth = '150px';
+    menuOverlay.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    menuOverlay.style.fontSize = '14px';
+    
+    // 添加菜单项
+    const menuItems = [
+        {
+            text: '📋 复制',
+            action: function() {
+                navigator.clipboard.writeText(selectedTextForMenu);
+                showToast('已复制到剪贴板', 'success');
+            }
+        },
+        {
+            text: '🧠 深入学习',
+            action: function() {
+                handleDeepLearning();
+            }
+        },
+        {
+            text: '📝 生成练习',
+            action: function() {
+                handlePractice();
+            }
+        }
+    ];
+    
+    menuItems.forEach(item => {
+        const menuItem = document.createElement('div');
+        menuItem.style.padding = '8px 12px';
+        menuItem.style.cursor = 'pointer';
+        menuItem.style.borderBottom = '1px solid #eee';
+        menuItem.style.transition = 'background-color 0.2s';
+        menuItem.textContent = item.text;
+        
+        menuItem.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f0f0f0';
+        });
+        
+        menuItem.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = 'white';
+        });
+        
+        menuItem.addEventListener('click', function() {
+            item.action();
+            menuOverlay.remove();
+        });
+        
+        menuOverlay.appendChild(menuItem);
+    });
+    
+    // 移除最后一个分割线
+    const lastItem = menuOverlay.lastElementChild;
+    if (lastItem) {
+        lastItem.style.borderBottom = 'none';
+    }
+    
+    document.body.appendChild(menuOverlay);
+    
+    // 点击其他地方时隐藏菜单
+    setTimeout(() => {
+        document.addEventListener('click', function hideMenu(e) {
+            if (!menuOverlay.contains(e.target)) {
+                menuOverlay.remove();
+                document.removeEventListener('click', hideMenu);
+            }
+        });
+    }, 10);
+    
+    // 确保菜单不超出屏幕
+    const rect = menuOverlay.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+        menuOverlay.style.left = (x - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+        menuOverlay.style.top = (y - rect.height) + 'px';
+    }
+    
+    addDebugLog('✅ 增强菜单已显示');
+}
+
+// 测试右键菜单功能
+function testRightClickMenu() {
+    try {
+        addDebugLog('🧪 测试右键菜单功能被调用');
+        
+        // 检查菜单元素是否存在
+        const menu = document.getElementById('textContextMenu');
+        addDebugLog('🔍 菜单元素存在: ' + (!!menu));
+        
+        if (menu) {
+            addDebugLog('🧪 手动显示右键菜单测试');
+            menu.style.display = 'block';
+            menu.style.left = '100px';
+            menu.style.top = '100px';
+            menu.style.zIndex = '9999';
+            
+            setTimeout(() => {
+                menu.style.display = 'none';
+                addDebugLog('🧪 3秒后自动隐藏菜单');
+            }, 3000);
+        } else {
+            addDebugLog('❌ 未找到右键菜单元素');
+        }
+    } catch(e) {
+        console.log('🧪 测试右键菜单功能:', e);
+    }
+}
+
+// 测试增强菜单功能
+function testEnhanceMenu() {
+    addDebugLog('🧪 测试增强菜单功能被调用');
+    
+    try {
+        // 模拟选中文本
+        selectedTextForMenu = '这是测试文本内容，用于验证增强菜单功能是否正常工作。';
+        
+        // 在屏幕中央显示增强菜单
+        const x = window.innerWidth / 2;
+        const y = window.innerHeight / 2;
+        
+        enhanceContextMenu(x, y);
+        
+        addDebugLog('✅ 增强菜单测试完成');
+    } catch(e) {
+        addDebugLog('❌ 测试增强菜单功能失败: ' + e.message);
+        console.log('🧪 测试增强菜单功能失败:', e);
+    }
+}
 
 // 如果页面已经加载完成，立即初始化
 if (document.readyState === 'complete') {
-    setTimeout(initTextContextMenu, 1000);
+    setTimeout(function() {
+        addDebugLog('🔧 页面已完成加载，初始化文本选择右键菜单');
+    }, 500);
 }
 
-// 页面可见性变化时重新初始化（解决页面切换后右键菜单失效问题）
-document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) {
-        console.log('🔄 页面重新可见，重新初始化右键菜单');
-        setTimeout(function() {
-            if (typeof initTextContextMenu === 'function') {
-                initTextContextMenu();
+// 确保函数在全局作用域中可用
+window.testEnhanceMenu = testEnhanceMenu;
+window.testRightClickMenu = testRightClickMenu;
+window.enhanceContextMenu = enhanceContextMenu;
+window.handleDeepLearning = handleDeepLearning;
+window.handlePractice = handlePractice;
+window.generatePracticeQuestionsForAI = generatePracticeQuestionsForAI;
+
+// 立即初始化右键菜单
+try {
+    initializeRightClickMenu();
+} catch(e) {
+    addDebugLog('❌ 立即初始化失败，等待DOM加载: ' + e.message);
+    // 备用方案：等待DOM加载完成
+    document.addEventListener('DOMContentLoaded', function() {
+        addDebugLog('🔄 DOM加载完成，重新初始化右键菜单');
+        initializeRightClickMenu();
+    });
+}
+
+// 额外的延迟初始化确保万无一失
+setTimeout(function() {
+    addDebugLog('🔄 延迟初始化右键菜单（备用方案）');
+    try {
+        // 重新绑定事件监听器
+        document.addEventListener('contextmenu', function(e) {
+            addDebugLog('🖱️ 延迟绑定的右键事件触发，目标: ' + e.target.tagName);
+            
+            // 检查是否在预览或编辑区域
+            const previewContent = document.getElementById('preview-content');
+            const editContent = document.getElementById('edit-content');
+            
+            if (previewContent && previewContent.contains(e.target)) {
+                const selection = window.getSelection();
+                const selectedText = selection.toString().trim();
+                
+                if (selectedText.length > 0) {
+                    selectedTextForMenu = selectedText;
+                    addDebugLog('🖱️ 延迟绑定检测到文本选择右键');
+                    
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    enhanceContextMenu(e.pageX, e.pageY);
+                }
             }
-        }, 500);
+        }, true);
+    } catch(e) {
+        addDebugLog('❌ 延迟初始化也失败: ' + e.message);
     }
-});
+}, 1000);
 
-// 监听窗口焦点事件，确保页面切换后功能正常
-window.addEventListener('focus', function() {
-    console.log('🔄 窗口重新获得焦点，重新初始化右键菜单');
-    setTimeout(function() {
-        if (typeof initTextContextMenu === 'function') {
-            initTextContextMenu();
-        }
-    }, 500);
-});
-
-// 定期检查并重新初始化（作为最后的保障）
-setInterval(function() {
-    // 检查右键菜单元素是否存在且事件监听器是否正常
-    const contextMenu = document.getElementById('contextMenu');
-    const previewContent = document.getElementById('preview-content');
-    const editContent = document.getElementById('edit-content');
-    
-    if (contextMenu && (previewContent || editContent)) {
-        // 简单测试：检查是否有事件监听器
-        const hasPreviewListener = previewContent && previewContent.oncontextmenu !== null;
-        const hasEditListener = editContent && editContent.oncontextmenu !== null;
-        
-        if (!hasPreviewListener && !hasEditListener) {
-            console.log('🔧 检测到右键菜单事件监听器丢失，重新初始化');
-            if (typeof initTextContextMenu === 'function') {
-                initTextContextMenu();
-            }
-        }
-    }
-}, 10000); // 每10秒检查一次
-
-})(); // 关闭IIFE
+// 页面初始化完成
+addDebugLog('🔥 网课笔记页面右键菜单系统初始化完成');
 </script>
+
+<!-- 右键菜单 -->
+<div id="textContextMenu" class="context-menu" style="display: none;">
+    <div class="context-menu-item" id="deepLearningMenuItem">
+        <span class="material-icons-outlined">psychology</span>
+        继续深入学习
+    </div>
+    <div class="context-menu-item" id="practiceMenuItem">
+        <span class="material-icons-outlined">quiz</span>
+        练习
+    </div>
+</div>
