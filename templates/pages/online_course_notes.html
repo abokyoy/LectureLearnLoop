@@ -78,14 +78,14 @@ window.jsTreeLoading = false;
         justify-content: center;
     }
     
-    /* 文件结构面板收缩样式 - 类似主菜单的折叠效果 */
+    /* 文件结构面板收缩样式 - 允许水平滚动 */
     #file-structure {
         transition: all 0.3s ease;
-        overflow: hidden;
-        /* 固定宽度，防止内容撑开 */
+        overflow: visible; /* 允许内容溢出，让子元素处理滚动 */
+        /* 调整宽度设置，允许内容超出时显示滚动条 */
         min-width: 300px !important;
-        max-width: 300px !important;
-        width: 300px !important;
+        width: 300px !important; /* 保持面板宽度 */
+        max-width: none !important; /* 移除最大宽度限制 */
         flex-shrink: 0; /* 防止被压缩 */
         /* 垂直滚动控制 */
         display: flex !important;
@@ -877,30 +877,35 @@ window.jsTreeLoading = false;
         background: white;
     }
     
-    /* 文件树容器溢出处理 */
+    /* 文件树容器溢出处理 - 支持长文件名水平滚动 */
     #file-tree {
-        overflow-x: auto; /* 水平滚动 */
-        overflow-y: auto; /* 垂直滚动 */
+        overflow-x: auto !important; /* 强制启用水平滚动 */
+        overflow-y: auto !important; /* 垂直滚动 */
         max-width: 100%; /* 限制最大宽度 */
         white-space: nowrap; /* 防止文本换行 */
         flex: 1 !important; /* 占用剩余空间 */
         min-height: 0 !important; /* 允许收缩 */
+        /* 确保内容可以超出容器宽度 */
+        width: 100%;
+        box-sizing: border-box;
     }
     
     /* jsTree节点文本溢出处理 */
     #file-tree .jstree-anchor {
-        max-width: 250px; /* 限制节点最大宽度 */
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        max-width: none; /* 移除宽度限制，允许长文件名完整显示 */
+        overflow: visible; /* 允许内容溢出，由父容器处理滚动 */
+        white-space: nowrap; /* 保持单行显示 */
         display: inline-block;
         box-sizing: border-box;
+        min-width: max-content; /* 确保内容完整显示 */
     }
     
     /* 深层嵌套节点的宽度限制 */
     #file-tree .jstree-node {
-        max-width: 100%;
-        overflow: hidden;
+        max-width: none; /* 移除宽度限制，允许长文件名完整显示 */
+        overflow: visible; /* 允许内容溢出，由父容器处理滚动 */
+        white-space: nowrap; /* 保持单行显示 */
+        min-width: max-content; /* 确保内容完整显示 */
     }
     
     /* 确保图标和文本在一行显示 */
@@ -912,38 +917,118 @@ window.jsTreeLoading = false;
     
     /* 文本部分的处理 */
     #file-tree .jstree-anchor > .jstree-icon + * {
-        max-width: calc(100% - 20px); /* 减去图标宽度 */
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        max-width: none; /* 移除宽度限制，允许长文件名完整显示 */
+        overflow: visible; /* 允许内容溢出，由父容器处理滚动 */
+        white-space: nowrap; /* 保持单行显示 */
         display: inline-block;
         vertical-align: middle;
+        min-width: max-content; /* 确保内容完整显示 */
     }
     
-    /* 确保jsTree容器不会超出面板宽度 */
+    /* 确保jsTree容器支持水平滚动 */
     #file-tree .jstree-default {
-        max-width: 100%;
-        overflow-x: auto;
+        max-width: none; /* 移除宽度限制 */
+        overflow-x: visible; /* 允许内容溢出 */
+        min-width: max-content; /* 确保容器宽度适应内容 */
     }
     
-    /* 滚动条样式 */
+    /* jsTree列表容器样式 */
+    #file-tree .jstree-container-ul {
+        min-width: max-content; /* 确保列表容器宽度适应内容 */
+        width: auto; /* 自动宽度 */
+    }
+    
+    /* jsTree节点列表样式 */
+    #file-tree .jstree-node {
+        min-width: max-content; /* 确保节点宽度适应内容 */
+        width: auto; /* 自动宽度 */
+    }
+    
+    /* 强制jsTree内容触发水平滚动 */
+    #file-tree .jstree-anchor {
+        display: inline-block !important;
+        white-space: nowrap !important;
+        min-width: max-content !important;
+        width: auto !important;
+    }
+    
+    /* 确保长文件名不被截断 */
+    #file-tree .jstree-anchor .jstree-icon + * {
+        display: inline !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        max-width: none !important;
+        width: auto !important;
+    }
+    
+    /* 文件树滚动条样式 - 增强可见性 */
     #file-tree::-webkit-scrollbar {
-        width: 6px;
-        height: 6px; /* 添加水平滚动条高度 */
+        width: 8px; /* 增加垂直滚动条宽度 */
+        height: 8px; /* 增加水平滚动条高度 */
     }
     
     #file-tree::-webkit-scrollbar-track {
-        background: #f1f5f9;
-        border-radius: 3px;
+        background: #e2e8f0; /* 更明显的轨道背景色 */
+        border-radius: 4px;
+        border: 1px solid #cbd5e0; /* 添加边框增强可见性 */
     }
     
     #file-tree::-webkit-scrollbar-thumb {
-        background: #cbd5e0;
-        border-radius: 3px;
+        background: #94a3b8; /* 更深的滑块颜色 */
+        border-radius: 4px;
+        border: 1px solid #64748b; /* 添加边框 */
+        min-height: 20px; /* 确保滑块最小高度 */
+        min-width: 20px; /* 确保滑块最小宽度 */
     }
     
     #file-tree::-webkit-scrollbar-thumb:hover {
-        background: #a0aec0;
+        background: #64748b; /* 悬停时更深的颜色 */
+        border-color: #475569;
+    }
+    
+    #file-tree::-webkit-scrollbar-thumb:active {
+        background: #475569; /* 点击时的颜色 */
+    }
+    
+    /* 滚动条交叉点样式 */
+    #file-tree::-webkit-scrollbar-corner {
+        background: #e2e8f0;
+        border: 1px solid #cbd5e0;
+    }
+    
+    /* 强制显示水平滚动条的关键设置 */
+    #file-tree {
+        /* 确保容器可以滚动 */
+        position: relative !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        /* 强制显示滚动条 */
+        overflow-x: scroll !important; /* 改为scroll强制显示 */
+        overflow-y: auto !important;
+    }
+    
+    #file-tree .jstree-default {
+        /* 让jsTree内容可以超出容器宽度 */
+        width: max-content !important;
+        min-width: 500px !important; /* 设置一个固定的最小宽度来强制滚动 */
+    }
+    
+    /* 强制所有jsTree节点不换行，触发水平滚动 */
+    #file-tree .jstree-node,
+    #file-tree .jstree-anchor,
+    #file-tree .jstree-anchor > * {
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        max-width: none !important;
+        width: auto !important;
+    }
+    
+    /* 强制jsTree容器最小宽度 */
+    #file-tree .jstree-container-ul {
+        min-width: 500px !important;
+        width: max-content !important;
     }
     
     /* 终极覆盖 - 确保去除所有jsTree边框和阴影 */
@@ -1275,12 +1360,27 @@ window.jsTreeLoading = false;
         max-height: calc(100vh - 200px) !important;
     }
     
-    /* 文件树容器滚动优化 */
+    /* 文件树容器滚动优化 - 强制显示水平滚动条 */
     #file-tree {
         overflow-y: auto !important;
-        overflow-x: hidden !important;
+        overflow-x: auto !important; /* 强制显示水平滚动条 */
         max-height: calc(100vh - 150px) !important; /* 为顶部工具栏留出空间 */
         min-height: 0 !important;
+        /* 强制显示滚动条，即使内容不足也显示 */
+        scrollbar-width: thin; /* Firefox */
+        -ms-overflow-style: auto; /* IE/Edge */
+    }
+    
+    /* 强制显示水平滚动条 - 即使内容不足也显示 */
+    #file-tree::-webkit-scrollbar {
+        width: 8px !important;
+        height: 8px !important;
+        display: block !important;
+    }
+    
+    #file-tree::-webkit-scrollbar:horizontal {
+        height: 8px !important;
+        display: block !important;
     }
     
     /* 文档预览区域滚动优化 */
@@ -1486,7 +1586,7 @@ window.jsTreeLoading = false;
                 </div>
                 <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
             </div>
-            <div id="file-tree" class="flex-1 overflow-y-auto"></div>
+            <div id="file-tree" class="flex-1"></div>
         </div>
         
         <!-- 中间文档预览/编辑区域 -->
@@ -8863,7 +8963,6 @@ window.handlePractice = function(e) {
                                 if (window.showAIPracticePanel) {
                                     window.showAIPracticePanel(updatedPracticeData);
                                 }
-                                
                                 console.log('✅ AI助手题目生成成功');
                             } else {
                                 console.error('❌ 生成结果为空或无效');
@@ -10717,6 +10816,137 @@ setTimeout(function() {
 
 // 页面初始化完成
 addDebugLog('🔥 网课笔记页面右键菜单系统初始化完成');
+
+// 强制启用文件树水平滚动条
+function enableFileTreeHorizontalScroll() {
+    const fileTree = document.getElementById('file-tree');
+    if (fileTree) {
+        console.log('🔧 开始应用文件树水平滚动设置');
+        
+        // 强制设置容器样式
+        fileTree.style.overflowX = 'scroll'; // 强制显示滚动条
+        fileTree.style.overflowY = 'auto';
+        fileTree.style.whiteSpace = 'nowrap';
+        fileTree.style.width = '100%';
+        fileTree.style.boxSizing = 'border-box';
+        fileTree.style.position = 'relative';
+        
+        // 等待jsTree加载完成后应用样式
+        const checkJsTree = setInterval(() => {
+            const jstreeDefault = fileTree.querySelector('.jstree-default');
+            if (jstreeDefault) {
+                console.log('✅ jsTree已加载，应用水平滚动样式');
+                
+                // 设置jsTree容器样式
+                jstreeDefault.style.width = 'max-content';
+                jstreeDefault.style.minWidth = '500px'; // 强制最小宽度
+                jstreeDefault.style.whiteSpace = 'nowrap';
+                
+                // 强制设置容器列表样式
+                const containerUl = jstreeDefault.querySelector('.jstree-container-ul');
+                if (containerUl) {
+                    containerUl.style.minWidth = '500px';
+                    containerUl.style.width = 'max-content';
+                }
+                
+                // 查找所有jsTree节点并设置样式
+                const jstreeNodes = fileTree.querySelectorAll('.jstree-anchor');
+                jstreeNodes.forEach(node => {
+                    node.style.whiteSpace = 'nowrap';
+                    node.style.overflow = 'visible';
+                    node.style.textOverflow = 'clip';
+                    node.style.maxWidth = 'none';
+                    node.style.width = 'auto';
+                    node.style.minWidth = 'max-content';
+                    node.style.display = 'inline-block';
+                });
+                
+                // 设置所有文本节点样式
+                const textNodes = fileTree.querySelectorAll('.jstree-anchor > .jstree-icon + *');
+                textNodes.forEach(textNode => {
+                    textNode.style.whiteSpace = 'nowrap';
+                    textNode.style.overflow = 'visible';
+                    textNode.style.textOverflow = 'clip';
+                    textNode.style.maxWidth = 'none';
+                    textNode.style.width = 'auto';
+                    textNode.style.display = 'inline';
+                });
+                
+                console.log('✅ 文件树水平滚动样式已应用');
+                clearInterval(checkJsTree);
+            }
+        }, 500);
+        
+        // 10秒后停止检查
+        setTimeout(() => {
+            clearInterval(checkJsTree);
+        }, 10000);
+    }
+}
+
+// 页面加载完成后启用水平滚动
+document.addEventListener('DOMContentLoaded', function() {
+    enableFileTreeHorizontalScroll();
+});
+
+// 如果页面已经加载完成，立即执行
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    enableFileTreeHorizontalScroll();
+}
+
+// 监听文件树内容变化，重新应用样式
+const observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+        if (mutation.type === 'childList' && mutation.target.id === 'file-tree') {
+            console.log('🔄 文件树内容发生变化，重新应用水平滚动样式');
+            setTimeout(enableFileTreeHorizontalScroll, 1000);
+        }
+    });
+});
+
+// 开始观察文件树变化
+const fileTreeElement = document.getElementById('file-tree');
+if (fileTreeElement) {
+    observer.observe(fileTreeElement, {
+        childList: true,
+        subtree: true
+    });
+}
+
+// 立即测试：强制设置文件树样式（调试用）
+setTimeout(() => {
+    const fileTree = document.getElementById('file-tree');
+    if (fileTree) {
+        console.log('🧪 立即测试：强制设置文件树样式');
+        
+        // 强制设置样式
+        fileTree.style.setProperty('overflow-x', 'scroll', 'important');
+        fileTree.style.setProperty('overflow-y', 'auto', 'important');
+        fileTree.style.setProperty('white-space', 'nowrap', 'important');
+        
+        // 查找jsTree并强制设置宽度
+        const jstreeDefault = fileTree.querySelector('.jstree-default');
+        if (jstreeDefault) {
+            jstreeDefault.style.setProperty('min-width', '500px', 'important');
+            jstreeDefault.style.setProperty('width', 'max-content', 'important');
+            console.log('✅ 强制样式设置完成');
+        } else {
+            console.log('⚠️ 未找到 .jstree-default 元素');
+        }
+        
+        // 强制设置所有节点样式
+        const anchors = fileTree.querySelectorAll('.jstree-anchor');
+        anchors.forEach((anchor, index) => {
+            anchor.style.setProperty('white-space', 'nowrap', 'important');
+            anchor.style.setProperty('overflow', 'visible', 'important');
+            anchor.style.setProperty('text-overflow', 'clip', 'important');
+            anchor.style.setProperty('max-width', 'none', 'important');
+        });
+        
+        console.log(`✅ 已处理 ${anchors.length} 个文件节点`);
+    }
+}, 2000); // 2秒后执行测试
+
 </script>
 
 <!-- 右键菜单 -->
