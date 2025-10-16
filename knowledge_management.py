@@ -125,6 +125,64 @@ class DatabaseManager:
             cursor.execute("ALTER TABLE error_questions ADD COLUMN explanation TEXT DEFAULT NULL")
         except Exception:
             pass
+        
+        # UUID追踪系统迁移：为knowledge_point_sources表添加note_uuid字段
+        try:
+            cursor.execute("ALTER TABLE knowledge_point_sources ADD COLUMN note_uuid TEXT")
+            print("✅ 已为knowledge_point_sources表添加note_uuid字段")
+        except Exception as e:
+            print(f"ℹ️ note_uuid字段可能已存在: {e}")
+        
+        # 数据迁移：将现有的note_id关联转换为note_uuid关联
+        try:
+            # 检查是否需要迁移数据
+            cursor.execute("SELECT COUNT(*) FROM knowledge_point_sources WHERE note_uuid IS NULL AND note_id IS NOT NULL")
+            unmigrated_count = cursor.fetchone()[0]
+            
+            if unmigrated_count > 0:
+                print(f"🔄 开始迁移 {unmigrated_count} 条知识点来源记录...")
+                
+                # 更新note_uuid字段
+                cursor.execute("""
+                    UPDATE knowledge_point_sources 
+                    SET note_uuid = (
+                        SELECT note_uuid 
+                        FROM notes 
+                        WHERE notes.id = knowledge_point_sources.note_id
+                    )
+                    WHERE note_uuid IS NULL AND note_id IS NOT NULL
+                """)
+                
+                migrated_count = cursor.rowcount
+                print(f"✅ 成功迁移 {migrated_count} 条记录到UUID系统")
+            else:
+                print("ℹ️ 所有记录已使用UUID系统，无需迁移")
+                
+        except Exception as e:
+            print(f"⚠️ 数据迁移过程中出现问题: {e}")
+        
+        # 为现有notes记录生成UUID（如果缺失）
+        try:
+            cursor.execute("SELECT COUNT(*) FROM notes WHERE note_uuid IS NULL OR note_uuid = ''")
+            notes_without_uuid = cursor.fetchone()[0]
+            
+            if notes_without_uuid > 0:
+                import uuid
+                print(f"🔄 为 {notes_without_uuid} 个笔记生成UUID...")
+                
+                cursor.execute("SELECT id FROM notes WHERE note_uuid IS NULL OR note_uuid = ''")
+                note_ids = cursor.fetchall()
+                
+                for (note_id,) in note_ids:
+                    new_uuid = str(uuid.uuid4())
+                    cursor.execute("UPDATE notes SET note_uuid = ? WHERE id = ?", (new_uuid, note_id))
+                
+                print(f"✅ 成功为 {len(note_ids)} 个笔记生成UUID")
+            else:
+                print("ℹ️ 所有笔记已有UUID，无需生成")
+                
+        except Exception as e:
+            print(f"⚠️ UUID生成过程中出现问题: {e}")
 
         # 错题熟练度历史表（时间序列）
         cursor.execute('''
@@ -956,37 +1014,60 @@ class KnowledgePointManager:
     
     def merge_to_existing_point(self, existing_point_id: int, new_point: Dict) -> bool:
         """合并到已有知识点"""
+        print(f"🔄 开始合并操作: existing_point_id={existing_point_id}", flush=True)
+        print(f"📝 新知识点数据: {new_point}", flush=True)
+        
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
-        # 获取已有知识点信息
-        cursor.execute(
-            "SELECT point_name, core_description FROM knowledge_points WHERE id = ?",
-            (existing_point_id,)
-        )
-        result = cursor.fetchone()
-        
-        if not result:
+        try:
+            # 获取已有知识点信息
+            cursor.execute(
+                "SELECT point_name, core_description FROM knowledge_points WHERE id = ?",
+                (existing_point_id,)
+            )
+            result = cursor.fetchone()
+            
+            if not result:
+                print(f"❌ 未找到ID为{existing_point_id}的知识点", flush=True)
+                conn.close()
+                return False
+            
+            existing_name, existing_desc = result
+            print(f"📖 现有知识点: name='{existing_name}', desc='{existing_desc[:50]}...'", flush=True)
+            
+            # 生成合并后的描述
+            merged_desc = self._merge_descriptions(existing_desc, new_point['core_description'])
+            merged_name = self._merge_names(existing_name, new_point['point_name'])
+            
+            print(f"🔀 合并后: name='{merged_name}', desc='{merged_desc[:50]}...'", flush=True)
+            
+            # 更新知识点
+            cursor.execute(
+                """UPDATE knowledge_points 
+                   SET point_name = ?, core_description = ?, updated_time = CURRENT_TIMESTAMP 
+                   WHERE id = ?""",
+                (merged_name, merged_desc, existing_point_id)
+            )
+            
+            affected_rows = cursor.rowcount
+            print(f"📊 更新影响行数: {affected_rows}", flush=True)
+            
+            conn.commit()
+            conn.close()
+            
+            if affected_rows > 0:
+                print(f"✅ 合并成功: ID={existing_point_id}", flush=True)
+                return True
+            else:
+                print(f"❌ 合并失败: 没有行被更新", flush=True)
+                return False
+                
+        except Exception as e:
+            print(f"❌ 合并过程中出错: {e}", flush=True)
+            conn.rollback()
             conn.close()
             return False
-        
-        existing_name, existing_desc = result
-        
-        # 生成合并后的描述
-        merged_desc = self._merge_descriptions(existing_desc, new_point['core_description'])
-        merged_name = self._merge_names(existing_name, new_point['point_name'])
-        
-        # 更新知识点
-        cursor.execute(
-            """UPDATE knowledge_points 
-               SET point_name = ?, core_description = ?, updated_time = CURRENT_TIMESTAMP 
-               WHERE id = ?""",
-            (merged_name, merged_desc, existing_point_id)
-        )
-        
-        conn.commit()
-        conn.close()
-        return True
 
 
 class PracticeRecordManager:
@@ -2085,24 +2166,47 @@ class KnowledgeManagementSystem:
         print(f"[知识处理] 处理完成，返回 {len(processed_points)} 个处理后的知识点")
         return result
     
-    def confirm_knowledge_points(self, confirmations: List[Dict]) -> List[int]:
+    def confirm_knowledge_points(self, confirmations: List[Dict], note_uuid: str = None) -> List[int]:
         """确认知识点并保存
         confirmations: List of items with fields:
           - action: 'merge' | 'new' | 'skip'
           - point_data: {point_name, core_description}
           - existing_id: int (when action == 'merge')
           - subject_name: str (when action == 'new')
+        note_uuid: 可选的笔记UUID，用于建立关联
         返回保存/合并后的知识点ID列表。
         """
+        print(f"📝 开始确认知识点，总数: {len(confirmations)}", flush=True)
+        if note_uuid:
+            print(f"🔗 将建立UUID关联: {note_uuid[:8]}...", flush=True)
+        else:
+            print("⚠️ 未提供note_uuid，不会建立关联", flush=True)
+            
         saved_point_ids: List[int] = []
-        for confirmation in confirmations:
+        for i, confirmation in enumerate(confirmations):
             action = confirmation.get("action")
             point_data = confirmation.get("point_data", {})
+            print(f"📌 处理第{i+1}个知识点，操作类型: {action}", flush=True)
+            
             if action == "merge":
                 existing_id = confirmation.get("existing_id")
+                print(f"🔄 [第{i+1}个] 处理合并操作: existing_id={existing_id}", flush=True)
                 if existing_id:
-                    if self.knowledge_manager.merge_to_existing_point(existing_id, point_data):
+                    merge_success = self.knowledge_manager.merge_to_existing_point(existing_id, point_data)
+                    print(f"📝 合并结果: {merge_success}", flush=True)
+                    if merge_success:
                         saved_point_ids.append(existing_id)
+                        print(f"✅ 合并成功，添加到结果列表: {existing_id}", flush=True)
+                        # 建立与笔记的关联（如果提供了note_uuid）
+                        if note_uuid:
+                            link_success = self.link_knowledge_point_to_note(existing_id, note_uuid)
+                            print(f"🔗 UUID关联结果: {link_success}", flush=True)
+                        else:
+                            print("⚠️ 没有提供note_uuid，跳过关联", flush=True)
+                    else:
+                        print(f"❌ 合并失败: existing_id={existing_id}", flush=True)
+                else:
+                    print(f"❌ existing_id为空，跳过合并操作", flush=True)
             elif action == "new":
                 subject_name = confirmation.get("subject_name", "通用学科")
                 pid = self.knowledge_manager.save_knowledge_point(
@@ -2111,6 +2215,9 @@ class KnowledgeManagementSystem:
                     point_data.get("core_description", "")
                 )
                 saved_point_ids.append(pid)
+                # 建立与笔记的关联（如果提供了note_uuid）
+                if note_uuid:
+                    self.link_knowledge_point_to_note(pid, note_uuid)
             else:
                 # skip
                 continue
@@ -2166,23 +2273,35 @@ class KnowledgeManagementSystem:
         finally:
             conn.close()
     
-    def link_knowledge_point_to_note(self, knowledge_point_id: int, note_id: int) -> bool:
-        """建立知识点与笔记的关联"""
+    def link_knowledge_point_to_note(self, knowledge_point_id: int, note_uuid: str) -> bool:
+        """建立知识点与笔记的关联（使用UUID）"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         
         try:
+            # 首先通过note_uuid获取note_id
+            cursor.execute("SELECT id FROM notes WHERE note_uuid = ?", (note_uuid,))
+            note_record = cursor.fetchone()
+            
+            if not note_record:
+                print(f"❌ 未找到UUID对应的笔记记录: {note_uuid[:8]}...", flush=True)
+                return False
+            
+            note_id = note_record[0]
+            
+            # 插入关联记录，同时提供note_id和note_uuid
             cursor.execute("""
-                INSERT OR IGNORE INTO knowledge_point_sources (knowledge_point_id, note_id)
-                VALUES (?, ?)
-            """, (knowledge_point_id, note_id))
+                INSERT OR IGNORE INTO knowledge_point_sources (knowledge_point_id, note_id, note_uuid)
+                VALUES (?, ?, ?)
+            """, (knowledge_point_id, note_id, note_uuid))
             
             conn.commit()
+            print(f"✅ 成功建立知识点关联: knowledge_point_id={knowledge_point_id}, note_id={note_id}, note_uuid={note_uuid[:8]}...", flush=True)
             return True
             
         except Exception as e:
             conn.rollback()
-            print(f"建立知识点来源关联失败: {e}")
+            print(f"❌ 建立知识点来源关联失败: {e}", flush=True)
             return False
         finally:
             conn.close()
@@ -2196,7 +2315,7 @@ class KnowledgeManagementSystem:
             cursor.execute("""
                 SELECT n.id, n.note_uuid, n.file_name, n.file_path, n.title, kps.extraction_time
                 FROM knowledge_point_sources kps
-                JOIN notes n ON n.id = kps.note_id
+                JOIN notes n ON n.note_uuid = kps.note_uuid
                 WHERE kps.knowledge_point_id = ?
                 ORDER BY kps.extraction_time DESC
             """, (knowledge_point_id,))

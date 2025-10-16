@@ -1622,7 +1622,7 @@ class CorgiWebBridge(QObject):
             try:
                 cursor.execute(
                     """SELECT COUNT(*) FROM knowledge_point_sources kps
-                       JOIN notes n ON kps.note_id = n.id
+                       JOIN notes n ON kps.note_uuid = n.note_uuid
                        WHERE kps.knowledge_point_id = ?""",
                     (knowledge_point_id,)
                 )
@@ -1710,7 +1710,7 @@ class CorgiWebBridge(QObject):
                 cursor.execute(
                     """SELECT n.id, n.title, n.file_name, n.created_time, n.updated_time, kps.extraction_time
                        FROM knowledge_point_sources kps
-                       JOIN notes n ON kps.note_id = n.id
+                       JOIN notes n ON kps.note_uuid = n.note_uuid
                        WHERE kps.knowledge_point_id = ?
                        ORDER BY kps.extraction_time DESC""",
                     (knowledge_point_id,)
@@ -1770,7 +1770,7 @@ class CorgiWebBridge(QObject):
             cursor = conn.cursor()
             
             cursor.execute(
-                """SELECT id, title, file_name, file_path, created_time, updated_time
+                """SELECT id, note_uuid, title, file_name, file_path, created_time, updated_time
                    FROM notes WHERE id = ?""",
                 (note_id,)
             )
@@ -1783,7 +1783,7 @@ class CorgiWebBridge(QObject):
                     "error": "未找到该笔记"
                 }, ensure_ascii=False)
             
-            note_id, title, file_name, file_path, created_time, updated_time = note_result
+            note_id, note_uuid, title, file_name, file_path, created_time, updated_time = note_result
             
             # 尝试读取笔记文件内容
             content = ""
@@ -1799,14 +1799,14 @@ class CorgiWebBridge(QObject):
                 content = "笔记文件不存在或路径无效"
                 self.logger.warning(f"⚠️ 笔记文件不存在: {file_path}")
             
-            # 获取关联的知识点
+            # 获取关联的知识点（使用UUID）
             cursor.execute(
                 """SELECT kp.id, kp.point_name, kps.extraction_time
                    FROM knowledge_point_sources kps
                    JOIN knowledge_points kp ON kps.knowledge_point_id = kp.id
-                   WHERE kps.note_id = ?
+                   WHERE kps.note_uuid = ?
                    ORDER BY kps.extraction_time DESC""",
-                (note_id,)
+                (note_uuid,)
             )
             related_knowledge_points = cursor.fetchall()
             
@@ -2535,11 +2535,11 @@ class CorgiWebBridge(QObject):
             from knowledge_management import KnowledgeManagementSystem
             km_system = KnowledgeManagementSystem(self.config)
             
-            # 注册笔记到数据库（使用文件追踪系统）
-            note_id = None
+            # 注册笔记到数据库（使用UUID追踪系统）
+            note_uuid = None
             if note_info.get('filePath'):
-                note_id = self._findOrCreateNoteRecord(km_system, note_info['filePath'])
-                self.logger.info(f"通过文件追踪获取笔记记录，ID: {note_id}")
+                note_uuid = self._findOrCreateNoteRecord(km_system, note_info['filePath'])
+                self.logger.info(f"通过UUID追踪获取笔记记录，UUID: {note_uuid}")
             
             # 获取目标知识点的详细信息
             conn = km_system.db_manager.get_connection()
@@ -2573,9 +2573,9 @@ class CorgiWebBridge(QObject):
             conn.commit()
             conn.close()
             
-            # 建立知识点与笔记的关联
-            if note_id:
-                link_success = km_system.link_knowledge_point_to_note(target_knowledge_id, note_id)
+            # 建立知识点与笔记的关联（使用UUID）
+            if note_uuid:
+                link_success = km_system.link_knowledge_point_to_note(target_knowledge_id, note_uuid)
                 self.logger.info(f"知识点来源关联: {'成功' if link_success else '失败'}")
             
             self.logger.info(f"知识点合并成功，目标ID: {target_knowledge_id}")
@@ -2624,11 +2624,11 @@ class CorgiWebBridge(QObject):
             # 确保科目存在
             km_system.add_subject(subject)
             
-            # 注册笔记到数据库（使用文件追踪系统）
-            note_id = None
+            # 注册笔记到数据库（使用UUID追踪系统）
+            note_uuid = None
             if note_info.get('filePath'):
-                note_id = self._findOrCreateNoteRecord(km_system, note_info['filePath'])
-                self.logger.info(f"通过文件追踪获取笔记记录，ID: {note_id}")
+                note_uuid = self._findOrCreateNoteRecord(km_system, note_info['filePath'])
+                self.logger.info(f"通过UUID追踪获取笔记记录，UUID: {note_uuid}")
             
             # 创建知识点数据
             knowledge_point_data = {
@@ -2644,21 +2644,16 @@ class CorgiWebBridge(QObject):
                 "subject_name": subject
             }]
             
-            saved_ids = km_system.confirm_knowledge_points(confirmations)
+            saved_ids = km_system.confirm_knowledge_points(confirmations, note_uuid)
             
             if saved_ids and len(saved_ids) > 0:
                 new_knowledge_id = saved_ids[0]
-                
-                # 建立知识点与笔记的关联
-                if note_id:
-                    link_success = km_system.link_knowledge_point_to_note(new_knowledge_id, note_id)
-                    self.logger.info(f"知识点来源关联: {'成功' if link_success else '失败'}")
                 
                 self.logger.info(f"新知识点创建成功，ID: {new_knowledge_id}")
                 
                 # 获取来源信息
                 sources = []
-                if note_id:
+                if note_uuid:
                     sources = km_system.get_knowledge_point_sources(new_knowledge_id)
                 
                 response = {
@@ -2688,21 +2683,21 @@ class CorgiWebBridge(QObject):
     
     @Slot(str, result=str)
     def getNoteKnowledgePoints(self, file_path):
-        """获取指定笔记相关的知识点"""
-        self.logger.info(f"获取笔记相关知识点: {file_path}")
+        """获取指定笔记相关的知识点（UUID版本）"""
+        self.logger.info(f"🔍 获取笔记相关知识点: {file_path}")
         
         try:
             from knowledge_management import KnowledgeManagementSystem
             km_system = KnowledgeManagementSystem(self.config)
             
-            # 查找该笔记在数据库中的记录（使用增强的文件追踪）
-            note_id = self._findOrCreateNoteRecord(km_system, file_path)
+            # 使用UUID追踪系统查找笔记
+            note_uuid = self._findOrCreateNoteRecord(km_system, file_path)
             
-            if not note_id:
-                self.logger.info(f"笔记 {file_path} 无法找到或创建记录")
+            if not note_uuid:
+                self.logger.info(f"❌ 笔记 {file_path} 无法找到或创建记录")
                 return json.dumps([], ensure_ascii=False)
             
-            # 查询该笔记相关的知识点
+            # 通过UUID查询该笔记相关的知识点
             conn = km_system.db_manager.get_connection()
             cursor = conn.cursor()
             
@@ -2710,9 +2705,9 @@ class CorgiWebBridge(QObject):
                 SELECT kp.id, kp.point_name, kp.core_description, kp.subject_name, kp.mastery_score, kp.created_time
                 FROM knowledge_points kp
                 JOIN knowledge_point_sources kps ON kp.id = kps.knowledge_point_id
-                WHERE kps.note_id = ?
+                WHERE kps.note_uuid = ?
                 ORDER BY kps.extraction_time DESC
-            """, (note_id,))
+            """, (note_uuid,))
             
             knowledge_points = []
             for row in cursor.fetchall():
@@ -2728,23 +2723,25 @@ class CorgiWebBridge(QObject):
             
             conn.close()
             
-            self.logger.info(f"找到 {len(knowledge_points)} 个相关知识点")
+            self.logger.info(f"✅ 找到 {len(knowledge_points)} 个相关知识点 (UUID: {note_uuid[:8]}...)")
             return json.dumps(knowledge_points, ensure_ascii=False)
             
         except Exception as e:
-            self.logger.error(f"获取笔记知识点失败: {e}")
+            self.logger.error(f"❌ 获取笔记知识点失败: {e}")
+            import traceback
+            traceback.print_exc()
             return json.dumps([], ensure_ascii=False)
     
     def _findOrCreateNoteRecord(self, km_system, file_path):
-        """查找或创建笔记记录，支持文件追踪和路径更新"""
+        """优化的文件追踪逻辑：UUID + 简化匹配"""
         import os
-        import hashlib
+        import uuid
         from pathlib import Path
         
         try:
             # 标准化文件路径
             normalized_path = self._normalizePath(file_path)
-            self.logger.info(f"标准化路径: {file_path} -> {normalized_path}")
+            self.logger.info(f"🔍 UUID追踪系统 - 标准化路径: {file_path} -> {normalized_path}")
             
             # 检查文件是否存在
             full_path = Path(normalized_path)
@@ -2752,7 +2749,7 @@ class CorgiWebBridge(QObject):
                 # 尝试相对于当前工作目录的路径
                 full_path = Path(os.getcwd()) / normalized_path
                 if not full_path.exists():
-                    self.logger.error(f"文件不存在: {normalized_path}")
+                    self.logger.error(f"❌ 文件不存在: {normalized_path}")
                     return None
             
             # 计算文件内容哈希
@@ -2763,86 +2760,43 @@ class CorgiWebBridge(QObject):
             cursor = conn.cursor()
             
             try:
-                # 1. 首先尝试通过完全匹配的路径查找
-                cursor.execute("SELECT id, content_hash FROM notes WHERE file_path = ?", (normalized_path,))
+                # 步骤1：通过路径精确匹配查找
+                cursor.execute("SELECT note_uuid, content_hash FROM notes WHERE file_path = ?", (normalized_path,))
                 result = cursor.fetchone()
                 
                 if result:
-                    note_id, stored_hash = result
+                    note_uuid, stored_hash = result
                     # 检查内容是否变化
                     if stored_hash != content_hash:
-                        # 更新内容哈希
                         cursor.execute(
-                            "UPDATE notes SET content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
-                            (content_hash, note_id)
+                            "UPDATE notes SET content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE note_uuid = ?",
+                            (content_hash, note_uuid)
                         )
                         conn.commit()
-                        self.logger.info(f"更新笔记内容哈希: {note_id}")
+                        self.logger.info(f"📝 更新笔记内容哈希: {note_uuid[:8]}...")
                     
-                    self.logger.info(f"通过路径找到笔记: {note_id}")
-                    return note_id
+                    self.logger.info(f"✅ 通过路径找到笔记UUID: {note_uuid[:8]}...")
+                    return note_uuid
                 
-                # 2. 通过文件名和内容哈希查找（处理文件移动的情况）
-                cursor.execute(
-                    "SELECT id, file_path FROM notes WHERE file_name = ? AND content_hash = ?",
-                    (file_name, content_hash)
-                )
+                # 步骤2：通过内容哈希匹配（处理重命名/移动）
+                cursor.execute("SELECT note_uuid, file_path FROM notes WHERE content_hash = ?", (content_hash,))
                 result = cursor.fetchone()
                 
                 if result:
-                    note_id, old_path = result
-                    # 更新文件路径
+                    note_uuid, old_path = result
+                    # 更新文件路径和文件名
                     cursor.execute(
-                        "UPDATE notes SET file_path = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
-                        (normalized_path, note_id)
+                        "UPDATE notes SET file_path = ?, file_name = ?, updated_time = CURRENT_TIMESTAMP WHERE note_uuid = ?",
+                        (normalized_path, file_name, note_uuid)
                     )
                     conn.commit()
-                    self.logger.info(f"文件已移动，更新路径: {old_path} -> {normalized_path}")
-                    return note_id
+                    self.logger.info(f"🔄 文件已重命名/移动，更新路径: {old_path} -> {normalized_path}")
+                    return note_uuid
                 
-                # 3. 通过文件名查找（内容可能已修改）
-                cursor.execute("SELECT id, file_path, content_hash FROM notes WHERE file_name = ?", (file_name,))
-                results = cursor.fetchall()
+                # 步骤3：创建新记录
+                new_uuid = str(uuid.uuid4())
                 
-                for note_id, stored_path, stored_hash in results:
-                    # 检查是否是同一个文件（路径相似度）
-                    if self._pathSimilarity(normalized_path, stored_path) > 0.7:
-                        # 更新路径和内容哈希
-                        cursor.execute(
-                            "UPDATE notes SET file_path = ?, content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
-                            (normalized_path, content_hash, note_id)
-                        )
-                        conn.commit()
-                        self.logger.info(f"找到相似文件，更新记录: {note_id}")
-                        return note_id
-                
-                # 4. 智能文件名匹配（处理扩展名变化的情况）
-                base_name = file_name.rsplit('.', 1)[0]  # 去掉扩展名
-                self.logger.info(f"尝试基础文件名匹配: {base_name}")
-                
-                cursor.execute("""
-                    SELECT id, file_path, content_hash, file_name 
-                    FROM notes 
-                    WHERE file_name LIKE ? OR file_name LIKE ?
-                """, (f"{base_name}.%", f"%{base_name}%"))
-                
-                results = cursor.fetchall()
-                self.logger.info(f"基础文件名匹配找到 {len(results)} 个候选")
-                
-                for note_id, stored_path, stored_hash, stored_name in results:
-                    stored_base = stored_name.rsplit('.', 1)[0]
-                    # 检查基础文件名是否匹配
-                    if stored_base == base_name:
-                        # 更新为当前文件信息
-                        cursor.execute(
-                            "UPDATE notes SET file_name = ?, file_path = ?, content_hash = ?, updated_time = CURRENT_TIMESTAMP WHERE id = ?",
-                            (file_name, normalized_path, content_hash, note_id)
-                        )
-                        conn.commit()
-                        self.logger.info(f"通过基础文件名找到并更新记录: {note_id} ({stored_name} -> {file_name})")
-                        return note_id
-                
-                # 5. 如果都没找到，创建新记录
+                # 使用现有的register_note方法创建记录
                 note_id = km_system.register_note(
                     file_name=file_name,
                     file_path=normalized_path,
@@ -2850,14 +2804,20 @@ class CorgiWebBridge(QObject):
                     content_hash=content_hash
                 )
                 
-                self.logger.info(f"创建新笔记记录: {note_id}")
-                return note_id
+                # 更新UUID字段
+                cursor.execute("UPDATE notes SET note_uuid = ? WHERE id = ?", (new_uuid, note_id))
+                conn.commit()
+                
+                self.logger.info(f"🆕 创建新笔记记录，UUID: {new_uuid[:8]}...")
+                return new_uuid
                 
             finally:
                 conn.close()
                 
         except Exception as e:
-            self.logger.error(f"查找或创建笔记记录失败: {e}")
+            self.logger.error(f"❌ UUID追踪系统失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _normalizePath(self, file_path):
@@ -2883,6 +2843,7 @@ class CorgiWebBridge(QObject):
     
     def _calculateFileHash(self, file_path):
         """计算文件内容的MD5哈希"""
+        import hashlib
         try:
             hash_md5 = hashlib.md5()
             with open(file_path, "rb") as f:
@@ -3133,6 +3094,70 @@ class CorgiWebBridge(QObject):
             return json.dumps({"success": False, "error": f"加载失败: {str(e)}"}, ensure_ascii=False)
 
     @Slot(str, result=str)
+    def batchSaveKnowledgePoints(self, batch_data):
+        """批量保存知识点并建立UUID关联"""
+        self.logger.info("批量保存知识点")
+        
+        try:
+            data = json.loads(batch_data)
+            file_path = data.get('filePath')
+            subject_name = data.get('subject', '通用学科')
+            knowledge_points = data.get('knowledgePoints', [])
+            
+            self.logger.info(f"文件路径: {file_path}")
+            self.logger.info(f"科目: {subject_name}")
+            self.logger.info(f"知识点数量: {len(knowledge_points)}")
+            
+            # 使用知识管理系统
+            from knowledge_management import KnowledgeManagementSystem
+            km_system = KnowledgeManagementSystem(self.config)
+            
+            # 获取笔记UUID
+            note_uuid = self._findOrCreateNoteRecord(km_system, file_path)
+            if not note_uuid:
+                return json.dumps({"success": False, "error": "无法获取笔记UUID"}, ensure_ascii=False)
+            
+            self.logger.info(f"笔记UUID: {note_uuid[:8]}...")
+            
+            # 确保科目存在
+            km_system.add_subject(subject_name)
+            
+            # 批量保存知识点
+            confirmations = []
+            for point in knowledge_points:
+                confirmations.append({
+                    "action": "new",
+                    "point_data": {
+                        "point_name": point.get('name', ''),
+                        "core_description": point.get('description', ''),
+                        "mastery_score": 50
+                    },
+                    "subject_name": subject_name
+                })
+            
+            # 保存知识点并自动建立UUID关联
+            print(f"🚀 开始批量保存知识点，数量: {len(confirmations)}", flush=True)
+            saved_ids = km_system.confirm_knowledge_points(confirmations, note_uuid)
+            print(f"🎯 批量保存完成，成功保存: {len(saved_ids)} 个知识点", flush=True)
+            print(f"📋 保存的知识点ID列表: {saved_ids}", flush=True)
+            
+            self.logger.info(f"成功保存 {len(saved_ids)} 个知识点")
+            
+            response = {
+                "success": True,
+                "message": f"成功保存 {len(saved_ids)} 个知识点",
+                "saved_count": len(saved_ids),
+                "saved_ids": saved_ids,
+                "note_uuid": note_uuid
+            }
+            
+            return json.dumps(response, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"批量保存知识点失败: {e}")
+            return json.dumps({"success": False, "error": str(e)}, ensure_ascii=False)
+
+    @Slot(str, result=str)
     def saveNoteKnowledgeMapping(self, mapping_data):
         """保存笔记知识点映射关系"""
         self.logger.info("保存笔记知识点映射关系")
@@ -3153,11 +3178,20 @@ class CorgiWebBridge(QObject):
             from knowledge_management import KnowledgeManagementSystem
             km_system = KnowledgeManagementSystem(self.config)
             
-            # 确保笔记在数据库中存在（使用增强的文件追踪）
+            # 确保笔记在数据库中存在（使用UUID追踪系统）
             if not note_id:
-                # 使用文件追踪系统查找或创建笔记记录
-                note_id = self._findOrCreateNoteRecord(km_system, file_path or 'unknown')
-                self.logger.info(f"通过文件追踪获取笔记记录，ID: {note_id}")
+                # 使用UUID追踪系统查找或创建笔记记录
+                note_uuid = self._findOrCreateNoteRecord(km_system, file_path or 'unknown')
+                self.logger.info(f"通过UUID追踪获取笔记记录，UUID: {note_uuid}")
+            else:
+                # 如果已有note_id，需要转换为note_uuid
+                conn = km_system.db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT note_uuid FROM notes WHERE id = ?", (note_id,))
+                result = cursor.fetchone()
+                note_uuid = result[0] if result else None
+                conn.close()
+                self.logger.info(f"从note_id转换为UUID: {note_uuid}")
             
             # 保存每个已处理知识点的映射关系
             saved_count = 0
@@ -3173,10 +3207,10 @@ class CorgiWebBridge(QObject):
                         self.logger.warning(f"知识点缺少ID，跳过: {name}")
                         continue
                     
-                    # 建立知识点与笔记的关联
-                    if km_system.link_knowledge_point_to_note(knowledge_point_id, note_id):
+                    # 建立知识点与笔记的关联（使用UUID）
+                    if note_uuid and km_system.link_knowledge_point_to_note(knowledge_point_id, note_uuid):
                         saved_count += 1
-                        self.logger.info(f"已保存知识点映射: {point['name']} -> 笔记ID {note_id}")
+                        self.logger.info(f"已保存知识点映射: {point['name']} -> 笔记UUID {note_uuid[:8]}...")
                     else:
                         self.logger.warning(f"保存知识点映射失败: {point['name']}")
                         

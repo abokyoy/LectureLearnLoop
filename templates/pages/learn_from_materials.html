@@ -3196,37 +3196,72 @@
     function finishKnowledgeManagement(knowledgePoints, noteId) {
         addToDebugPanel('INFO', '完成知识点管理');
         
-        // 检查是否还有未处理的知识点
-        const unprocessedPoints = knowledgePoints.filter(point => !point.processed);
-        
-        if (unprocessedPoints.length > 0) {
-            const pointNames = unprocessedPoints.map(p => p.name).join('、');
-            if (!confirm(`还有 ${unprocessedPoints.length} 个知识点未处理：${pointNames}\n\n确定要退出吗？`)) {
-                return false;
-            }
+        // 检查是否有知识点需要保存
+        if (knowledgePoints.length === 0) {
+            addToDebugPanel('WARN', '没有知识点需要保存');
+            return true;
         }
         
-        // 保存笔记映射关系
-        if (window.bridge && window.bridge.saveNoteKnowledgeMapping) {
-            const mappingData = {
-                noteId: noteId,
-                fileName: currentFileName,
+        // 询问用户是否要保存所有知识点
+        const confirmMessage = `即将保存 ${knowledgePoints.length} 个知识点到数据库，确定继续吗？`;
+        if (!confirm(confirmMessage)) {
+            return false;
+        }
+        
+        // 批量保存知识点
+        if (window.bridge && window.bridge.batchSaveKnowledgePoints) {
+            const batchData = {
                 filePath: currentFilePath,
-                processedPoints: knowledgePoints.filter(point => point.processed)
+                subject: '机器学习', // 默认科目，可以根据需要修改
+                knowledgePoints: knowledgePoints.map(point => ({
+                    name: point.name,
+                    description: point.description
+                }))
             };
             
-            window.bridge.saveNoteKnowledgeMapping(JSON.stringify(mappingData), function(result) {
+            addToDebugPanel('INFO', `准备批量保存 ${knowledgePoints.length} 个知识点`);
+            
+            window.bridge.batchSaveKnowledgePoints(JSON.stringify(batchData), function(result) {
                 try {
                     const response = JSON.parse(result);
                     if (response.success) {
-                        addToDebugPanel('SUCCESS', '笔记知识点映射已保存');
+                        addToDebugPanel('SUCCESS', `成功保存 ${response.saved_count} 个知识点`);
+                        alert(`✅ 成功保存 ${response.saved_count} 个知识点！\n\n刷新页面后即可在知识点面板中看到保存的知识点。`);
+                        
+                        // 关闭管理面板
+                        const panel = document.getElementById('knowledge-management-panel');
+                        if (panel) {
+                            panel.remove();
+                        }
+                        
+                        // 刷新知识点显示
+                        setTimeout(() => {
+                            if (window.bridge && window.bridge.getNoteKnowledgePoints) {
+                                window.bridge.getNoteKnowledgePoints(currentFilePath, function(existingResult) {
+                                    try {
+                                        const existingPoints = JSON.parse(existingResult);
+                                        if (Array.isArray(existingPoints) && existingPoints.length > 0) {
+                                            displayExistingKnowledgePoints(existingPoints);
+                                        }
+                                    } catch (e) {
+                                        console.error('刷新知识点显示失败:', e);
+                                    }
+                                });
+                            }
+                        }, 1000);
+                        
                     } else {
-                        addToDebugPanel('ERROR', `保存映射失败: ${response.error}`);
+                        addToDebugPanel('ERROR', `批量保存失败: ${response.error}`);
+                        alert(`❌ 保存失败: ${response.error}`);
                     }
                 } catch (e) {
                     addToDebugPanel('ERROR', `解析保存结果失败: ${e.message}`);
+                    alert(`❌ 保存失败: ${e.message}`);
                 }
             });
+        } else {
+            addToDebugPanel('ERROR', 'batchSaveKnowledgePoints方法不可用');
+            alert('❌ 批量保存功能不可用，请检查系统配置');
         }
         
         return true;
