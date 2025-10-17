@@ -295,6 +295,27 @@ class CorgiWebBridge(QObject):
     def loadContent(self, content_id):
         """加载指定内容"""
         print(f"🔍 loadContent被调用，content_id: {content_id}")
+        
+        # 检查是否有未保存的更改
+        check_unsaved_js = f"""
+        if (window.UnsavedChangesGuard && window.UnsavedChangesGuard.hasUnsavedChanges) {{
+            console.log('🛡️ 检测到未保存的更改，显示保存提示');
+            window.UnsavedChangesGuard.canNavigate(function() {{
+                console.log('✅ 用户确认导航，继续加载页面: {content_id}');
+                window.pybridge.loadContentForced('{content_id}');
+            }});
+        }} else {{
+            console.log('✅ 无未保存更改，直接导航到: {content_id}');
+            window.pybridge.loadContentForced('{content_id}');
+        }}
+        """
+        
+        self.main_window.web_view.page().runJavaScript(check_unsaved_js)
+    
+    @Slot(str)
+    def loadContentForced(self, content_id):
+        """强制加载指定内容（跳过未保存检查）"""
+        print(f"🔍 loadContentForced被调用，content_id: {content_id}")
         self.current_page = content_id
         if self.main_window:
             print(f"🔍 main_window存在，开始生成内容HTML")
@@ -305,6 +326,15 @@ class CorgiWebBridge(QObject):
             # 转义HTML内容中的反引号和反斜杠
             escaped_html = content_html.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
             print(f"🔍 HTML转义完成，长度: {len(escaped_html)}")
+            
+            # 重置未保存状态
+            reset_js = """
+            if (window.UnsavedChangesGuard) {
+                window.UnsavedChangesGuard.reset();
+                console.log('🔄 已重置未保存内容守卫状态');
+            }
+            """
+            self.main_window.web_view.page().runJavaScript(reset_js)
             
             # 通过JavaScript更新右侧内容区域
             js_code = f"updateContentArea(`{escaped_html}`);"

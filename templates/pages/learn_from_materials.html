@@ -799,8 +799,27 @@
         element.classList.add('selected');
         
         if (type === 'file' && path.endsWith('.md')) {
-            // 加载Markdown文件
-            loadFileContent(path, name);
+            // 使用新的未保存内容守卫系统检查
+            if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== path) {
+                console.log('🛡️ 检查文件切换时的未保存内容');
+                
+                // 使用守卫系统检查是否可以导航
+                window.UnsavedChangesGuard.canNavigate(function() {
+                    console.log('✅ 用户确认切换文件，加载新文件: ' + path);
+                    
+                    // 重置守卫状态
+                    if (window.UnsavedChangesGuard) {
+                        window.UnsavedChangesGuard.reset();
+                    }
+                    
+                    // 加载新文件
+                    loadFileContent(path, name);
+                });
+            } else {
+                // 无未保存内容或同一文件，直接加载
+                console.log('✅ 无未保存内容，直接加载文件: ' + path);
+                loadFileContent(path, name);
+            }
         }
     }
 
@@ -872,6 +891,44 @@
                 
                 // 自动加载该笔记相关的知识点
                 loadNoteKnowledgePoints(filePath);
+                
+                // 重新注册编辑器到未保存内容守卫系统
+                setTimeout(function() {
+                    const editContent = document.getElementById('edit-content');
+                    if (editContent && window.UnsavedChangesGuard) {
+                        // 取消之前的监控
+                        window.UnsavedChangesGuard.reset();
+                        
+                        // 重新注册当前文件的编辑器
+                        window.UnsavedChangesGuard.registerEditor(editContent, filePath, function() {
+                            return new Promise((resolve, reject) => {
+                                if (filePath && editContent.value) {
+                                    console.log('💾 执行从资料学习保存 (文件切换后)');
+                                    
+                                    if (window.bridge && window.bridge.saveMarkdownFile) {
+                                        const success = window.bridge.saveMarkdownFile(filePath, editContent.value);
+                                        if (success) {
+                                            console.log('✅ 从资料学习保存成功 (文件切换后)');
+                                            originalContent = editContent.value;
+                                            hasUnsavedChanges = false;
+                                            hideUnsavedIndicator();
+                                            resolve();
+                                        } else {
+                                            console.error('❌ 从资料学习保存失败 (文件切换后)');
+                                            reject(new Error('保存失败'));
+                                        }
+                                    } else {
+                                        reject(new Error('保存功能不可用'));
+                                    }
+                                } else {
+                                    reject(new Error('没有文件路径或内容'));
+                                }
+                            });
+                        });
+                        
+                        console.log('✅ 文件切换后重新注册编辑器到未保存内容守卫');
+                    }
+                }, 500);
             });
         } catch (error) {
             debugError(`加载文件内容时发生错误: ${error.message}`);
@@ -4725,6 +4782,54 @@
                 console.log('目标元素类名:', e.target.className);
             });
         }, 1000);
+        
+        // 初始化未保存内容检测
+        initUnsavedChangesDetection();
+    }
+    
+    // 初始化未保存内容检测
+    function initUnsavedChangesDetection() {
+        console.log('🛡️ 初始化从资料学习未保存内容检测');
+        
+        // 等待编辑器元素加载
+        setTimeout(function() {
+            const editContent = document.getElementById('edit-content');
+            if (editContent && window.registerEditor) {
+                // 注册编辑器监控
+                window.registerEditor(editContent, currentFilePath, function() {
+                    // 保存回调函数
+                    return new Promise((resolve, reject) => {
+                        if (currentFilePath && editContent.value) {
+                            console.log('💾 执行从资料学习保存');
+                            
+                            // 调用现有的保存函数
+                            if (window.pybridge && window.pybridge.saveMarkdownFile) {
+                                const success = window.pybridge.saveMarkdownFile(currentFilePath, editContent.value);
+                                if (success) {
+                                    console.log('✅ 从资料学习保存成功');
+                                    // 更新原始内容
+                                    originalContent = editContent.value;
+                                    hasUnsavedChanges = false;
+                                    hideUnsavedIndicator();
+                                    resolve();
+                                } else {
+                                    console.error('❌ 从资料学习保存失败');
+                                    reject(new Error('保存失败'));
+                                }
+                            } else {
+                                reject(new Error('保存功能不可用'));
+                            }
+                        } else {
+                            reject(new Error('没有文件路径或内容'));
+                        }
+                    });
+                });
+                
+                console.log('✅ 从资料学习编辑器已注册到未保存内容守卫');
+            } else {
+                console.log('⚠️ 编辑器元素或守卫系统不可用');
+            }
+        }, 1500);
     }
     
     if (document.readyState === 'loading') {

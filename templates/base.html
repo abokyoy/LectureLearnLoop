@@ -38,6 +38,9 @@
     
     {% block extra_head %}{% endblock %}
     
+    <!-- 未保存内容守卫组件 -->
+    {% include "components/unsaved_changes_guard.html" %}
+    
     <style>
         /* AI助手浮窗样式 */
         .ai-assistant-float {

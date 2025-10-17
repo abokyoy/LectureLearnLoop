@@ -4899,8 +4899,37 @@ window.handlePractice = function(e) {
         let normalizedPath = filePath.replace(/\\/g, '/');
         debugLog('标准化后的路径: ' + normalizedPath);
         
-        if (!window.pybridge || typeof window.pybridge.getNoteContent !== 'function') {
-            debugError('Bridge对象或getNoteContent方法不可用');
+        // 检查是否切换到不同文件，如果是则进行未保存内容检测
+        if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== normalizedPath) {
+            console.log('🛡️ jsTree文件切换检测未保存内容');
+            console.log('📁 从文件:', currentFilePath, '切换到:', normalizedPath);
+            
+            // 使用守卫系统检查是否可以导航
+            window.UnsavedChangesGuard.canNavigate(function() {
+                console.log('✅ 用户确认文件切换，继续加载: ' + normalizedPath);
+                
+                // 重置守卫状态
+                if (window.UnsavedChangesGuard) {
+                    window.UnsavedChangesGuard.reset();
+                }
+                
+                // 继续执行文件加载
+                loadFileInSelectFile(normalizedPath);
+            });
+            return; // 等待用户确认，不继续执行
+        }
+        
+        // 无未保存内容或同一文件，直接加载
+        console.log('✅ 无未保存内容或同一文件，直接加载: ' + normalizedPath);
+        loadFileInSelectFile(normalizedPath);
+    }
+    
+    // 实际的文件加载逻辑（从selectFile中提取）
+    function loadFileInSelectFile(normalizedPath) {
+        const filePath = normalizedPath; // 保持兼容性
+        
+        if (!window.pybridge || typeof window.pybridge.loadMarkdownRaw !== 'function') {
+            debugError('Bridge对象或loadMarkdownRaw方法不可用');
             debugError('可用的pybridge方法: ' + (window.pybridge ? Object.keys(window.pybridge) : '无'));
             return;
         }
@@ -5009,6 +5038,51 @@ window.handlePractice = function(e) {
                     
                     // 自动加载该笔记相关的知识点
                     loadNoteKnowledgePoints(normalizedPath);
+                    
+                    // 重新注册编辑器到未保存内容守卫系统
+                    setTimeout(function() {
+                        const editContent = document.getElementById('edit-content');
+                        if (editContent && window.UnsavedChangesGuard) {
+                            // 取消之前的监控
+                            window.UnsavedChangesGuard.reset();
+                            
+                            // 重新注册当前文件的编辑器
+                            window.UnsavedChangesGuard.registerEditor(editContent, normalizedPath, function() {
+                                return new Promise((resolve, reject) => {
+                                    if (normalizedPath && editContent.value) {
+                                        console.log('💾 执行网课笔记保存 (jsTree文件切换后)');
+                                        
+                                        if (window.pybridge && window.pybridge.save_file) {
+                                            window.pybridge.save_file(normalizedPath, editContent.value, function(result) {
+                                                try {
+                                                    const response = typeof result === 'string' ? JSON.parse(result) : result;
+                                                    if (response.success) {
+                                                        console.log('✅ 网课笔记保存成功 (jsTree文件切换后)');
+                                                        originalContent = editContent.value;
+                                                        hasUnsavedChanges = false;
+                                                        hideUnsavedIndicator();
+                                                        resolve();
+                                                    } else {
+                                                        console.error('❌ 网课笔记保存失败 (jsTree文件切换后):', response.error);
+                                                        reject(new Error(response.error));
+                                                    }
+                                                } catch (e) {
+                                                    console.error('❌ 解析保存响应失败 (jsTree文件切换后):', e);
+                                                    reject(e);
+                                                }
+                                            });
+                                        } else {
+                                            reject(new Error('保存功能不可用'));
+                                        }
+                                    } else {
+                                        reject(new Error('没有文件路径或内容'));
+                                    }
+                                });
+                            });
+                            
+                            console.log('✅ jsTree文件切换后重新注册编辑器到未保存内容守卫');
+                        }
+                    }, 500);
                 } else {
                     debugError('文件内容为空或获取失败');
                     if (previewContent) {
@@ -5188,22 +5262,35 @@ window.handlePractice = function(e) {
         element.classList.add('selected');
         
         if (type === 'file' && path.endsWith('.md')) {
-            // 检查是否在编辑模式且有未保存的更改
-            if (isEditMode && hasUnsavedChanges && currentFilePath && currentFilePath !== path) {
-                debugLog('检测到编辑模式下切换文件，先保存当前文件...');
+            // 使用新的未保存内容守卫系统检查
+            if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== path) {
+                console.log('🛡️ 检查文件切换时的未保存内容');
                 
-                // 先保存当前文件，然后加载新文件
-                saveCurrentFile(function() {
-                    debugLog('当前文件保存完成，加载新文件...');
-                    loadFileContentAndSwitchToEdit(path, name);
+                // 使用守卫系统检查是否可以导航
+                window.UnsavedChangesGuard.canNavigate(function() {
+                    console.log('✅ 用户确认切换文件，加载新文件: ' + path);
+                    
+                    // 重置守卫状态
+                    if (window.UnsavedChangesGuard) {
+                        window.UnsavedChangesGuard.reset();
+                    }
+                    
+                    // 根据当前模式加载文件
+                    if (isEditMode) {
+                        loadFileContentAndSwitchToEdit(path, name);
+                    } else {
+                        loadFileContent(path, name);
+                    }
                 });
-            } else if (isEditMode && currentFilePath && currentFilePath !== path) {
-                // 编辑模式但没有未保存更改，直接切换到新文件的编辑模式
-                debugLog('编辑模式下切换文件，无未保存更改，直接加载...');
-                loadFileContentAndSwitchToEdit(path, name);
             } else {
-                // 预览模式或同一文件，正常加载
-                loadFileContent(path, name);
+                // 无未保存内容或同一文件，直接加载
+                console.log('✅ 无未保存内容，直接加载文件: ' + path);
+                
+                if (isEditMode && currentFilePath && currentFilePath !== path) {
+                    loadFileContentAndSwitchToEdit(path, name);
+                } else {
+                    loadFileContent(path, name);
+                }
             }
         }
     }
@@ -5286,6 +5373,51 @@ window.handlePractice = function(e) {
                 
                 // 自动加载该笔记相关的知识点
                 loadNoteKnowledgePoints(filePath);
+                
+                // 重新注册编辑器到未保存内容守卫系统
+                setTimeout(function() {
+                    const editContent = document.getElementById('edit-content');
+                    if (editContent && window.UnsavedChangesGuard) {
+                        // 取消之前的监控
+                        window.UnsavedChangesGuard.reset();
+                        
+                        // 重新注册当前文件的编辑器
+                        window.UnsavedChangesGuard.registerEditor(editContent, filePath, function() {
+                            return new Promise((resolve, reject) => {
+                                if (filePath && editContent.value) {
+                                    console.log('💾 执行网课笔记保存 (文件切换后)');
+                                    
+                                    if (window.pybridge && window.pybridge.save_file) {
+                                        window.pybridge.save_file(filePath, editContent.value, function(result) {
+                                            try {
+                                                const response = typeof result === 'string' ? JSON.parse(result) : result;
+                                                if (response.success) {
+                                                    console.log('✅ 网课笔记保存成功 (文件切换后)');
+                                                    originalContent = editContent.value;
+                                                    hasUnsavedChanges = false;
+                                                    hideUnsavedIndicator();
+                                                    resolve();
+                                                } else {
+                                                    console.error('❌ 网课笔记保存失败 (文件切换后):', response.error);
+                                                    reject(new Error(response.error));
+                                                }
+                                            } catch (e) {
+                                                console.error('❌ 解析保存响应失败 (文件切换后):', e);
+                                                reject(e);
+                                            }
+                                        });
+                                    } else {
+                                        reject(new Error('保存功能不可用'));
+                                    }
+                                } else {
+                                    reject(new Error('没有文件路径或内容'));
+                                }
+                            });
+                        });
+                        
+                        console.log('✅ 文件切换后重新注册编辑器到未保存内容守卫');
+                    }
+                }, 500);
             });
         } catch (error) {
             debugError(`加载文件内容时发生错误: ${error.message}`);
@@ -10148,6 +10280,61 @@ window.handlePractice = function(e) {
                 console.log('目标元素类名:', e.target.className);
             });
         }, 1000);
+        
+        // 初始化未保存内容检测
+        initUnsavedChangesDetection();
+    }
+    
+    // 初始化未保存内容检测
+    function initUnsavedChangesDetection() {
+        console.log('🛡️ 初始化网课笔记未保存内容检测');
+        
+        // 等待编辑器元素加载
+        setTimeout(function() {
+            const editContent = document.getElementById('edit-content');
+            if (editContent && window.registerEditor) {
+                // 注册编辑器监控
+                window.registerEditor(editContent, currentFilePath, function() {
+                    // 保存回调函数
+                    return new Promise((resolve, reject) => {
+                        if (currentFilePath && editContent.value) {
+                            console.log('💾 执行网课笔记保存');
+                            
+                            // 调用现有的保存函数
+                            if (window.pybridge && window.pybridge.save_file) {
+                                window.pybridge.save_file(currentFilePath, editContent.value, function(result) {
+                                    try {
+                                        const response = typeof result === 'string' ? JSON.parse(result) : result;
+                                        if (response.success) {
+                                            console.log('✅ 网课笔记保存成功');
+                                            // 更新原始内容
+                                            originalContent = editContent.value;
+                                            hasUnsavedChanges = false;
+                                            hideUnsavedIndicator();
+                                            resolve();
+                                        } else {
+                                            console.error('❌ 网课笔记保存失败:', response.error);
+                                            reject(new Error(response.error));
+                                        }
+                                    } catch (e) {
+                                        console.error('❌ 解析保存响应失败:', e);
+                                        reject(e);
+                                    }
+                                });
+                            } else {
+                                reject(new Error('保存功能不可用'));
+                            }
+                        } else {
+                            reject(new Error('没有文件路径或内容'));
+                        }
+                    });
+                });
+                
+                console.log('✅ 网课笔记编辑器已注册到未保存内容守卫');
+            } else {
+                console.log('⚠️ 编辑器元素或守卫系统不可用');
+            }
+        }, 1500);
     }
     
     // 简化初始化机制，提升加载速度
