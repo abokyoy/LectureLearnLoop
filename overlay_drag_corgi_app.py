@@ -1183,6 +1183,45 @@ class CorgiWebBridge(QObject):
             print(f"❌ 保存文件失败: {e}")
             return False
 
+    @Slot(str, str, result=str)
+    def save_file(self, file_path, content):
+        """保存文件 - 前端兼容接口"""
+        self.logger.info("=" * 60)
+        self.logger.info("【文件保存】save_file 开始")
+        self.logger.info(f"文件路径: {file_path}")
+        self.logger.info(f"内容长度: {len(content)} 字符")
+        
+        try:
+            # 调用现有的saveMarkdownFile方法
+            success = self.saveMarkdownFile(file_path, content)
+            
+            # 返回JSON格式的响应，与前端期望的格式一致
+            if success:
+                result = {
+                    "success": True,
+                    "message": "文件保存成功",
+                    "file_path": file_path
+                }
+                self.logger.info("✅ save_file 成功")
+            else:
+                result = {
+                    "success": False,
+                    "error": "文件保存失败",
+                    "file_path": file_path
+                }
+                self.logger.error("❌ save_file 失败")
+            
+            return json.dumps(result, ensure_ascii=False)
+            
+        except Exception as e:
+            self.logger.error(f"❌ save_file 异常: {e}")
+            result = {
+                "success": False,
+                "error": str(e),
+                "file_path": file_path
+            }
+            return json.dumps(result, ensure_ascii=False)
+
     # ==================== 配置管理功能 ====================
     
     @Slot(result=str)

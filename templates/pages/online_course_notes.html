@@ -4980,6 +4980,11 @@ window.handlePractice = function(e) {
                         editContent.value = content;
                     }
                     
+                    // 触发文件切换的自动保存检查
+                    if (typeof window.onFileSwitch === 'function') {
+                        window.onFileSwitch(normalizedPath);
+                    }
+                    
                     // 设置当前文件路径（用于保存和编辑）
                     currentFilePath = normalizedPath;
                     currentFileName = fileName;
@@ -11127,7 +11132,7 @@ function updateButtonStates(activeMode) {
     const previewBtn = document.getElementById('preview-btn');
     const editBtn = document.getElementById('edit-btn');
     
-    console.log('🔄 更新按钮状态:', activeMode);
+    addDebugLog('🔄 更新按钮状态: ' + activeMode);
     
     if (previewBtn && editBtn) {
         // 重置所有按钮样式
@@ -11144,7 +11149,7 @@ function updateButtonStates(activeMode) {
             editBtn.style.setProperty('background-color', 'transparent', 'important');
             editBtn.style.setProperty('color', '#6b7280', 'important');
             
-            console.log('✅ 预览按钮已激活');
+            addDebugLog('✅ 预览按钮已激活');
         } else if (activeMode === 'edit') {
             // 激活编辑按钮
             editBtn.classList.add('active');
@@ -11155,100 +11160,262 @@ function updateButtonStates(activeMode) {
             previewBtn.style.setProperty('background-color', 'transparent', 'important');
             previewBtn.style.setProperty('color', '#6b7280', 'important');
             
-            console.log('✅ 编辑按钮已激活');
+            addDebugLog('✅ 编辑按钮已激活');
         }
     } else {
-        console.log('⚠️ 按钮元素未找到');
+        addDebugLog('⚠️ 按钮元素未找到');
     }
 }
 
-// 保存按钮功能 - 避免命名冲突
+// 保存按钮功能 - 修复API调用
 function handleSaveButton() {
-    console.log('💾 保存当前文件');
+    addDebugLog('🔥 handleSaveButton被调用');
     
     const editContent = document.getElementById('edit-content');
     const currentFilePath = window.currentFilePath;
     
     if (!currentFilePath) {
-        console.log('⚠️ 没有选择文件');
+        addDebugLog('⚠️ 没有选择文件，无法保存');
         alert('请先选择一个文件进行编辑');
         return;
     }
     
     if (!editContent) {
-        console.log('⚠️ 编辑区域未找到');
+        addDebugLog('❌ 编辑区域未找到');
         return;
     }
     
     const content = editContent.value;
-    console.log('📝 准备保存内容，长度:', content.length);
+    addDebugLog('📊 准备保存内容，长度: ' + content.length);
+    addDebugLog('📋 文件路径: ' + currentFilePath);
     
-    // 调用后端保存函数
-    if (window.bridge && window.bridge.save_file) {
+    // 检查可用的保存接口
+    addDebugLog('🔍 检查可用的保存接口...');
+    addDebugLog('📊 window.pybridge: ' + (window.pybridge ? '存在' : '不存在'));
+    addDebugLog('📊 window.bridge: ' + (window.bridge ? '存在' : '不存在'));
+    
+    if (window.pybridge) {
+        addDebugLog('📊 pybridge.save_file: ' + (window.pybridge.save_file ? '存在' : '不存在'));
+    }
+    if (window.bridge) {
+        addDebugLog('📊 bridge.save_file: ' + (window.bridge.save_file ? '存在' : '不存在'));
+    }
+    
+    // 调用正确的后端保存函数
+    if (window.pybridge && window.pybridge.save_file) {
+        addDebugLog('🔗 使用 pybridge.save_file 保存文件');
+        window.pybridge.save_file(currentFilePath, content, function(result) {
+            try {
+                addDebugLog('📊 收到保存响应: ' + JSON.stringify(result));
+                const response = typeof result === 'string' ? JSON.parse(result) : result;
+                if (response.success) {
+                    addDebugLog('✅ 文件保存成功');
+                    
+                    // 隐藏保存按钮和未保存指示器
+                    const saveBtn = document.getElementById('save-btn');
+                    const unsavedIndicator = document.getElementById('unsaved-indicator');
+                    
+                    if (saveBtn) {
+                        saveBtn.classList.add('hidden');
+                        addDebugLog('✅ 保存按钮已隐藏');
+                    }
+                    if (unsavedIndicator) {
+                        unsavedIndicator.classList.add('hidden');
+                        addDebugLog('✅ 未保存指示器已隐藏');
+                    }
+                    
+                    // 更新预览内容
+                    if (window.pybridge.render_markdown) {
+                        addDebugLog('🔄 更新预览内容');
+                        window.pybridge.render_markdown(content, function(html) {
+                            const previewContent = document.getElementById('preview-content');
+                            if (previewContent) {
+                                previewContent.innerHTML = html;
+                                addDebugLog('✅ 预览内容已更新');
+                            }
+                        });
+                    }
+                    
+                    // 标记为已保存
+                    window.hasUnsavedChanges = false;
+                    addDebugLog('✅ 未保存状态已重置');
+                    
+                    alert('文件保存成功！');
+                } else {
+                    addDebugLog('❌ 文件保存失败: ' + (response.error || '未知错误'));
+                    alert('文件保存失败: ' + (response.error || '未知错误'));
+                }
+            } catch (e) {
+                addDebugLog('❌ 解析保存响应失败: ' + e.message);
+                alert('文件保存失败，请重试');
+            }
+        });
+    } else if (window.bridge && window.bridge.save_file) {
+        addDebugLog('🔗 使用 bridge.save_file 保存文件');
         window.bridge.save_file(currentFilePath, content, function(success) {
             if (success) {
-                console.log('✅ 文件保存成功');
+                addDebugLog('✅ 文件保存成功');
                 
                 // 隐藏保存按钮和未保存指示器
                 const saveBtn = document.getElementById('save-btn');
                 const unsavedIndicator = document.getElementById('unsaved-indicator');
                 
-                if (saveBtn) saveBtn.classList.add('hidden');
-                if (unsavedIndicator) unsavedIndicator.classList.add('hidden');
-                
-                // 更新预览内容
-                if (window.bridge.render_markdown) {
-                    window.bridge.render_markdown(content, function(html) {
-                        const previewContent = document.getElementById('preview-content');
-                        if (previewContent) {
-                            previewContent.innerHTML = html;
-                        }
-                    });
+                if (saveBtn) {
+                    saveBtn.classList.add('hidden');
+                    addDebugLog('✅ 保存按钮已隐藏');
                 }
+                if (unsavedIndicator) {
+                    unsavedIndicator.classList.add('hidden');
+                    addDebugLog('✅ 未保存指示器已隐藏');
+                }
+                
+                // 标记为已保存
+                window.hasUnsavedChanges = false;
+                addDebugLog('✅ 未保存状态已重置');
                 
                 alert('文件保存成功！');
             } else {
-                console.log('❌ 文件保存失败');
+                addDebugLog('❌ 文件保存失败');
                 alert('文件保存失败，请重试');
             }
         });
     } else {
-        console.log('⚠️ 保存接口未找到');
-        alert('保存功能暂不可用');
+        addDebugLog('❌ 保存接口未找到');
+        alert('保存功能暂不可用，请按F12查看调试面板');
+    }
+}
+
+// 自动保存功能
+function autoSaveCurrentFile() {
+    addDebugLog('🔥 autoSaveCurrentFile被调用');
+    
+    const editContent = document.getElementById('edit-content');
+    const currentFilePath = window.currentFilePath;
+    
+    addDebugLog('📊 自动保存条件检查:');
+    addDebugLog('📊 - currentFilePath: ' + (currentFilePath || '无'));
+    addDebugLog('📊 - editContent: ' + (editContent ? '存在' : '不存在'));
+    addDebugLog('📊 - hasUnsavedChanges: ' + (window.hasUnsavedChanges || false));
+    
+    if (!currentFilePath || !editContent || !window.hasUnsavedChanges) {
+        addDebugLog('⚠️ 自动保存条件不满足，跳过保存');
+        return;
+    }
+    
+    const content = editContent.value;
+    addDebugLog('📊 自动保存内容，长度: ' + content.length);
+    
+    // 调用保存API
+    if (window.pybridge && window.pybridge.save_file) {
+        addDebugLog('🔗 使用 pybridge.save_file 进行自动保存');
+        window.pybridge.save_file(currentFilePath, content, function(result) {
+            try {
+                addDebugLog('📊 自动保存响应: ' + JSON.stringify(result));
+                const response = typeof result === 'string' ? JSON.parse(result) : result;
+                if (response.success) {
+                    addDebugLog('✅ 自动保存成功');
+                    window.hasUnsavedChanges = false;
+                    
+                    // 隐藏保存按钮和未保存指示器
+                    const saveBtn = document.getElementById('save-btn');
+                    const unsavedIndicator = document.getElementById('unsaved-indicator');
+                    
+                    if (saveBtn) {
+                        saveBtn.classList.add('hidden');
+                        addDebugLog('✅ 自动保存后隐藏保存按钮');
+                    }
+                    if (unsavedIndicator) {
+                        unsavedIndicator.classList.add('hidden');
+                        addDebugLog('✅ 自动保存后隐藏未保存指示器');
+                    }
+                } else {
+                    addDebugLog('❌ 自动保存失败: ' + (response.error || '未知错误'));
+                }
+            } catch (e) {
+                addDebugLog('❌ 自动保存响应解析失败: ' + e.message);
+            }
+        });
+    } else if (window.bridge && window.bridge.save_file) {
+        addDebugLog('🔗 使用 bridge.save_file 进行自动保存');
+        window.bridge.save_file(currentFilePath, content, function(success) {
+            if (success) {
+                addDebugLog('✅ 自动保存成功');
+                window.hasUnsavedChanges = false;
+                
+                // 隐藏保存按钮和未保存指示器
+                const saveBtn = document.getElementById('save-btn');
+                const unsavedIndicator = document.getElementById('unsaved-indicator');
+                
+                if (saveBtn) {
+                    saveBtn.classList.add('hidden');
+                    addDebugLog('✅ 自动保存后隐藏保存按钮');
+                }
+                if (unsavedIndicator) {
+                    unsavedIndicator.classList.add('hidden');
+                    addDebugLog('✅ 自动保存后隐藏未保存指示器');
+                }
+            } else {
+                addDebugLog('❌ 自动保存失败');
+            }
+        });
+    } else {
+        addDebugLog('❌ 自动保存接口未找到');
     }
 }
 
 // 页面加载时初始化按钮状态
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('📋 初始化文档预览/编辑按钮');
+    addDebugLog('🔥 页面DOMContentLoaded事件触发');
+    addDebugLog('📋 初始化文档预览/编辑按钮');
     
     // 默认激活预览模式
     setTimeout(() => {
+        addDebugLog('🔄 设置默认预览模式');
         updateButtonStates('preview');
         window.isEditMode = false;
+        addDebugLog('✅ 默认模式设置完成');
     }, 500);
     
     // 监听编辑内容变化
     const editContent = document.getElementById('edit-content');
     if (editContent) {
+        addDebugLog('✅ 找到编辑内容区域，绑定input事件');
         editContent.addEventListener('input', function() {
             // 显示保存按钮和未保存指示器
             const saveBtn = document.getElementById('save-btn');
             const unsavedIndicator = document.getElementById('unsaved-indicator');
             
-            if (saveBtn) saveBtn.classList.remove('hidden');
-            if (unsavedIndicator) unsavedIndicator.classList.remove('hidden');
+            if (saveBtn) {
+                saveBtn.classList.remove('hidden');
+                addDebugLog('✅ 保存按钮已显示');
+            }
+            if (unsavedIndicator) {
+                unsavedIndicator.classList.remove('hidden');
+                addDebugLog('✅ 未保存指示器已显示');
+            }
             
-            console.log('📝 检测到内容变化，显示保存按钮');
+            // 标记为有未保存的更改
+            window.hasUnsavedChanges = true;
+            
+            addDebugLog('📝 检测到内容变化，标记为未保存状态');
         });
+    } else {
+        addDebugLog('❌ 未找到编辑内容区域');
     }
     
-    console.log('✅ 按钮初始化完成');
+    // 初始化未保存状态
+    window.hasUnsavedChanges = false;
+    addDebugLog('📊 初始化未保存状态: false');
+    
+    // 设置自动保存功能
+    setupAutoSaveOnPageChange();
+    
+    addDebugLog('✅ 按钮初始化完成');
 });
 
 // 测试按钮功能
 function testButtonFunctions() {
-    console.log('🧪 测试按钮功能');
+    addDebugLog('🧪 测试按钮功能');
     
     const previewBtn = document.getElementById('preview-btn');
     const editBtn = document.getElementById('edit-btn');
@@ -11256,22 +11423,92 @@ function testButtonFunctions() {
     const previewContent = document.getElementById('preview-content');
     const editContent = document.getElementById('edit-content');
     
-    console.log('按钮元素检查:');
-    console.log('- 预览按钮:', previewBtn ? '✅' : '❌');
-    console.log('- 编辑按钮:', editBtn ? '✅' : '❌');
-    console.log('- 保存按钮:', saveBtn ? '✅' : '❌');
-    console.log('- 预览内容:', previewContent ? '✅' : '❌');
-    console.log('- 编辑内容:', editContent ? '✅' : '❌');
+    addDebugLog('📊 按钮元素检查:');
+    addDebugLog('- 预览按钮: ' + (previewBtn ? '✅' : '❌'));
+    addDebugLog('- 编辑按钮: ' + (editBtn ? '✅' : '❌'));
+    addDebugLog('- 保存按钮: ' + (saveBtn ? '✅' : '❌'));
+    addDebugLog('- 预览内容: ' + (previewContent ? '✅' : '❌'));
+    addDebugLog('- 编辑内容: ' + (editContent ? '✅' : '❌'));
     
     // 测试切换功能
     if (previewBtn && editBtn) {
-        console.log('🔄 测试切换到编辑模式');
+        addDebugLog('🔄 测试切换到编辑模式');
         switchToEdit();
         
         setTimeout(() => {
-            console.log('🔄 测试切换到预览模式');
+            addDebugLog('🔄 测试切换到预览模式');
             switchToPreview();
         }, 1000);
+    } else {
+        addDebugLog('❌ 按钮元素缺失，无法测试切换功能');
+    }
+}
+
+// 页面切换时的自动保存功能
+function setupAutoSaveOnPageChange() {
+    addDebugLog('🔧 设置页面切换自动保存');
+    
+    // 监听页面可见性变化（用户切换标签页或最小化窗口）
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden && window.hasUnsavedChanges) {
+            addDebugLog('📄 页面隐藏，执行自动保存');
+            autoSaveCurrentFile();
+        }
+    });
+    
+    // 监听窗口失去焦点（用户切换到其他应用）
+    window.addEventListener('blur', function() {
+        if (window.hasUnsavedChanges) {
+            addDebugLog('🔄 窗口失去焦点，执行自动保存');
+            autoSaveCurrentFile();
+        }
+    });
+    
+    // 监听页面卸载前（用户关闭页面或刷新）
+    window.addEventListener('beforeunload', function(e) {
+        if (window.hasUnsavedChanges) {
+            addDebugLog('⚠️ 页面即将卸载，有未保存的更改');
+            autoSaveCurrentFile();
+            
+            // 显示确认对话框
+            const message = '您有未保存的更改，确定要离开吗？';
+            e.returnValue = message;
+            return message;
+        }
+    });
+    
+    addDebugLog('✅ 自动保存监听器已设置');
+}
+
+// 文件切换时的自动保存
+function onFileSwitch(newFilePath) {
+    addDebugLog('📁 文件切换: ' + (window.currentFilePath || '无') + ' -> ' + newFilePath);
+    
+    // 如果当前文件有未保存的更改，先自动保存
+    if (window.hasUnsavedChanges && window.currentFilePath) {
+        addDebugLog('💾 文件切换前自动保存当前文件');
+        autoSaveCurrentFile();
+    }
+    
+    // 更新当前文件路径
+    window.currentFilePath = newFilePath;
+    addDebugLog('📋 当前文件路径已更新: ' + newFilePath);
+    
+    // 重置未保存状态
+    window.hasUnsavedChanges = false;
+    addDebugLog('✅ 未保存状态已重置');
+    
+    // 隐藏保存按钮和未保存指示器
+    const saveBtn = document.getElementById('save-btn');
+    const unsavedIndicator = document.getElementById('unsaved-indicator');
+    
+    if (saveBtn) {
+        saveBtn.classList.add('hidden');
+        addDebugLog('✅ 保存按钮已隐藏');
+    }
+    if (unsavedIndicator) {
+        unsavedIndicator.classList.add('hidden');
+        addDebugLog('✅ 未保存指示器已隐藏');
     }
 }
 
@@ -11280,6 +11517,8 @@ window.switchToPreview = switchToPreview;
 window.switchToEdit = switchToEdit;
 window.updateButtonStates = updateButtonStates;
 window.handleSaveButton = handleSaveButton;
+window.autoSaveCurrentFile = autoSaveCurrentFile;
+window.onFileSwitch = onFileSwitch;
 window.testButtonFunctions = testButtonFunctions;
 
 // 5秒后自动测试按钮功能
