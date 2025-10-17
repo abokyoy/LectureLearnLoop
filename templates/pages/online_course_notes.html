@@ -10635,6 +10635,18 @@ function handleDeepLearning(e) {
     
     addDebugLog('🧠 开始深入学习: ' + selectedTextForMenu.substring(0, 30) + '...');
     
+    // 隐藏右键菜单
+    const contextMenu = document.getElementById('contextMenu');
+    if (contextMenu) {
+        contextMenu.style.display = 'none';
+    }
+    
+    // 隐藏增强菜单
+    const menu = document.getElementById('enhanced-context-menu');
+    if (menu) {
+        menu.remove();
+    }
+    
     // 构建深入学习的提示词
     const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
 
@@ -10653,7 +10665,43 @@ function handleDeepLearning(e) {
     // 打开AI聊天窗口并发送消息
     openChatWithMessage(deepLearningPrompt);
     
+    // 清除选中文本状态
+    selectedTextForMenu = '';
+    
+    // 清除页面文本选择
+    if (window.getSelection) {
+        window.getSelection().removeAllRanges();
+    }
+    
     showToast('已将选中内容发送给AI助手进行深入解释', 'success');
+}
+
+// 打开AI聊天窗口并发送消息
+function openChatWithMessage(message) {
+    // 使用全局函数打开AI聊天窗口
+    if (window.openAIChatWindow) {
+        window.openAIChatWindow();
+    }
+    
+    // 等待窗口打开后设置消息内容并发送
+    setTimeout(() => {
+        if (window.sendAIMessage) {
+            window.sendAIMessage(message);
+        } else {
+            // 备用方案：直接操作DOM
+            const aiChatInput = document.getElementById('aiChatInput');
+            const sendBtn = document.getElementById('sendChatBtn');
+            
+            if (aiChatInput && sendBtn) {
+                aiChatInput.value = message;
+                setTimeout(() => {
+                    sendBtn.click();
+                }, 100);
+            } else {
+                showToast('AI聊天功能暂时不可用，请稍后再试', 'error');
+            }
+        }
+    }, 300);
 }
 
 // 处理练习功能
@@ -10688,13 +10736,14 @@ function handlePractice(e) {
         addDebugLog('✅ 已发送生成提示到AI助手');
     }
     
-    // 生成练习ID
-    const practiceId = 'practice_' + Date.now();
+    // 保存选中文本，避免被点击事件清除
+    const textToGenerate = selectedTextForMenu;
     
-    // 创建练习数据
+    // 生成练习ID和数据
+    const practiceId = 'practice_' + Date.now();
     const practiceData = {
         id: practiceId,
-        selectedText: selectedTextForMenu,
+        selectedText: textToGenerate,
         questions: null,
         status: 'generating'
     };
@@ -10707,7 +10756,15 @@ function handlePractice(e) {
     
     // 异步生成题目
     setTimeout(() => {
-        generatePracticeQuestionsForAI(selectedTextForMenu, practiceId);
+        generatePracticeQuestionsForAI(textToGenerate, practiceId);
+        
+        // 生成题目后清除选中文本状态
+        selectedTextForMenu = '';
+        
+        // 清除页面文本选择
+        if (window.getSelection) {
+            window.getSelection().removeAllRanges();
+        }
     }, 500);
     
     showToast('已切换到AI练习助手', 'success');
@@ -10715,13 +10772,13 @@ function handlePractice(e) {
 
 // 为AI助手生成练习题目
 function generatePracticeQuestionsForAI(selectedText, practiceId) {
-    if (window.bridge && window.bridge.generatePracticeQuestions) {
+    if (window.pybridge && window.pybridge.generatePracticeQuestions) {
         try {
-            addDebugLog('🔄 开始调用bridge生成题目...');
+            addDebugLog('🔄 开始调用pybridge生成题目...');
             // 使用setTimeout真正异步执行，避免界面冻结
             setTimeout(() => {
                 try {
-                    const result = window.bridge.generatePracticeQuestions(selectedText);
+                    const result = window.pybridge.generatePracticeQuestions(selectedText);
                     
                     // 处理可能的Promise返回值
                     const handleResult = (questions) => {
@@ -10789,13 +10846,13 @@ function generatePracticeQuestionsForAI(selectedText, practiceId) {
                 }
             }, 100);
         } catch (error) {
-            addDebugLog('❌ 调用bridge失败: ' + error.message);
+            addDebugLog('❌ 调用pybridge失败: ' + error.message);
             if (window.addAIPracticeMessage) {
                 window.addAIPracticeMessage('无法连接到题目生成服务，请重试。', 'ai');
             }
         }
     } else {
-        addDebugLog('❌ bridge对象不可用');
+        addDebugLog('❌ pybridge对象不可用');
         if (window.addAIPracticeMessage) {
             window.addAIPracticeMessage('题目生成服务不可用，请检查系统状态。', 'ai');
         }
@@ -10885,8 +10942,14 @@ function initializeRightClickMenu() {
             }
         }, true); // 使用捕获阶段
         
-        // 点击其他地方时清除选中文本
-        document.addEventListener('click', function() {
+        // 点击其他地方时清除选中文本（但不包括菜单项）
+        document.addEventListener('click', function(e) {
+            // 如果点击的是菜单项，不清除选中文本
+            if (e.target.closest('#enhanced-context-menu') || 
+                e.target.closest('#deepLearningMenuItem') || 
+                e.target.closest('#practiceMenuItem')) {
+                return;
+            }
             selectedTextForMenu = '';
         });
         
