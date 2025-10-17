@@ -1031,6 +1031,76 @@ window.jsTreeLoading = false;
         width: max-content !important;
     }
     
+    /* 终极强制水平滚动条显示 - 最高优先级 */
+    div#file-structure div#file-tree {
+        overflow-x: scroll !important;
+        overflow-y: auto !important;
+        position: relative !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* 确保文件结构面板不会隐藏水平滚动 */
+    div#file-structure {
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+    }
+    
+    /* 文档预览区工具栏样式优化 */
+    #document-area .border-b.border-gray-200 {
+        padding: 12px 16px; /* 减小padding */
+    }
+    
+    #document-area h2 {
+        font-size: 14px !important; /* 减小标题字体 */
+        font-weight: 500 !important;
+    }
+    
+    /* 预览/编辑按钮开关样式 - 类似右侧面板 */
+    #document-area .bg-gray-100 {
+        background-color: #f3f4f6 !important;
+        border-radius: 8px !important;
+        padding: 4px !important;
+    }
+    
+    #document-area .bg-gray-100 button {
+        position: relative;
+        transition: all 0.2s ease;
+        border-radius: 6px !important;
+        font-size: 12px !important;
+        font-weight: 500 !important;
+        padding: 8px 12px !important;
+        border: none !important;
+    }
+    
+    /* 激活状态的按钮 */
+    #document-area .bg-gray-100 button.active {
+        background-color: #3b82f6 !important; /* 蓝色背景 */
+        color: white !important;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+    }
+    
+    /* 非激活状态的按钮 */
+    #document-area .bg-gray-100 button:not(.active) {
+        background-color: transparent !important;
+        color: #6b7280 !important;
+    }
+    
+    /* 悬停效果 */
+    #document-area .bg-gray-100 button:not(.active):hover {
+        background-color: white !important;
+        color: #374151 !important;
+    }
+    
+    /* 按钮图标样式 */
+    #document-area .bg-gray-100 button .material-icons-outlined {
+        font-size: 14px !important;
+        margin-right: 4px !important;
+    }
+    
     /* 终极覆盖 - 确保去除所有jsTree边框和阴影 */
     div#file-tree,
     div#file-tree.jstree,
@@ -1592,20 +1662,24 @@ window.jsTreeLoading = false;
         <!-- 中间文档预览/编辑区域 -->
         <div class="flex-1 bg-white border-r border-gray-200 flex flex-col" id="document-area">
             <!-- 顶部工具栏 -->
-            <div class="border-b border-gray-200 p-4 flex justify-between items-center">
+            <div class="border-b border-gray-200 p-3 flex justify-between items-center">
                 <div class="flex items-center space-x-2">
-                    <h2 class="text-lg font-semibold text-text-dark-brown" id="preview-title">文档预览区</h2>
-                    <span id="unsaved-indicator" class="text-orange-500 text-sm hidden">● 未保存</span>
+                    <h2 class="text-sm font-medium text-text-dark-brown" id="preview-title">文档预览区</h2>
+                    <span id="unsaved-indicator" class="text-orange-500 text-xs hidden">● 未保存</span>
                 </div>
-                <div class="flex space-x-2">
-                    <button id="save-btn" class="px-4 py-2 bg-green-500 text-white rounded-lg text-sm hidden" onclick="saveCurrentFile()" title="保存文件">
-                        <span class="material-icons-outlined text-sm mr-1">save</span>
+                <div class="flex items-center bg-gray-100 rounded-lg p-1">
+                    <button id="save-btn" class="px-3 py-1 bg-green-500 text-white rounded text-xs mr-2 hidden" onclick="handleSaveButton()" title="保存文件">
+                        <span class="material-icons-outlined text-xs mr-1">save</span>
                         保存
                     </button>
-                    <button id="preview-btn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm" onclick="switchToPreview()">预览</button>
-                    <button id="edit-btn" class="px-4 py-2 bg-white border border-gray-300 text-text-gray rounded-lg text-sm" onclick="try { addDebugLog('🖱️ 编辑按钮被点击'); } catch(e) { console.log('调试失败:', e); } switchToEdit();">编辑</button>
-                    <button id="test-menu-btn" class="px-4 py-2 bg-yellow-500 text-white rounded-lg text-sm" onclick="testRightClickMenu()">测试右键菜单</button>
-                    <button id="test-enhance-btn" class="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm" onclick="testEnhanceMenu()">测试增强菜单</button>
+                    <button id="preview-btn" class="px-3 py-1.5 bg-primary text-white rounded text-xs transition-colors" onclick="switchToPreview()">
+                        <span class="material-icons-outlined text-xs mr-1">visibility</span>
+                        预览
+                    </button>
+                    <button id="edit-btn" class="px-3 py-1.5 bg-transparent text-text-gray rounded text-xs transition-colors hover:bg-white" onclick="try { addDebugLog('🖱️ 编辑按钮被点击'); } catch(e) { console.log('调试失败:', e); } switchToEdit();">
+                        <span class="material-icons-outlined text-xs mr-1">edit</span>
+                        编辑
+                    </button>
                 </div>
             </div>
             
@@ -10330,8 +10404,30 @@ function initTextContextMenu() {
 
 // 旧的simpleTest函数已删除，避免重复定义
 
-// 旧的handleTextContextMenu函数已删除，避免重复定义和alert干扰
-
+// 处理文本右键菜单
+function handleTextContextMenu(e) {
+    e.preventDefault();
+    
+    const selection = window.getSelection();
+    const selectedText = selection.toString().trim();
+    
+    if (selectedText.length > 0) {
+        console.log('📝 检测到选中文本:', selectedText);
+        
+        // 显示右键菜单
+        const contextMenu = document.getElementById('textContextMenu');
+        if (contextMenu) {
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = e.pageX + 'px';
+            contextMenu.style.top = e.pageY + 'px';
+            
+            // 存储选中的文本
+            window.selectedTextForMenu = selectedText;
+        }
+    }
+    
+    return false;
+}
 
 // 处理深入学习
 function handleDeepLearning(e) {
@@ -10916,20 +11012,34 @@ if (fileTreeElement) {
 // 立即测试：强制设置文件树样式（调试用）
 setTimeout(() => {
     const fileTree = document.getElementById('file-tree');
+    const fileStructure = document.getElementById('file-structure');
+    
     if (fileTree) {
         console.log('🧪 立即测试：强制设置文件树样式');
         
-        // 强制设置样式
+        // 强制设置文件结构面板样式
+        if (fileStructure) {
+            fileStructure.style.setProperty('overflow', 'visible', 'important');
+            fileStructure.style.setProperty('overflow-x', 'visible', 'important');
+            fileStructure.style.setProperty('overflow-y', 'visible', 'important');
+            console.log('✅ 文件结构面板样式已设置');
+        }
+        
+        // 强制设置文件树样式
         fileTree.style.setProperty('overflow-x', 'scroll', 'important');
         fileTree.style.setProperty('overflow-y', 'auto', 'important');
         fileTree.style.setProperty('white-space', 'nowrap', 'important');
+        fileTree.style.setProperty('position', 'relative', 'important');
+        fileTree.style.setProperty('width', '100%', 'important');
+        fileTree.style.setProperty('max-width', '100%', 'important');
+        fileTree.style.setProperty('box-sizing', 'border-box', 'important');
         
         // 查找jsTree并强制设置宽度
         const jstreeDefault = fileTree.querySelector('.jstree-default');
         if (jstreeDefault) {
             jstreeDefault.style.setProperty('min-width', '500px', 'important');
             jstreeDefault.style.setProperty('width', 'max-content', 'important');
-            console.log('✅ 强制样式设置完成');
+            console.log('✅ jsTree容器样式设置完成');
         } else {
             console.log('⚠️ 未找到 .jstree-default 元素');
         }
@@ -10941,11 +11051,239 @@ setTimeout(() => {
             anchor.style.setProperty('overflow', 'visible', 'important');
             anchor.style.setProperty('text-overflow', 'clip', 'important');
             anchor.style.setProperty('max-width', 'none', 'important');
+            anchor.style.setProperty('display', 'inline-block', 'important');
         });
         
         console.log(`✅ 已处理 ${anchors.length} 个文件节点`);
+        console.log('🎯 水平滚动条强制设置完成');
     }
 }, 2000); // 2秒后执行测试
+
+// 额外的强制检查机制
+setInterval(() => {
+    const fileTree = document.getElementById('file-tree');
+    if (fileTree) {
+        const currentOverflowX = window.getComputedStyle(fileTree).overflowX;
+        if (currentOverflowX !== 'scroll') {
+            console.log('🔧 检测到水平滚动被重置，重新强制设置');
+            fileTree.style.setProperty('overflow-x', 'scroll', 'important');
+        }
+    }
+}, 5000); // 每5秒检查一次
+
+// 预览/编辑按钮切换功能 - 直接DOM操作
+function switchToPreview() {
+    console.log('🔄 切换到预览模式');
+    
+    const previewContent = document.getElementById('preview-content');
+    const editContent = document.getElementById('edit-content');
+    
+    // 显示预览内容，隐藏编辑内容
+    if (previewContent) {
+        previewContent.style.display = 'block';
+        previewContent.classList.remove('hidden');
+    }
+    if (editContent) {
+        editContent.style.display = 'none';
+        editContent.classList.add('hidden');
+    }
+    
+    // 更新按钮状态
+    updateButtonStates('preview');
+    
+    // 更新全局状态
+    window.isEditMode = false;
+    
+    console.log('✅ 已切换到预览模式');
+}
+
+function switchToEdit() {
+    console.log('🔄 切换到编辑模式');
+    
+    const previewContent = document.getElementById('preview-content');
+    const editContent = document.getElementById('edit-content');
+    
+    // 显示编辑内容，隐藏预览内容
+    if (editContent) {
+        editContent.style.display = 'block';
+        editContent.classList.remove('hidden');
+    }
+    if (previewContent) {
+        previewContent.style.display = 'none';
+        previewContent.classList.add('hidden');
+    }
+    
+    // 更新按钮状态
+    updateButtonStates('edit');
+    
+    // 更新全局状态
+    window.isEditMode = true;
+    
+    console.log('✅ 已切换到编辑模式');
+}
+
+// 更新按钮状态的辅助函数
+function updateButtonStates(activeMode) {
+    const previewBtn = document.getElementById('preview-btn');
+    const editBtn = document.getElementById('edit-btn');
+    
+    console.log('🔄 更新按钮状态:', activeMode);
+    
+    if (previewBtn && editBtn) {
+        // 重置所有按钮样式
+        previewBtn.classList.remove('active');
+        editBtn.classList.remove('active');
+        
+        if (activeMode === 'preview') {
+            // 激活预览按钮
+            previewBtn.classList.add('active');
+            previewBtn.style.setProperty('background-color', '#3b82f6', 'important');
+            previewBtn.style.setProperty('color', 'white', 'important');
+            
+            // 取消激活编辑按钮
+            editBtn.style.setProperty('background-color', 'transparent', 'important');
+            editBtn.style.setProperty('color', '#6b7280', 'important');
+            
+            console.log('✅ 预览按钮已激活');
+        } else if (activeMode === 'edit') {
+            // 激活编辑按钮
+            editBtn.classList.add('active');
+            editBtn.style.setProperty('background-color', '#3b82f6', 'important');
+            editBtn.style.setProperty('color', 'white', 'important');
+            
+            // 取消激活预览按钮
+            previewBtn.style.setProperty('background-color', 'transparent', 'important');
+            previewBtn.style.setProperty('color', '#6b7280', 'important');
+            
+            console.log('✅ 编辑按钮已激活');
+        }
+    } else {
+        console.log('⚠️ 按钮元素未找到');
+    }
+}
+
+// 保存按钮功能 - 避免命名冲突
+function handleSaveButton() {
+    console.log('💾 保存当前文件');
+    
+    const editContent = document.getElementById('edit-content');
+    const currentFilePath = window.currentFilePath;
+    
+    if (!currentFilePath) {
+        console.log('⚠️ 没有选择文件');
+        alert('请先选择一个文件进行编辑');
+        return;
+    }
+    
+    if (!editContent) {
+        console.log('⚠️ 编辑区域未找到');
+        return;
+    }
+    
+    const content = editContent.value;
+    console.log('📝 准备保存内容，长度:', content.length);
+    
+    // 调用后端保存函数
+    if (window.bridge && window.bridge.save_file) {
+        window.bridge.save_file(currentFilePath, content, function(success) {
+            if (success) {
+                console.log('✅ 文件保存成功');
+                
+                // 隐藏保存按钮和未保存指示器
+                const saveBtn = document.getElementById('save-btn');
+                const unsavedIndicator = document.getElementById('unsaved-indicator');
+                
+                if (saveBtn) saveBtn.classList.add('hidden');
+                if (unsavedIndicator) unsavedIndicator.classList.add('hidden');
+                
+                // 更新预览内容
+                if (window.bridge.render_markdown) {
+                    window.bridge.render_markdown(content, function(html) {
+                        const previewContent = document.getElementById('preview-content');
+                        if (previewContent) {
+                            previewContent.innerHTML = html;
+                        }
+                    });
+                }
+                
+                alert('文件保存成功！');
+            } else {
+                console.log('❌ 文件保存失败');
+                alert('文件保存失败，请重试');
+            }
+        });
+    } else {
+        console.log('⚠️ 保存接口未找到');
+        alert('保存功能暂不可用');
+    }
+}
+
+// 页面加载时初始化按钮状态
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📋 初始化文档预览/编辑按钮');
+    
+    // 默认激活预览模式
+    setTimeout(() => {
+        updateButtonStates('preview');
+        window.isEditMode = false;
+    }, 500);
+    
+    // 监听编辑内容变化
+    const editContent = document.getElementById('edit-content');
+    if (editContent) {
+        editContent.addEventListener('input', function() {
+            // 显示保存按钮和未保存指示器
+            const saveBtn = document.getElementById('save-btn');
+            const unsavedIndicator = document.getElementById('unsaved-indicator');
+            
+            if (saveBtn) saveBtn.classList.remove('hidden');
+            if (unsavedIndicator) unsavedIndicator.classList.remove('hidden');
+            
+            console.log('📝 检测到内容变化，显示保存按钮');
+        });
+    }
+    
+    console.log('✅ 按钮初始化完成');
+});
+
+// 测试按钮功能
+function testButtonFunctions() {
+    console.log('🧪 测试按钮功能');
+    
+    const previewBtn = document.getElementById('preview-btn');
+    const editBtn = document.getElementById('edit-btn');
+    const saveBtn = document.getElementById('save-btn');
+    const previewContent = document.getElementById('preview-content');
+    const editContent = document.getElementById('edit-content');
+    
+    console.log('按钮元素检查:');
+    console.log('- 预览按钮:', previewBtn ? '✅' : '❌');
+    console.log('- 编辑按钮:', editBtn ? '✅' : '❌');
+    console.log('- 保存按钮:', saveBtn ? '✅' : '❌');
+    console.log('- 预览内容:', previewContent ? '✅' : '❌');
+    console.log('- 编辑内容:', editContent ? '✅' : '❌');
+    
+    // 测试切换功能
+    if (previewBtn && editBtn) {
+        console.log('🔄 测试切换到编辑模式');
+        switchToEdit();
+        
+        setTimeout(() => {
+            console.log('🔄 测试切换到预览模式');
+            switchToPreview();
+        }, 1000);
+    }
+}
+
+// 确保函数在全局作用域可用
+window.switchToPreview = switchToPreview;
+window.switchToEdit = switchToEdit;
+window.updateButtonStates = updateButtonStates;
+window.handleSaveButton = handleSaveButton;
+window.testButtonFunctions = testButtonFunctions;
+
+// 5秒后自动测试按钮功能
+setTimeout(testButtonFunctions, 5000);
 
 </script>
 
