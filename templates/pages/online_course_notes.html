@@ -622,55 +622,7 @@ window.jsTreeLoading = false;
         box-shadow: none;
     }
     
-    /* 不同文件类型的图标样式 */
-    #file-tree .jstree-anchor.file-md::before {
-        content: "📝";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-txt::before {
-        content: "📄";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-pdf::before {
-        content: "📕";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-doc::before,
-    #file-tree .jstree-anchor.file-docx::before {
-        content: "📘";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-py::before {
-        content: "🐍";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-js::before {
-        content: "🟨";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-html::before {
-        content: "🌐";
-        margin-right: 6px;
-        font-size: 14px;
-    }
-    
-    #file-tree .jstree-anchor.file-json::before {
-        content: "📋";
-        margin-right: 6px;
-        font-size: 14px;
-    }
+    /* 移除emoji图标，统一使用Material Icons */
     
     /* md文件特殊样式 - 可编辑 */
     #file-tree .jstree-anchor.file-md {
@@ -683,10 +635,33 @@ window.jsTreeLoading = false;
         color: #1d4ed8;
     }
     
-    /* 非md文件样式 - 不可编辑 */
+    /* 非md文件样式 - 不可编辑，但不包括文件夹 */
     #file-tree .jstree-anchor:not(.file-md):not(.folder-node) {
         opacity: 0.7;
-        font-style: italic;
+        font-style: italic; /* 只对非md非文件夹的文件应用斜体 */
+    }
+    
+    /* 强制确保文件夹不受上述规则影响 */
+    #file-tree .jstree-anchor:has(.jstree-folder),
+    #file-tree li[role="treeitem"][aria-expanded] .jstree-anchor,
+    #file-tree .jstree-node .jstree-anchor:has(.jstree-icon.jstree-folder) {
+        opacity: 1 !important;
+        font-style: normal !important;
+        font-weight: normal !important;
+    }
+    
+    /* 文件夹确保不是斜体 - 强制覆盖所有可能的斜体样式 */
+    #file-tree .jstree-anchor.folder-node,
+    #file-tree .jstree-anchor[data-type="folder"],
+    #file-tree li[data-jstree='{"type":"folder"}'] .jstree-anchor,
+    #file-tree .jstree-node[data-type="folder"] .jstree-anchor {
+        font-style: normal !important;
+        font-weight: normal !important;
+    }
+    
+    /* 确保所有文件夹节点都不是斜体 */
+    #file-tree .jstree-anchor:has(.jstree-folder) {
+        font-style: normal !important;
     }
     
     #file-tree .jstree-anchor:not(.file-md):not(.folder-node):hover {
@@ -694,138 +669,78 @@ window.jsTreeLoading = false;
         cursor: not-allowed;
     }
     
-    /* 文件夹图标 - 现代化设计 */
-    #file-tree .jstree-default .jstree-icon.jstree-folder {
-        background-image: none;
-        color: #fbbf24; /* 更现代的金黄色 */
-        font-family: 'Material Icons Outlined';
-        font-size: 16px; /* 稍微小一点，更精致 */
-        line-height: 18px;
-        transition: color 0.2s ease; /* 添加过渡效果 */
+    /* 文件夹图标 - 默认状态 */
+    #file-tree .jstree-default .jstree-icon.jstree-folder,
+    #file-tree .jstree-anchor.folder-node .jstree-icon {
+        background-image: none !important;
+        color: #6b7280 !important; /* 默认灰色 */
+        font-family: 'Material Icons Outlined' !important;
+        font-size: 24px !important;
+        line-height: 24px !important;
+        transition: all 0.2s ease !important;
+        width: 24px !important;
+        height: 24px !important;
     }
     
-    #file-tree .jstree-default .jstree-icon.jstree-folder:before {
-        content: 'folder'; /* 保持经典文件夹图标 */
-    }
-    
-    #file-tree .jstree-default .jstree-open > .jstree-icon.jstree-folder:before {
-        content: 'folder_open'; /* 打开状态 */
-    }
-    
-    /* 文件夹悬停效果 */
-    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-folder {
-        color: #f59e0b; /* 悬停时更深的颜色 */
-    }
-    
-    /* 通过数据预处理设置的文件夹图标样式 */
+    #file-tree .jstree-default .jstree-icon.jstree-folder:before,
     #file-tree .jstree-anchor.folder-node .jstree-icon:before {
         content: 'folder' !important;
         font-family: 'Material Icons Outlined' !important;
-        color: #fbbf24 !important;
-        font-size: 16px !important;
     }
     
-    /* 展开状态的文件夹图标 */
-    #file-tree .jstree-open > .jstree-anchor.folder-node .jstree-icon:before {
-        content: 'folder_open' !important;
-    }
+    /* 移除原有的CSS选中状态，由JavaScript动态控制 */
+    /* 文件夹选中状态将由JavaScript动态设置 */
     
-    /* 文件夹悬停效果 - 数据预处理版本 */
+    /* 展开状态的文件夹图标也由JavaScript控制 */
+    /* 移除空的CSS规则，避免警告 */
+    
+    /* 文件夹悬停效果 */
+    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-folder,
     #file-tree .jstree-anchor.folder-node:hover .jstree-icon {
-        color: #f59e0b !important;
+        color: #4b5563 !important; /* 悬停时稍深的灰色 */
     }
     
-    /* 文件图标 - 根据文件类型区分 */
-    #file-tree .jstree-default .jstree-icon.jstree-file {
-        background-image: none;
-        color: #6b7280; /* 默认灰色 */
-        font-family: 'Material Icons Outlined';
-        font-size: 16px;
-        line-height: 18px;
-        transition: color 0.2s ease;
+    /* 文件图标 - 默认状态 */
+    #file-tree .jstree-default .jstree-icon.jstree-file,
+    #file-tree .jstree-anchor:not(.folder-node) .jstree-icon {
+        background-image: none !important;
+        color: #6b7280 !important; /* 默认灰色 */
+        font-family: 'Material Icons Outlined' !important;
+        font-size: 24px !important;
+        line-height: 24px !important;
+        transition: all 0.2s ease !important;
+        width: 24px !important;
+        height: 24px !important;
     }
     
-    /* Markdown文件特殊图标 */
-    #file-tree .jstree-default .jstree-icon.jstree-file:before {
-        content: 'article'; /* 更现代的文档图标 */
-    }
-    
-    /* 根据文件类型显示不同图标 - 简化选择器提高优先级 */
-    #file-tree .jstree-anchor.file-md .jstree-icon {
-        color: #10b981 !important; /* Markdown文件用绿色 */
+    /* 所有文件使用统一的文档图标 */
+    #file-tree .jstree-default .jstree-icon.jstree-file:before,
+    #file-tree .jstree-anchor:not(.folder-node) .jstree-icon:before {
+        content: 'description' !important; /* 统一使用文档图标 */
         font-family: 'Material Icons Outlined' !important;
     }
     
-    #file-tree .jstree-anchor.file-md .jstree-icon:before {
-        content: 'description' !important; /* Markdown专用图标 */
-    }
-    
-    /* 更高优先级的选择器 */
-    div#file-tree .jstree-anchor.file-md .jstree-icon.jstree-file {
-        color: #10b981 !important;
-        font-family: 'Material Icons Outlined' !important;
-    }
-    
-    div#file-tree .jstree-anchor.file-md .jstree-icon.jstree-file:before {
-        content: 'description' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-txt .jstree-icon.jstree-file {
-        color: #6b7280 !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-txt .jstree-icon.jstree-file:before {
-        content: 'text_snippet' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-json .jstree-icon.jstree-file {
-        color: #f59e0b !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-json .jstree-icon.jstree-file:before {
-        content: 'data_object' !important;
-    }
-    
-    /* 新增文件类型 */
-    #file-tree .jstree-default .jstree-anchor.file-py .jstree-icon.jstree-file {
-        color: #3b82f6 !important; /* Python文件用蓝色 */
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-py .jstree-icon.jstree-file:before {
-        content: 'code' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-js .jstree-icon.jstree-file {
-        color: #f59e0b !important; /* JavaScript文件用橙色 */
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-js .jstree-icon.jstree-file:before {
-        content: 'javascript' !important;
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-html .jstree-icon.jstree-file {
-        color: #ef4444 !important; /* HTML文件用红色 */
-    }
-    
-    #file-tree .jstree-default .jstree-anchor.file-html .jstree-icon.jstree-file:before {
-        content: 'html' !important;
-    }
+    /* 文件选中状态也由JavaScript动态控制 */
+    /* 移除CSS选中状态，由JavaScript统一管理 */
     
     /* 文件悬停效果 */
-    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-file {
-        transform: scale(1.1); /* 轻微放大效果 */
+    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-file,
+    #file-tree .jstree-anchor:not(.folder-node):hover .jstree-icon {
+        color: #4b5563 !important; /* 悬停时稍深的灰色 */
     }
+    
+    /* 移除特定文件类型的样式，统一使用文档图标 */
     
     /* 展开/收缩图标 - 现代化设计 */
     #file-tree .jstree-default .jstree-ocl {
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         margin-right: 4px;
         background-image: none;
         color: #9ca3af; /* 更柔和的灰色 */
         font-family: 'Material Icons Outlined';
-        font-size: 14px; /* 稍小一点，更精致 */
-        line-height: 18px;
+        font-size: 16px; /* 适配24px图标 */
+        line-height: 20px;
         text-align: center;
         transition: all 0.2s ease; /* 添加过渡效果 */
         border-radius: 2px; /* 轻微圆角 */
@@ -4514,6 +4429,9 @@ window.handlePractice = function(e) {
             // 添加文件类型CSS类
             addFileTypeClasses();
             
+            // 修复文件夹字体样式
+            fixFolderFontStyles();
+            
             addDebugLog('✅ jsTree 初始化完成，文件树已可用');
         } catch (error) {
             addDebugLog('❌ jsTree初始化失败: ' + error.message);
@@ -4627,6 +4545,155 @@ window.handlePractice = function(e) {
         });
     }
     
+    // 重置所有节点为默认样式
+    function resetAllNodesToDefault() {
+        try {
+            if (!fileTreeInstance) return;
+            
+            // 使用jQuery选择器获取所有节点
+            $('#file-tree .jstree-anchor').each(function() {
+                const $anchor = $(this);
+                const $icon = $anchor.find('.jstree-icon');
+                
+                if ($icon.length === 0) return;
+                
+                // 重置为默认样式
+                $icon.css('color', '#6b7280'); // 默认灰色
+                
+                // 检查是否为文件夹
+                if ($anchor.hasClass('folder-node') || $icon.hasClass('jstree-folder')) {
+                    $icon.css('content', "'folder'");
+                } else {
+                    $icon.css('content', "'description'");
+                }
+                
+                // 移除jsTree的选中状态类
+                $anchor.removeClass('jstree-clicked');
+            });
+            
+            addDebugLog('🔄 所有节点已重置为默认样式');
+        } catch (error) {
+            addDebugLog('❌ 重置节点样式时出错: ' + error.message);
+        }
+    }
+    
+    // 更新选中路径上的所有节点样式
+    function updateSelectionPath(selectedNode) {
+        try {
+            if (!fileTreeInstance || !selectedNode) return;
+            
+            // 首先重置所有节点为默认样式
+            resetAllNodesToDefault();
+            
+            // 获取选中节点到根节点的完整路径
+            const pathNodes = [];
+            let current = selectedNode;
+            
+            // 添加选中的节点本身
+            pathNodes.push(current);
+            
+            // 向上遍历到根节点，收集所有父节点
+            while (current && current.parent !== '#') {
+                current = fileTreeInstance.get_node(current.parent);
+                if (current) {
+                    pathNodes.push(current);
+                }
+            }
+            
+            addDebugLog('📋 选中路径节点: ' + pathNodes.map(n => n.text).join(' > '));
+            
+            // 为路径上的所有节点应用选中样式
+            pathNodes.forEach(node => {
+                try {
+                    // 使用更安全的方式查找节点元素
+                    const nodeElement = document.getElementById(node.id);
+                    if (!nodeElement) {
+                        addDebugLog('⚠️ 未找到节点元素: ' + node.id);
+                        return;
+                    }
+                    
+                    const $anchor = $(nodeElement).find('.jstree-anchor');
+                    const $icon = $anchor.find('.jstree-icon');
+                    
+                    if ($icon.length === 0) {
+                        addDebugLog('⚠️ 未找到图标元素: ' + node.text);
+                        return;
+                    }
+                    
+                    // 应用选中样式：绿色
+                    $icon.css('color', '#10b981');
+                    
+                    if (node.type === 'folder') {
+                        // 文件夹显示为打开状态
+                        $icon.css('content', "'folder_open'");
+                        addDebugLog('📁 文件夹路径节点样式已应用: ' + node.text);
+                    } else {
+                        // 文件保持文档图标
+                        $icon.css('content', "'description'");
+                        addDebugLog('📄 文件选中样式已应用: ' + node.text);
+                    }
+                } catch (error) {
+                    addDebugLog('❌ 处理节点样式时出错: ' + node.text + ', 错误: ' + error.message);
+                }
+            });
+            
+            addDebugLog('✅ 选中路径样式更新完成，路径节点数: ' + pathNodes.length);
+        } catch (error) {
+            addDebugLog('❌ 更新选中路径样式时出错: ' + error.message);
+        }
+    }
+    
+    // 强制修复所有文件夹的字体样式
+    function fixFolderFontStyles() {
+        try {
+            // 等待DOM完全加载后执行
+            setTimeout(() => {
+                $('#file-tree .jstree-anchor').each(function() {
+                    const $anchor = $(this);
+                    const $icon = $anchor.find('.jstree-icon');
+                    
+                    // 检查是否为文件夹 - 使用多种方式检测
+                    const isFolder = $anchor.hasClass('folder-node') || 
+                                   $icon.hasClass('jstree-folder') || 
+                                   $anchor.closest('li').attr('aria-expanded') !== undefined ||
+                                   ($anchor.closest('li').attr('data-jstree') && 
+                                    $anchor.closest('li').attr('data-jstree').includes('"type":"folder"'));
+                    
+                    if (isFolder) {
+                        // 强制设置为正常字体和完全不透明
+                        $anchor.css({
+                            'font-style': 'normal !important',
+                            'font-weight': 'normal !important',
+                            'opacity': '1 !important'
+                        });
+                        
+                        // 添加folder-node类确保样式正确
+                        $anchor.addClass('folder-node');
+                        
+                        addDebugLog('📁 修复文件夹样式: ' + $anchor.text().trim());
+                    }
+                });
+                
+                // 再次强制应用CSS规则
+                const style = document.createElement('style');
+                style.textContent = `
+                    #file-tree .jstree-anchor.folder-node {
+                        font-style: normal !important;
+                        font-weight: normal !important;
+                        opacity: 1 !important;
+                    }
+                `;
+                document.head.appendChild(style);
+                
+                addDebugLog('🔧 文件夹字体样式修复完成');
+            }, 500);
+        } catch (error) {
+            addDebugLog('❌ 修复文件夹字体样式时出错: ' + error.message);
+        }
+    }
+    
+    // 移除旧的辅助函数，使用新的路径选中逻辑
+    
     // 绑定 jsTree 事件
     function bindJsTreeEvents() {
         $('#file-tree')
@@ -4634,12 +4701,16 @@ window.handlePractice = function(e) {
             .on('ready.jstree', function(e, data) {
                 addDebugLog('🎯 jsTree ready事件触发，检查文件类型类');
                 addFileTypeClasses(); // 只作为备用检查
+                fixFolderFontStyles(); // 修复文件夹字体样式
             })
             // 节点选中事件
             .on('select_node.jstree', function(e, data) {
                 const node = data.node;
-                addDebugLog('🖱️ jsTree文件被选中');
-                addDebugLog('📊 文件路径: ' + node.data.path);
+                addDebugLog('🖱️ jsTree节点被选中');
+                addDebugLog('📊 节点路径: ' + node.data.path);
+                
+                // 更新整个选中路径的样式
+                updateSelectionPath(node);
                 
                 if (node.data.type === 'file') {
                     // 检查是否为md文件
@@ -4654,6 +4725,14 @@ window.handlePractice = function(e) {
                         $('#file-tree').jstree('deselect_node', node);
                     }
                 }
+            })
+            // 节点取消选中事件
+            .on('deselect_node.jstree', function(e, data) {
+                const node = data.node;
+                addDebugLog('🖱️ jsTree节点取消选中');
+                
+                // 重置所有节点为默认样式
+                resetAllNodesToDefault();
             })
             // 节点重命名事件
             .on('rename_node.jstree', function(e, data) {
@@ -10260,9 +10339,125 @@ window.handlePractice = function(e) {
         });
     }
     
+    // 终极文件夹样式修复方案
+    function applyUltimateFolderStyleFix() {
+        console.log('🔧 应用终极文件夹样式修复...');
+        
+        // 1. 立即添加强制CSS规则
+        const ultimateStyle = document.createElement('style');
+        ultimateStyle.id = 'ultimate-folder-fix';
+        ultimateStyle.textContent = `
+            /* 终极文件夹样式修复 - 暴力覆盖所有样式 */
+            * {
+                font-style: normal !important;
+            }
+            
+            #file-tree * {
+                font-style: normal !important;
+                opacity: 1 !important;
+            }
+            
+            #file-tree .jstree-anchor {
+                font-style: normal !important;
+                font-weight: normal !important;
+                opacity: 1 !important;
+            }
+            
+            /* 只对特定文件类型应用斜体 */
+            #file-tree .jstree-anchor.file-py:not(.folder-node),
+            #file-tree .jstree-anchor.file-txt:not(.folder-node),
+            #file-tree .jstree-anchor.file-json:not(.folder-node) {
+                opacity: 0.7 !important;
+                font-style: italic !important;
+            }
+        `;
+        
+        // 移除旧的样式（如果存在）
+        const oldStyle = document.getElementById('ultimate-folder-fix');
+        if (oldStyle) {
+            oldStyle.remove();
+        }
+        
+        document.head.appendChild(ultimateStyle);
+        console.log('✅ 终极CSS样式已应用');
+        
+        // 2. 延迟JavaScript强制修复
+        setTimeout(() => {
+            console.log('🔧 执行JavaScript强制修复...');
+            
+            // 查找所有可能的文件夹元素
+            const allAnchors = document.querySelectorAll('#file-tree .jstree-anchor');
+            let folderCount = 0;
+            
+            allAnchors.forEach(anchor => {
+                const icon = anchor.querySelector('.jstree-icon');
+                const li = anchor.closest('li');
+                
+                // 多种方式检测文件夹
+                const isFolder = icon && (
+                    icon.classList.contains('jstree-folder') ||
+                    li.hasAttribute('aria-expanded') ||
+                    li.getAttribute('role') === 'treeitem' ||
+                    anchor.textContent.trim() === 'attachments' ||
+                    anchor.textContent.trim() === 'subfolder' ||
+                    anchor.textContent.trim().includes('文件夹') ||
+                    anchor.textContent.trim().includes('机器学习') ||
+                    anchor.textContent.trim().includes('新文件夹') ||
+                    anchor.textContent.trim().includes('项目笔记')
+                );
+                
+                if (isFolder) {
+                    // 强制设置文件夹样式
+                    anchor.classList.add('folder-node');
+                    anchor.style.setProperty('font-style', 'normal', 'important');
+                    anchor.style.setProperty('font-weight', 'normal', 'important');
+                    anchor.style.setProperty('opacity', '1', 'important');
+                    folderCount++;
+                    console.log('📁 修复文件夹样式:', anchor.textContent.trim());
+                }
+            });
+            
+            console.log(`✅ JavaScript强制修复完成，处理了 ${folderCount} 个文件夹`);
+        }, 100);
+        
+        // 3. 持续监控和修复
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    setTimeout(() => {
+                        const newAnchors = document.querySelectorAll('#file-tree .jstree-anchor:not(.folder-node)');
+                        newAnchors.forEach(anchor => {
+                            const icon = anchor.querySelector('.jstree-icon');
+                            if (icon && icon.classList.contains('jstree-folder')) {
+                                anchor.classList.add('folder-node');
+                                anchor.style.setProperty('font-style', 'normal', 'important');
+                                anchor.style.setProperty('font-weight', 'normal', 'important');
+                                anchor.style.setProperty('opacity', '1', 'important');
+                                console.log('📁 动态修复新文件夹样式:', anchor.textContent.trim());
+                            }
+                        });
+                    }, 50);
+                }
+            });
+        });
+        
+        // 开始监控文件树变化
+        setTimeout(() => {
+            const fileTree = document.getElementById('file-tree');
+            if (fileTree) {
+                observer.observe(fileTree, { childList: true, subtree: true });
+                console.log('👁️ 文件夹样式监控已启动');
+            }
+        }, 500);
+    }
+    
     // 页面初始化
     function initAll() {
         console.log('开始初始化页面...');
+        
+        // 立即应用终极文件夹样式修复
+        applyUltimateFolderStyleFix();
+        
         initializePage();
         initMarkdownEnhancements();
         initResizer(); // 初始化拖拽调整功能
@@ -10271,6 +10466,18 @@ window.handlePractice = function(e) {
         setTimeout(function() {
             updateSelectedDeviceInfo();
         }, 1000);
+        
+        // 延迟再次应用文件夹样式修复，确保文件树加载完成
+        setTimeout(function() {
+            console.log('🔄 延迟再次应用文件夹样式修复...');
+            applyUltimateFolderStyleFix();
+        }, 2000);
+        
+        // 更长延迟的第三次修复，确保所有异步加载完成
+        setTimeout(function() {
+            console.log('🔄 最终文件夹样式修复...');
+            applyUltimateFolderStyleFix();
+        }, 5000);
         
         // 延迟添加全局右键测试
         setTimeout(function() {
@@ -10628,12 +10835,12 @@ function handleDeepLearning(e) {
         e.preventDefault();
     }
     
-    if (!selectedTextForMenu) {
+    if (!window.selectedTextForMenu) {
         showToast('请先选择要深入学习的文本内容', 'warning');
         return;
     }
     
-    addDebugLog('🧠 开始深入学习: ' + selectedTextForMenu.substring(0, 30) + '...');
+    addDebugLog('🧠 开始深入学习: ' + window.selectedTextForMenu.substring(0, 30) + '...');
     
     // 隐藏右键菜单
     const contextMenu = document.getElementById('contextMenu');
@@ -10650,7 +10857,7 @@ function handleDeepLearning(e) {
     // 构建深入学习的提示词
     const deepLearningPrompt = `请对以下内容进行全面深入的解释和分析：
 
-"${selectedTextForMenu}"
+"${window.selectedTextForMenu}"
 
 要求：
 1. 深入浅出地讲解这段内容的核心概念和要点
@@ -10666,7 +10873,7 @@ function handleDeepLearning(e) {
     openChatWithMessage(deepLearningPrompt);
     
     // 清除选中文本状态
-    selectedTextForMenu = '';
+    window.selectedTextForMenu = '';
     
     // 清除页面文本选择
     if (window.getSelection) {
@@ -10711,12 +10918,12 @@ function handlePractice(e) {
         e.preventDefault();
     }
     
-    if (!selectedTextForMenu) {
+    if (!window.selectedTextForMenu) {
         showToast('请先选择要生成练习的文本内容', 'warning');
         return;
     }
     
-    addDebugLog('📝 开始生成练习: ' + selectedTextForMenu.substring(0, 30) + '...');
+    addDebugLog('📝 开始生成练习: ' + window.selectedTextForMenu.substring(0, 30) + '...');
     
     // 隐藏增强菜单
     const menu = document.getElementById('enhanced-context-menu');
@@ -10737,7 +10944,7 @@ function handlePractice(e) {
     }
     
     // 保存选中文本，避免被点击事件清除
-    const textToGenerate = selectedTextForMenu;
+    const textToGenerate = window.selectedTextForMenu;
     
     // 生成练习ID和数据
     const practiceId = 'practice_' + Date.now();
@@ -10759,7 +10966,7 @@ function handlePractice(e) {
         generatePracticeQuestionsForAI(textToGenerate, practiceId);
         
         // 生成题目后清除选中文本状态
-        selectedTextForMenu = '';
+        window.selectedTextForMenu = '';
         
         // 清除页面文本选择
         if (window.getSelection) {
@@ -10889,8 +11096,8 @@ try {
     console.log('🔥 网课笔记页面JavaScript开始加载 - 复用系统菜单方案');
 }
 
-// 存储选中的文本
-let selectedTextForMenu = '';
+// 存储选中的文本（使用全局变量，避免重复声明）
+window.selectedTextForMenu = window.selectedTextForMenu || '';
 
 // 立即初始化右键菜单功能
 function initializeRightClickMenu() {
@@ -10921,7 +11128,7 @@ function initializeRightClickMenu() {
                 addDebugLog('✅ 在目标区域内右键');
                 
                 if (selectedText.length > 0) {
-                    selectedTextForMenu = selectedText;
+                    window.selectedTextForMenu = selectedText;
                     
                     addDebugLog('🖱️ 检测到文本选择右键，准备显示增强菜单');
                     
@@ -10934,7 +11141,7 @@ function initializeRightClickMenu() {
                     // 立即显示增强菜单
                     enhanceContextMenu(e.pageX, e.pageY);
                 } else {
-                    selectedTextForMenu = '';
+                    window.selectedTextForMenu = '';
                     addDebugLog('❌ 在目标区域但没有选中文本，允许默认菜单');
                 }
             } else {
@@ -10985,7 +11192,7 @@ function enhanceContextMenu(x, y) {
         {
             text: '📋 复制',
             action: function() {
-                navigator.clipboard.writeText(selectedTextForMenu);
+                navigator.clipboard.writeText(window.selectedTextForMenu);
                 showToast('已复制到剪贴板', 'success');
             }
         },
@@ -11091,7 +11298,7 @@ function testEnhanceMenu() {
     
     try {
         // 模拟选中文本
-        selectedTextForMenu = '这是测试文本内容，用于验证增强菜单功能是否正常工作。';
+        window.selectedTextForMenu = '这是测试文本内容，用于验证增强菜单功能是否正常工作。';
         
         // 在屏幕中央显示增强菜单
         const x = window.innerWidth / 2;
@@ -11150,7 +11357,7 @@ setTimeout(function() {
                 const selectedText = selection.toString().trim();
                 
                 if (selectedText.length > 0) {
-                    selectedTextForMenu = selectedText;
+                    window.selectedTextForMenu = selectedText;
                     addDebugLog('🖱️ 延迟绑定检测到文本选择右键');
                     
                     e.preventDefault();
