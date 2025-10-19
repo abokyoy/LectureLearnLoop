@@ -1,0 +1,253 @@
+<!-- 添加完整的编辑器工具栏 -->
+<script>
+// 为暴力方案添加完整的Markdown编辑工具栏
+(function() {
+    console.log('🔧 添加编辑器工具栏');
+    
+    function addEditorToolbar() {
+        console.log('🛠️ 开始添加编辑器工具栏...');
+        
+        // 等待暴力方案完成
+        setTimeout(() => {
+            const container = document.getElementById('editor');
+            if (!container) {
+                console.log('❌ 找不到编辑器容器');
+                return;
+            }
+            
+            // 查找Tab栏
+            const tabBar = container.querySelector('div[style*="border-bottom"]');
+            if (!tabBar) {
+                console.log('❌ 找不到Tab栏');
+                return;
+            }
+            
+            // 检查是否已经有工具栏
+            const existingToolbar = container.querySelector('.editor-toolbar');
+            if (existingToolbar) {
+                console.log('✅ 工具栏已存在');
+                return;
+            }
+            
+            // 创建工具栏
+            const toolbar = document.createElement('div');
+            toolbar.className = 'editor-toolbar';
+            toolbar.style.cssText = `
+                display: flex;
+                align-items: center;
+                padding: 8px 12px;
+                background: #f8f9fa;
+                border-bottom: 1px solid #e1e5e9;
+                gap: 8px;
+                flex-wrap: wrap;
+                height: 44px;
+                flex-shrink: 0;
+            `;
+            
+            // 工具栏按钮数据
+            const toolbarButtons = [
+                { icon: '𝐁', title: '粗体 (Ctrl+B)', action: 'bold', shortcut: 'Ctrl+B' },
+                { icon: '𝐼', title: '斜体 (Ctrl+I)', action: 'italic', shortcut: 'Ctrl+I' },
+                { icon: '≡', title: '标题', action: 'heading', shortcut: 'Ctrl+H' },
+                { icon: '•', title: '无序列表', action: 'ul', shortcut: 'Ctrl+U' },
+                { icon: '1.', title: '有序列表', action: 'ol', shortcut: 'Ctrl+O' },
+                { icon: '[]', title: '任务列表', action: 'task', shortcut: 'Ctrl+T' },
+                { icon: '""', title: '引用', action: 'quote', shortcut: 'Ctrl+Q' },
+                { icon: '</>', title: '代码块', action: 'code', shortcut: 'Ctrl+K' },
+                { icon: '🔗', title: '链接', action: 'link', shortcut: 'Ctrl+L' },
+                { icon: '🖼️', title: '图片', action: 'image', shortcut: 'Ctrl+G' },
+                { icon: '📊', title: '表格', action: 'table', shortcut: 'Ctrl+Shift+T' },
+                { icon: '---', title: '分割线', action: 'hr', shortcut: 'Ctrl+R' }
+            ];
+            
+            // 创建工具栏按钮
+            toolbarButtons.forEach(btn => {
+                const button = document.createElement('button');
+                button.innerHTML = btn.icon;
+                button.title = btn.title;
+                button.className = 'toolbar-btn';
+                button.style.cssText = `
+                    padding: 6px 8px;
+                    border: 1px solid #ddd;
+                    background: white;
+                    cursor: pointer;
+                    border-radius: 3px;
+                    font-size: 14px;
+                    font-weight: bold;
+                    min-width: 32px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s;
+                `;
+                
+                // 悬停效果
+                button.addEventListener('mouseenter', () => {
+                    button.style.background = '#e9ecef';
+                    button.style.borderColor = '#adb5bd';
+                });
+                
+                button.addEventListener('mouseleave', () => {
+                    button.style.background = 'white';
+                    button.style.borderColor = '#ddd';
+                });
+                
+                // 点击事件
+                button.addEventListener('click', () => {
+                    executeToolbarAction(btn.action);
+                });
+                
+                toolbar.appendChild(button);
+            });
+            
+            // 插入工具栏到Tab栏下方
+            const contentArea = tabBar.nextElementSibling;
+            container.insertBefore(toolbar, contentArea);
+            
+            console.log('✅ 编辑器工具栏添加完成');
+            
+            // 输出到调试面板
+            if (window.addDebugLog) {
+                window.addDebugLog('🔧 编辑器工具栏已添加');
+                window.addDebugLog('工具栏按钮: ' + toolbarButtons.length + '个');
+            }
+            
+        }, 8000); // 等待8秒，确保暴力方案完成
+    }
+    
+    function executeToolbarAction(action) {
+        console.log('🔧 执行工具栏操作: ' + action);
+        
+        const editArea = document.querySelector('#editor textarea');
+        if (!editArea) {
+            console.log('❌ 找不到编辑区域');
+            return;
+        }
+        
+        const start = editArea.selectionStart;
+        const end = editArea.selectionEnd;
+        const selectedText = editArea.value.substring(start, end);
+        const beforeText = editArea.value.substring(0, start);
+        const afterText = editArea.value.substring(end);
+        
+        let insertText = '';
+        let newCursorPos = start;
+        
+        switch(action) {
+            case 'bold':
+                insertText = `**${selectedText || '粗体文字'}**`;
+                newCursorPos = selectedText ? end + 4 : start + 2;
+                break;
+                
+            case 'italic':
+                insertText = `*${selectedText || '斜体文字'}*`;
+                newCursorPos = selectedText ? end + 2 : start + 1;
+                break;
+                
+            case 'heading':
+                insertText = `## ${selectedText || '标题'}`;
+                newCursorPos = selectedText ? end + 3 : start + 3;
+                break;
+                
+            case 'ul':
+                insertText = `- ${selectedText || '列表项'}`;
+                newCursorPos = selectedText ? end + 2 : start + 2;
+                break;
+                
+            case 'ol':
+                insertText = `1. ${selectedText || '列表项'}`;
+                newCursorPos = selectedText ? end + 3 : start + 3;
+                break;
+                
+            case 'task':
+                insertText = `- [ ] ${selectedText || '任务项'}`;
+                newCursorPos = selectedText ? end + 6 : start + 6;
+                break;
+                
+            case 'quote':
+                insertText = `> ${selectedText || '引用内容'}`;
+                newCursorPos = selectedText ? end + 2 : start + 2;
+                break;
+                
+            case 'code':
+                if (selectedText.includes('\n')) {
+                    insertText = `\`\`\`\n${selectedText || '代码内容'}\n\`\`\``;
+                    newCursorPos = selectedText ? end + 8 : start + 4;
+                } else {
+                    insertText = `\`${selectedText || '代码'}\``;
+                    newCursorPos = selectedText ? end + 2 : start + 1;
+                }
+                break;
+                
+            case 'link':
+                insertText = `[${selectedText || '链接文字'}](URL地址)`;
+                newCursorPos = selectedText ? start + selectedText.length + 3 : start + 4;
+                break;
+                
+            case 'image':
+                insertText = `![${selectedText || '图片描述'}](图片URL)`;
+                newCursorPos = selectedText ? start + selectedText.length + 4 : start + 5;
+                break;
+                
+            case 'table':
+                insertText = `| 列1 | 列2 | 列3 |\n|-----|-----|-----|\n| 内容 | 内容 | 内容 |`;
+                newCursorPos = start + insertText.length;
+                break;
+                
+            case 'hr':
+                insertText = '\n---\n';
+                newCursorPos = start + insertText.length;
+                break;
+        }
+        
+        // 更新文本内容
+        editArea.value = beforeText + insertText + afterText;
+        
+        // 设置光标位置
+        editArea.focus();
+        editArea.setSelectionRange(newCursorPos, newCursorPos);
+        
+        console.log('✅ 工具栏操作完成: ' + action);
+    }
+    
+    // 添加键盘快捷键支持
+    function addKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            if (!e.ctrlKey) return;
+            
+            const editArea = document.querySelector('#editor textarea');
+            if (!editArea || document.activeElement !== editArea) return;
+            
+            let action = '';
+            
+            switch(e.key.toLowerCase()) {
+                case 'b': action = 'bold'; break;
+                case 'i': action = 'italic'; break;
+                case 'h': action = 'heading'; break;
+                case 'u': action = 'ul'; break;
+                case 'o': action = 'ol'; break;
+                case 't': action = e.shiftKey ? 'table' : 'task'; break;
+                case 'q': action = 'quote'; break;
+                case 'k': action = 'code'; break;
+                case 'l': action = 'link'; break;
+                case 'g': action = 'image'; break;
+                case 'r': action = 'hr'; break;
+            }
+            
+            if (action) {
+                e.preventDefault();
+                executeToolbarAction(action);
+            }
+        });
+        
+        console.log('✅ 键盘快捷键已添加');
+    }
+    
+    // 开始添加工具栏
+    addEditorToolbar();
+    addKeyboardShortcuts();
+    
+    console.log('🔧 编辑器工具栏系统已启动');
+})();
+</script>
