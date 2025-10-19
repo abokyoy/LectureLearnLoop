@@ -1,0 +1,215 @@
+<!-- 强制重建为Tab模式 -->
+<script>
+// 强制重建TUI Editor为Tab模式
+function forceTabRebuild() {
+    console.log('💪 强制重建TUI Editor为Tab模式...');
+    
+    // 1. 完全销毁现有编辑器
+    if (window.tuiEditor) {
+        try {
+            console.log('🗑️ 销毁现有编辑器...');
+            const content = window.tuiEditor.getMarkdown() || '';
+            window.tuiEditor.destroy();
+            window.tuiEditor = null;
+            
+            // 保存内容供后续使用
+            window.savedContent = content;
+            console.log('💾 已保存内容: ' + content.length + ' 字符');
+        } catch(e) {
+            console.log('❌ 销毁编辑器失败: ' + e.message);
+        }
+    }
+    
+    // 2. 清空容器
+    const container = document.getElementById('editor');
+    if (container) {
+        container.innerHTML = '';
+        console.log('🧹 容器已清空');
+    } else {
+        console.log('❌ 找不到editor容器');
+        return;
+    }
+    
+    // 3. 移除所有相关的CSS
+    const styles = document.querySelectorAll('style');
+    styles.forEach(style => {
+        if (style.textContent.includes('toastui-editor')) {
+            console.log('🗑️ 移除TUI相关CSS');
+            style.remove();
+        }
+    });
+    
+    // 4. 等待一下再重建
+    setTimeout(() => {
+        rebuildTabEditor();
+    }, 1000);
+}
+
+// 重建Tab模式编辑器
+function rebuildTabEditor() {
+    console.log('🔨 重建Tab模式编辑器...');
+    
+    const container = document.getElementById('editor');
+    if (!container) {
+        console.log('❌ 容器不存在');
+        return;
+    }
+    
+    // 确保容器样式正确
+    container.style.height = '600px';
+    container.style.width = '100%';
+    container.style.border = '1px solid #ddd';
+    
+    try {
+        // 创建新的Tab模式编辑器
+        console.log('🔧 创建Tab模式编辑器...');
+        
+        window.tuiEditor = new toastui.Editor({
+            el: container,
+            height: '600px',
+            initialEditType: 'markdown',
+            previewStyle: 'tab', // 重要：Tab模式
+            initialValue: window.savedContent || '# 欢迎使用TUI Editor\n\n请点击上方的 **Write** 和 **Preview** 标签来切换编辑和预览模式。',
+            useCommandShortcut: true,
+            usageStatistics: false,
+            hideModeSwitch: false,
+            toolbarItems: [
+                ['heading', 'bold', 'italic', 'strike'],
+                ['hr', 'quote'],
+                ['ul', 'ol', 'task'],
+                ['table', 'image', 'link'],
+                ['code', 'codeblock']
+            ]
+        });
+        
+        console.log('✅ Tab模式编辑器创建成功！');
+        
+        // 检查Tab标签是否存在
+        setTimeout(() => {
+            checkTabsExist();
+        }, 500);
+        
+    } catch(e) {
+        console.log('❌ 创建编辑器失败: ' + e.message);
+        
+        // 如果失败，尝试最简单的配置
+        trySimpleEditor();
+    }
+}
+
+// 检查Tab标签是否存在
+function checkTabsExist() {
+    console.log('🔍 检查Tab标签...');
+    
+    const tabs = document.querySelectorAll('.toastui-editor-tab');
+    console.log('📑 找到Tab数量: ' + tabs.length);
+    
+    if (tabs.length === 0) {
+        console.log('❌ 没有找到Tab标签，可能创建失败');
+        
+        // 尝试查找其他可能的Tab元素
+        const allTabs = document.querySelectorAll('[class*="tab"]');
+        console.log('🔍 找到所有tab相关元素: ' + allTabs.length);
+        
+        allTabs.forEach((tab, index) => {
+            console.log('  - Tab' + index + ': ' + tab.className + ' - ' + tab.textContent);
+        });
+        
+    } else {
+        tabs.forEach((tab, index) => {
+            console.log('  ✅ Tab' + index + ': ' + tab.textContent + (tab.classList.contains('active') ? ' (活跃)' : ''));
+        });
+    }
+    
+    // 检查预览模式
+    if (window.tuiEditor) {
+        try {
+            const mode = window.tuiEditor.getCurrentPreviewStyle();
+            console.log('📊 当前预览模式: ' + mode);
+            
+            if (mode !== 'tab') {
+                console.log('⚠️ 预览模式不正确，尝试强制设置');
+                window.tuiEditor.changePreviewStyle('tab');
+            }
+        } catch(e) {
+            console.log('❌ 检查预览模式失败: ' + e.message);
+        }
+    }
+}
+
+// 尝试最简单的编辑器配置
+function trySimpleEditor() {
+    console.log('🔧 尝试最简单的编辑器配置...');
+    
+    const container = document.getElementById('editor');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    try {
+        window.tuiEditor = new toastui.Editor({
+            el: container,
+            height: '600px',
+            previewStyle: 'tab'
+        });
+        
+        console.log('✅ 简单编辑器创建成功');
+        
+    } catch(e) {
+        console.log('❌ 简单编辑器也失败: ' + e.message);
+        
+        // 最后的备用方案
+        container.innerHTML = '<div style="padding: 20px; border: 1px solid #ddd; height: 580px;">❌ TUI Editor初始化失败<br><br>请刷新页面重试</div>';
+    }
+}
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    console.log('🔥 强制Tab重建调试！');
+    
+    console.log('📊 当前状态：');
+    console.log('  - tuiEditor存在: ' + (window.tuiEditor ? '是' : '否'));
+    
+    if (window.tuiEditor) {
+        try {
+            const mode = window.tuiEditor.getCurrentPreviewStyle();
+            console.log('  - 预览模式: ' + mode);
+            
+            const tabs = document.querySelectorAll('.toastui-editor-tab');
+            console.log('  - Tab数量: ' + tabs.length);
+            
+        } catch(e) {
+            console.log('  - 获取信息失败: ' + e.message);
+        }
+    }
+    
+    // 强制重建
+    console.log('🔄 执行强制重建...');
+    forceTabRebuild();
+};
+
+// 禁用其他可能的TUI初始化函数
+const functionsToDisable = [
+    'initEmptyTuiEditor',
+    'setupFileSelectLoader', 
+    'completelyRewriteTuiSystem',
+    'ultimateTuiFix',
+    'fixTuiLayout'
+];
+
+functionsToDisable.forEach(funcName => {
+    if (window[funcName]) {
+        window[funcName] = function() {
+            console.log('🚫 已禁用函数: ' + funcName + '，使用强制Tab重建');
+        };
+    }
+});
+
+// 立即执行强制重建
+setTimeout(() => {
+    console.log('🚀 开始强制Tab重建流程...');
+    forceTabRebuild();
+}, 2000);
+
+console.log('💪 强制Tab重建系统已加载');
+</script>

@@ -1,0 +1,171 @@
+<!-- 超级简单的TUI Editor - 避免所有冲突 -->
+<script>
+// 超级简单的TUI Editor实现
+(function() {
+    console.log('🚀 超级简单TUI Editor启动');
+    
+    // 1. 完全清理现有的所有TUI相关内容
+    if (window.tuiEditor) {
+        try {
+            window.tuiEditor.destroy();
+            console.log('🗑️ 已清理现有TUI Editor');
+        } catch(e) {}
+    }
+    window.tuiEditor = null;
+    
+    // 2. 等待页面完全稳定后再创建
+    function waitAndCreate() {
+        console.log('⏳ 等待页面稳定...');
+        
+        setTimeout(() => {
+            createSimpleTuiEditor();
+        }, 5000); // 等待5秒确保所有其他脚本完成
+    }
+    
+    function createSimpleTuiEditor() {
+        console.log('🔨 创建超级简单TUI Editor...');
+        
+        const container = document.getElementById('editor');
+        if (!container) {
+            console.log('❌ 找不到容器');
+            return;
+        }
+        
+        // 清空容器
+        container.innerHTML = '';
+        container.style.cssText = 'height: 600px; width: 100%; border: 1px solid #ddd; background: white;';
+        
+        // 检查TUI库是否可用
+        if (!window.toastui || !window.toastui.Editor) {
+            console.log('❌ TUI Editor库不可用');
+            container.innerHTML = '<div style="padding: 20px; text-align: center;">TUI Editor库加载失败<br><br>请刷新页面重试</div>';
+            return;
+        }
+        
+        try {
+            console.log('🔧 创建TUI Editor实例...');
+            
+            // 使用最简单的配置
+            window.tuiEditor = new toastui.Editor({
+                el: container,
+                height: '600px',
+                previewStyle: 'tab',
+                initialValue: '# 欢迎使用TUI Editor\n\n请点击上方的 **Write** 和 **Preview** 标签切换模式。'
+            });
+            
+            console.log('✅ 超级简单TUI Editor创建成功！');
+            
+            // 验证Tab模式
+            setTimeout(() => {
+                verifyTabMode();
+            }, 1000);
+            
+        } catch(e) {
+            console.log('❌ 创建失败: ' + e.message);
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: red;">TUI Editor创建失败<br><br>' + e.message + '</div>';
+        }
+    }
+    
+    function verifyTabMode() {
+        console.log('🔍 验证Tab模式...');
+        
+        if (!window.tuiEditor) {
+            console.log('❌ TUI Editor不存在');
+            return;
+        }
+        
+        try {
+            const mode = window.tuiEditor.getCurrentPreviewStyle();
+            console.log('📊 预览模式: ' + mode);
+            
+            const tabs = document.querySelectorAll('.toastui-editor-tab');
+            console.log('📑 Tab标签数量: ' + tabs.length);
+            
+            if (mode === 'tab' && tabs.length >= 2) {
+                console.log('✅ Tab模式验证成功！');
+                
+                // 输出到调试文件
+                logToFile('✅ 超级简单TUI Editor成功！\n模式: ' + mode + '\nTab数量: ' + tabs.length);
+                
+            } else {
+                console.log('❌ Tab模式验证失败');
+                logToFile('❌ Tab模式验证失败\n模式: ' + mode + '\nTab数量: ' + tabs.length);
+            }
+            
+        } catch(e) {
+            console.log('❌ 验证失败: ' + e.message);
+            logToFile('❌ 验证失败: ' + e.message);
+        }
+    }
+    
+    function logToFile(message) {
+        // 尝试输出到调试面板
+        if (window.addDebugLog) {
+            window.addDebugLog(message);
+        }
+        
+        // 也输出到控制台
+        console.log('📝 ' + message);
+    }
+    
+    // 重写调试按钮
+    window.simpleDebug = function() {
+        console.log('🔍 超级简单调试模式');
+        
+        if (window.tuiEditor) {
+            try {
+                const mode = window.tuiEditor.getCurrentPreviewStyle();
+                const tabs = document.querySelectorAll('.toastui-editor-tab');
+                const container = document.getElementById('editor');
+                
+                const info = 
+                    '📊 TUI Editor状态:\n' +
+                    '  - 模式: ' + mode + '\n' +
+                    '  - Tab数量: ' + tabs.length + '\n' +
+                    '  - 容器高度: ' + (container ? container.offsetHeight + 'px' : '未知') + '\n' +
+                    '  - 实例存在: 是';
+                
+                console.log(info);
+                logToFile(info);
+                alert('调试完成！\n\n' + info.replace(/\n/g, '\n'));
+                
+            } catch(e) {
+                const error = '❌ 调试失败: ' + e.message;
+                console.log(error);
+                logToFile(error);
+                alert(error);
+            }
+        } else {
+            const error = '❌ TUI Editor不存在';
+            console.log(error);
+            logToFile(error);
+            alert(error);
+        }
+    };
+    
+    // 禁用所有可能的干扰函数
+    const blacklist = [
+        'replaceWithTuiEditor',
+        'fixTuiEditorContent', 
+        'forceLoadRealContent',
+        'cleanTuiContent',
+        'updateTuiEditorContent'
+    ];
+    
+    blacklist.forEach(funcName => {
+        window[funcName] = function() {
+            console.log('🚫 已禁用: ' + funcName);
+            return false;
+        };
+    });
+    
+    // 开始等待和创建
+    if (document.readyState === 'complete') {
+        waitAndCreate();
+    } else {
+        window.addEventListener('load', waitAndCreate);
+    }
+    
+    console.log('🚀 超级简单TUI Editor系统已启动');
+})();
+</script>

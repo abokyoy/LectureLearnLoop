@@ -1,0 +1,214 @@
+<!-- 强制重新渲染TUI Editor -->
+<script>
+// 强制重新渲染TUI Editor DOM结构
+(function() {
+    console.log('🔄 强制重新渲染TUI Editor启动');
+    
+    function waitAndForceRerender() {
+        console.log('⏳ 等待并强制重新渲染...');
+        
+        setTimeout(() => {
+            forceRerenderTuiEditor();
+        }, 4000); // 等待4秒确保所有脚本完成
+    }
+    
+    function forceRerenderTuiEditor() {
+        console.log('🔨 开始强制重新渲染TUI Editor...');
+        
+        const container = document.getElementById('editor');
+        if (!container) {
+            console.log('❌ 找不到编辑器容器');
+            return;
+        }
+        
+        console.log('📦 容器状态: ' + container.offsetWidth + 'x' + container.offsetHeight);
+        
+        // 1. 检查当前TUI Editor状态
+        if (window.tuiEditor) {
+            console.log('🔍 检测到TUI Editor实例，尝试销毁...');
+            try {
+                window.tuiEditor.destroy();
+                console.log('✅ TUI Editor实例已销毁');
+            } catch(e) {
+                console.log('⚠️ 销毁TUI Editor失败: ' + e.message);
+            }
+        }
+        
+        // 2. 完全清空容器
+        console.log('🧹 完全清空容器...');
+        container.innerHTML = '';
+        container.removeAttribute('class');
+        container.removeAttribute('style');
+        
+        // 3. 重新设置容器样式
+        console.log('🎨 重新设置容器样式...');
+        container.style.cssText = `
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ddd;
+            background: white;
+            position: relative;
+            overflow: hidden;
+        `;
+        
+        // 4. 检查TUI Editor库
+        if (!window.toastui || !window.toastui.Editor) {
+            console.log('❌ TUI Editor库不可用，重新加载...');
+            loadTuiEditorLibrary(() => {
+                createFreshTuiEditor(container);
+            });
+        } else {
+            console.log('✅ TUI Editor库可用，直接创建');
+            createFreshTuiEditor(container);
+        }
+    }
+    
+    function loadTuiEditorLibrary(callback) {
+        console.log('📦 重新加载TUI Editor库...');
+        
+        // 移除现有的TUI脚本
+        const existingScripts = document.querySelectorAll('script[src*="toastui"]');
+        existingScripts.forEach(script => script.remove());
+        
+        // 加载新的TUI Editor脚本
+        const script = document.createElement('script');
+        script.src = 'https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js';
+        script.onload = function() {
+            console.log('✅ TUI Editor库重新加载完成');
+            setTimeout(callback, 1000);
+        };
+        script.onerror = function() {
+            console.log('❌ TUI Editor库重新加载失败');
+        };
+        document.head.appendChild(script);
+    }
+    
+    function createFreshTuiEditor(container) {
+        console.log('🆕 创建全新的TUI Editor...');
+        
+        try {
+            // 使用最简单的配置强制创建
+            window.tuiEditor = new toastui.Editor({
+                el: container,
+                height: '600px',
+                initialEditType: 'markdown',
+                previewStyle: 'tab',
+                initialValue: '# 强制重新渲染成功\n\n这是重新渲染后的TUI Editor。\n\n请检查Tab标签是否正确显示。',
+                usageStatistics: false,
+                useCommandShortcut: true,
+                toolbarItems: [
+                    ['heading', 'bold', 'italic'],
+                    ['hr', 'quote'],
+                    ['ul', 'ol'],
+                    ['table', 'link'],
+                    ['code', 'codeblock']
+                ]
+            });
+            
+            console.log('✅ 全新TUI Editor创建成功！');
+            
+            // 强制刷新渲染
+            setTimeout(() => {
+                forceRefreshRendering();
+            }, 1000);
+            
+        } catch(e) {
+            console.log('❌ 创建TUI Editor失败: ' + e.message);
+            console.log('❌ 错误详情: ' + e.stack);
+            
+            // 显示错误信息
+            container.innerHTML = `
+                <div style="padding: 20px; text-align: center; color: red;">
+                    <h3>TUI Editor创建失败</h3>
+                    <p>错误: ${e.message}</p>
+                    <p>请刷新页面重试</p>
+                </div>
+            `;
+        }
+    }
+    
+    function forceRefreshRendering() {
+        console.log('🔄 强制刷新TUI Editor渲染...');
+        
+        if (!window.tuiEditor) {
+            console.log('❌ TUI Editor实例不存在');
+            return;
+        }
+        
+        try {
+            // 强制触发重新渲染
+            const container = document.getElementById('editor');
+            const tuiElement = container.querySelector('.toastui-editor');
+            
+            if (tuiElement) {
+                console.log('✅ 找到TUI Editor DOM元素');
+                
+                // 强制重新计算尺寸
+                tuiElement.style.display = 'none';
+                tuiElement.offsetHeight; // 触发重排
+                tuiElement.style.display = '';
+                
+                // 验证Tab标签
+                setTimeout(() => {
+                    verifyTabRendering();
+                }, 500);
+                
+            } else {
+                console.log('❌ 找不到TUI Editor DOM元素');
+            }
+            
+        } catch(e) {
+            console.log('❌ 强制刷新失败: ' + e.message);
+        }
+    }
+    
+    function verifyTabRendering() {
+        console.log('🔍 验证Tab渲染结果...');
+        
+        const tuiElements = document.querySelectorAll('[class*="toastui"]');
+        const tabElements = document.querySelectorAll('.toastui-editor-tab');
+        const writeElements = Array.from(document.querySelectorAll('*')).filter(el => 
+            el.textContent.trim() === 'Write' && el.children.length === 0
+        );
+        const previewElements = Array.from(document.querySelectorAll('*')).filter(el => 
+            el.textContent.trim() === 'Preview' && el.children.length === 0
+        );
+        
+        console.log('📊 重新渲染后统计:');
+        console.log('  - TUI元素: ' + tuiElements.length);
+        console.log('  - Tab元素: ' + tabElements.length);
+        console.log('  - Write元素: ' + writeElements.length);
+        console.log('  - Preview元素: ' + previewElements.length);
+        
+        // 输出到调试面板
+        if (window.addDebugLog) {
+            window.addDebugLog('🔄 强制重新渲染完成');
+            window.addDebugLog('TUI元素: ' + tuiElements.length + ', Tab元素: ' + tabElements.length);
+            window.addDebugLog('Write元素: ' + writeElements.length + ', Preview元素: ' + previewElements.length);
+        }
+        
+        if (tuiElements.length > 0 && tabElements.length >= 2) {
+            console.log('✅ 重新渲染成功！Tab标签正确显示');
+            alert('✅ TUI Editor重新渲染成功！\n\nTUI元素: ' + tuiElements.length + '\nTab元素: ' + tabElements.length + '\n\n请检查Tab标签是否正确显示。');
+        } else {
+            console.log('❌ 重新渲染仍然失败');
+            alert('❌ TUI Editor重新渲染失败\n\nTUI元素: ' + tuiElements.length + '\nTab元素: ' + tabElements.length + '\n\n可能需要检查TUI Editor库版本或兼容性。');
+        }
+    }
+    
+    // 重写调试按钮
+    window.simpleDebug = function() {
+        console.log('🔄 手动触发强制重新渲染');
+        forceRerenderTuiEditor();
+    };
+    
+    // 开始等待和重新渲染
+    if (document.readyState === 'complete') {
+        waitAndForceRerender();
+    } else {
+        window.addEventListener('load', waitAndForceRerender);
+    }
+    
+    console.log('🔄 强制重新渲染系统已启动');
+})();
+</script>

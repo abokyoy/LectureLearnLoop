@@ -1,0 +1,194 @@
+<!-- DOM诊断脚本 - 详细分析TUI Editor结构 -->
+<script>
+// 详细诊断TUI Editor的DOM结构
+(function() {
+    console.log('🔍 DOM诊断脚本启动');
+    
+    function startDiagnosis() {
+        console.log('⏳ 等待TUI Editor并开始诊断...');
+        
+        setTimeout(() => {
+            performDetailedDiagnosis();
+        }, 3000); // 等待3秒确保TUI Editor完全加载
+    }
+    
+    function performDetailedDiagnosis() {
+        console.log('🔬 开始详细DOM诊断...');
+        
+        // 1. 检查容器
+        const container = document.getElementById('editor');
+        console.log('📦 编辑器容器 #editor: ' + (container ? '存在' : '不存在'));
+        
+        if (!container) {
+            console.log('❌ 容器不存在，诊断结束');
+            return;
+        }
+        
+        console.log('📊 容器信息:');
+        console.log('  - 宽度: ' + container.offsetWidth + 'px');
+        console.log('  - 高度: ' + container.offsetHeight + 'px');
+        console.log('  - 子元素数量: ' + container.children.length);
+        
+        // 2. 检查TUI Editor实例
+        console.log('🔍 TUI Editor实例: ' + (window.tuiEditor ? '存在' : '不存在'));
+        
+        if (window.tuiEditor) {
+            try {
+                const mode = window.tuiEditor.getCurrentPreviewStyle();
+                console.log('📊 预览模式: ' + mode);
+            } catch(e) {
+                console.log('❌ 获取预览模式失败: ' + e.message);
+            }
+        }
+        
+        // 3. 详细检查DOM结构
+        console.log('🔬 详细DOM结构分析:');
+        
+        // 检查所有子元素
+        Array.from(container.children).forEach((child, index) => {
+            console.log('  子元素' + index + ':');
+            console.log('    - 标签: ' + child.tagName);
+            console.log('    - 类名: ' + child.className);
+            console.log('    - ID: ' + child.id);
+            console.log('    - 尺寸: ' + child.offsetWidth + 'x' + child.offsetHeight);
+            
+            // 检查是否是TUI Editor元素
+            if (child.classList.contains('toastui-editor')) {
+                console.log('    ✅ 这是TUI Editor主元素');
+                analyzeTuiEditorStructure(child);
+            }
+        });
+        
+        // 4. 全局搜索TUI相关元素
+        console.log('🔍 全局搜索TUI相关元素:');
+        
+        const tuiElements = document.querySelectorAll('[class*="toastui"]');
+        console.log('📊 找到 ' + tuiElements.length + ' 个TUI相关元素');
+        
+        tuiElements.forEach((el, index) => {
+            console.log('  TUI元素' + index + ': ' + el.tagName + '.' + el.className);
+        });
+        
+        // 5. 搜索Tab相关元素
+        console.log('🔍 搜索Tab相关元素:');
+        
+        const tabElements = document.querySelectorAll('[class*="tab"]');
+        console.log('📊 找到 ' + tabElements.length + ' 个Tab相关元素');
+        
+        tabElements.forEach((el, index) => {
+            console.log('  Tab元素' + index + ': ' + el.tagName + '.' + el.className + ' - 文本: "' + el.textContent.trim() + '"');
+        });
+        
+        // 6. 检查Write和Preview文本
+        console.log('🔍 搜索Write和Preview文本:');
+        
+        const allElements = document.querySelectorAll('*');
+        let writeElements = [];
+        let previewElements = [];
+        
+        allElements.forEach(el => {
+            const text = el.textContent.trim();
+            if (text === 'Write' && el.children.length === 0) {
+                writeElements.push(el);
+            }
+            if (text === 'Preview' && el.children.length === 0) {
+                previewElements.push(el);
+            }
+        });
+        
+        console.log('📊 找到 ' + writeElements.length + ' 个Write元素');
+        writeElements.forEach((el, index) => {
+            console.log('  Write' + index + ': ' + el.tagName + '.' + el.className);
+        });
+        
+        console.log('📊 找到 ' + previewElements.length + ' 个Preview元素');
+        previewElements.forEach((el, index) => {
+            console.log('  Preview' + index + ': ' + el.tagName + '.' + el.className);
+        });
+        
+        // 7. 生成诊断报告
+        generateDiagnosisReport(container, tuiElements, tabElements, writeElements, previewElements);
+    }
+    
+    function analyzeTuiEditorStructure(tuiElement) {
+        console.log('🔬 分析TUI Editor内部结构:');
+        
+        // 检查工具栏
+        const toolbar = tuiElement.querySelector('.toastui-editor-toolbar');
+        console.log('  🔧 工具栏: ' + (toolbar ? '存在' : '不存在'));
+        
+        // 检查Tab容器
+        const tabsContainer = tuiElement.querySelector('.toastui-editor-tabs');
+        console.log('  📑 Tab容器: ' + (tabsContainer ? '存在' : '不存在'));
+        
+        // 检查内容区域
+        const contents = tuiElement.querySelector('.toastui-editor-contents');
+        console.log('  📄 内容区域: ' + (contents ? '存在' : '不存在'));
+        
+        // 检查编辑器模式相关元素
+        const mdContainer = tuiElement.querySelector('.toastui-editor-md-container');
+        const preview = tuiElement.querySelector('.toastui-editor-md-preview');
+        console.log('  ✏️ Markdown容器: ' + (mdContainer ? '存在' : '不存在'));
+        console.log('  👁️ 预览容器: ' + (preview ? '存在' : '不存在'));
+        
+        // 递归检查所有子元素
+        console.log('  🌳 完整子元素树:');
+        logElementTree(tuiElement, '    ');
+    }
+    
+    function logElementTree(element, indent) {
+        if (indent.length > 20) return; // 防止过深递归
+        
+        Array.from(element.children).forEach(child => {
+            console.log(indent + '- ' + child.tagName + (child.className ? '.' + child.className : '') + (child.id ? '#' + child.id : ''));
+            if (child.children.length > 0) {
+                logElementTree(child, indent + '  ');
+            }
+        });
+    }
+    
+    function generateDiagnosisReport(container, tuiElements, tabElements, writeElements, previewElements) {
+        console.log('📋 ===== 诊断报告 =====');
+        
+        const report = {
+            container: container ? '存在' : '不存在',
+            tuiInstance: window.tuiEditor ? '存在' : '不存在',
+            tuiElements: tuiElements.length,
+            tabElements: tabElements.length,
+            writeElements: writeElements.length,
+            previewElements: previewElements.length,
+            containerSize: container ? container.offsetWidth + 'x' + container.offsetHeight : '未知'
+        };
+        
+        console.log('📊 诊断结果:');
+        Object.keys(report).forEach(key => {
+            console.log('  - ' + key + ': ' + report[key]);
+        });
+        
+        // 输出到调试面板
+        if (window.addDebugLog) {
+            window.addDebugLog('📋 DOM诊断完成');
+            window.addDebugLog('TUI元素: ' + report.tuiElements + ', Tab元素: ' + report.tabElements);
+            window.addDebugLog('Write元素: ' + report.writeElements + ', Preview元素: ' + report.previewElements);
+        }
+        
+        console.log('📋 ===== 诊断完成 =====');
+    }
+    
+    // 重写调试按钮
+    window.simpleDebug = function() {
+        console.log('🔍 手动触发DOM诊断');
+        performDetailedDiagnosis();
+        alert('DOM诊断完成！请查看控制台了解详情。');
+    };
+    
+    // 开始诊断
+    if (document.readyState === 'complete') {
+        startDiagnosis();
+    } else {
+        window.addEventListener('load', startDiagnosis);
+    }
+    
+    console.log('🔍 DOM诊断系统已启动');
+})();
+</script>

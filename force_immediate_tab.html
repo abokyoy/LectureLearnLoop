@@ -1,0 +1,146 @@
+<!-- 立即强制执行Tab模式 -->
+<script>
+// 立即强制执行Tab模式，优先级最高
+(function() {
+    console.log('🚀 立即强制Tab模式执行！');
+    
+    // 禁用所有其他TUI初始化函数
+    const functionsToDisable = [
+        'replaceWithTuiEditor',
+        'initializeTuiEditor', 
+        'fixTuiEditorContent',
+        'forceLoadRealContent',
+        'ultimateTuiFix'
+    ];
+    
+    functionsToDisable.forEach(funcName => {
+        if (window[funcName]) {
+            console.log('🚫 禁用函数: ' + funcName);
+            window[funcName] = function() {
+                console.log('🚫 函数已被禁用: ' + funcName);
+            };
+        }
+    });
+    
+    // 等待DOM和TUI库准备就绪
+    function waitAndCreateTabEditor() {
+        console.log('⏳ 等待DOM和TUI库准备...');
+        
+        let attempts = 0;
+        const checkInterval = setInterval(() => {
+            attempts++;
+            
+            const container = document.getElementById('editor');
+            const hasTuiLib = window.toastui && window.toastui.Editor;
+            
+            if (container && hasTuiLib) {
+                console.log('✅ 条件满足，创建Tab编辑器');
+                clearInterval(checkInterval);
+                createTabEditor(container);
+            } else if (attempts > 50) {
+                console.log('❌ 等待超时');
+                clearInterval(checkInterval);
+            } else {
+                console.log('⏳ 等待中... 容器:' + (container ? '✅' : '❌') + ' TUI库:' + (hasTuiLib ? '✅' : '❌'));
+            }
+        }, 200);
+    }
+    
+    function createTabEditor(container) {
+        console.log('🔨 创建Tab模式编辑器...');
+        
+        // 销毁现有编辑器
+        if (window.tuiEditor) {
+            try {
+                window.tuiEditor.destroy();
+                console.log('🗑️ 已销毁现有编辑器');
+            } catch(e) {}
+        }
+        
+        // 清空容器
+        container.innerHTML = '';
+        container.style.height = '600px';
+        container.style.width = '100%';
+        container.style.border = '1px solid #ddd';
+        
+        try {
+            // 创建Tab模式编辑器
+            window.tuiEditor = new toastui.Editor({
+                el: container,
+                height: '600px',
+                initialEditType: 'markdown',
+                previewStyle: 'tab', // 关键：Tab模式
+                initialValue: '# 欢迎使用TUI Editor\n\n请点击上方的 **Write** 和 **Preview** 标签来切换编辑和预览模式。\n\n## 功能特点\n\n- Tab切换模式\n- 丰富的工具栏\n- Markdown语法支持',
+                useCommandShortcut: true,
+                usageStatistics: false,
+                toolbarItems: [
+                    ['heading', 'bold', 'italic', 'strike'],
+                    ['hr', 'quote'],
+                    ['ul', 'ol', 'task'],
+                    ['table', 'image', 'link'],
+                    ['code', 'codeblock']
+                ]
+            });
+            
+            console.log('✅ Tab模式编辑器创建成功！');
+            
+            // 验证Tab模式
+            setTimeout(() => {
+                checkTabMode();
+            }, 1000);
+            
+        } catch(e) {
+            console.log('❌ 创建编辑器失败: ' + e.message);
+        }
+    }
+    
+    function checkTabMode() {
+        console.log('🔍 验证Tab模式...');
+        
+        if (window.tuiEditor) {
+            try {
+                const mode = window.tuiEditor.getCurrentPreviewStyle();
+                console.log('📊 当前预览模式: ' + mode);
+                
+                const tabs = document.querySelectorAll('.toastui-editor-tab');
+                console.log('📑 Tab数量: ' + tabs.length);
+                
+                tabs.forEach((tab, index) => {
+                    console.log('  - Tab' + index + ': ' + tab.textContent);
+                });
+                
+                if (mode === 'tab' && tabs.length >= 2) {
+                    console.log('✅ Tab模式验证成功！');
+                    alert('✅ Tab模式设置成功！\n\n请查看编辑器上方的 Write 和 Preview 标签。');
+                } else {
+                    console.log('❌ Tab模式验证失败');
+                }
+                
+            } catch(e) {
+                console.log('❌ 验证失败: ' + e.message);
+            }
+        }
+    }
+    
+    // 重写调试按钮
+    window.simpleDebug = function() {
+        console.log('🔥 强制Tab模式调试！');
+        
+        const container = document.getElementById('editor');
+        if (container) {
+            createTabEditor(container);
+        } else {
+            console.log('❌ 找不到编辑器容器');
+        }
+    };
+    
+    // 立即开始等待
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', waitAndCreateTabEditor);
+    } else {
+        waitAndCreateTabEditor();
+    }
+    
+    console.log('🚀 强制Tab模式系统已启动');
+})();
+</script>

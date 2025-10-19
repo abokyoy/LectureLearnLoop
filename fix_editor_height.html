@@ -1,0 +1,157 @@
+<!-- 强制修复编辑器高度 -->
+<style>
+/* 强制修复TUI Editor容器高度 */
+#editor {
+    height: 600px !important;
+    min-height: 600px !important;
+    width: 100% !important;
+    border: 1px solid #ddd !important;
+    background: white !important;
+}
+
+/* 确保TUI Editor内部组件正确显示 */
+#editor .toastui-editor {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+/* Tab标签区域 */
+#editor .toastui-editor-tabs {
+    height: 40px !important;
+    border-bottom: 1px solid #ddd !important;
+    background: #f8f9fa !important;
+}
+
+/* 内容区域 */
+#editor .toastui-editor-contents {
+    height: calc(100% - 80px) !important;
+    width: 100% !important;
+}
+
+/* 工具栏 */
+#editor .toastui-editor-toolbar {
+    height: 40px !important;
+    border-bottom: 1px solid #ddd !important;
+}
+
+/* 编辑和预览区域 */
+#editor .toastui-editor-md-container,
+#editor .toastui-editor-md-preview {
+    height: 100% !important;
+    width: 100% !important;
+}
+
+/* 确保编辑器文本区域有合适的高度 */
+#editor .toastui-editor .CodeMirror {
+    height: 100% !important;
+    min-height: 400px !important;
+}
+
+/* 预览区域 */
+#editor .toastui-editor-md-preview-style {
+    height: 100% !important;
+    overflow-y: auto !important;
+    padding: 20px !important;
+}
+</style>
+
+<script>
+// 强制修复编辑器高度的脚本
+function forceFixEditorHeight() {
+    console.log('🔧 强制修复编辑器高度...');
+    
+    // 1. 修复容器高度
+    const editorContainer = document.getElementById('editor');
+    if (editorContainer) {
+        editorContainer.style.height = '600px';
+        editorContainer.style.minHeight = '600px';
+        editorContainer.style.width = '100%';
+        editorContainer.style.border = '1px solid #ddd';
+        editorContainer.style.background = 'white';
+        console.log('✅ 容器高度已修复');
+    }
+    
+    // 2. 如果TUI Editor已存在，调整其高度
+    if (window.tuiEditor) {
+        try {
+            // 获取TUI Editor的DOM元素
+            const tuiEditorEl = document.querySelector('.toastui-editor');
+            if (tuiEditorEl) {
+                tuiEditorEl.style.height = '100%';
+                tuiEditorEl.style.width = '100%';
+                console.log('✅ TUI Editor元素高度已修复');
+            }
+            
+            // 修复内容区域
+            const contentsEl = document.querySelector('.toastui-editor-contents');
+            if (contentsEl) {
+                contentsEl.style.height = 'calc(100% - 80px)';
+                contentsEl.style.width = '100%';
+                console.log('✅ 内容区域高度已修复');
+            }
+            
+            // 修复CodeMirror
+            const codeMirror = document.querySelector('.CodeMirror');
+            if (codeMirror) {
+                codeMirror.style.height = '100%';
+                codeMirror.style.minHeight = '400px';
+                console.log('✅ CodeMirror高度已修复');
+            }
+            
+        } catch(e) {
+            console.log('❌ 修复TUI Editor高度失败: ' + e.message);
+        }
+    }
+    
+    console.log('✅ 编辑器高度修复完成');
+}
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    console.log('🔥 高度修复调试！');
+    
+    const container = document.getElementById('editor');
+    if (container) {
+        console.log('📦 容器信息:');
+        console.log('  - 高度: ' + container.offsetHeight + 'px');
+        console.log('  - 宽度: ' + container.offsetWidth + 'px');
+        console.log('  - 样式高度: ' + container.style.height);
+    }
+    
+    if (window.tuiEditor) {
+        const tuiEl = document.querySelector('.toastui-editor');
+        if (tuiEl) {
+            console.log('📝 TUI Editor信息:');
+            console.log('  - 高度: ' + tuiEl.offsetHeight + 'px');
+            console.log('  - 宽度: ' + tuiEl.offsetWidth + 'px');
+        }
+        
+        const contentsEl = document.querySelector('.toastui-editor-contents');
+        if (contentsEl) {
+            console.log('📄 内容区域信息:');
+            console.log('  - 高度: ' + contentsEl.offsetHeight + 'px');
+            console.log('  - 宽度: ' + contentsEl.offsetWidth + 'px');
+        }
+    }
+    
+    // 强制修复
+    console.log('🔧 执行强制高度修复...');
+    forceFixEditorHeight();
+};
+
+// 等待页面加载后执行修复
+setTimeout(() => {
+    forceFixEditorHeight();
+}, 3000);
+
+// 定期检查并修复高度
+setInterval(() => {
+    const container = document.getElementById('editor');
+    if (container && container.offsetHeight < 500) {
+        console.log('🔧 检测到高度异常，重新修复...');
+        forceFixEditorHeight();
+    }
+}, 5000);
+
+console.log('🔧 编辑器高度修复系统已加载');
+</script>

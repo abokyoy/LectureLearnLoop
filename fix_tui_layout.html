@@ -1,0 +1,200 @@
+<!-- 修复TUI Editor布局问题 -->
+<script>
+// 修复TUI Editor布局
+function fixTuiLayout() {
+    console.log('🎨 修复TUI Editor布局...');
+    
+    if (!window.tuiEditor) {
+        console.log('❌ TUI Editor不可用');
+        return;
+    }
+    
+    try {
+        // 1. 检查当前预览模式
+        const currentMode = window.tuiEditor.getCurrentPreviewStyle();
+        console.log('📊 当前预览模式: ' + currentMode);
+        
+        // 2. 强制设置为垂直分割模式（左右分栏）
+        if (currentMode !== 'vertical') {
+            console.log('🔄 切换到垂直分割模式...');
+            window.tuiEditor.changePreviewStyle('vertical');
+        }
+        
+        // 3. 检查并修复容器样式
+        const editorContainer = document.querySelector('.toastui-editor');
+        if (editorContainer) {
+            console.log('🎨 修复编辑器容器样式...');
+            
+            // 确保容器有足够的高度和宽度
+            editorContainer.style.height = '600px';
+            editorContainer.style.width = '100%';
+            editorContainer.style.minHeight = '500px';
+            
+            console.log('✅ 容器样式已修复');
+        }
+        
+        // 4. 检查并修复预览面板样式
+        const previewPanel = document.querySelector('.toastui-editor-md-preview');
+        if (previewPanel) {
+            console.log('🎨 修复预览面板样式...');
+            
+            // 确保预览面板正确显示
+            previewPanel.style.display = 'block';
+            previewPanel.style.width = '50%';
+            previewPanel.style.height = '100%';
+            previewPanel.style.float = 'right';
+            
+            console.log('✅ 预览面板样式已修复');
+        }
+        
+        // 5. 检查并修复编辑面板样式
+        const editPanel = document.querySelector('.toastui-editor-md-container');
+        if (editPanel) {
+            console.log('🎨 修复编辑面板样式...');
+            
+            editPanel.style.width = '50%';
+            editPanel.style.height = '100%';
+            editPanel.style.float = 'left';
+            
+            console.log('✅ 编辑面板样式已修复');
+        }
+        
+        // 6. 强制刷新编辑器布局
+        setTimeout(() => {
+            if (window.tuiEditor) {
+                try {
+                    // 触发重新布局
+                    const content = window.tuiEditor.getMarkdown();
+                    window.tuiEditor.setMarkdown(content);
+                    console.log('🔄 编辑器布局已刷新');
+                } catch(e) {
+                    console.log('❌ 刷新布局失败: ' + e.message);
+                }
+            }
+        }, 500);
+        
+        console.log('✅ TUI Editor布局修复完成');
+        
+    } catch(e) {
+        console.log('❌ 修复布局失败: ' + e.message);
+    }
+}
+
+// 添加CSS样式来强制正确的布局
+function addLayoutCSS() {
+    console.log('🎨 添加布局CSS...');
+    
+    const style = document.createElement('style');
+    style.textContent = `
+        /* 强制TUI Editor左右分栏布局 */
+        .toastui-editor {
+            height: 600px !important;
+            min-height: 500px !important;
+            width: 100% !important;
+            display: flex !important;
+            flex-direction: row !important;
+        }
+        
+        .toastui-editor-md-container {
+            width: 50% !important;
+            height: 100% !important;
+            flex: 1 !important;
+            border-right: 1px solid #e1e5e9 !important;
+        }
+        
+        .toastui-editor-md-preview {
+            width: 50% !important;
+            height: 100% !important;
+            flex: 1 !important;
+            display: block !important;
+        }
+        
+        /* 确保工具栏正确显示 */
+        .toastui-editor-toolbar {
+            width: 100% !important;
+            border-bottom: 1px solid #e1e5e9 !important;
+        }
+        
+        /* 修复可能的上下布局问题 */
+        .toastui-editor-contents {
+            display: flex !important;
+            flex-direction: row !important;
+            height: calc(100% - 40px) !important;
+        }
+    `;
+    
+    document.head.appendChild(style);
+    console.log('✅ 布局CSS已添加');
+}
+
+// 监听TUI Editor的模式变化
+function monitorLayoutChanges() {
+    console.log('👁️ 开始监听布局变化...');
+    
+    // 定期检查布局
+    setInterval(() => {
+        if (window.tuiEditor) {
+            try {
+                const currentMode = window.tuiEditor.getCurrentPreviewStyle();
+                if (currentMode !== 'vertical') {
+                    console.log('🔄 检测到布局变化，重新修复: ' + currentMode);
+                    fixTuiLayout();
+                }
+            } catch(e) {
+                // 忽略错误
+            }
+        }
+    }, 3000); // 每3秒检查一次
+}
+
+// 重写调试按钮，包含布局信息
+window.simpleDebug = function() {
+    console.log('🔥 布局调试模式！');
+    
+    if (window.tuiEditor) {
+        try {
+            const currentMode = window.tuiEditor.getCurrentPreviewStyle();
+            console.log('📊 当前预览模式: ' + currentMode);
+            
+            const container = document.querySelector('.toastui-editor');
+            console.log('📦 容器信息:');
+            if (container) {
+                console.log('  - 宽度: ' + container.offsetWidth + 'px');
+                console.log('  - 高度: ' + container.offsetHeight + 'px');
+                console.log('  - 显示: ' + getComputedStyle(container).display);
+            }
+            
+            const editPanel = document.querySelector('.toastui-editor-md-container');
+            const previewPanel = document.querySelector('.toastui-editor-md-preview');
+            
+            console.log('📝 编辑面板: ' + (editPanel ? '存在' : '不存在'));
+            console.log('👁️ 预览面板: ' + (previewPanel ? '存在' : '不存在'));
+            
+            if (editPanel) {
+                console.log('  - 编辑面板宽度: ' + editPanel.offsetWidth + 'px');
+            }
+            if (previewPanel) {
+                console.log('  - 预览面板宽度: ' + previewPanel.offsetWidth + 'px');
+            }
+            
+        } catch(e) {
+            console.log('❌ 获取布局信息失败: ' + e.message);
+        }
+    }
+    
+    // 强制修复布局
+    console.log('🔧 强制修复布局...');
+    fixTuiLayout();
+};
+
+// 立即执行
+addLayoutCSS();
+
+// 等待TUI Editor初始化后修复布局
+setTimeout(() => {
+    fixTuiLayout();
+    monitorLayoutChanges();
+}, 2000);
+
+console.log('🎨 TUI Editor布局修复系统已加载');
+</script>

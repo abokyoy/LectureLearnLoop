@@ -1,0 +1,151 @@
+<!-- 禁用所有干扰脚本，保护TUI Editor -->
+<script>
+// 立即执行，禁用所有可能干扰TUI Editor的脚本
+(function() {
+    console.log('🛡️ 禁用所有干扰脚本，保护TUI Editor...');
+    
+    // 禁用所有可能的干扰函数
+    const interferingFunctions = [
+        'fixTuiEditorContent',
+        'forceLoadRealContent', 
+        'cleanTuiContent',
+        'preciseLoadRealContent',
+        'tryExtractFromTextarea',
+        'tryExtractFromPreview',
+        'collectPageContent',
+        'extractAllTextContent',
+        'updateTuiEditorWithContent',
+        'updateTuiEditorContent',
+        'updateOurContent',
+        'hideOriginalContent',
+        'forceFixEditorHeight',
+        'fixContentLimit',
+        'immediateCleanTui'
+    ];
+    
+    interferingFunctions.forEach(funcName => {
+        // 立即禁用
+        window[funcName] = function() {
+            console.log('🚫 已阻止干扰函数: ' + funcName);
+            return false;
+        };
+        
+        // 也禁用可能的未来定义
+        Object.defineProperty(window, funcName, {
+            value: function() {
+                console.log('🚫 已阻止干扰函数: ' + funcName);
+                return false;
+            },
+            writable: false,
+            configurable: false
+        });
+    });
+    
+    // 禁用所有定时器相关的清理
+    const originalSetTimeout = window.setTimeout;
+    const originalSetInterval = window.setInterval;
+    
+    window.setTimeout = function(func, delay) {
+        // 检查是否是干扰性的定时器
+        const funcStr = func.toString();
+        if (funcStr.includes('cleanTui') || 
+            funcStr.includes('fixTui') || 
+            funcStr.includes('forceLoad') ||
+            funcStr.includes('updateTui') ||
+            funcStr.includes('clearTui')) {
+            console.log('🚫 已阻止干扰性定时器');
+            return null;
+        }
+        return originalSetTimeout.apply(this, arguments);
+    };
+    
+    window.setInterval = function(func, delay) {
+        const funcStr = func.toString();
+        if (funcStr.includes('cleanTui') || 
+            funcStr.includes('fixTui') || 
+            funcStr.includes('forceLoad') ||
+            funcStr.includes('updateTui') ||
+            funcStr.includes('clearTui')) {
+            console.log('🚫 已阻止干扰性循环定时器');
+            return null;
+        }
+        return originalSetInterval.apply(this, arguments);
+    };
+    
+    // 保护TUI Editor实例
+    let protectedTuiEditor = null;
+    
+    Object.defineProperty(window, 'tuiEditor', {
+        get: function() {
+            return protectedTuiEditor;
+        },
+        set: function(value) {
+            if (value && value.getCurrentPreviewStyle) {
+                console.log('✅ 设置受保护的TUI Editor实例');
+                protectedTuiEditor = value;
+                
+                // 立即检查并保护Tab模式
+                setTimeout(() => {
+                    if (protectedTuiEditor) {
+                        try {
+                            const mode = protectedTuiEditor.getCurrentPreviewStyle();
+                            console.log('🔍 TUI Editor模式: ' + mode);
+                            
+                            if (mode !== 'tab') {
+                                console.log('🔧 强制切换到Tab模式');
+                                protectedTuiEditor.changePreviewStyle('tab');
+                            }
+                        } catch(e) {
+                            console.log('❌ 检查模式失败: ' + e.message);
+                        }
+                    }
+                }, 100);
+                
+            } else if (value === null) {
+                console.log('⚠️ 尝试清空TUI Editor，已阻止');
+                // 不允许清空
+            } else {
+                console.log('⚠️ 尝试设置无效的TUI Editor，已阻止');
+            }
+        },
+        configurable: false
+    });
+    
+    // 重写调试按钮，只显示状态不做修改
+    window.simpleDebug = function() {
+        console.log('🔍 TUI Editor状态检查（只读模式）');
+        
+        if (window.tuiEditor) {
+            try {
+                const mode = window.tuiEditor.getCurrentPreviewStyle();
+                console.log('📊 当前模式: ' + mode);
+                
+                const tabs = document.querySelectorAll('.toastui-editor-tab');
+                console.log('📑 Tab数量: ' + tabs.length);
+                
+                tabs.forEach((tab, index) => {
+                    console.log('  - Tab' + index + ': ' + tab.textContent + (tab.classList.contains('active') ? ' (活跃)' : ''));
+                });
+                
+                const container = document.getElementById('editor');
+                if (container) {
+                    console.log('📦 容器高度: ' + container.offsetHeight + 'px');
+                }
+                
+                alert('TUI Editor状态检查完成！\n\n模式: ' + mode + '\nTab数量: ' + tabs.length + '\n\n请查看控制台了解详情。');
+                
+            } catch(e) {
+                console.log('❌ 状态检查失败: ' + e.message);
+                alert('TUI Editor状态检查失败: ' + e.message);
+            }
+        } else {
+            console.log('❌ TUI Editor不存在');
+            alert('TUI Editor不存在');
+        }
+    };
+    
+    console.log('🛡️ TUI Editor保护系统已激活');
+    console.log('🚫 已禁用 ' + interferingFunctions.length + ' 个干扰函数');
+    console.log('🛡️ TUI Editor实例已受保护');
+})();
+</script>
