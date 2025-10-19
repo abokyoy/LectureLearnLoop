@@ -2170,7 +2170,7 @@ window.handlePractice = function(e) {
     
     console.log('handlePractice 函数被调用');
     // 这里可以添加练习功能的具体实现
-    alert('练习功能已触发');
+    console.log('练习功能已触发');
 };
 
 (function() {
@@ -3265,7 +3265,7 @@ window.handlePractice = function(e) {
     window.manualSummarize = function() {
         debugLog('手动总结选中内容');
         if (selectedTranscriptTexts.length === 0) {
-            alert('请先选择转写文本');
+            console.log('请先选择转写文本');
             return;
         }
         
@@ -3317,7 +3317,7 @@ window.handlePractice = function(e) {
                 updateManualSummarizeButton();
             });
         } else {
-            alert('总结功能不可用');
+            console.log('总结功能不可用');
             btn.disabled = false;
             updateManualSummarizeButton();
         }
@@ -3767,7 +3767,7 @@ window.handlePractice = function(e) {
         if (audioPath && audioPath !== 'null' && audioPath !== 'null') {
             playTestAudio(audioPath, deviceName);
         } else {
-            alert(`设备 ${deviceName} 录制测试完成！\\n✅ 设备功能正常，已成功录制2秒音频。\\n\\n设备可以用于正式录制功能。`);
+            console.log(`设备 ${deviceName} 录制测试完成！设备功能正常，已成功录制2秒音频。`);
         }
     };
     
@@ -3778,7 +3778,7 @@ window.handlePractice = function(e) {
         // 重置测试按钮状态
         resetTestButton(deviceName);
         
-        alert(`设备 ${deviceName} 测试录制失败:\\n${errorMessage}`);
+        console.log(`设备 ${deviceName} 测试录制失败: ${errorMessage}`);
     };
     
     // 重置测试按钮状态
@@ -5319,6 +5319,12 @@ window.handlePractice = function(e) {
                         editContent.value = content;
                     }
                     
+                    // 同时加载到暴力方案编辑器
+                    if (window.loadFileToEditor) {
+                        console.log('📝 selectFile：加载到暴力方案编辑器');
+                        window.loadFileToEditor(normalizedPath, content);
+                    }
+                    
                     // 触发文件切换的自动保存检查
                     if (typeof window.onFileSwitch === 'function') {
                         window.onFileSwitch(normalizedPath);
@@ -5662,8 +5668,19 @@ window.handlePractice = function(e) {
                                 hljs.highlightElement(block);
                             });
                         }
+                        
+                        // 同时加载到暴力方案编辑器
+                        if (window.loadFileToEditor) {
+                            console.log('📝 同时加载到暴力方案编辑器');
+                            window.loadFileToEditor(filePath, markdownContent);
+                        }
                     } else {
                         previewContent.innerHTML = '<div class="text-center py-8 text-gray-500">文件内容为空或加载失败</div>';
+                        
+                        // 清空暴力方案编辑器
+                        if (window.loadFileToEditor) {
+                            window.loadFileToEditor(filePath, '');
+                        }
                     }
                 }
                 
@@ -5797,6 +5814,12 @@ window.handlePractice = function(e) {
                     
                     // 聚焦到编辑器
                     editContent.focus();
+                    
+                    // 同时加载到暴力方案编辑器
+                    if (window.loadFileToEditor) {
+                        console.log('📝 编辑模式：同时加载到暴力方案编辑器');
+                        window.loadFileToEditor(filePath, markdownContent);
+                    }
                 }
                 
                 // 自动加载该笔记相关的知识点
@@ -18787,22 +18810,9 @@ console.log('🔧 编辑器高度修复系统已加载');
             resize: none;
             outline: none;
         `;
-        editArea.value = `# 暴力强制Tab模式成功！
-
-这是手动创建的Tab编辑器：
-
-## 功能特点
-- ✅ **Write标签**：Markdown编辑模式
-- ✅ **Preview标签**：实时预览模式
-- ✅ **完全手动**：不依赖TUI Editor的DOM渲染
-- ✅ **稳定可靠**：不会被其他脚本破坏
-
-## 使用方法
-1. 点击 **Write** 标签进行编辑
-2. 点击 **Preview** 标签查看预览
-3. 内容会自动保存
-
-**这次绝对不会再"一闪而过"了！**`;
+        // 初始显示空内容
+        editArea.value = '';
+        editArea.placeholder = '请从左侧文件树选择一个Markdown文件开始编辑...';
         
         // 创建预览区域
         const previewArea = document.createElement('div');
@@ -18890,6 +18900,34 @@ console.log('🔧 编辑器高度修复系统已加载');
         writeTab.addEventListener('click', switchToWrite);
         previewTab.addEventListener('click', switchToPreview);
         
+        // 添加文件点击处理函数
+        window.loadFileToEditor = function(filePath, content) {
+            console.log('📄 加载文件到编辑器:', filePath);
+            if (editArea) {
+                editArea.value = content || '';
+                // 如果当前是预览模式，更新预览
+                if (currentMode === 'preview') {
+                    updatePreview();
+                }
+                console.log('✅ 文件内容已加载到编辑器');
+            }
+        };
+        
+        // 暴露编辑器引用供外部使用
+        window.brutalEditor = {
+            editArea: editArea,
+            previewArea: previewArea,
+            switchToWrite: switchToWrite,
+            switchToPreview: switchToPreview,
+            updatePreview: updatePreview,
+            loadContent: function(content) {
+                editArea.value = content || '';
+                if (currentMode === 'preview') {
+                    updatePreview();
+                }
+            }
+        };
+        
         // 组装界面
         tabBar.appendChild(writeTab);
         tabBar.appendChild(previewTab);
@@ -18921,8 +18959,6 @@ console.log('🔧 编辑器高度修复系统已加载');
             window.addDebugLog('Tab标签: 2个 (Write, Preview)');
             window.addDebugLog('状态: 完全手动创建，不依赖TUI Editor');
         }
-        
-        alert('💀 暴力强制Tab方案成功！\n\n✅ Write和Preview标签已创建\n✅ 完全手动实现，绝对稳定\n✅ 不会再"一闪而过"了！\n\n现在可以正常使用Tab切换功能！');
     }
     
     // 重写调试按钮
