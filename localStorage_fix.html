@@ -1,0 +1,163 @@
+<!-- localStorage修复 - 为TUI Editor提供localStorage模拟 -->
+<script>
+// localStorage模拟器 - 解决Qt WebEngine中localStorage被禁用的问题
+(function() {
+    // 检查localStorage是否可用
+    let localStorageAvailable = false;
+    try {
+        localStorage.setItem('test', 'test');
+        localStorage.removeItem('test');
+        localStorageAvailable = true;
+        console.log('✅ localStorage可用');
+    } catch(e) {
+        console.log('❌ localStorage不可用，启用模拟器');
+        
+        // 创建localStorage模拟器
+        const mockStorage = {
+            _data: {},
+            
+            setItem: function(key, value) {
+                this._data[key] = String(value);
+            },
+            
+            getItem: function(key) {
+                return this._data.hasOwnProperty(key) ? this._data[key] : null;
+            },
+            
+            removeItem: function(key) {
+                delete this._data[key];
+            },
+            
+            clear: function() {
+                this._data = {};
+            },
+            
+            key: function(index) {
+                const keys = Object.keys(this._data);
+                return keys[index] || null;
+            },
+            
+            get length() {
+                return Object.keys(this._data).length;
+            }
+        };
+        
+        // 替换全局localStorage
+        Object.defineProperty(window, 'localStorage', {
+            value: mockStorage,
+            writable: false,
+            configurable: false
+        });
+        
+        console.log('✅ localStorage模拟器已安装');
+    }
+    
+    // 同样处理sessionStorage
+    try {
+        sessionStorage.setItem('test', 'test');
+        sessionStorage.removeItem('test');
+        console.log('✅ sessionStorage可用');
+    } catch(e) {
+        console.log('❌ sessionStorage不可用，启用模拟器');
+        
+        const mockSessionStorage = {
+            _data: {},
+            setItem: function(key, value) { this._data[key] = String(value); },
+            getItem: function(key) { return this._data.hasOwnProperty(key) ? this._data[key] : null; },
+            removeItem: function(key) { delete this._data[key]; },
+            clear: function() { this._data = {}; },
+            key: function(index) { const keys = Object.keys(this._data); return keys[index] || null; },
+            get length() { return Object.keys(this._data).length; }
+        };
+        
+        Object.defineProperty(window, 'sessionStorage', {
+            value: mockSessionStorage,
+            writable: false,
+            configurable: false
+        });
+        
+        console.log('✅ sessionStorage模拟器已安装');
+    }
+})();
+
+// 修复后重新定义调试函数
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || window.immediateLog || console.log;
+    
+    logFunc('🔥 修复版调试开始！');
+    logFunc('📊 当前时间: ' + new Date().toLocaleTimeString());
+    
+    // 检查localStorage状态
+    logFunc('🔍 === 检查Storage状态 ===');
+    try {
+        localStorage.setItem('test_key', 'test_value');
+        const testValue = localStorage.getItem('test_key');
+        localStorage.removeItem('test_key');
+        logFunc('✅ localStorage工作正常，测试值: ' + testValue);
+    } catch(e) {
+        logFunc('❌ localStorage仍然有问题: ' + e.message);
+    }
+    
+    // 检查TUI Editor状态
+    logFunc('🔍 === 检查TUI Editor状态 ===');
+    logFunc('📊 typeof toastui: ' + typeof toastui);
+    logFunc('📊 toastui.Editor存在: ' + (toastui && toastui.Editor ? '✅是' : '❌否'));
+    
+    // 检查容器
+    const container = document.getElementById('editor');
+    if (container) {
+        logFunc('✅ 编辑器容器存在');
+        logFunc('📊 容器尺寸: ' + container.offsetWidth + 'x' + container.offsetHeight);
+    }
+    
+    // 尝试初始化编辑器（使用修复后的localStorage）
+    if (toastui && toastui.Editor && container) {
+        logFunc('🔍 === 尝试初始化编辑器（localStorage已修复）===');
+        
+        try {
+            // 清空容器
+            container.innerHTML = '';
+            logFunc('🧹 容器已清空');
+            
+            // 创建编辑器实例（现在应该能成功）
+            window.tuiEditor = new toastui.Editor({
+                el: container,
+                height: '400px',
+                initialEditType: 'markdown',
+                previewStyle: 'vertical',
+                initialValue: '# TUI Editor 成功初始化！\n\n恭喜！编辑器现在应该正常工作了。\n\n## 功能测试\n\n- **粗体文本**\n- *斜体文本*\n- `代码文本`\n\n### 代码块测试\n\n```javascript\nconsole.log("Hello, TUI Editor!");\n```\n\n> 这是一个引用块\n\n1. 有序列表项1\n2. 有序列表项2\n\n- 无序列表项1\n- 无序列表项2'
+            });
+            
+            logFunc('✅ TUI Editor实例创建成功！');
+            logFunc('📊 编辑器类型: ' + typeof window.tuiEditor);
+            
+            // 测试编辑器功能
+            try {
+                const content = window.tuiEditor.getMarkdown();
+                logFunc('📊 当前内容长度: ' + content.length);
+                logFunc('📊 内容预览: ' + content.substring(0, 80) + '...');
+                
+                // 设置全局变量
+                window.isTuiEditorMode = true;
+                logFunc('✅ 全局变量已设置: isTuiEditorMode = true');
+                
+                logFunc('🎉 TUI Editor完全初始化成功！');
+                
+            } catch(e) {
+                logFunc('❌ 编辑器功能测试失败: ' + e.message);
+            }
+            
+        } catch(e) {
+            logFunc('❌ TUI Editor实例创建仍然失败: ' + e.message);
+            logFunc('❌ 错误详情: ' + e.stack);
+        }
+    } else {
+        logFunc('❌ 无法初始化：缺少必要组件');
+    }
+    
+    logFunc('🎉 修复版调试完成！');
+    alert('localStorage修复版调试完成！\n\n如果成功，编辑器应该正常显示。\n请查看调试面板获取详细结果！');
+};
+
+console.log('✅ localStorage修复和增强版调试函数已准备就绪');
+</script>

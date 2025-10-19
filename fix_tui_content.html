@@ -1,0 +1,154 @@
+<!-- 修复TUI Editor内容加载 -->
+<script>
+// 修复TUI Editor内容加载问题
+function fixTuiEditorContent() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔧 开始修复TUI Editor内容加载...');
+    
+    // 1. 获取当前文件的实际内容
+    let actualContent = '';
+    
+    // 方法1：从原有的文本区域获取内容
+    const existingTextarea = document.querySelector('textarea');
+    if (existingTextarea && existingTextarea.value.trim()) {
+        actualContent = existingTextarea.value;
+        logFunc('✅ 从textarea获取内容，长度: ' + actualContent.length);
+    }
+    
+    // 方法2：从预览区域获取内容（如果有的话）
+    if (!actualContent) {
+        const previewContent = document.getElementById('preview-content');
+        if (previewContent && previewContent.textContent.trim()) {
+            // 这里需要从后端重新获取原始Markdown内容
+            logFunc('🔄 从预览区域检测到内容，需要获取原始Markdown');
+        }
+    }
+    
+    // 方法3：通过API获取当前文件内容
+    if (!actualContent && window.currentFilePath && window.pybridge) {
+        logFunc('🔄 通过API获取文件内容: ' + window.currentFilePath);
+        
+        window.pybridge.loadMarkdownRaw(window.currentFilePath, function(response) {
+            try {
+                const result = typeof response === 'string' ? JSON.parse(response) : response;
+                if (result.success && result.content) {
+                    actualContent = result.content;
+                    logFunc('✅ 通过API获取内容成功，长度: ' + actualContent.length);
+                    
+                    // 更新TUI Editor内容
+                    updateTuiEditorContent(actualContent);
+                } else {
+                    logFunc('❌ API获取内容失败: ' + (result.error || '未知错误'));
+                }
+            } catch(e) {
+                logFunc('❌ 解析API响应失败: ' + e.message);
+            }
+        });
+        return; // 等待异步结果
+    }
+    
+    // 如果已经有内容，直接更新
+    if (actualContent) {
+        updateTuiEditorContent(actualContent);
+    } else {
+        logFunc('❌ 无法获取文件内容，使用默认内容');
+    }
+}
+
+function updateTuiEditorContent(content) {
+    const logFunc = window.addDebugLog || console.log;
+    
+    if (window.tuiEditor && content) {
+        try {
+            // 设置TUI Editor的内容
+            window.tuiEditor.setMarkdown(content);
+            logFunc('✅ TUI Editor内容已更新，长度: ' + content.length);
+            logFunc('📄 内容预览: ' + content.substring(0, 100) + '...');
+            
+            // 隐藏下方的原始内容显示
+            hideOriginalContent();
+            
+        } catch(e) {
+            logFunc('❌ 更新TUI Editor内容失败: ' + e.message);
+        }
+    } else {
+        logFunc('❌ TUI Editor不存在或内容为空');
+    }
+}
+
+function hideOriginalContent() {
+    const logFunc = window.addDebugLog || console.log;
+    
+    // 隐藏原有的编辑器和预览区域
+    const elementsToHide = [
+        'textarea',
+        '#preview-content',
+        '.markdown-content',
+        '.editor-content',
+        '.preview-area'
+    ];
+    
+    elementsToHide.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+            // 检查元素是否在TUI Editor容器外
+            const tuiContainer = document.getElementById('editor');
+            if (tuiContainer && !tuiContainer.contains(element)) {
+                element.style.display = 'none';
+                logFunc('🙈 隐藏原始内容元素: ' + selector);
+            }
+        });
+    });
+    
+    logFunc('✅ 原始内容区域已隐藏');
+}
+
+// 重新定义调试按钮，集成内容修复功能
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 TUI Editor内容修复调试！');
+    
+    // 检查TUI Editor状态
+    if (window.tuiEditor) {
+        logFunc('✅ TUI Editor实例存在');
+        
+        try {
+            const currentContent = window.tuiEditor.getMarkdown();
+            logFunc('📊 当前TUI Editor内容长度: ' + currentContent.length);
+            
+            if (currentContent.includes('欢迎使用TUI Editor') || currentContent.includes('这是一个功能强大的Markdown编辑器')) {
+                logFunc('⚠️ 检测到默认内容，开始加载实际文件内容');
+                fixTuiEditorContent();
+            } else {
+                logFunc('✅ TUI Editor已包含实际内容');
+            }
+        } catch(e) {
+            logFunc('❌ 获取TUI Editor内容失败: ' + e.message);
+        }
+    } else {
+        logFunc('❌ TUI Editor实例不存在');
+    }
+    
+    alert('TUI Editor内容修复调试完成！\n请查看调试面板了解详情。');
+};
+
+// 页面加载完成后自动修复内容
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(function() {
+        if (window.tuiEditor) {
+            fixTuiEditorContent();
+        }
+    }, 2000); // 延迟2秒确保TUI Editor完全初始化
+});
+
+// 如果页面已经加载完成，立即执行
+if (document.readyState === 'complete') {
+    setTimeout(function() {
+        if (window.tuiEditor) {
+            fixTuiEditorContent();
+        }
+    }, 2000);
+}
+
+console.log('✅ TUI Editor内容修复系统已准备就绪');
+</script>

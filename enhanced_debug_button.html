@@ -1,0 +1,141 @@
+<!-- 增强版调试按钮 - 集成库加载和详细诊断 -->
+<script>
+// 重新定义simpleDebug函数，集成完整的诊断和修复功能
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || window.immediateLog || console.log;
+    
+    logFunc('🔥 增强版调试开始！');
+    logFunc('📊 当前时间: ' + new Date().toLocaleTimeString());
+    
+    // 第一步：检查当前toastui对象
+    logFunc('🔍 === 第一步：检查当前TUI Editor状态 ===');
+    logFunc('📊 typeof toastui: ' + typeof toastui);
+    
+    if (typeof toastui !== 'undefined') {
+        logFunc('✅ toastui对象存在');
+        const keys = Object.keys(toastui || {});
+        logFunc('📊 toastui属性数量: ' + keys.length);
+        logFunc('📊 toastui属性: ' + keys.join(', '));
+        logFunc('📊 toastui.Editor存在: ' + (toastui.Editor ? '✅是' : '❌否'));
+    } else {
+        logFunc('❌ toastui对象不存在');
+    }
+    
+    // 第二步：检查容器状态
+    logFunc('🔍 === 第二步：检查编辑器容器 ===');
+    const container = document.getElementById('editor');
+    if (container) {
+        logFunc('✅ 编辑器容器存在');
+        logFunc('📊 容器尺寸: ' + container.offsetWidth + 'x' + container.offsetHeight);
+        logFunc('📊 容器子元素数量: ' + container.children.length);
+        logFunc('📊 容器内容长度: ' + container.innerHTML.length);
+    } else {
+        logFunc('❌ 编辑器容器不存在');
+    }
+    
+    // 第三步：动态加载完整的TUI Editor库
+    logFunc('🔍 === 第三步：动态加载TUI Editor库 ===');
+    
+    if (!toastui || !toastui.Editor) {
+        logFunc('🔄 开始动态加载TUI Editor库...');
+        
+        const script = document.createElement('script');
+        script.src = 'https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js';
+        
+        script.onload = function() {
+            logFunc('✅ TUI Editor库加载完成');
+            logFunc('📊 重新检查 toastui.Editor: ' + (toastui.Editor ? '✅存在' : '❌不存在'));
+            
+            // 第四步：尝试初始化编辑器
+            if (toastui.Editor && container) {
+                logFunc('🔍 === 第四步：尝试初始化编辑器 ===');
+                
+                try {
+                    // 清空容器
+                    container.innerHTML = '';
+                    logFunc('🧹 容器已清空');
+                    
+                    // 创建编辑器实例
+                    window.tuiEditor = new toastui.Editor({
+                        el: container,
+                        height: '400px',
+                        initialEditType: 'markdown',
+                        previewStyle: 'vertical',
+                        initialValue: '# 测试编辑器\n\n这是一个测试文档，用于验证TUI Editor是否正常工作。\n\n- 列表项1\n- 列表项2\n\n**粗体文本** 和 *斜体文本*'
+                    });
+                    
+                    logFunc('✅ TUI Editor实例创建成功！');
+                    logFunc('📊 编辑器类型: ' + typeof window.tuiEditor);
+                    logFunc('📊 getMarkdown方法: ' + (window.tuiEditor.getMarkdown ? '✅存在' : '❌不存在'));
+                    logFunc('📊 setMarkdown方法: ' + (window.tuiEditor.setMarkdown ? '✅存在' : '❌不存在'));
+                    
+                    // 测试编辑器功能
+                    try {
+                        const content = window.tuiEditor.getMarkdown();
+                        logFunc('📊 当前内容长度: ' + content.length);
+                        logFunc('📊 内容预览: ' + content.substring(0, 50) + '...');
+                    } catch(e) {
+                        logFunc('❌ 获取内容失败: ' + e.message);
+                    }
+                    
+                    // 设置全局变量
+                    window.isTuiEditorMode = true;
+                    logFunc('✅ 全局变量已设置: isTuiEditorMode = true');
+                    
+                    logFunc('🎉 TUI Editor初始化完全成功！');
+                    
+                } catch(e) {
+                    logFunc('❌ TUI Editor实例创建失败: ' + e.message);
+                    logFunc('❌ 错误详情: ' + e.stack);
+                }
+            } else {
+                logFunc('❌ 无法初始化：Editor构造函数或容器不存在');
+            }
+        };
+        
+        script.onerror = function() {
+            logFunc('❌ TUI Editor库加载失败');
+        };
+        
+        document.head.appendChild(script);
+        logFunc('📤 TUI Editor库加载请求已发送');
+        
+    } else {
+        logFunc('✅ TUI Editor库已存在，跳过加载');
+        
+        // 直接尝试初始化
+        if (container && !window.tuiEditor) {
+            logFunc('🔍 === 直接初始化编辑器 ===');
+            try {
+                container.innerHTML = '';
+                window.tuiEditor = new toastui.Editor({
+                    el: container,
+                    height: '400px',
+                    initialEditType: 'markdown',
+                    previewStyle: 'vertical',
+                    initialValue: '# 测试编辑器\n\n编辑器已成功初始化！'
+                });
+                logFunc('✅ 编辑器直接初始化成功');
+            } catch(e) {
+                logFunc('❌ 编辑器直接初始化失败: ' + e.message);
+            }
+        }
+    }
+    
+    // 第五步：检查按钮状态
+    logFunc('🔍 === 第五步：检查界面按钮 ===');
+    const editBtn = document.getElementById('edit-btn');
+    const previewBtn = document.getElementById('preview-btn');
+    const saveBtn = document.getElementById('save-btn');
+    logFunc('📊 编辑按钮: ' + (editBtn ? '✅存在' : '❌不存在'));
+    logFunc('📊 预览按钮: ' + (previewBtn ? '✅存在' : '❌不存在'));
+    logFunc('📊 保存按钮: ' + (saveBtn ? '✅存在' : '❌不存在'));
+    
+    logFunc('🎉 增强版调试完成！请等待库加载结果...');
+    
+    // 显示弹窗确认
+    alert('增强版调试已启动！\n- 检查了当前状态\n- 动态加载TUI Editor库\n- 尝试初始化编辑器\n\n请查看调试面板获取详细结果！');
+};
+
+console.log('✅ 增强版simpleDebug函数已定义');
+</script>

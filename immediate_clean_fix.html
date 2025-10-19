@@ -1,0 +1,209 @@
+<!-- 立即生效的终极清理方案 -->
+<script>
+// 立即执行 - 不等待任何延迟
+(function() {
+    console.log('🚨 立即执行终极清理方案');
+    
+    // 1. 立即禁用所有垃圾收集函数
+    const garbageFunctions = [
+        'preciseLoadRealContent',
+        'tryExtractFromTextarea', 
+        'tryExtractFromPreview',
+        'forceLoadRealContent',
+        'collectPageContent',
+        'extractAllTextContent',
+        'loadRealContent',
+        'getRealContent',
+        'extractContent',
+        'collectContent',
+        'gatherContent',
+        'findContent'
+    ];
+    
+    garbageFunctions.forEach(funcName => {
+        window[funcName] = function() {
+            console.log('🚫 已阻止垃圾收集函数: ' + funcName);
+            return '';
+        };
+    });
+    
+    // 2. 重写所有可能的内容更新函数
+    const originalAlert = window.alert;
+    window.alert = function(message) {
+        if (message && message.includes('内容长度') && message.includes('字符')) {
+            console.log('🚫 已阻止垃圾内容弹窗: ' + message.substring(0, 50));
+            return;
+        }
+        return originalAlert.call(this, message);
+    };
+    
+    // 3. 重写updateTuiEditorWithContent函数
+    window.updateTuiEditorWithContent = function(content) {
+        console.log('🚫 已阻止垃圾内容更新，内容长度: ' + (content ? content.length : 0));
+        return;
+    };
+    
+    // 4. 重写updateTuiEditorContent函数
+    window.updateTuiEditorContent = function(content) {
+        console.log('🚫 已阻止垃圾内容更新，内容长度: ' + (content ? content.length : 0));
+        return;
+    };
+    
+    // 5. 重写所有可能的TUI更新函数
+    window.updateOurContent = function(content, filePath) {
+        console.log('🔄 使用安全的内容更新: ' + filePath);
+        
+        // 只允许短内容和干净内容
+        if (!content || content.length > 5000) {
+            console.log('🚫 内容太长，拒绝更新: ' + (content ? content.length : 0));
+            return;
+        }
+        
+        // 检查垃圾模式
+        const garbagePatterns = [
+            '智能生成练习题目',
+            'add_circle_outline',
+            '💡 提示：您可以通过AI对话',
+            'function(',
+            'window.',
+            'document.',
+            'console.'
+        ];
+        
+        for (let pattern of garbagePatterns) {
+            if (content.includes(pattern)) {
+                console.log('🚫 检测到垃圾模式，拒绝更新: ' + pattern);
+                return;
+            }
+        }
+        
+        // 安全更新
+        if (window.tuiEditor) {
+            try {
+                window.tuiEditor.setMarkdown(content);
+                console.log('✅ 安全内容已更新: ' + content.length + ' 字符');
+            } catch(e) {
+                console.log('❌ 更新失败: ' + e.message);
+            }
+        }
+    };
+    
+    console.log('✅ 垃圾收集函数已全部禁用');
+})();
+
+// 立即清理TUI Editor
+function immediateCleanTui() {
+    console.log('🧹 立即清理TUI Editor...');
+    
+    // 等待TUI Editor初始化
+    let attempts = 0;
+    const cleanInterval = setInterval(() => {
+        attempts++;
+        
+        if (window.tuiEditor) {
+            try {
+                const content = window.tuiEditor.getMarkdown();
+                console.log('📊 检查内容长度: ' + content.length);
+                
+                // 如果内容太长或包含垃圾，立即清空
+                if (content.length > 1000 || 
+                    content.includes('智能生成练习题目') ||
+                    content.includes('add_circle_outline') ||
+                    content.includes('function(')) {
+                    
+                    console.log('🧹 清理垃圾内容...');
+                    window.tuiEditor.setMarkdown('');
+                    console.log('✅ TUI Editor已清空');
+                }
+                
+                clearInterval(cleanInterval);
+            } catch(e) {
+                console.log('❌ 清理失败: ' + e.message);
+            }
+        } else if (attempts > 20) {
+            console.log('❌ TUI Editor未找到，停止尝试');
+            clearInterval(cleanInterval);
+        }
+    }, 100); // 每100ms检查一次
+}
+
+// 立即执行清理
+immediateCleanTui();
+
+// 重写文件加载函数 - 只使用API
+window.loadOurFileContent = function(filePath) {
+    console.log('🔄 安全加载文件: ' + filePath);
+    
+    if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
+        console.log('❌ API不可用');
+        return;
+    }
+    
+    if (window.tuiEditor) {
+        try {
+            window.tuiEditor.setMarkdown('📄 加载中: ' + filePath.split('/').pop());
+        } catch(e) {}
+    }
+    
+    window.pybridge.loadMarkdownRaw(filePath, function(response) {
+        console.log('📥 API响应: ' + typeof response);
+        
+        try {
+            let content = '';
+            
+            if (typeof response === 'string') {
+                try {
+                    const result = JSON.parse(response);
+                    if (result.success && result.content) {
+                        content = result.content;
+                    }
+                } catch(e) {
+                    content = response;
+                }
+            }
+            
+            // 只允许合理长度的内容
+            if (content && content.length > 0 && content.length < 5000) {
+                window.updateOurContent(content, filePath);
+            } else {
+                console.log('❌ 内容长度异常: ' + (content ? content.length : 0));
+                if (window.tuiEditor) {
+                    window.tuiEditor.setMarkdown('❌ 文件内容异常\n\n📁 ' + filePath);
+                }
+            }
+            
+        } catch(e) {
+            console.log('❌ 处理响应失败: ' + e.message);
+        }
+    });
+};
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    console.log('🔥 安全调试模式');
+    
+    if (window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            console.log('📊 当前内容长度: ' + content.length);
+            console.log('📄 内容开头: ' + content.substring(0, 50));
+            
+            // 如果内容异常，立即清空
+            if (content.length > 1000) {
+                console.log('🧹 内容异常，立即清空');
+                window.tuiEditor.setMarkdown('');
+            }
+        } catch(e) {
+            console.log('❌ 调试失败: ' + e.message);
+        }
+    }
+    
+    // 如果有文件，重新加载
+    if (window.currentFilePath) {
+        console.log('🔄 重新加载文件: ' + window.currentFilePath);
+        window.loadOurFileContent(window.currentFilePath);
+    }
+};
+
+console.log('🚨 立即清理系统已激活');
+</script>

@@ -1,0 +1,179 @@
+<!-- 修复内容长度限制 -->
+<script>
+// 修复内容长度限制
+function fixContentLimit() {
+    console.log('🔧 修复内容长度限制...');
+    
+    // 重写安全的内容更新函数，放宽长度限制
+    window.updateOurContent = function(content, filePath) {
+        console.log('🔄 使用修复版内容更新: ' + filePath);
+        
+        // 只拒绝超长内容（可能是垃圾）
+        if (!content) {
+            console.log('❌ 内容为空');
+            return;
+        }
+        
+        if (content.length > 50000) { // 放宽到50000字符
+            console.log('🚫 内容过长，可能是垃圾: ' + content.length);
+            return;
+        }
+        
+        // 检查垃圾模式（更严格的检查）
+        const garbagePatterns = [
+            '智能生成练习题目，提升学习效果',
+            'add_circle_outline 💡 提示：您可以通过AI对话',
+            'function(',
+            'window.tuiEditor',
+            'document.querySelector',
+            'console.log',
+            'setTimeout(',
+            'setInterval(',
+            'addEventListener('
+        ];
+        
+        let isGarbage = false;
+        for (let pattern of garbagePatterns) {
+            if (content.includes(pattern)) {
+                console.log('🚫 检测到垃圾模式，拒绝更新: ' + pattern);
+                isGarbage = true;
+                break;
+            }
+        }
+        
+        if (isGarbage) {
+            return;
+        }
+        
+        // 安全更新
+        if (window.tuiEditor) {
+            try {
+                window.tuiEditor.setMarkdown(content);
+                console.log('✅ 内容已更新: ' + content.length + ' 字符');
+                console.log('📄 文件: ' + filePath);
+                console.log('📝 内容开头: ' + content.substring(0, 100) + '...');
+            } catch(e) {
+                console.log('❌ 更新失败: ' + e.message);
+            }
+        }
+    };
+    
+    // 重写文件加载函数，移除长度限制
+    window.loadOurFileContent = function(filePath) {
+        console.log('🔄 修复版-加载文件: ' + filePath);
+        
+        if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
+            console.log('❌ API不可用');
+            return;
+        }
+        
+        if (window.tuiEditor) {
+            try {
+                window.tuiEditor.setMarkdown('📄 加载中: ' + filePath.split('/').pop());
+            } catch(e) {}
+        }
+        
+        window.pybridge.loadMarkdownRaw(filePath, function(response) {
+            console.log('📥 API响应: ' + typeof response);
+            
+            try {
+                let content = '';
+                
+                if (typeof response === 'string') {
+                    try {
+                        const result = JSON.parse(response);
+                        if (result.success && result.content) {
+                            content = result.content;
+                        }
+                    } catch(e) {
+                        content = response;
+                    }
+                }
+                
+                // 移除严格的长度限制，只检查垃圾内容
+                if (content && content.length > 0) {
+                    window.updateOurContent(content, filePath);
+                } else {
+                    console.log('❌ 内容为空');
+                    if (window.tuiEditor) {
+                        window.tuiEditor.setMarkdown('❌ 文件内容为空\n\n📁 ' + filePath);
+                    }
+                }
+                
+            } catch(e) {
+                console.log('❌ 处理响应失败: ' + e.message);
+            }
+        });
+    };
+    
+    // 重写isCleanContent函数，放宽限制
+    window.isCleanContent = function(content) {
+        // 移除长度限制，只检查垃圾模式
+        const garbagePatterns = [
+            '智能生成练习题目，提升学习效果',
+            'add_circle_outline 💡 提示：您可以通过AI对话',
+            'function(',
+            'window.tuiEditor',
+            'document.querySelector',
+            'console.log'
+        ];
+        
+        // 检查垃圾模式
+        for (let pattern of garbagePatterns) {
+            if (content.includes(pattern)) {
+                return false;
+            }
+        }
+        
+        return true;
+    };
+    
+    console.log('✅ 内容长度限制已修复');
+}
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    console.log('🔥 修复版调试！');
+    
+    console.log('📊 系统状态：');
+    console.log('  - tuiEditor可用: ' + (window.tuiEditor ? '是' : '否'));
+    console.log('  - 当前文件: ' + (window.currentFilePath || '无'));
+    
+    if (window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            console.log('  - 内容长度: ' + content.length);
+            console.log('  - 内容开头: ' + content.substring(0, 50));
+            console.log('  - 内容是否干净: ' + (window.isCleanContent ? window.isCleanContent(content) : '未知'));
+        } catch(e) {
+            console.log('  - 获取内容失败: ' + e.message);
+        }
+    }
+    
+    // 如果有文件，重新加载
+    if (window.currentFilePath) {
+        console.log('🔄 重新加载文件: ' + window.currentFilePath);
+        window.loadOurFileContent(window.currentFilePath);
+    } else {
+        alert('请先选择一个文件');
+    }
+};
+
+// 立即执行修复
+fixContentLimit();
+
+// 如果当前有文件且TUI Editor为空，立即重新加载
+setTimeout(function() {
+    if (window.currentFilePath && window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            if (!content || content.includes('加载中:') || content.length < 10) {
+                console.log('🔄 检测到空内容，重新加载: ' + window.currentFilePath);
+                window.loadOurFileContent(window.currentFilePath);
+            }
+        } catch(e) {}
+    }
+}, 1000);
+
+console.log('🔧 内容长度限制修复系统已加载');
+</script>

@@ -1,0 +1,69 @@
+<!-- 修复调试按钮输出到自定义面板 -->
+<script>
+// 重新定义simpleDebug函数，输出到自定义调试面板
+window.simpleDebug = function() {
+    // 使用自定义调试面板的日志函数
+    const logFunc = window.addDebugLog || window.immediateLog || console.log;
+    
+    logFunc('🔥 调试按钮被点击！');
+    logFunc('📊 当前时间: ' + new Date().toLocaleTimeString());
+    
+    // 检查基本环境
+    logFunc('📊 typeof toastui: ' + typeof toastui);
+    logFunc('📊 tuiEditor存在: ' + (typeof tuiEditor !== 'undefined' && tuiEditor !== null));
+    logFunc('📊 isTuiEditorMode: ' + (typeof isTuiEditorMode !== 'undefined' ? isTuiEditorMode : '未定义'));
+    
+    // 检查容器
+    const container = document.getElementById('editor');
+    logFunc('📊 编辑器容器存在: ' + (container !== null));
+    if (container) {
+        logFunc('📊 容器尺寸: ' + container.offsetWidth + 'x' + container.offsetHeight);
+        logFunc('📊 容器可见: ' + (container.offsetParent !== null));
+        logFunc('📊 容器子元素数量: ' + container.children.length);
+    }
+    
+    // 检查按钮
+    const editBtn = document.getElementById('edit-btn');
+    const previewBtn = document.getElementById('preview-btn');
+    const saveBtn = document.getElementById('save-btn');
+    logFunc('📊 编辑按钮: ' + (editBtn ? '存在' : '不存在'));
+    logFunc('📊 预览按钮: ' + (previewBtn ? '存在' : '不存在'));
+    logFunc('📊 保存按钮: ' + (saveBtn ? '存在' : '不存在'));
+    
+    // 检查TUI Editor库状态
+    if (typeof toastui !== 'undefined') {
+        logFunc('✅ toastui对象存在');
+        logFunc('📊 toastui.Editor: ' + (toastui.Editor ? '存在' : '不存在'));
+        if (toastui.Editor) {
+            logFunc('📊 Editor构造函数类型: ' + typeof toastui.Editor);
+        }
+    } else {
+        logFunc('❌ toastui对象不存在');
+    }
+    
+    // 检查编辑器实例
+    if (typeof tuiEditor !== 'undefined' && tuiEditor) {
+        logFunc('🔍 === 编辑器实例检查 ===');
+        logFunc('📊 实例类型: ' + typeof tuiEditor);
+        logFunc('📊 getMarkdown方法: ' + (tuiEditor.getMarkdown ? '存在' : '不存在'));
+        logFunc('📊 setMarkdown方法: ' + (tuiEditor.setMarkdown ? '存在' : '不存在'));
+        
+        try {
+            const content = tuiEditor.getMarkdown();
+            logFunc('📊 当前内容长度: ' + content.length);
+            logFunc('📊 内容预览: ' + content.substring(0, 50) + '...');
+        } catch(e) {
+            logFunc('❌ 获取内容失败: ' + e.message);
+        }
+    } else {
+        logFunc('❌ tuiEditor实例不存在');
+    }
+    
+    logFunc('🎉 TUI Editor调试检查完成');
+    
+    // 显示弹窗确认
+    alert('调试信息已输出到调试面板！请查看右侧面板。');
+};
+
+console.log('✅ simpleDebug函数已重新定义，将输出到自定义调试面板');
+</script>

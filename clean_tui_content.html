@@ -1,0 +1,246 @@
+<!-- 清理TUI Editor垃圾内容 -->
+<script>
+// 清理TUI Editor垃圾内容
+function cleanTuiContent() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🧹 开始清理TUI Editor垃圾内容...');
+    
+    if (!window.tuiEditor) {
+        logFunc('❌ TUI Editor不可用');
+        return;
+    }
+    
+    try {
+        // 获取当前内容
+        const currentContent = window.tuiEditor.getMarkdown();
+        logFunc('📊 当前内容长度: ' + currentContent.length);
+        
+        // 检查是否包含垃圾内容
+        const garbagePatterns = [
+            '智能生成练习题目',
+            'add_circle_outline',
+            '💡 提示：您可以通过AI对话',
+            'function(',
+            'window.',
+            'document.',
+            'console.',
+            'setTimeout',
+            'setInterval',
+            'addEventListener',
+            'querySelector',
+            'getElementById',
+            'prototype',
+            'hasOwnProperty',
+            'undefined',
+            'null',
+            'true',
+            'false'
+        ];
+        
+        let isGarbage = false;
+        for (let pattern of garbagePatterns) {
+            if (currentContent.includes(pattern)) {
+                isGarbage = true;
+                logFunc('🗑️ 检测到垃圾内容模式: ' + pattern);
+                break;
+            }
+        }
+        
+        if (isGarbage || currentContent.length > 10000) {
+            logFunc('🧹 清理垃圾内容...');
+            
+            // 强制清空
+            window.tuiEditor.setMarkdown('');
+            logFunc('✅ TUI Editor已清空垃圾内容');
+            
+            // 如果有当前文件，重新加载正确内容
+            if (window.currentFilePath) {
+                logFunc('🔄 重新加载正确文件内容: ' + window.currentFilePath);
+                setTimeout(() => {
+                    loadCleanFileContent(window.currentFilePath);
+                }, 500);
+            }
+        } else {
+            logFunc('✅ 内容正常，无需清理');
+        }
+        
+    } catch(e) {
+        logFunc('❌ 清理内容失败: ' + e.message);
+    }
+}
+
+// 加载干净的文件内容
+function loadCleanFileContent(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔄 加载干净的文件内容: ' + filePath);
+    
+    if (!window.pybridge || !window.pybridge.loadMarkdownRaw) {
+        logFunc('❌ API不可用');
+        return;
+    }
+    
+    // 设置加载状态
+    try {
+        window.tuiEditor.setMarkdown('📄 正在重新加载: ' + filePath.split('/').pop());
+    } catch(e) {
+        logFunc('❌ 设置加载状态失败: ' + e.message);
+    }
+    
+    // 调用API
+    window.pybridge.loadMarkdownRaw(filePath, function(response) {
+        logFunc('📥 API响应: ' + typeof response);
+        
+        try {
+            let content = '';
+            
+            if (typeof response === 'string') {
+                // 尝试JSON解析
+                try {
+                    const result = JSON.parse(response);
+                    if (result.success && result.content) {
+                        content = result.content;
+                    }
+                } catch(e) {
+                    // 纯文本
+                    content = response;
+                }
+            }
+            
+            // 验证内容是否干净
+            if (content && content.trim() && isCleanContent(content)) {
+                window.tuiEditor.setMarkdown(content);
+                logFunc('✅ 干净内容已加载！');
+                logFunc('📊 内容长度: ' + content.length);
+                logFunc('📄 内容开头: ' + content.substring(0, 50) + '...');
+            } else {
+                logFunc('❌ 内容不干净或为空');
+                window.tuiEditor.setMarkdown('❌ 无法加载干净内容\n\n📁 ' + filePath);
+            }
+            
+        } catch(e) {
+            logFunc('❌ 处理响应失败: ' + e.message);
+            window.tuiEditor.setMarkdown('❌ 加载失败\n\n📁 ' + filePath);
+        }
+    });
+}
+
+// 检查内容是否干净
+function isCleanContent(content) {
+    const garbagePatterns = [
+        '智能生成练习题目',
+        'add_circle_outline',
+        '💡 提示：您可以通过AI对话',
+        'function(',
+        'window.',
+        'document.',
+        'console.',
+        'setTimeout',
+        'setInterval',
+        'addEventListener',
+        'querySelector',
+        'getElementById',
+        'prototype'
+    ];
+    
+    // 如果内容太长，可能包含垃圾
+    if (content.length > 5000) {
+        return false;
+    }
+    
+    // 检查垃圾模式
+    for (let pattern of garbagePatterns) {
+        if (content.includes(pattern)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// 禁用垃圾内容收集函数
+function disableGarbageCollectors() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🚫 禁用垃圾内容收集函数...');
+    
+    // 禁用可能的垃圾收集函数
+    const functionsToDisable = [
+        'preciseLoadRealContent',
+        'tryExtractFromTextarea',
+        'tryExtractFromPreview',
+        'forceLoadRealContent',
+        'collectPageContent',
+        'extractAllTextContent'
+    ];
+    
+    functionsToDisable.forEach(funcName => {
+        if (window[funcName]) {
+            window[funcName] = function() {
+                logFunc('🚫 已禁用垃圾收集函数: ' + funcName);
+            };
+        }
+    });
+    
+    logFunc('✅ 垃圾收集函数已禁用');
+}
+
+// 重写loadOurFileContent，确保只加载API内容
+window.loadOurFileContent = function(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔄 重写版-加载文件内容: ' + filePath);
+    
+    // 先清理当前内容
+    if (window.tuiEditor) {
+        try {
+            window.tuiEditor.setMarkdown('');
+        } catch(e) {}
+    }
+    
+    // 只使用API加载
+    loadCleanFileContent(filePath);
+};
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🧹 清理版调试！');
+    
+    // 先清理内容
+    cleanTuiContent();
+    
+    logFunc('📊 系统状态：');
+    logFunc('  - tuiEditor可用: ' + (window.tuiEditor ? '是' : '否'));
+    logFunc('  - 当前文件: ' + (window.currentFilePath || '无'));
+    
+    if (window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            logFunc('  - 内容长度: ' + content.length);
+            logFunc('  - 内容是否干净: ' + (isCleanContent(content) ? '是' : '否'));
+        } catch(e) {
+            logFunc('  - 获取内容失败: ' + e.message);
+        }
+    }
+};
+
+// 立即执行清理
+setTimeout(function() {
+    disableGarbageCollectors();
+    cleanTuiContent();
+}, 3000); // 3秒后执行，确保其他脚本已加载
+
+// 定期检查并清理垃圾内容
+setInterval(function() {
+    if (window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            if (content.length > 5000 || !isCleanContent(content)) {
+                const logFunc = window.addDebugLog || console.log;
+                logFunc('🧹 定期清理检测到垃圾内容');
+                cleanTuiContent();
+            }
+        } catch(e) {}
+    }
+}, 5000); // 每5秒检查一次
+
+console.log('🧹 TUI内容清理系统已加载');
+</script>

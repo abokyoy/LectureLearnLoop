@@ -1,0 +1,232 @@
+<!-- 直接API加载真实文件内容 -->
+<script>
+// 直接通过API加载文件内容
+function directApiLoadContent() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🎯 直接API加载文件内容...');
+    
+    if (!window.currentFilePath) {
+        logFunc('❌ 当前文件路径为空');
+        alert('❌ 请先选择一个文件');
+        return;
+    }
+    
+    if (!window.pybridge) {
+        logFunc('❌ pybridge不可用');
+        alert('❌ 系统未初始化完成，请稍后重试');
+        return;
+    }
+    
+    logFunc('🔄 通过pybridge.loadMarkdownContent加载: ' + window.currentFilePath);
+    
+    // 使用loadMarkdownContent方法
+    window.pybridge.loadMarkdownContent(window.currentFilePath, function(response) {
+        try {
+            logFunc('📥 收到API响应，类型: ' + typeof response);
+            logFunc('📄 响应内容: ' + (typeof response === 'string' ? response.substring(0, 200) + '...' : JSON.stringify(response).substring(0, 200) + '...'));
+            
+            let result = response;
+            
+            // 如果是字符串，尝试解析为JSON
+            if (typeof response === 'string') {
+                try {
+                    result = JSON.parse(response);
+                    logFunc('✅ JSON解析成功');
+                } catch(e) {
+                    logFunc('⚠️ JSON解析失败，当作纯文本处理: ' + e.message);
+                    // 如果解析失败，可能response本身就是文件内容
+                    if (response.length > 50 && !response.includes('智能生成练习题目')) {
+                        logFunc('✅ 检测到纯文本内容，直接使用');
+                        updateTuiEditorDirectly(response);
+                        return;
+                    }
+                }
+            }
+            
+            // 处理JSON格式响应
+            if (result && typeof result === 'object') {
+                if (result.success && result.content) {
+                    const content = result.content.trim();
+                    logFunc('✅ API返回成功，内容长度: ' + content.length);
+                    logFunc('📄 内容开头: ' + content.substring(0, 100) + '...');
+                    
+                    if (content.length > 0) {
+                        updateTuiEditorDirectly(content);
+                        return;
+                    }
+                } else {
+                    logFunc('❌ API返回失败: ' + (result.error || '未知错误'));
+                }
+            }
+            
+            // 如果以上都失败，尝试其他API方法
+            tryAlternativeApiMethods();
+            
+        } catch(e) {
+            logFunc('❌ 处理API响应失败: ' + e.message);
+            tryAlternativeApiMethods();
+        }
+    });
+}
+
+function tryAlternativeApiMethods() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔄 尝试备用API方法...');
+    
+    // 尝试loadMarkdownRaw方法
+    if (window.pybridge.loadMarkdownRaw) {
+        logFunc('🔄 尝试loadMarkdownRaw方法');
+        window.pybridge.loadMarkdownRaw(window.currentFilePath, function(response) {
+            try {
+                let result = response;
+                if (typeof response === 'string') {
+                    try {
+                        result = JSON.parse(response);
+                    } catch(e) {
+                        // 如果不是JSON，可能是纯文本
+                        if (response.length > 10 && !response.includes('智能生成练习题目')) {
+                            updateTuiEditorDirectly(response);
+                            return;
+                        }
+                    }
+                }
+                
+                if (result && result.success && result.content) {
+                    updateTuiEditorDirectly(result.content);
+                    return;
+                }
+                
+                logFunc('❌ loadMarkdownRaw也失败了');
+                showFailureMessage();
+                
+            } catch(e) {
+                logFunc('❌ loadMarkdownRaw处理失败: ' + e.message);
+                showFailureMessage();
+            }
+        });
+    } else {
+        logFunc('❌ loadMarkdownRaw方法不存在');
+        showFailureMessage();
+    }
+}
+
+function updateTuiEditorDirectly(content) {
+    const logFunc = window.addDebugLog || console.log;
+    
+    if (!window.tuiEditor) {
+        logFunc('❌ TUI Editor实例不存在');
+        alert('❌ TUI Editor未初始化\n请等待页面完全加载后重试');
+        return;
+    }
+    
+    if (!content || content.trim().length === 0) {
+        logFunc('❌ 内容为空');
+        alert('❌ 文件内容为空');
+        return;
+    }
+    
+    const cleanContent = content.trim();
+    
+    // 验证内容不是UI文本
+    if (cleanContent.includes('智能生成练习题目') || 
+        cleanContent.includes('提升学习效果') ||
+        cleanContent.includes('add_circle_outline')) {
+        logFunc('❌ 检测到UI文本，拒绝更新');
+        alert('❌ 获取到的仍然是页面UI文本，而不是文件内容\n\n请尝试：\n1. 重新选择文件\n2. 刷新页面\n3. 检查文件是否存在');
+        return;
+    }
+    
+    try {
+        // 更新TUI Editor内容
+        window.tuiEditor.setMarkdown(cleanContent);
+        logFunc('✅ TUI Editor内容已成功更新！');
+        logFunc('📊 内容长度: ' + cleanContent.length);
+        logFunc('📄 内容开头: ' + cleanContent.substring(0, 100) + '...');
+        
+        // 隐藏下方的重复内容
+        hideOriginalContentAreas();
+        
+        // 显示成功消息
+        alert('✅ 成功加载真实文件内容到TUI Editor！\n\n📄 文件: ' + window.currentFileName + '\n📊 内容长度: ' + cleanContent.length + ' 字符\n📝 内容开头: ' + cleanContent.substring(0, 50) + '...\n🎯 下方重复内容已隐藏');
+        
+    } catch(e) {
+        logFunc('❌ 更新TUI Editor失败: ' + e.message);
+        alert('❌ 更新TUI Editor失败: ' + e.message);
+    }
+}
+
+function hideOriginalContentAreas() {
+    const logFunc = window.addDebugLog || console.log;
+    
+    // 隐藏所有可能的原始内容区域
+    const selectorsToHide = [
+        '.markdown-content',
+        '.preview-content', 
+        '#preview-content',
+        '.note-content',
+        '.content-area'
+    ];
+    
+    let hiddenCount = 0;
+    selectorsToHide.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+            // 确保不是TUI Editor内部的元素
+            const tuiContainer = document.getElementById('editor');
+            if (tuiContainer && !tuiContainer.contains(element)) {
+                element.style.display = 'none';
+                hiddenCount++;
+            }
+        });
+    });
+    
+    logFunc('🙈 已隐藏 ' + hiddenCount + ' 个原始内容区域');
+}
+
+function showFailureMessage() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('❌ 所有API方法都失败了');
+    
+    alert('❌ 无法通过API获取文件内容\n\n可能的原因：\n1. 文件不存在或无法读取\n2. API方法不可用\n3. 文件路径错误\n\n请尝试：\n1. 重新选择文件\n2. 检查文件是否存在\n3. 刷新页面重试');
+}
+
+// 重新定义调试按钮
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 直接API加载调试！');
+    
+    logFunc('📊 当前状态检查：');
+    logFunc('  - currentFilePath: ' + (window.currentFilePath || '未设置'));
+    logFunc('  - currentFileName: ' + (window.currentFileName || '未设置'));
+    logFunc('  - pybridge可用: ' + (window.pybridge ? '是' : '否'));
+    logFunc('  - tuiEditor可用: ' + (window.tuiEditor ? '是' : '否'));
+    
+    if (window.tuiEditor) {
+        try {
+            const currentContent = window.tuiEditor.getMarkdown();
+            logFunc('  - 当前TUI Editor内容长度: ' + currentContent.length);
+            logFunc('  - 当前内容开头: ' + currentContent.substring(0, 100) + '...');
+        } catch(e) {
+            logFunc('  - 获取TUI Editor内容失败: ' + e.message);
+        }
+    }
+    
+    // 直接API加载
+    directApiLoadContent();
+};
+
+// 页面加载后自动执行
+setTimeout(function() {
+    if (window.tuiEditor && window.currentFilePath) {
+        const currentContent = window.tuiEditor.getMarkdown();
+        if (currentContent.includes('欢迎使用TUI Editor') || 
+            currentContent.includes('这是一个功能强大的Markdown编辑器') ||
+            currentContent.includes('智能生成练习题目')) {
+            console.log('🔄 检测到默认或错误内容，直接API加载真实内容...');
+            directApiLoadContent();
+        }
+    }
+}, 5000); // 5秒后自动执行
+
+console.log('✅ 直接API内容加载系统已就绪');
+</script>

@@ -1,0 +1,180 @@
+<!-- 修复API调用方法名 -->
+<script>
+// 修复API调用
+function fixApiCall() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔧 修复API调用方法名...');
+    
+    // 重写loadOurFileContent函数，使用正确的API方法
+    window.loadOurFileContent = function(filePath) {
+        const logFunc = window.addDebugLog || console.log;
+        logFunc('📄 修复版-加载文件内容: ' + filePath);
+        
+        if (!filePath) {
+            logFunc('❌ 文件路径为空');
+            return;
+        }
+        
+        if (!window.tuiEditor) {
+            logFunc('❌ TUI Editor不可用');
+            return;
+        }
+        
+        if (!window.pybridge) {
+            logFunc('❌ pybridge不可用');
+            return;
+        }
+        
+        // 设置加载状态
+        try {
+            window.tuiEditor.setMarkdown('📄 正在加载: ' + filePath.split('/').pop());
+            logFunc('✅ 设置加载状态');
+        } catch(e) {
+            logFunc('❌ 设置加载状态失败: ' + e.message);
+        }
+        
+        // 使用正确的API方法：loadMarkdownRaw
+        logFunc('🔄 调用正确的API: loadMarkdownRaw');
+        
+        if (window.pybridge.loadMarkdownRaw) {
+            window.pybridge.loadMarkdownRaw(filePath, function(response) {
+                logFunc('📥 loadMarkdownRaw响应类型: ' + typeof response);
+                logFunc('📄 响应内容预览: ' + (typeof response === 'string' ? response.substring(0, 100) : JSON.stringify(response).substring(0, 100)));
+                
+                try {
+                    let content = '';
+                    
+                    // 处理响应
+                    if (typeof response === 'string') {
+                        try {
+                            const result = JSON.parse(response);
+                            if (result.success && result.content) {
+                                content = result.content;
+                                logFunc('✅ JSON解析成功，内容长度: ' + content.length);
+                            } else {
+                                logFunc('❌ JSON响应失败: ' + (result.error || '未知错误'));
+                            }
+                        } catch(e) {
+                            // 可能是纯文本
+                            if (response.length > 10 && !isUIContent(response)) {
+                                content = response;
+                                logFunc('✅ 纯文本响应，内容长度: ' + content.length);
+                            } else {
+                                logFunc('❌ 无效文本响应');
+                            }
+                        }
+                    } else if (response && response.success && response.content) {
+                        content = response.content;
+                        logFunc('✅ 对象响应成功，内容长度: ' + content.length);
+                    }
+                    
+                    // 更新内容
+                    if (content && content.trim() && !isUIContent(content)) {
+                        updateOurContent(content, filePath);
+                    } else {
+                        logFunc('❌ 内容无效或为UI内容');
+                        showOurError(filePath);
+                    }
+                    
+                } catch(e) {
+                    logFunc('❌ 处理API响应失败: ' + e.message);
+                    showOurError(filePath);
+                }
+            });
+        } else {
+            logFunc('❌ loadMarkdownRaw方法也不存在');
+            
+            // 尝试loadMarkdownFile方法
+            if (window.pybridge.loadMarkdownFile) {
+                logFunc('🔄 尝试loadMarkdownFile方法');
+                window.pybridge.loadMarkdownFile(filePath, function(response) {
+                    logFunc('📥 loadMarkdownFile响应: ' + typeof response);
+                    
+                    // loadMarkdownFile返回HTML，我们需要原始内容
+                    // 但先试试能不能用
+                    if (response && typeof response === 'string' && response.length > 10) {
+                        try {
+                            window.tuiEditor.setMarkdown('⚠️ 使用HTML内容（非原始Markdown）\n\n' + response);
+                            logFunc('⚠️ 使用了HTML内容作为临时方案');
+                        } catch(e) {
+                            logFunc('❌ 设置HTML内容也失败: ' + e.message);
+                            showOurError(filePath);
+                        }
+                    } else {
+                        showOurError(filePath);
+                    }
+                });
+            } else {
+                logFunc('❌ 所有API方法都不存在');
+                showOurError(filePath);
+            }
+        }
+    };
+    
+    logFunc('✅ API调用方法已修复');
+}
+
+// 检查可用的API方法
+function checkAvailableApis() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔍 检查可用的API方法...');
+    
+    if (window.pybridge) {
+        logFunc('📊 pybridge对象可用，检查方法：');
+        logFunc('  - loadMarkdownRaw: ' + (typeof window.pybridge.loadMarkdownRaw));
+        logFunc('  - loadMarkdownFile: ' + (typeof window.pybridge.loadMarkdownFile));
+        logFunc('  - loadMarkdownContent: ' + (typeof window.pybridge.loadMarkdownContent));
+        
+        // 列出所有可用方法
+        const methods = [];
+        for (let prop in window.pybridge) {
+            if (typeof window.pybridge[prop] === 'function') {
+                methods.push(prop);
+            }
+        }
+        logFunc('📋 所有可用方法: ' + methods.join(', '));
+    } else {
+        logFunc('❌ pybridge对象不可用');
+    }
+}
+
+// 重写调试按钮，包含API检查
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 修复版调试！');
+    
+    // 检查API方法
+    checkAvailableApis();
+    
+    logFunc('📊 系统状态：');
+    logFunc('  - tuiEditor可用: ' + (window.tuiEditor ? '是' : '否'));
+    logFunc('  - pybridge可用: ' + (window.pybridge ? '是' : '否'));
+    logFunc('  - 当前文件: ' + (window.currentFilePath || '无'));
+    
+    if (window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            logFunc('  - 内容长度: ' + content.length);
+            logFunc('  - 内容开头: ' + content.substring(0, 50) + '...');
+        } catch(e) {
+            logFunc('  - 获取内容失败: ' + e.message);
+        }
+    }
+    
+    // 强制重新加载
+    if (window.currentFilePath) {
+        logFunc('🔄 使用修复版方法重新加载...');
+        window.loadOurFileContent(window.currentFilePath);
+    } else {
+        alert('请先选择一个文件');
+    }
+};
+
+// 立即执行修复
+setTimeout(function() {
+    fixApiCall();
+    checkAvailableApis();
+}, 2000);
+
+console.log('🔧 API调用修复系统已加载');
+</script>

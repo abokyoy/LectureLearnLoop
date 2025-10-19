@@ -1,0 +1,257 @@
+<!-- 精确加载笔记内容到TUI Editor -->
+<script>
+// 精确获取真实笔记内容
+function preciseLoadRealContent() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🎯 精确加载真实笔记内容...');
+    
+    // 1. 优先通过API获取原始文件内容
+    if (window.currentFilePath && window.pybridge) {
+        logFunc('🔄 通过API获取原始文件内容: ' + window.currentFilePath);
+        
+        // 使用loadMarkdownContent方法获取文件内容
+        window.pybridge.loadMarkdownContent(window.currentFilePath, function(response) {
+            try {
+                let result = response;
+                if (typeof response === 'string') {
+                    result = JSON.parse(response);
+                }
+                
+                if (result.success && result.content) {
+                    const apiContent = result.content.trim();
+                    logFunc('✅ API获取成功，内容长度: ' + apiContent.length);
+                    logFunc('📄 内容开头: ' + apiContent.substring(0, 100) + '...');
+                    
+                    // 验证内容是否为真实笔记内容
+                    if (isRealNoteContent(apiContent)) {
+                        updateTuiEditorWithContent(apiContent);
+                        return;
+                    } else {
+                        logFunc('⚠️ API返回的不是真实笔记内容，尝试其他方法');
+                    }
+                } else {
+                    logFunc('❌ API获取失败: ' + (result.error || '未知错误'));
+                }
+            } catch(e) {
+                logFunc('❌ 解析API响应失败: ' + e.message);
+            }
+            
+            // API失败，尝试其他方法
+            tryExtractFromTextarea();
+        });
+        return;
+    }
+    
+    // 2. 如果没有API，直接尝试从textarea获取
+    tryExtractFromTextarea();
+}
+
+function tryExtractFromTextarea() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔍 尝试从textarea获取内容...');
+    
+    // 查找所有textarea元素
+    const textareas = document.querySelectorAll('textarea');
+    logFunc('📊 找到 ' + textareas.length + ' 个textarea元素');
+    
+    for (let i = 0; i < textareas.length; i++) {
+        const textarea = textareas[i];
+        const content = textarea.value;
+        
+        logFunc('📝 检查textarea[' + i + '], 内容长度: ' + content.length);
+        if (content.length > 0) {
+            logFunc('📄 textarea[' + i + '] 内容开头: ' + content.substring(0, 100) + '...');
+        }
+        
+        // 检查是否是TUI Editor内部的textarea
+        const tuiContainer = document.getElementById('editor');
+        if (tuiContainer && tuiContainer.contains(textarea)) {
+            logFunc('⚠️ textarea[' + i + '] 是TUI Editor内部元素，跳过');
+            continue;
+        }
+        
+        if (content && content.trim() && isRealNoteContent(content)) {
+            logFunc('✅ 找到真实笔记内容，来源: textarea[' + i + ']');
+            updateTuiEditorWithContent(content.trim());
+            return;
+        }
+    }
+    
+    logFunc('❌ 未从textarea找到真实内容，尝试其他方法');
+    tryExtractFromPreview();
+}
+
+function tryExtractFromPreview() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔍 尝试从预览区域获取内容...');
+    
+    // 查找预览相关的元素
+    const previewSelectors = [
+        '#preview-content',
+        '.preview-content',
+        '.markdown-content',
+        '.note-content'
+    ];
+    
+    for (let selector of previewSelectors) {
+        const elements = document.querySelectorAll(selector);
+        logFunc('📊 查找 ' + selector + ', 找到 ' + elements.length + ' 个元素');
+        
+        for (let element of elements) {
+            // 确保不是TUI Editor内部的元素
+            const tuiContainer = document.getElementById('editor');
+            if (tuiContainer && tuiContainer.contains(element)) {
+                logFunc('⚠️ ' + selector + ' 是TUI Editor内部元素，跳过');
+                continue;
+            }
+            
+            const content = element.textContent || element.innerText || '';
+            logFunc('📝 检查 ' + selector + ', 内容长度: ' + content.length);
+            
+            if (content.length > 0) {
+                logFunc('📄 ' + selector + ' 内容开头: ' + content.substring(0, 100) + '...');
+                
+                if (isRealNoteContent(content)) {
+                    logFunc('✅ 找到真实笔记内容，来源: ' + selector);
+                    updateTuiEditorWithContent(content.trim());
+                    return;
+                }
+            }
+        }
+    }
+    
+    logFunc('❌ 未找到真实笔记内容');
+    alert('❌ 无法获取真实笔记内容\n\n请尝试：\n1. 重新选择文件\n2. 刷新页面\n3. 检查文件是否存在');
+}
+
+function isRealNoteContent(content) {
+    // 检查内容是否为真实笔记内容
+    const excludePatterns = [
+        '欢迎使用TUI Editor',
+        '这是一个功能强大的Markdown编辑器',
+        '智能生成练习题目',
+        '提升学习效果',
+        '💡 提示：您可以通过AI对话',
+        'add_circle_outline',
+        '实时预览（右侧面板）',
+        '丰富的工具栏',
+        '表格编辑',
+        '代码高亮',
+        '图片插入',
+        '链接管理'
+    ];
+    
+    // 如果内容包含这些模式，说明不是真实笔记内容
+    for (let pattern of excludePatterns) {
+        if (content.includes(pattern)) {
+            return false;
+        }
+    }
+    
+    // 如果内容太短，可能不是真实内容
+    if (content.length < 10) {
+        return false;
+    }
+    
+    return true;
+}
+
+function updateTuiEditorWithContent(content) {
+    const logFunc = window.addDebugLog || console.log;
+    
+    if (!window.tuiEditor) {
+        logFunc('❌ TUI Editor实例不存在');
+        alert('❌ TUI Editor未初始化\n请等待页面完全加载后重试');
+        return;
+    }
+    
+    if (!content || !content.trim()) {
+        logFunc('❌ 内容为空');
+        alert('❌ 笔记内容为空');
+        return;
+    }
+    
+    try {
+        // 更新TUI Editor内容
+        window.tuiEditor.setMarkdown(content);
+        logFunc('✅ TUI Editor内容已更新！');
+        logFunc('📊 新内容长度: ' + content.length);
+        logFunc('📄 内容开头: ' + content.substring(0, 100) + '...');
+        
+        // 隐藏下方的重复内容
+        hideOriginalContentAreas();
+        
+        // 显示成功消息
+        alert('✅ 成功加载真实笔记内容到TUI Editor！\n\n📄 内容长度: ' + content.length + ' 字符\n📝 内容开头: ' + content.substring(0, 50) + '...\n🎯 下方重复内容已隐藏');
+        
+    } catch(e) {
+        logFunc('❌ 更新TUI Editor失败: ' + e.message);
+        alert('❌ 更新TUI Editor失败: ' + e.message);
+    }
+}
+
+function hideOriginalContentAreas() {
+    const logFunc = window.addDebugLog || console.log;
+    
+    // 隐藏所有可能的原始内容区域
+    const selectorsToHide = [
+        '.markdown-content',
+        '.preview-content', 
+        '#preview-content',
+        '.note-content',
+        '.content-area'
+    ];
+    
+    let hiddenCount = 0;
+    selectorsToHide.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+            // 确保不是TUI Editor内部的元素
+            const tuiContainer = document.getElementById('editor');
+            if (tuiContainer && !tuiContainer.contains(element)) {
+                element.style.display = 'none';
+                hiddenCount++;
+            }
+        });
+    });
+    
+    logFunc('🙈 已隐藏 ' + hiddenCount + ' 个原始内容区域');
+}
+
+// 重新定义调试按钮
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 精确加载真实内容调试！');
+    
+    // 检查TUI Editor状态
+    if (window.tuiEditor) {
+        try {
+            const currentContent = window.tuiEditor.getMarkdown();
+            logFunc('📊 当前TUI Editor内容长度: ' + currentContent.length);
+            logFunc('📄 当前内容预览: ' + currentContent.substring(0, 100) + '...');
+            
+            // 精确重新加载真实内容
+            preciseLoadRealContent();
+            
+        } catch(e) {
+            logFunc('❌ 检查TUI Editor失败: ' + e.message);
+        }
+    } else {
+        logFunc('❌ TUI Editor实例不存在');
+        alert('❌ TUI Editor未初始化\n请等待页面完全加载后重试');
+    }
+};
+
+// 页面加载后自动执行
+setTimeout(function() {
+    if (window.tuiEditor) {
+        const currentContent = window.tuiEditor.getMarkdown();
+        if (currentContent.includes('欢迎使用TUI Editor') || currentContent.includes('这是一个功能强大的Markdown编辑器')) {
+            console.log('🔄 检测到默认内容，精确加载真实内容...');
+            preciseLoadRealContent();
+        }
+    }
+}, 4000); // 4秒后自动执行
+
+console.log('✅ 精确内容加载系统已就绪');
+</script>

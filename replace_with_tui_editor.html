@@ -1,0 +1,204 @@
+<!-- 完全替换为TUI Editor系统 -->
+<script>
+// 完全替换现有编辑器为TUI Editor
+function replaceWithTuiEditor() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔄 开始替换为TUI Editor系统...');
+    
+    // 1. 安装localStorage模拟器
+    try {
+        localStorage.setItem('test', 'test');
+        localStorage.removeItem('test');
+        logFunc('✅ localStorage可用');
+    } catch(e) {
+        logFunc('🔧 安装localStorage模拟器...');
+        const mockStorage = {
+            _data: {},
+            setItem: function(key, value) { this._data[key] = String(value); },
+            getItem: function(key) { return this._data.hasOwnProperty(key) ? this._data[key] : null; },
+            removeItem: function(key) { delete this._data[key]; },
+            clear: function() { this._data = {}; },
+            key: function(index) { const keys = Object.keys(this._data); return keys[index] || null; },
+            get length() { return Object.keys(this._data).length; }
+        };
+        Object.defineProperty(window, 'localStorage', { value: mockStorage, writable: false });
+        Object.defineProperty(window, 'sessionStorage', { value: mockStorage, writable: false });
+        logFunc('✅ localStorage模拟器已安装');
+    }
+    
+    // 2. 确保TUI Editor库已加载
+    if (!window.toastui || !window.toastui.Editor) {
+        logFunc('🔄 加载TUI Editor库...');
+        const script = document.createElement('script');
+        script.src = 'https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js';
+        script.onload = function() {
+            logFunc('✅ TUI Editor库加载完成');
+            initializeTuiEditor();
+        };
+        script.onerror = function() {
+            logFunc('❌ TUI Editor库加载失败');
+        };
+        document.head.appendChild(script);
+    } else {
+        logFunc('✅ TUI Editor库已存在');
+        initializeTuiEditor();
+    }
+    
+    function initializeTuiEditor() {
+        // 3. 找到编辑器容器
+        const container = document.getElementById('editor');
+        if (!container) {
+            logFunc('❌ 找不到编辑器容器');
+            return;
+        }
+        
+        logFunc('✅ 找到编辑器容器');
+        
+        // 4. 清空容器并设置样式
+        container.innerHTML = '';
+        container.style.height = '500px';
+        container.style.width = '100%';
+        container.style.border = '1px solid #ddd';
+        container.style.borderRadius = '4px';
+        
+        // 5. 获取当前文件内容
+        let initialContent = '# 欢迎使用TUI Editor\n\n这是一个功能强大的Markdown编辑器。\n\n## 功能特点\n\n- 实时预览\n- 语法高亮\n- 表格编辑\n- 代码块支持\n\n开始编辑你的文档吧！';
+        
+        // 尝试从现有编辑器获取内容
+        const existingTextarea = document.querySelector('textarea');
+        if (existingTextarea && existingTextarea.value.trim()) {
+            initialContent = existingTextarea.value;
+            logFunc('✅ 从现有编辑器获取内容，长度: ' + initialContent.length);
+        }
+        
+        try {
+            // 6. 创建TUI Editor实例
+            window.tuiEditor = new toastui.Editor({
+                el: container,
+                height: '500px',
+                initialEditType: 'markdown',
+                previewStyle: 'vertical', // 垂直分割：左边编辑，右边预览
+                initialValue: initialContent,
+                // 工具栏配置
+                toolbarItems: [
+                    ['heading', 'bold', 'italic', 'strike'],
+                    ['hr', 'quote'],
+                    ['ul', 'ol', 'task', 'indent', 'outdent'],
+                    ['table', 'image', 'link'],
+                    ['code', 'codeblock'],
+                    ['scrollSync']
+                ],
+                // 插件配置
+                plugins: [],
+                // 事件处理
+                events: {
+                    change: function() {
+                        // 标记为已修改
+                        if (window.markAsModified) {
+                            window.markAsModified();
+                        }
+                        logFunc('📝 内容已修改');
+                    }
+                }
+            });
+            
+            logFunc('✅ TUI Editor创建成功！');
+            
+            // 7. 隐藏原有的编辑/预览按钮，因为TUI Editor自带
+            const editBtn = document.getElementById('edit-btn');
+            const previewBtn = document.getElementById('preview-btn');
+            if (editBtn) {
+                editBtn.style.display = 'none';
+                logFunc('✅ 隐藏原编辑按钮');
+            }
+            if (previewBtn) {
+                previewBtn.style.display = 'none';
+                logFunc('✅ 隐藏原预览按钮');
+            }
+            
+            // 8. 修改保存按钮功能
+            const saveBtn = document.getElementById('save-btn');
+            if (saveBtn) {
+                // 移除原有事件监听器
+                const newSaveBtn = saveBtn.cloneNode(true);
+                saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+                
+                // 添加新的保存功能
+                newSaveBtn.addEventListener('click', function() {
+                    if (window.tuiEditor) {
+                        const content = window.tuiEditor.getMarkdown();
+                        logFunc('💾 保存TUI Editor内容，长度: ' + content.length);
+                        
+                        // 调用原有的保存函数，但传递TUI Editor的内容
+                        if (window.pybridge && window.pybridge.saveMarkdownContent) {
+                            const currentPath = window.currentFilePath || 'untitled.md';
+                            window.pybridge.saveMarkdownContent(currentPath, content, function(result) {
+                                logFunc('✅ 文件保存结果: ' + result);
+                                if (result.includes('成功')) {
+                                    // 重置修改状态
+                                    if (window.resetModifiedState) {
+                                        window.resetModifiedState();
+                                    }
+                                }
+                            });
+                        }
+                    }
+                });
+                logFunc('✅ 保存按钮功能已更新');
+            }
+            
+            // 9. 设置全局变量
+            window.isTuiEditorMode = true;
+            window.currentEditor = 'tui';
+            
+            // 10. 添加切换模式的功能
+            window.switchToMarkdownMode = function() {
+                if (window.tuiEditor) {
+                    window.tuiEditor.changeMode('markdown');
+                    logFunc('📝 切换到Markdown编辑模式');
+                }
+            };
+            
+            window.switchToWysiwygMode = function() {
+                if (window.tuiEditor) {
+                    window.tuiEditor.changeMode('wysiwyg');
+                    logFunc('📝 切换到所见即所得模式');
+                }
+            };
+            
+            logFunc('🎉 TUI Editor系统替换完成！');
+            logFunc('📋 可用功能:');
+            logFunc('  - 实时预览（右侧面板）');
+            logFunc('  - 丰富的工具栏');
+            logFunc('  - 表格编辑');
+            logFunc('  - 代码高亮');
+            logFunc('  - 图片插入');
+            logFunc('  - 链接管理');
+            
+            // 显示成功消息
+            alert('🎉 TUI Editor替换成功！\n\n✅ 左侧：Markdown编辑\n✅ 右侧：实时预览\n✅ 工具栏：丰富功能\n✅ 保存功能：已更新\n\n现在可以开始使用强大的TUI Editor了！');
+            
+        } catch(e) {
+            logFunc('❌ TUI Editor创建失败: ' + e.message);
+            logFunc('❌ 错误详情: ' + e.stack);
+        }
+    }
+}
+
+// 重新定义调试按钮功能
+window.simpleDebug = function() {
+    replaceWithTuiEditor();
+};
+
+// 页面加载完成后自动替换
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(replaceWithTuiEditor, 1000);
+});
+
+// 如果页面已经加载完成，立即执行
+if (document.readyState === 'complete') {
+    setTimeout(replaceWithTuiEditor, 1000);
+}
+
+console.log('✅ TUI Editor替换系统已准备就绪');
+</script>

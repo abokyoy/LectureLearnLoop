@@ -1,0 +1,318 @@
+<!-- 完全重写TUI Editor初始化和文件加载系统 -->
+<script>
+// 完全重写TUI Editor系统
+function completelyRewriteTuiSystem() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 完全重写TUI Editor系统...');
+    
+    // 等待TUI Editor完全初始化
+    if (!window.tuiEditor) {
+        logFunc('⏳ 等待TUI Editor初始化...');
+        setTimeout(completelyRewriteTuiSystem, 1000);
+        return;
+    }
+    
+    // 1. 强制清空TUI Editor内容
+    try {
+        window.tuiEditor.setMarkdown('');
+        logFunc('✅ TUI Editor已清空');
+    } catch(e) {
+        logFunc('❌ 清空TUI Editor失败: ' + e.message);
+    }
+    
+    // 2. 重写文件选择监听
+    setupCompleteFileListener();
+    
+    // 3. 如果当前已有选中文件，立即加载
+    if (window.currentFilePath) {
+        logFunc('📁 检测到已选中文件: ' + window.currentFilePath);
+        setTimeout(() => {
+            forceLoadCurrentFile();
+        }, 1000);
+    }
+    
+    logFunc('✅ TUI Editor系统重写完成');
+}
+
+// 设置完整的文件监听系统
+function setupCompleteFileListener() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔧 设置完整文件监听系统...');
+    
+    // 监听jsTree的文件选择事件
+    if (window.jQuery && window.jQuery('#file-tree').jstree) {
+        window.jQuery('#file-tree').on('select_node.jstree', function(e, data) {
+            const node = data.node;
+            if (node && node.original && node.original.path) {
+                const filePath = node.original.path;
+                logFunc('🖱️ jsTree文件选择: ' + filePath);
+                
+                // 延迟加载，确保路径变量已更新
+                setTimeout(() => {
+                    forceLoadFileContent(filePath);
+                }, 500);
+            }
+        });
+        logFunc('✅ jsTree事件监听已设置');
+    }
+    
+    // 监听全局变量变化
+    let lastPath = window.currentFilePath || '';
+    setInterval(() => {
+        if (window.currentFilePath && window.currentFilePath !== lastPath) {
+            logFunc('📁 检测到文件路径变化: ' + lastPath + ' -> ' + window.currentFilePath);
+            lastPath = window.currentFilePath;
+            forceLoadFileContent(window.currentFilePath);
+        }
+    }, 500);
+    
+    logFunc('✅ 文件监听系统设置完成');
+}
+
+// 强制加载当前文件
+function forceLoadCurrentFile() {
+    if (window.currentFilePath) {
+        forceLoadFileContent(window.currentFilePath);
+    } else {
+        const logFunc = window.addDebugLog || console.log;
+        logFunc('❌ 没有当前文件路径');
+    }
+}
+
+// 强制加载文件内容
+function forceLoadFileContent(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🚀 强制加载文件内容: ' + filePath);
+    
+    if (!filePath) {
+        logFunc('❌ 文件路径为空');
+        return;
+    }
+    
+    if (!window.tuiEditor) {
+        logFunc('❌ TUI Editor不可用');
+        return;
+    }
+    
+    if (!window.pybridge) {
+        logFunc('❌ pybridge不可用');
+        return;
+    }
+    
+    // 设置加载状态
+    try {
+        window.tuiEditor.setMarkdown('🔄 正在加载文件内容...\n\n📁 文件: ' + filePath);
+        logFunc('✅ 已设置加载状态');
+    } catch(e) {
+        logFunc('❌ 设置加载状态失败: ' + e.message);
+    }
+    
+    // 尝试多种API方法
+    tryLoadWithMultipleApis(filePath);
+}
+
+// 尝试多种API方法加载文件
+function tryLoadWithMultipleApis(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    
+    // 方法1: loadMarkdownContent
+    logFunc('🔄 尝试方法1: loadMarkdownContent');
+    
+    if (window.pybridge.loadMarkdownContent) {
+        window.pybridge.loadMarkdownContent(filePath, function(response) {
+            logFunc('📥 loadMarkdownContent响应: ' + typeof response);
+            
+            if (handleApiResponse(response, filePath, 'loadMarkdownContent')) {
+                return; // 成功了就不尝试其他方法
+            }
+            
+            // 失败了尝试方法2
+            tryMethod2(filePath);
+        });
+    } else {
+        tryMethod2(filePath);
+    }
+}
+
+// 尝试方法2: loadMarkdownRaw
+function tryMethod2(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔄 尝试方法2: loadMarkdownRaw');
+    
+    if (window.pybridge.loadMarkdownRaw) {
+        window.pybridge.loadMarkdownRaw(filePath, function(response) {
+            logFunc('📥 loadMarkdownRaw响应: ' + typeof response);
+            
+            if (handleApiResponse(response, filePath, 'loadMarkdownRaw')) {
+                return; // 成功了就不尝试其他方法
+            }
+            
+            // 失败了尝试方法3
+            tryMethod3(filePath);
+        });
+    } else {
+        tryMethod3(filePath);
+    }
+}
+
+// 尝试方法3: 直接文件读取
+function tryMethod3(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔄 尝试方法3: 直接文件读取');
+    
+    // 如果有其他文件读取方法，在这里尝试
+    // 否则显示失败信息
+    showLoadFailure(filePath);
+}
+
+// 处理API响应
+function handleApiResponse(response, filePath, methodName) {
+    const logFunc = window.addDebugLog || console.log;
+    
+    try {
+        let content = '';
+        
+        // 处理字符串响应
+        if (typeof response === 'string') {
+            try {
+                const result = JSON.parse(response);
+                if (result.success && result.content) {
+                    content = result.content;
+                    logFunc('✅ ' + methodName + ' JSON解析成功，内容长度: ' + content.length);
+                } else {
+                    logFunc('❌ ' + methodName + ' JSON响应失败: ' + (result.error || '未知错误'));
+                    return false;
+                }
+            } catch(e) {
+                // 可能是纯文本
+                if (response.length > 10 && !isUIContent(response)) {
+                    content = response;
+                    logFunc('✅ ' + methodName + ' 纯文本响应，内容长度: ' + content.length);
+                } else {
+                    logFunc('❌ ' + methodName + ' 无效文本响应');
+                    return false;
+                }
+            }
+        }
+        // 处理对象响应
+        else if (response && typeof response === 'object') {
+            if (response.success && response.content) {
+                content = response.content;
+                logFunc('✅ ' + methodName + ' 对象响应成功，内容长度: ' + content.length);
+            } else {
+                logFunc('❌ ' + methodName + ' 对象响应失败: ' + (response.error || '未知错误'));
+                return false;
+            }
+        } else {
+            logFunc('❌ ' + methodName + ' 响应格式不支持');
+            return false;
+        }
+        
+        // 验证内容
+        if (content && content.trim() && !isUIContent(content)) {
+            updateTuiEditorContent(content, filePath);
+            return true;
+        } else {
+            logFunc('❌ ' + methodName + ' 内容无效或为UI内容');
+            return false;
+        }
+        
+    } catch(e) {
+        logFunc('❌ ' + methodName + ' 处理响应失败: ' + e.message);
+        return false;
+    }
+}
+
+// 检查是否为UI内容
+function isUIContent(content) {
+    const uiPatterns = [
+        '欢迎使用TUI Editor',
+        '这是一个功能强大的Markdown编辑器',
+        '智能生成练习题目',
+        '提升学习效果',
+        'add_circle_outline',
+        '实时预览（右侧面板）',
+        '丰富的工具栏'
+    ];
+    
+    for (let pattern of uiPatterns) {
+        if (content.includes(pattern)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 更新TUI Editor内容
+function updateTuiEditorContent(content, filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    
+    try {
+        window.tuiEditor.setMarkdown(content);
+        logFunc('✅ TUI Editor内容已更新成功！');
+        logFunc('📁 文件: ' + filePath);
+        logFunc('📊 内容长度: ' + content.length);
+        logFunc('📄 内容开头: ' + content.substring(0, 100) + '...');
+        
+        // 显示成功提示
+        if (window.addDebugLog) {
+            window.addDebugLog('🎉 文件加载成功: ' + (filePath.split('/').pop() || filePath));
+        }
+        
+    } catch(e) {
+        logFunc('❌ 更新TUI Editor失败: ' + e.message);
+        showLoadFailure(filePath);
+    }
+}
+
+// 显示加载失败
+function showLoadFailure(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('❌ 所有方法都失败了');
+    
+    try {
+        window.tuiEditor.setMarkdown('❌ 加载文件失败\n\n📁 文件: ' + filePath + '\n\n💡 请尝试：\n- 重新选择文件\n- 刷新页面\n- 检查文件是否存在');
+    } catch(e) {
+        logFunc('❌ 设置失败信息也失败: ' + e.message);
+    }
+}
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 完整TUI调试！');
+    
+    logFunc('📊 系统状态：');
+    logFunc('  - tuiEditor: ' + (window.tuiEditor ? '可用' : '不可用'));
+    logFunc('  - pybridge: ' + (window.pybridge ? '可用' : '不可用'));
+    logFunc('  - currentFilePath: ' + (window.currentFilePath || '未设置'));
+    logFunc('  - currentFileName: ' + (window.currentFileName || '未设置'));
+    
+    if (window.tuiEditor) {
+        try {
+            const content = window.tuiEditor.getMarkdown();
+            logFunc('  - 当前内容长度: ' + content.length);
+            logFunc('  - 内容开头: ' + content.substring(0, 50) + '...');
+            logFunc('  - 是否为UI内容: ' + (isUIContent(content) ? '是' : '否'));
+        } catch(e) {
+            logFunc('  - 获取内容失败: ' + e.message);
+        }
+    }
+    
+    // 强制重新加载当前文件
+    if (window.currentFilePath) {
+        logFunc('🔄 强制重新加载当前文件...');
+        forceLoadFileContent(window.currentFilePath);
+    } else {
+        logFunc('❌ 没有选中的文件');
+        alert('请先选择一个文件');
+    }
+};
+
+// 页面加载后立即执行
+setTimeout(function() {
+    completelyRewriteTuiSystem();
+}, 2000); // 2秒后执行，确保TUI Editor已初始化
+
+console.log('✅ 完整TUI重写系统已加载');
+</script>

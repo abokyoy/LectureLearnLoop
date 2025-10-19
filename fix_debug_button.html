@@ -1,0 +1,33 @@
+<!-- 临时修复：在页面底部添加简单调试函数 -->
+<script>
+// 简单调试函数 - 直接定义，避免语法错误
+window.simpleDebug = function() {
+    console.log('🔥 调试按钮被点击！');
+    console.log('📊 当前时间: ' + new Date().toLocaleTimeString());
+    
+    // 检查基本环境
+    console.log('📊 typeof toastui: ' + typeof toastui);
+    console.log('📊 tuiEditor存在: ' + (typeof tuiEditor !== 'undefined' && tuiEditor !== null));
+    
+    // 检查容器
+    const container = document.getElementById('editor');
+    console.log('📊 编辑器容器存在: ' + (container !== null));
+    if (container) {
+        console.log('📊 容器尺寸: ' + container.offsetWidth + 'x' + container.offsetHeight);
+    }
+    
+    // 检查按钮
+    const editBtn = document.getElementById('edit-btn');
+    const previewBtn = document.getElementById('preview-btn');
+    console.log('📊 编辑按钮: ' + (editBtn ? '存在' : '不存在'));
+    console.log('📊 预览按钮: ' + (previewBtn ? '存在' : '不存在'));
+    
+    console.log('🎉 简单调试完成');
+    
+    // 显示弹窗确认
+    alert('调试信息已输出到控制台，请按F12查看！');
+};
+
+// 确保函数立即可用
+console.log('✅ simpleDebug函数已定义');
+</script>

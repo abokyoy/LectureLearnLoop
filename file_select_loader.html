@@ -1,0 +1,183 @@
+<!-- 文件选择时自动加载内容系统 -->
+<script>
+// 文件选择时自动加载内容
+function setupFileSelectLoader() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔧 设置文件选择自动加载系统...');
+    
+    // 监听文件路径变化
+    let lastFilePath = '';
+    
+    // 定期检查文件路径变化
+    setInterval(function() {
+        if (window.currentFilePath && window.currentFilePath !== lastFilePath) {
+            logFunc('📁 检测到文件切换: ' + lastFilePath + ' -> ' + window.currentFilePath);
+            lastFilePath = window.currentFilePath;
+            
+            // 延迟加载，确保文件路径设置完成
+            setTimeout(function() {
+                loadFileContentToTui(window.currentFilePath);
+            }, 500);
+        }
+    }, 1000);
+    
+    logFunc('✅ 文件选择自动加载系统已启动');
+}
+
+// 加载文件内容到TUI Editor
+function loadFileContentToTui(filePath) {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('📄 开始加载文件内容到TUI: ' + filePath);
+    
+    if (!filePath) {
+        logFunc('❌ 文件路径为空');
+        return;
+    }
+    
+    if (!window.pybridge) {
+        logFunc('❌ pybridge不可用');
+        return;
+    }
+    
+    if (!window.tuiEditor) {
+        logFunc('❌ TUI Editor不可用');
+        return;
+    }
+    
+    // 清空TUI Editor内容，显示加载状态
+    try {
+        window.tuiEditor.setMarkdown('📄 正在加载文件内容...\n\n文件: ' + filePath);
+        logFunc('✅ 已设置加载状态');
+    } catch(e) {
+        logFunc('❌ 设置加载状态失败: ' + e.message);
+    }
+    
+    // 通过API加载文件内容
+    logFunc('🔄 调用API加载文件: ' + filePath);
+    
+    window.pybridge.loadMarkdownContent(filePath, function(response) {
+        try {
+            logFunc('📥 收到API响应');
+            
+            let content = '';
+            
+            // 处理不同类型的响应
+            if (typeof response === 'string') {
+                try {
+                    const result = JSON.parse(response);
+                    if (result.success && result.content) {
+                        content = result.content;
+                        logFunc('✅ JSON格式响应，内容长度: ' + content.length);
+                    } else {
+                        logFunc('❌ JSON响应失败: ' + (result.error || '未知错误'));
+                    }
+                } catch(e) {
+                    // 可能是纯文本响应
+                    if (response.length > 10 && !response.includes('智能生成练习题目')) {
+                        content = response;
+                        logFunc('✅ 纯文本响应，内容长度: ' + content.length);
+                    } else {
+                        logFunc('❌ 无效的文本响应');
+                    }
+                }
+            } else if (response && typeof response === 'object') {
+                if (response.success && response.content) {
+                    content = response.content;
+                    logFunc('✅ 对象格式响应，内容长度: ' + content.length);
+                } else {
+                    logFunc('❌ 对象响应失败: ' + (response.error || '未知错误'));
+                }
+            }
+            
+            // 更新TUI Editor内容
+            if (content && content.trim()) {
+                const cleanContent = content.trim();
+                
+                // 验证内容不是UI文本
+                if (cleanContent.includes('智能生成练习题目') || 
+                    cleanContent.includes('提升学习效果') ||
+                    cleanContent.includes('add_circle_outline')) {
+                    logFunc('❌ 检测到UI文本，设置为空内容');
+                    window.tuiEditor.setMarkdown('');
+                } else {
+                    window.tuiEditor.setMarkdown(cleanContent);
+                    logFunc('✅ 文件内容已加载到TUI Editor');
+                    logFunc('📄 内容开头: ' + cleanContent.substring(0, 100) + '...');
+                }
+            } else {
+                logFunc('⚠️ 文件内容为空，设置空白编辑器');
+                window.tuiEditor.setMarkdown('');
+            }
+            
+        } catch(e) {
+            logFunc('❌ 处理API响应失败: ' + e.message);
+            // 设置错误提示
+            try {
+                window.tuiEditor.setMarkdown('❌ 加载文件失败\n\n文件: ' + filePath + '\n错误: ' + e.message);
+            } catch(e2) {
+                logFunc('❌ 设置错误提示也失败: ' + e2.message);
+            }
+        }
+    });
+}
+
+// 初始化TUI Editor为空内容
+function initEmptyTuiEditor() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔧 初始化TUI Editor为空内容...');
+    
+    if (window.tuiEditor) {
+        try {
+            window.tuiEditor.setMarkdown('');
+            logFunc('✅ TUI Editor已设置为空内容');
+        } catch(e) {
+            logFunc('❌ 设置空内容失败: ' + e.message);
+        }
+    } else {
+        logFunc('❌ TUI Editor不可用');
+    }
+}
+
+// 重写调试按钮
+window.simpleDebug = function() {
+    const logFunc = window.addDebugLog || console.log;
+    logFunc('🔥 文件加载调试！');
+    
+    logFunc('📊 当前状态：');
+    logFunc('  - currentFilePath: ' + (window.currentFilePath || '未设置'));
+    logFunc('  - currentFileName: ' + (window.currentFileName || '未设置'));
+    logFunc('  - pybridge: ' + (window.pybridge ? '可用' : '不可用'));
+    logFunc('  - tuiEditor: ' + (window.tuiEditor ? '可用' : '不可用'));
+    
+    if (window.tuiEditor) {
+        try {
+            const currentContent = window.tuiEditor.getMarkdown();
+            logFunc('  - 当前内容长度: ' + currentContent.length);
+            logFunc('  - 内容开头: ' + currentContent.substring(0, 50) + '...');
+        } catch(e) {
+            logFunc('  - 获取内容失败: ' + e.message);
+        }
+    }
+    
+    if (window.currentFilePath) {
+        logFunc('🔄 手动加载当前文件...');
+        loadFileContentToTui(window.currentFilePath);
+    } else {
+        logFunc('❌ 没有选中的文件');
+        alert('请先选择一个文件');
+    }
+};
+
+// 页面加载完成后初始化
+setTimeout(function() {
+    // 初始化为空内容
+    initEmptyTuiEditor();
+    
+    // 设置文件选择监听
+    setupFileSelectLoader();
+    
+    console.log('✅ 文件选择加载系统已就绪');
+}, 3000);
+
+console.log('✅ 文件选择内容加载系统已加载');
+</script>
