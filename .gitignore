@@ -1,6 +1,8 @@
 # 忽略虚拟环境目录
 env/
+venv/
 __pycache__/
+flask_session/
 attachments/
 conversations/
 vault/

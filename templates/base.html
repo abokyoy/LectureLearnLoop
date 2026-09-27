@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <title>{% block title %}柯基学习小助手{% endblock %}</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
-    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <!-- Flask版本：使用API封装替代QWebChannel -->
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     
     <script>
@@ -5992,13 +5993,11 @@ ${cleanContent}
             globalDebugLog('AI助手浮窗初始化完成');
         }
 
-        // 初始化WebChannel
-        new QWebChannel(qt.webChannelTransport, function (channel) {
-            window.bridge = channel.objects.bridge;
-            window.pybridge = channel.objects.bridge;  // 添加pybridge别名
-            console.log("WebChannel连接成功");
+        // Flask版本：API已通过api.js加载，pybridge兼容层已自动创建
+        // 触发bridge准备就绪事件（兼容原有代码）
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Flask API已加载，pybridge兼容层已就绪");
             
-            // 触发bridge准备就绪事件
             const bridgeReadyEvent = new CustomEvent('bridgeReady');
             document.dispatchEvent(bridgeReadyEvent);
             
@@ -6008,10 +6007,48 @@ ${cleanContent}
             }
         });
         
-        // 调用Python函数
+        // 调用Python函数（兼容层）
         function callPythonFunction(functionName, ...args) {
-            if (bridge && bridge[functionName]) {
-                bridge[functionName](...args);
+            console.warn('callPythonFunction已废弃，请使用API模块');
+            // 可以在这里添加兼容逻辑
+        }
+        
+        // Flask版本：菜单导航函数
+        const menuRoutes = {
+            'dashboard': '/',
+            'learn_from_materials': '/learn_materials',
+            'online_course_notes': '/online_course',
+            'practice_knowledge': '/practice',
+            'practice_materials': '/practice',
+            'memory_knowledge': '/practice',
+            'knowledge_base': '/knowledge_base',
+            'settings': '/settings',
+            'llm_logs': '/llm_logs'
+        };
+        
+        function handleMenuClick(menuId) {
+            console.log('菜单点击:', menuId);
+            
+            // 如果是子菜单的父级，展开/收起子菜单
+            const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
+            if (menuItem) {
+                const submenu = menuItem.parentElement.querySelector('.submenu');
+                const expandIcon = menuItem.querySelector('.expand-icon');
+                
+                if (submenu && expandIcon) {
+                    // 切换子菜单显示
+                    submenu.classList.toggle('hidden');
+                    expandIcon.textContent = submenu.classList.contains('hidden') ? 'expand_more' : 'expand_less';
+                    return; // 不跳转页面
+                }
+            }
+            
+            // 否则跳转到对应页面
+            const route = menuRoutes[menuId];
+            if (route) {
+                window.location.href = route;
+            } else {
+                console.warn('未找到菜单路由:', menuId);
             }
         }
     </script>
