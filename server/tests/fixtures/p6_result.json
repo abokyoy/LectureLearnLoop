@@ -1,0 +1,99 @@
+{
+  "accuracy": 0.7,
+  "correct_count": 7,
+  "detailed_results": [
+    {
+      "correct_answer": "A",
+      "difficulty": "容易",
+      "explanation": "知识点明确介绍的是最新开源、无审查的“迷你 MIGSage 加速模型”，用于本地视频生成。",
+      "is_correct": true,
+      "question": "本知识点中，用于在本地生成视频的“迷你 MIGSage 加速模型”被描述为哪类模型？",
+      "question_index": 0,
+      "user_answer": "A"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "容易",
+      "explanation": "操作要点中写明“下载主模型：注意 int8 量化”。",
+      "is_correct": true,
+      "question": "下载主模型时，操作要点特别提醒要注意哪种量化格式？",
+      "question_index": 1,
+      "user_answer": "A"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "容易",
+      "explanation": "操作要点指出，打开视频下方文章链接，下载模型、工作流、提示词等。",
+      "is_correct": true,
+      "question": "根据操作要点，模型、工作流、提示词等资源应通过什么途径获取？",
+      "question_index": 2,
+      "user_answer": "A"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "中等",
+      "explanation": "知识点说明该方案支持文生视频、图生视频。",
+      "is_correct": true,
+      "question": "该本地视频生成方案支持哪些生成方式？",
+      "question_index": 3,
+      "user_answer": "A"
+    },
+    {
+      "correct_answer": "D",
+      "difficulty": "中等",
+      "explanation": "该方案强调本地运行，低显存/普通显卡也能运行，而不是必须依赖高端云端服务器。",
+      "is_correct": true,
+      "question": "以下哪项不是该方案被描述的主要亮点？",
+      "question_index": 4,
+      "user_answer": "D"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "中等",
+      "explanation": "知识点指出，配合“月夜模型”后，提示词限制更宽松，风格更自由。",
+      "is_correct": true,
+      "question": "配合“月夜模型”使用后，主要会带来什么效果？",
+      "question_index": 5,
+      "user_answer": "A"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "中等",
+      "explanation": "普通显卡/低显存用户应关注 int8 量化主模型，并按操作要点获取工作流、提示词等配套资源。",
+      "is_correct": true,
+      "question": "用户想在普通显卡上本地运行该视频生成方案，以下做法最符合操作要点的是？",
+      "question_index": 6,
+      "user_answer": "A"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "困难",
+      "explanation": "int8 量化通过用 8 位整数表示权重/计算，降低资源占用，从而支持低显存或普通显卡本地运行。",
+      "is_correct": false,
+      "question": "在本地部署该视频生成模型时，使用 int8 量化的主要意义是什么？",
+      "question_index": 7,
+      "user_answer": "X"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "困难",
+      "explanation": "工作流通常用于定义生成视频的处理步骤和节点连接，缺少节点/流程链接时应检查工作流资源。",
+      "is_correct": false,
+      "question": "某学生已下载主模型，但生成时缺少处理节点和流程链接，最可能遗漏了操作要点中的哪类资源？",
+      "question_index": 8,
+      "user_answer": "X"
+    },
+    {
+      "correct_answer": "A",
+      "difficulty": "困难",
+      "explanation": "低显存本地运行应选 int8 量化主模型，配合工作流完成生成流程；若要提示词更宽松、风格更自由，可配合月夜模型。",
+      "is_correct": false,
+      "question": "某用户显存较低，希望本地生成视频，并且希望提示词限制更宽松、风格更自由。以下部署组合最合理的是？",
+      "question_index": 9,
+      "user_answer": "X"
+    }
+  ],
+  "mastery_score": 63,
+  "success": true,
+  "total_count": 10
+}

@@ -1,0 +1,721 @@
+<!-- 网课笔记页面 - 像素级还原录音室界面 -->
+
+<!-- 主内容区域 - 完全复制录音室的main部分 -->
+<div class="flex-1 flex flex-col p-8 overflow-y-auto" style="background-color: #F5F7F9;">
+    <!-- 🎯 新界面标识 - 确认模板渲染生效 -->
+    <div class="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-center">
+        <span class="text-green-800 font-bold text-lg">✅ 网课笔记新界面 - 模板渲染成功！</span>
+        <p class="text-green-600 text-sm mt-1">框架工作原理已理解：online_course_notes → online_course_notes.html</p>
+    </div>
+    
+    <!-- 页面头部 -->
+    <header class="flex-shrink-0 flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold" style="color: #715D46;">网课笔记</h2>
+        <div class="flex items-center space-x-4">
+            <!-- 音源测试按钮 -->
+            <button id="audio-source-btn" style="background: #FF6B35; color: white; padding: 8px 16px; border: none; border-radius: 4px; margin-right: 10px;">🎧音源测试</button>
+            <button id="start-record-btn" class="text-white font-semibold py-2 px-4 rounded-lg flex items-center shadow-sm hover:bg-green-600 transition duration-300" style="background-color: #32C77F;">
+                <span class="material-icons-outlined mr-2">play_arrow</span>
+                <span>🎤测试录音按钮🎤</span>
+            </button>
+            <button id="pause-record-btn" class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">pause</span>
+                <span>暂停录音</span>
+            </button>
+            <button id="save-notes-btn" class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">save</span>
+                <span>保存笔记</span>
+            </button>
+            <button id="manual-summary-btn" class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">auto_awesome</span>
+                <span>手动总结</span>
+            </button>
+            <button id="screenshot-btn" class="bg-white font-semibold py-2 px-4 rounded-lg flex items-center border border-gray-300 hover:bg-gray-50 transition duration-300" style="color: #828282;">
+                <span class="material-icons-outlined mr-2">camera_alt</span>
+                <span>截图笔记</span>
+            </button>
+        </div>
+    </header>
+    
+    <!-- 主要内容区域 - 两列布局 -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- 左侧：笔记总结 -->
+        <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+            <h3 class="text-xl font-semibold mb-4" style="color: #715D46;">笔记总结 (Markdown)</h3>
+            <div class="flex-1 border border-gray-200 rounded-lg p-4 prose max-w-none">
+                <h4># 标题一</h4>
+                <p>这是<strong>加粗</strong>的文本，这是<em>斜体</em>的文本。</p>
+                <ul>
+                    <li>列表项一</li>
+                    <li>列表项二</li>
+                </ul>
+                <pre><code>// 代码块
+function helloWorld() {
+  console.log("Hello, world!");
+}
+</code></pre>
+                <blockquote>
+                    <p>这是一段引用的文字。</p>
+                </blockquote>
+                <p>在这里编辑和查看您的Markdown笔记总结。</p>
+            </div>
+        </div>
+        
+        <!-- 右侧：实时语音转写 -->
+        <div class="bg-white p-6 rounded-xl shadow-sm flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold" style="color: #715D46;">实时语音转写</h3>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm" style="color: #828282;">音量</span>
+                    <div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div id="volume-bar" class="h-full" style="width: 60%; background-color: #32C77F;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 border border-gray-200 rounded-lg p-4 space-y-4 overflow-y-auto" style="min-height: 300px;">
+                <div class="flex">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:03]</span>
+                    <p style="color: #9B8D7D;">今天我们来学习一下柯基的日常行为习惯。柯基犬，全名彭布罗克威尔士柯基犬，是一种非常聪明活泼的犬种。</p>
+                </div>
+                <div class="flex">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:15]</span>
+                    <p style="color: #9B8D7D;">它们的精力非常旺盛，需要每天有足够的运动量来消耗体力，否则可能会出现一些破坏性行为。</p>
+                </div>
+                <div class="flex p-2 rounded-lg" style="background-color: #E2F2EB;">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:28]</span>
+                    <p style="color: #715D46;">请注意，这里的重点是运动量，这是保证柯基身心健康的关键。</p>
+                </div>
+                <div class="flex">
+                    <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[00:00:40]</span>
+                    <p style="color: #9B8D7D;">在饮食方面，需要注意控制体重，因为它们天生容易发胖，过胖会对脊椎造成很大压力。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+    
+    // 调试函数
+    function debugLog(message) {
+        console.log('[Online Course Notes Debug]', message);
+    }
+
+    function debugError(message) {
+        console.error('[Online Course Notes Error]', message);
+    }
+
+    // 初始化网课笔记页面
+    function initializeOnlineCourseNotes() {
+        debugLog('初始化网课笔记页面');
+        
+        // 绑定按钮事件
+        bindButtonEvents();
+        
+        debugLog('网课笔记页面初始化完成');
+    }
+
+    // 绑定按钮事件
+    function bindButtonEvents() {
+        // 等待DOM完全加载
+        setTimeout(function() {
+            debugLog('开始绑定按钮事件');
+            
+            // 使用ID选择器绑定事件，避免位置依赖
+            const audioSourceBtn = document.getElementById('audio-source-btn');
+            const startBtn = document.getElementById('start-record-btn');
+            const pauseBtn = document.getElementById('pause-record-btn');
+            const saveBtn = document.getElementById('save-notes-btn');
+            const summaryBtn = document.getElementById('manual-summary-btn');
+            const screenshotBtn = document.getElementById('screenshot-btn');
+            
+            debugLog('找到按钮: 音源=' + !!audioSourceBtn + ', 开始=' + !!startBtn + ', 暂停=' + !!pauseBtn + ', 保存=' + !!saveBtn + ', 总结=' + !!summaryBtn + ', 截图=' + !!screenshotBtn);
+            
+            // 音源测试按钮
+            if (audioSourceBtn) {
+                audioSourceBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    debugLog('🎧 点击音源测试按钮');
+                    showDeviceSelectionDialog();
+                });
+                debugLog('✅ 音源测试按钮事件已绑定');
+            }
+            
+            // 开始录音按钮
+            if (startBtn) {
+                startBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    debugLog('🎤 点击开始录音按钮');
+                    startRecording();
+                });
+                debugLog('✅ 开始录音按钮事件已绑定');
+            }
+
+            // 暂停录音按钮
+            if (pauseBtn) {
+                pauseBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    debugLog('⏸️ 点击暂停录音按钮');
+                    stopRecording();
+                });
+                debugLog('✅ 暂停录音按钮事件已绑定');
+            }
+
+            // 保存笔记按钮
+            if (saveBtn) {
+                saveBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    debugLog('💾 点击保存笔记按钮');
+                    saveNotes();
+                });
+                debugLog('✅ 保存笔记按钮事件已绑定');
+            }
+
+            // 手动总结按钮
+            if (summaryBtn) {
+                summaryBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    debugLog('✨ 点击手动总结按钮');
+                    manualSummary();
+                });
+                debugLog('✅ 手动总结按钮事件已绑定');
+            }
+
+            // 截图笔记按钮
+            if (screenshotBtn) {
+                screenshotBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    debugLog('📷 点击截图笔记按钮');
+                    takeScreenshot();
+                });
+                debugLog('✅ 截图笔记按钮事件已绑定');
+            }
+            
+            debugLog('✅ 所有按钮事件绑定完成');
+        }, 100); // 延迟100ms确保DOM加载完成
+    }
+
+    // 录音控制功能
+    function startRecording() {
+        debugLog('🎤 startRecording函数被调用');
+        debugLog('调用堆栈: ' + (new Error().stack || '无法获取堆栈'));
+        
+        if (!window.bridge || !window.bridge.startRecording) {
+            debugError('Bridge对象或startRecording方法不可用');
+            showMessage('录音功能不可用', 'error');
+            return;
+        }
+        
+        // 更新按钮状态
+        updateButtonStates(true);
+        
+        window.bridge.startRecording().then(function(result) {
+            debugLog('录音启动结果: ' + result);
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success) {
+                    showMessage('录音已开始', 'success');
+                } else {
+                    // 如果没有选择设备，提示用户先选择音源
+                    if (data.needDeviceSelection) {
+                        showMessage('请先点击"🎧音源测试"选择音频设备', 'error');
+                        updateButtonStates(false);
+                    } else {
+                        showMessage('启动录音失败: ' + data.error, 'error');
+                        updateButtonStates(false);
+                    }
+                }
+            } catch (parseError) {
+                debugError('解析录音启动结果失败: ' + parseError.message);
+                showMessage('录音启动异常', 'error');
+                updateButtonStates(false);
+            }
+        }).catch(function(error) {
+            debugError('录音启动异常: ' + error);
+            showMessage('录音启动异常: ' + error, 'error');
+            updateButtonStates(false);
+        });
+    }
+
+    // 显示设备选择对话框
+    function showDeviceSelectionDialog() {
+        debugLog('显示设备选择对话框');
+        
+        if (!window.bridge || !window.bridge.getAudioDevices) {
+            showMessage('设备选择功能不可用', 'error');
+            return;
+        }
+        
+        // 获取音频设备列表
+        window.bridge.getAudioDevices().then(function(result) {
+            debugLog('获取设备列表结果: ' + result);
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success && data.devices && data.devices.length > 0) {
+                    createDeviceSelectionModal(data.devices);
+                } else {
+                    showMessage('未找到可用的音频输入设备', 'error');
+                }
+            } catch (parseError) {
+                debugError('解析设备列表失败: ' + parseError.message);
+                showMessage('获取设备列表失败', 'error');
+            }
+        }).catch(function(error) {
+            debugError('获取设备列表异常: ' + error);
+            showMessage('获取设备列表异常: ' + error, 'error');
+        });
+    }
+
+    // 创建设备选择模态框
+    function createDeviceSelectionModal(devices) {
+        // 移除已存在的模态框
+        const existingModal = document.getElementById('device-selection-modal');
+        if (existingModal) {
+            existingModal.remove();
+        }
+        
+        // 创建模态框
+        const modal = document.createElement('div');
+        modal.id = 'device-selection-modal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+        
+        // 创建对话框内容
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 70vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        `;
+        
+        // 标题
+        const title = document.createElement('h3');
+        title.textContent = '选择音频输入设备';
+        title.style.cssText = `
+            margin: 0 0 20px 0;
+            color: #715D46;
+            font-size: 18px;
+            font-weight: 600;
+        `;
+        dialog.appendChild(title);
+        
+        // 设备列表
+        const deviceList = document.createElement('div');
+        deviceList.style.cssText = `
+            margin-bottom: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        `;
+        
+        devices.forEach(function(device, index) {
+            const deviceItem = document.createElement('div');
+            deviceItem.style.cssText = `
+                padding: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 8px;
+                margin-bottom: 8px;
+                cursor: pointer;
+                transition: all 0.2s;
+                background: white;
+            `;
+            
+            deviceItem.innerHTML = `
+                <div style="font-weight: 500; color: #2d3748; margin-bottom: 4px;">
+                    ${device.name}
+                </div>
+                <div style="font-size: 12px; color: #718096;">
+                    设备ID: ${device.index} | ${device.channels}声道 | ${device.sampleRate}Hz
+                </div>
+            `;
+            
+            // 鼠标悬停效果
+            deviceItem.addEventListener('mouseenter', function() {
+                this.style.borderColor = '#32C77F';
+                this.style.backgroundColor = '#f0fff4';
+            });
+            
+            deviceItem.addEventListener('mouseleave', function() {
+                if (!this.classList.contains('selected')) {
+                    this.style.borderColor = '#e2e8f0';
+                    this.style.backgroundColor = 'white';
+                }
+            });
+            
+            // 点击选择
+            deviceItem.addEventListener('click', function() {
+                // 清除其他选中状态
+                deviceList.querySelectorAll('div').forEach(function(item) {
+                    item.classList.remove('selected');
+                    item.style.borderColor = '#e2e8f0';
+                    item.style.backgroundColor = 'white';
+                });
+                
+                // 设置当前选中
+                this.classList.add('selected');
+                this.style.borderColor = '#32C77F';
+                this.style.backgroundColor = '#f0fff4';
+                
+                // 存储选中的设备
+                dialog.selectedDevice = device;
+            });
+            
+            deviceList.appendChild(deviceItem);
+        });
+        
+        dialog.appendChild(deviceList);
+        
+        // 按钮区域
+        const buttonArea = document.createElement('div');
+        buttonArea.style.cssText = `
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        `;
+        
+        // 取消按钮
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = '取消';
+        cancelButton.style.cssText = `
+            padding: 8px 16px;
+            border: 1px solid #d1d5db;
+            background: white;
+            color: #374151;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        
+        cancelButton.addEventListener('click', function() {
+            modal.remove();
+        });
+        
+        // 确认按钮
+        const confirmButton = document.createElement('button');
+        confirmButton.textContent = '确认选择';
+        confirmButton.style.cssText = `
+            padding: 8px 16px;
+            border: none;
+            background: #32C77F;
+            color: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        
+        confirmButton.addEventListener('click', function() {
+            if (dialog.selectedDevice) {
+                selectAudioDevice(dialog.selectedDevice);
+                modal.remove();
+            } else {
+                showMessage('请选择一个音频设备', 'error');
+            }
+        });
+        
+        buttonArea.appendChild(cancelButton);
+        buttonArea.appendChild(confirmButton);
+        dialog.appendChild(buttonArea);
+        
+        // 点击外部关闭
+        modal.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.remove();
+            }
+        });
+        
+        modal.appendChild(dialog);
+        document.body.appendChild(modal);
+    }
+
+    // 选择音频设备
+    function selectAudioDevice(device) {
+        debugLog('选择音频设备: ' + device.name);
+        
+        if (!window.bridge || !window.bridge.selectAudioDevice) {
+            showMessage('设备选择功能不可用', 'error');
+            return;
+        }
+        
+        window.bridge.selectAudioDevice(device.index, device.name).then(function(result) {
+            debugLog('设备选择结果: ' + result);
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success) {
+                    showMessage(data.message + '，现在可以点击"🎤开始录音"按钮开始录音', 'success');
+                    // 设备选择成功，不自动开始录音，让用户手动点击开始录音按钮
+                } else {
+                    showMessage('选择设备失败: ' + data.error, 'error');
+                }
+            } catch (parseError) {
+                debugError('解析设备选择结果失败: ' + parseError.message);
+                showMessage('选择设备失败', 'error');
+            }
+        }).catch(function(error) {
+            debugError('设备选择异常: ' + error);
+            showMessage('设备选择异常: ' + error, 'error');
+        });
+    }
+
+    function stopRecording() {
+        debugLog('停止录音');
+        
+        if (!window.bridge || !window.bridge.stopRecording) {
+            debugError('Bridge对象或stopRecording方法不可用');
+            showMessage('录音功能不可用', 'error');
+            return;
+        }
+        
+        window.bridge.stopRecording().then(function(result) {
+            debugLog('录音停止结果: ' + result);
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success) {
+                    showMessage('录音已停止', 'success');
+                    updateRecordingStatus('录音已停止');
+                    updateButtonStates(false);
+                } else {
+                    showMessage('停止录音失败: ' + data.error, 'error');
+                }
+            } catch (parseError) {
+                debugError('解析录音停止结果失败: ' + parseError.message);
+                showMessage('停止录音失败', 'error');
+            }
+        }).catch(function(error) {
+            debugError('录音停止异常: ' + error);
+            showMessage('录音停止异常: ' + error, 'error');
+        });
+    }
+
+    function saveNotes() {
+        debugLog('保存笔记');
+        
+        if (!window.bridge || !window.bridge.saveNotes) {
+            debugError('Bridge对象或saveNotes方法不可用');
+            showMessage('保存功能不可用', 'error');
+            return;
+        }
+        
+        window.bridge.saveNotes().then(function(result) {
+            debugLog('保存笔记结果: ' + result);
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage('保存笔记失败: ' + data.error, 'error');
+                }
+            } catch (parseError) {
+                debugError('解析保存结果失败: ' + parseError.message);
+                showMessage('保存笔记失败', 'error');
+            }
+        }).catch(function(error) {
+            debugError('保存笔记异常: ' + error);
+            showMessage('保存笔记异常: ' + error, 'error');
+        });
+    }
+
+    function manualSummary() {
+        debugLog('手动总结');
+        
+        if (!window.bridge || !window.bridge.manualSummary) {
+            debugError('Bridge对象或manualSummary方法不可用');
+            showMessage('总结功能不可用', 'error');
+            return;
+        }
+        
+        // 显示加载状态
+        showMessage('正在生成总结...', 'info');
+        
+        window.bridge.manualSummary().then(function(result) {
+            debugLog('手动总结结果: ' + result.substring(0, 100) + '...');
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success) {
+                    showMessage('总结完成', 'success');
+                    updateSummaryText(data.summary);
+                } else {
+                    showMessage('生成总结失败: ' + data.error, 'error');
+                }
+            } catch (parseError) {
+                debugError('解析总结结果失败: ' + parseError.message);
+                showMessage('生成总结失败', 'error');
+            }
+        }).catch(function(error) {
+            debugError('手动总结异常: ' + error);
+            showMessage('生成总结异常: ' + error, 'error');
+        });
+    }
+
+    function takeScreenshot() {
+        debugLog('截图笔记');
+        
+        if (!window.bridge || !window.bridge.takeScreenshot) {
+            debugError('Bridge对象或takeScreenshot方法不可用');
+            showMessage('截图功能不可用', 'error');
+            return;
+        }
+        
+        window.bridge.takeScreenshot().then(function(result) {
+            debugLog('截图结果: ' + result);
+            
+            try {
+                const data = JSON.parse(result);
+                if (data.success) {
+                    showMessage(data.message, 'success');
+                } else {
+                    showMessage('截图失败: ' + data.error, 'error');
+                }
+            } catch (parseError) {
+                debugError('解析截图结果失败: ' + parseError.message);
+                showMessage('截图失败', 'error');
+            }
+        }).catch(function(error) {
+            debugError('截图异常: ' + error);
+            showMessage('截图异常: ' + error, 'error');
+        });
+    }
+
+    // UI更新功能
+    function updateButtonStates(isRecording) {
+        const buttons = document.querySelectorAll('header button');
+        if (buttons.length >= 5) {
+            // 开始录音按钮
+            if (buttons[0]) {
+                buttons[0].disabled = isRecording;
+                buttons[0].style.opacity = isRecording ? '0.5' : '1';
+            }
+            
+            // 暂停录音按钮
+            if (buttons[1]) {
+                buttons[1].disabled = !isRecording;
+                buttons[1].style.opacity = isRecording ? '1' : '0.5';
+            }
+        }
+    }
+
+    function updateRecordingStatus(status) {
+        // 可以在这里更新状态显示
+        debugLog('录音状态更新: ' + status);
+    }
+
+    function updateSummaryText(summary) {
+        // 更新左侧笔记总结区域
+        const summaryArea = document.querySelector('.prose');
+        if (summaryArea) {
+            // 将Markdown转换为HTML显示
+            summaryArea.innerHTML = '<div style="white-space: pre-wrap;">' + summary + '</div>';
+        }
+    }
+
+    function showMessage(message, type) {
+        // 简单的消息提示
+        const messageDiv = document.createElement('div');
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            color: white;
+            font-weight: 500;
+            z-index: 10000;
+            max-width: 300px;
+            word-wrap: break-word;
+        `;
+        
+        switch (type) {
+            case 'success':
+                messageDiv.style.backgroundColor = '#32C77F';
+                break;
+            case 'error':
+                messageDiv.style.backgroundColor = '#ED4B4B';
+                break;
+            case 'info':
+                messageDiv.style.backgroundColor = '#4299e1';
+                break;
+            default:
+                messageDiv.style.backgroundColor = '#828282';
+        }
+        
+        messageDiv.textContent = message;
+        document.body.appendChild(messageDiv);
+        
+        // 3秒后自动移除
+        setTimeout(() => {
+            if (messageDiv.parentNode) {
+                messageDiv.parentNode.removeChild(messageDiv);
+            }
+        }, 3000);
+    }
+
+    // 全局回调函数，供后端调用
+    window.updateTranscriptionText = function(text) {
+        debugLog('收到转写文本: ' + text.substring(0, 50) + '...');
+        
+        // 更新右侧转写区域
+        const transcriptionArea = document.querySelector('.space-y-4');
+        if (transcriptionArea) {
+            const timeStamp = new Date().toLocaleTimeString();
+            const newEntry = document.createElement('div');
+            newEntry.className = 'flex';
+            newEntry.innerHTML = `
+                <span class="text-sm font-semibold mr-3" style="color: #32C77F;">[${timeStamp}]</span>
+                <p style="color: #9B8D7D;">${text}</p>
+            `;
+            transcriptionArea.appendChild(newEntry);
+            
+            // 滚动到底部
+            transcriptionArea.scrollTop = transcriptionArea.scrollHeight;
+        }
+    };
+
+    window.updateRecordingStatus = function(status) {
+        updateRecordingStatus(status);
+    };
+
+    window.updateVolumeLevel = function(level) {
+        // 更新音量指示器
+        const volumeBar = document.querySelector('#volume-bar');
+        if (volumeBar) {
+            const percentage = Math.min(100, Math.max(0, level * 100));
+            volumeBar.style.width = percentage + '%';
+        }
+    };
+
+    // 页面初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeOnlineCourseNotes);
+    } else {
+        initializeOnlineCourseNotes();
+    }
+
+})();
+</script>

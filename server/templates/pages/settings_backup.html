@@ -1,0 +1,123 @@
+<div class="bg-white rounded<!-- 设置页面 -->
+<style>
+    .config-group {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        padding: 20px;
+    }
+    .config-group h3 {
+        color: #2d3748;
+        font-size: 16px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        border-bottom: 2px solid #32C77F;
+        padding-bottom: 8px;
+    }
+    .form-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .form-row label {
+        width: 120px;
+        color: #4a5568;
+        font-weight: 500;
+    }
+    .form-row input, .form-row select {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .form-row input:focus, .form-row select:focus {
+        outline: none;
+        border-color: #32C77F;
+        box-shadow: 0 0 0 3px rgba(50, 199, 127, 0.1);
+    }
+    .provider-radio {
+        margin-bottom: 8px;
+    }
+    .provider-radio input[type="radio"] {
+        margin-right: 8px;
+    }
+    .provider-radio label {
+        color: #2d3748;
+        font-weight: 500;
+        cursor: pointer;
+    }
+    .save-btn {
+        background: #32C77F;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .save-btn:hover {
+        background: #2bb06a;
+    }
+    .save-btn:disabled {
+        background: #a0aec0;
+        cursor: not-allowed;
+    }
+    .status-message {
+        padding: 10px 15px;
+        border-radius: 4px;
+        margin-top: 10px;
+        font-size: 14px;
+    }
+    .status-success {
+        background: #f0fff4;
+        color: #22543d;
+        border: 1px solid #9ae6b4;
+    }
+    .status-error {
+        background: #fed7d7;
+        color: #742a2a;
+        border: 1px solid #feb2b2;
+    }
+</style>
+
+<div class="p-8">
+    <h1 class="text-2xl font-bold text-text-dark-brown mb-6">系统设置</h1>
+    
+    <!-- 大语言模型提供商 -->
+    <div class="config-group">
+        <h3>大语言模型提供商</h3>
+        <div class="provider-radio">
+            <input type="radio" id="provider-deepseek" name="llm_provider" value="DeepSeek">
+            <label for="provider-deepseek">DeepSeek (在线)</label>
+        </div>
+        <div class="provider-radio">
+            <input type="radio" id="provider-gemini" name="llm_provider" value="Gemini">
+            <label for="provider-gemini">Gemini (云端)</label>
+            <label class="block text-sm font-medium text-text-dark-brown mb-2">API Key</label>
+            <input type="password" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="输入你的API Key">
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-text-dark-brown mb-2">学习提醒</label>
+            <div class="flex items-center">
+                <input type="checkbox" class="mr-2">
+                <span class="text-sm text-text-gray">启用每日学习提醒</span>
+            </div>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-text-dark-brown mb-2">模板系统状态</label>
+            <div class="bg-green-50 border border-green-200 rounded-lg p-3">
+                <div class="flex items-center">
+                    <span class="material-icons-outlined text-green-600 mr-2">check_circle</span>
+                    <span class="text-sm text-green-800">模板系统已启用</span>
+                </div>
+                <p class="text-xs text-green-600 mt-1">使用Jinja2模板引擎渲染页面</p>
+            </div>
+        </div>
+        <button class="bg-primary text-white px-6 py-2 rounded-lg hover:bg-green-600">
+            保存设置
+        </button>
+    </div>
+</div>

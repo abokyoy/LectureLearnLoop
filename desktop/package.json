@@ -1,0 +1,18 @@
+{
+  "name": "lecturelearnloop-desktop",
+  "version": "0.1.0",
+  "description": "LectureLearnLoop Electron 桌面客户端（悬浮窗录音 + 学习闭环）",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:debug": "electron . --remote-debugging-port=9222"
+  },
+  "author": "LectureLearnLoop",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^37.0.0"
+  }
+}

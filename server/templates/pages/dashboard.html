@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                <span class="material-icons-outlined text-blue-600">school</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-text-dark-brown">学习模块</h3>
+                <p class="text-sm text-text-gray">从资料和音视频中学习</p>
+            </div>
+        </div>
+        <div class="text-2xl font-bold text-blue-600 mb-2" id="dash-materials-week">–</div>
+        <p class="text-sm text-text-gray">本周学习资料数（实时统计）</p>
+        <div class="mt-4">
+            <button class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700" onclick="handleMenuClick('online_course_notes')">
+                开始学习
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                <span class="material-icons-outlined text-green-600">fitness_center</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-text-dark-brown">练习模块</h3>
+                <p class="text-sm text-text-gray">知识点和错题练习</p>
+            </div>
+        </div>
+        <div class="text-2xl font-bold text-green-600 mb-2" id="dash-accuracy">–</div>
+        <p class="text-sm text-text-gray" id="dash-accuracy-sub">本周练习正确率（无记录时显示 —）</p>
+        <div class="mt-4">
+            <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700" onclick="handleMenuClick('practice_knowledge')">
+                开始练习
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm">
+        <div class="flex items-center mb-4">
+            <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
+                <span class="material-icons-outlined text-purple-600">psychology</span>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold text-text-dark-brown">记忆模块</h3>
+                <p class="text-sm text-text-gray">知识点记忆和复习</p>
+            </div>
+        </div>
+        <div class="text-2xl font-bold text-purple-600 mb-2"><span id="dash-mastered">–</span><span class="text-sm font-normal text-text-gray" id="dash-kp-total"></span></div>
+        <p class="text-sm text-text-gray">已掌握知识点数（掌握度≥80）</p>
+        <div class="mt-4">
+            <button class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700" onclick="handleMenuClick('memory_knowledge')">
+                开始记忆
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white p-6 rounded-xl shadow-sm col-span-full">
+        <h3 class="text-lg font-semibold text-text-dark-brown mb-4">最近学习活动</h3>
+        <div class="space-y-3" id="dash-activities">
+            <p class="text-sm text-text-gray">加载中…</p>
+        </div>
+    </div>
+</div>
+<script>
+// 工作台真实统计（四期：旧模板假兜底已全面下线，数据源 /api/dashboard/stats）
+(function () {
+    function tk() { return (window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || '')); }
+    function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+    function relTime(ts) {
+        try {
+            var t = new Date(String(ts).replace(' ', 'T') + 'Z'); // 库内为 UTC
+            var d = Date.now() - t.getTime();
+            if (d < 0) d = 0;
+            var m = Math.floor(d / 60000);
+            if (m < 1) return '刚刚';
+            if (m < 60) return m + ' 分钟前';
+            var h = Math.floor(m / 60);
+            if (h < 24) return h + ' 小时前';
+            return Math.floor(h / 24) + ' 天前';
+        } catch (e) { return String(ts || ''); }
+    }
+    fetch('/api/dashboard/stats', { headers: { 'Authorization': 'Bearer ' + tk() } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (!j || !j.success || !j.data) return;
+            var s = j.data;
+            var e1 = document.getElementById('dash-materials-week');
+            if (e1) e1.textContent = s.materials_this_week;
+            var e2 = document.getElementById('dash-accuracy');
+            if (e2) e2.textContent = (s.practice_accuracy == null) ? '—' : (s.practice_accuracy + '%');
+            var e2s = document.getElementById('dash-accuracy-sub');
+            if (e2s) e2s.textContent = (s.practice_count_this_week > 0)
+                ? '本周练习 ' + s.practice_count_this_week + ' 题正确率'
+                : '本周暂无练习记录';
+            var e3 = document.getElementById('dash-mastered');
+            if (e3) e3.textContent = s.knowledge_mastered;
+            var e3t = document.getElementById('dash-kp-total');
+            if (e3t) e3t.textContent = ' / ' + s.knowledge_total + '（在学科目 ' + s.subjects + '）';
+            var box = document.getElementById('dash-activities');
+            if (box) {
+                var acts = s.recent_activities || [];
+                if (!acts.length) {
+                    box.innerHTML = '<p class="text-sm text-text-gray">还没有学习活动，从「网课笔记」开始第一次录制吧。</p>';
+                } else {
+                    box.innerHTML = acts.map(function (a) {
+                        var color = a.kind === 'note' ? 'blue' : 'green';
+                        var icon = a.kind === 'note' ? 'article' : 'quiz';
+                        return '<div class="flex items-center p-3 bg-gray-50 rounded-lg">'
+                            + '<div class="w-8 h-8 bg-' + color + '-100 rounded-full flex items-center justify-center mr-3">'
+                            + '<span class="material-icons-outlined text-' + color + '-600 text-sm">' + icon + '</span></div>'
+                            + '<div class="flex-1"><p class="font-medium text-text-dark-brown">' + esc(a.title) + '</p>'
+                            + '<p class="text-sm text-text-gray">' + esc(relTime(a.time)) + '</p></div></div>';
+                    }).join('');
+                }
+            }
+        }).catch(function () { /* 保持占位符，不用假数据 */ });
+})();
+</script>
+{% endblock %}

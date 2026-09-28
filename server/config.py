@@ -1,0 +1,136 @@
+"""
+服务端配置中心 —— 唯一配置来源（.env + 常量路径）。
+
+架构收敛说明：
+- 旧工程通过 app_config.json 提供配置（含明文密钥，掉坑笔记 P005），本工程废止该机制；
+- `load_config()` 保持与旧 llm_provider_factory / knowledge_management 相同的键名，
+  但数据源改为 .env，禁止任何代码再直接读 app_config.json。
+"""
+from __future__ import annotations
+
+import json
+import os
+import secrets
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# ---------------------------------------------------------------- 路径常量
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+VAULT_DIR = DATA_DIR / "vault"          # vault/<user_id>/...
+LOG_DIR = BASE_DIR / "logs"
+DB_PATH = DATA_DIR / "knowledge_management.db"
+PRACTICE_DB_PATH = DATA_DIR / "practice_history.db"
+
+for _d in (DATA_DIR, VAULT_DIR, LOG_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------------- .env
+load_dotenv(BASE_DIR / ".env")
+
+SERVER_PORT = int(os.getenv("SERVER_PORT", "6001"))
+JWT_SECRET = os.getenv("JWT_SECRET", "")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+# P6 实测：Deepgram nova-2 language=multi 对中文音频返回空转写，中文课程默认 zh-CN。
+# 旧设置页 whisper_language 映射：auto→multi / zh→zh-CN / en→en（可选 "auto"/"zh"/"en"）。
+DEEPGRAM_LANGUAGE = os.getenv("DEEPGRAM_LANGUAGE", "zh-CN")
+DEEPGRAM_LANGUAGE_MODE = os.getenv("DEEPGRAM_LANGUAGE_MODE", "fixed")  # fixed=用上面固定值；auto=按用户设置页映射
+HTTP_PROXY_URL = os.getenv("HTTP_PROXY_URL", "")
+
+# ---------------------------------------------------------------- 数据库全局配置（适配层唯一后端开关）
+# DB_BACKEND：网站全局配置项，postgres | sqlite（默认 sqlite 保留回退能力；
+# 生产目标为 postgres，见 database/db_adapter.py）。
+DB_BACKEND = (os.getenv("DB_BACKEND", "sqlite") or "sqlite").strip().lower()
+if DB_BACKEND != "postgres":
+    # worktree 并行开发防坑：新工作树忘拷 .env 时会静默起空 SQLite 库，
+    # 造成“数据丢失”假象（见 docs/计划/2026-09-28-练记系统改造方案.md §0）
+    print("[config][WARN] DB_BACKEND=sqlite —— 生产后端应为 postgres；"
+          "若是新 worktree，请拷贝 server/.env 后重启", flush=True)
+PG_HOST = os.getenv("PG_HOST", "127.0.0.1")
+PG_PORT = int(os.getenv("PG_PORT", "5432"))
+PG_DATABASE = os.getenv("PG_DATABASE", "lecturelearnloop")
+PG_USER = os.getenv("PG_USER", "postgres")
+PG_PASSWORD = os.getenv("PG_PASSWORD", "")
+PG_POOL_MIN = int(os.getenv("PG_POOL_MIN", "2"))
+PG_POOL_MAX = int(os.getenv("PG_POOL_MAX", "20"))
+
+# admin 种子账号（存量数据 user_id 归属）
+ADMIN_USER_ID = "0001"
+
+# ---------------------------------------------------------------- SECRET_KEY 落盘（修复断点 D3）
+_SECRET_FILE = DATA_DIR / "flask_secret.key"
+
+
+def get_flask_secret_key() -> str:
+    """持久化的 Flask SECRET_KEY，避免每次重启会话失效。"""
+    if _SECRET_FILE.exists():
+        return _SECRET_FILE.read_text(encoding="utf-8").strip()
+    key = secrets.token_hex(32)
+    _SECRET_FILE.write_text(key, encoding="utf-8")
+    return key
+
+
+# ---------------------------------------------------------------- 运行时配置（设置页可改的非 .env 键）
+RUNTIME_CONFIG_FILE = DATA_DIR / "runtime_config.json"
+
+
+# ---------------------------------------------------------------- 兼容旧模块的配置提供者
+def load_config() -> dict:
+    """
+    返回与旧 app_config.json 相同键名的配置 dict。
+    LLM 提供商固定为 DeepSeek（用户确认：单一提供商、失败直接报错、不做降级链）。
+    """
+    cfg = {
+        "llm_provider": "DeepSeek",
+        # DeepSeek
+        "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY", ""),
+        "deepseek_model": os.getenv("DEEPSEEK_MODEL", "deepseek-flash"),
+        "deepseek_api_url": os.getenv(
+            "DEEPSEEK_API_URL", "https://api.deepseek.com/v1/chat/completions"
+        ),
+        # 其余提供商键保留为空，防止旧代码 KeyError（今晚不会用到它们）
+        "gemini_api_key": "",
+        "gemini_model": "",
+        "qwen_api_key": "",
+        "qwen_model": "",
+        "qwen_api_url": "",
+        "ollama_url": "http://localhost:11434",
+        "ollama_model": "",
+        "ollama_api_url": "http://localhost:11434/api/generate",
+        # 相似度匹配（业务规则已确认：阈值 0.35）
+        "similarity_min_score": float(os.getenv("SIMILARITY_MIN_SCORE", "0.35")),
+        # 运行时路径
+        "db_path": str(DB_PATH),
+        "practice_db_path": str(PRACTICE_DB_PATH),
+        "vault_dir": str(VAULT_DIR),
+        "http_proxy": HTTP_PROXY_URL,
+        # 数据库后端（只读展示；切换只允许通过 .env，设置页不得覆盖）
+        "db_backend": DB_BACKEND,
+    }
+    # 合并设置页保存的运行时配置（P2：saveConfig 桥方法落点）；路径类键不允许覆盖
+    if RUNTIME_CONFIG_FILE.exists():
+        try:
+            overrides = json.loads(RUNTIME_CONFIG_FILE.read_text(encoding="utf-8"))
+            _protected = {"db_path", "practice_db_path", "vault_dir", "db_backend"}
+            for k, v in overrides.items():
+                if k not in _protected:
+                    cfg[k] = v
+        except Exception:  # noqa: BLE001  运行时配置损坏时静默回退 .env
+            pass
+    return cfg
+
+
+def save_runtime_config(updates: dict) -> bool:
+    """写入运行时配置（白名单外的键由调用方过滤）；返回是否成功。"""
+    try:
+        existing = {}
+        if RUNTIME_CONFIG_FILE.exists():
+            existing = json.loads(RUNTIME_CONFIG_FILE.read_text(encoding="utf-8"))
+        existing.update(updates)
+        RUNTIME_CONFIG_FILE.write_text(
+            json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        return True
+    except Exception:  # noqa: BLE001
+        return False

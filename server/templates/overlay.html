@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学习悬浮窗</title>
+<style>
+  :root { --bg:#1f2430; --fg:#eef1f7; --accent:#4c8dff; --muted:#8a94a6; --ok:#37c26e; --warn:#ff6b6b; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); overflow:hidden; }
+  #dragbar { height:34px; background:#171b24; display:flex; align-items:center; justify-content:space-between; padding:0 10px; cursor:move; -webkit-user-select:none; user-select:none; }
+  #dragbar .title { font-size:13px; color:var(--muted); }
+  #dragbar .btns button { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:2px 6px; }
+  #dragbar .btns button:hover { color:var(--fg); }
+  #body { padding:10px 12px; display:flex; flex-direction:column; gap:8px; height:calc(100% - 34px); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  button.main { flex:1; background:var(--accent); color:#fff; border:none; border-radius:8px; padding:9px 10px; font-size:14px; cursor:pointer; }
+  button.main.stop { background:var(--warn); }
+  button.main:disabled { opacity:.45; cursor:not-allowed; }
+  button.main.pressed { background:#2456a8; box-shadow:inset 0 2px 6px #0008; opacity:1; cursor:default; }
+  button.ghost { background:#2b3242; color:var(--fg); border:1px solid #3a4256; border-radius:8px; padding:8px 10px; font-size:13px; cursor:pointer; }
+  button.ghost:disabled { opacity:.45; cursor:not-allowed; }
+  select, input[type=file] { background:#2b3242; color:var(--fg); border:1px solid #3a4256; border-radius:6px; padding:5px 6px; font-size:12px; }
+  #noteBanner { display:none; background:#12301c; border:1px solid var(--ok); color:#bff3cf; border-radius:8px; padding:6px 10px; font-size:12.5px; line-height:1.4; }
+  #noteBanner.show { display:block; }
+  #noteBanner .sub { color:var(--muted); font-size:11px; margin-left:6px; }
+  #wave { width:100%; height:48px; background:#171b24; border-radius:8px; display:block; }
+  .panel { background:#171b24; border-radius:8px; padding:8px 10px; }
+  .panel h4 { margin:0 0 6px; font-size:12px; color:var(--muted); font-weight:600; display:flex; justify-content:space-between; }
+  #live { font-size:12px; color:var(--accent); min-height:16px; }
+  #subs { font-size:13px; line-height:1.5; height:96px; overflow-y:auto; white-space:pre-wrap; word-break:break-word; }
+  #subs .fin { color:var(--fg); }
+  #subs .int { color:var(--muted); font-style:italic; }
+  #sums { font-size:12.5px; line-height:1.55; height:88px; overflow-y:auto; white-space:pre-wrap; }
+  #status { font-size:11px; color:var(--muted); }
+  #toast { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); background:#000c; color:#fff; padding:8px 14px; border-radius:8px; font-size:12px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:90%; }
+  #toast.show { opacity:1; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#555; margin-right:4px; vertical-align:middle; }
+  .dot.rec { background:var(--warn); animation:pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+</style>
+</head>
+<body>
+  <div id="dragbar">
+    <span class="title"><span class="dot" id="dot"></span>学习悬浮窗</span>
+    <span class="btns"><button id="btnMin" title="收起">▁</button><button id="btnClose" title="关闭">✕</button></span>
+  </div>
+  <div id="body">
+    <div class="row">
+      <!-- 四期：音源只保留两项（原“文件音源（演示）”默认选中且未加载文件时点开始必报错） -->
+      <select id="source" title="音源">
+        <option value="loopback" selected>系统声音</option>
+        <option value="mic">麦克风</option>
+      </select>
+      <select id="lang" title="识别语言">
+        <option value="">服务端默认</option>
+        <option value="zh-CN" selected>中文</option>
+        <option value="en">英文</option>
+        <option value="multi">多语言(不含中文)</option>
+      </select>
+    </div>
+    <div class="row">
+      <button class="main" id="btnStart">开始</button>
+      <button class="main" id="btnPause" disabled>暂停</button>
+      <button class="main stop" id="btnDone" disabled>完成</button>
+    </div>
+    <div id="noteBanner"></div>
+    <div class="row">
+      <button class="ghost" id="btnShot" disabled>📷 截屏（框选）</button>
+      <button class="ghost" id="btnShotFull" disabled>📷 全屏截屏</button>
+    </div>
+    <canvas id="wave"></canvas>
+    <div class="panel">
+      <h4>实时转写 <span id="live"></span></h4>
+      <div id="subs"><span class="muted" style="color:var(--muted)">（尚未开始）</span></div>
+    </div>
+    <div class="panel">
+      <h4>段落总结 <span style="color:var(--muted)">每 <input id="interval" type="number" value="60" min="10" style="width:48px"> 秒</span></h4>
+      <div id="sums" style="color:var(--muted)">（总结将在此显示，并实时写入笔记）</div>
+    </div>
+    <div id="status">就绪</div>
+  </div>
+  <div id="toast"></div>
+
+<script src="/static/js/recorder.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const TOKEN_KEY = 'll_token';
+  const state = {
+    notePath: null, noteRel: null, noteName: null,
+    sumTimer: null, rafId: 0,
+  };
+
+  function token() {
+    // 四期：记住登录在 localStorage，会话级在 sessionStorage（跨窗口不可见时提示主窗口登录）
+    try { return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+  }
+  function toast(msg, ms) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms || 2600);
+  }
+  function setStatus(s) { $('status').textContent = s; }
+  async function api(path, opts) {
+    const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() } }, opts || {}));
+    return r.json().catch(() => ({ success: false, error: '非JSON响应' }));
+  }
+
+  /* ---------- 字幕渲染 ---------- */
+  function renderSubs(interim) {
+    const el = $('subs');
+    el.innerHTML = '<span class="fin">' + escapeHtml(rec.transcript) + '</span>' +
+      (interim ? '<span class="int"> ' + escapeHtml(interim) + '</span>' : '');
+    el.scrollTop = el.scrollHeight;
+  }
+  function escapeHtml(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+  /* ---------- 声波动画 ---------- */
+  function drawWave() {
+    const cv = $('wave'); const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+    const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#171b24'; ctx.fillRect(0, 0, w, h);
+    const bars = 48, gap = 3, bw = (w - gap * (bars - 1)) / bars;
+    const an = rec.analyser;
+    const data = new Uint8Array(an ? an.frequencyBinCount : bars);
+    if (an) an.getByteFrequencyData(data);
+    const active = rec.state !== 'idle';
+    ctx.fillStyle = rec.state === 'recording' ? '#4c8dff' : (rec.state === 'paused' ? '#8a94a6' : '#3a4256');
+    for (let i = 0; i < bars; i++) {
+      const v = an ? data[Math.floor(i * data.length / bars)] / 255 : 0.05;
+      const bh = Math.max(2, v * (h - 8));
+      ctx.fillRect(i * (bw + gap), (h - bh) / 2, bw, bh);
+    }
+    if (active) state.rafId = requestAnimationFrame(drawWave);
+  }
+
+  /* ---------- 共享录音引擎 ---------- */
+  const rec = new LLRecorder({
+    getToken: token,
+    onEvent: (ev) => {
+      if (ev.type === 'status') setStatus(ev.text);
+      else if (ev.type === 'state') syncUI(ev.state);
+      else if (ev.type === 'interim') { renderSubs(ev.text); $('live').textContent = '聆听中…'; }
+      else if (ev.type === 'final') { renderSubs(''); $('live').textContent = ''; }
+      else if (ev.type === 'saving') toast(ev.text || '正在保存学习笔记', 2000);
+      else if (ev.type === 'saved') {
+        if (ev.ok) { setBannerSub('已保存 ' + new Date().toLocaleTimeString()); }
+        else toast('笔记保存失败：' + (ev.error || '服务端未确认'), 3000);
+      }
+      else if (ev.type === 'error') toast('错误：' + ev.text, 3200);
+      else if (ev.type === 'credit') {
+        // 2026-09-28 积分：录音转文字按实际时长扣分结果
+        if (ev.error) toast('积分扣分上报失败：' + ev.error, 3000);
+        else if (ev.exempt_admin) toast('录音 ' + ev.minutes + ' 分钟 · 管理员不消耗积分', 3000);
+        else toast('录音 ' + ev.minutes + ' 分钟，消耗 ' + ev.credits + ' 积分 · 余额 ' + ev.balance, 3000);
+      }
+      else if (ev.type === 'done') { hideBanner(); toast('学习笔记已保存 ✓', 3000); }
+    },
+  });
+
+  /* ---------- 三态状态机 UI：idle / recording / paused ---------- */
+  function syncUI(s) {
+    const bs = $('btnStart'), bp = $('btnPause'), bd = $('btnDone');
+    bs.classList.remove('pressed');
+    if (s === 'idle') {
+      bs.disabled = false; bs.textContent = '开始';
+      bp.disabled = true; bp.textContent = '暂停';
+      bd.disabled = true;
+      $('btnShot').disabled = true; $('btnShotFull').disabled = true;
+      $('dot').classList.remove('rec');
+      cancelAnimationFrame(state.rafId);
+      const cv = $('wave'); const c = cv.getContext('2d'); c.clearRect(0, 0, cv.width, cv.height);
+    } else if (s === 'recording') {
+      bs.disabled = true; bs.textContent = '● 录制中'; bs.classList.add('pressed');
+      bp.disabled = false; bp.textContent = '暂停';
+      bd.disabled = false;
+      $('btnShot').disabled = false; $('btnShotFull').disabled = false;
+      $('dot').classList.add('rec');
+      cancelAnimationFrame(state.rafId); state.rafId = requestAnimationFrame(drawWave);
+    } else if (s === 'paused') {
+      bs.disabled = false; bs.textContent = '继续';
+      bp.disabled = true;
+      bd.disabled = false;
+      $('dot').classList.remove('rec');
+    }
+  }
+
+  /* ---------- "正在保存到 <doc>" 横幅 ---------- */
+  function showBanner(name) {
+    const b = $('noteBanner');
+    b.innerHTML = '📝 正在保存到 <b>' + escapeHtml(name) + '</b><span class="sub">实时更新中</span>';
+    b.classList.add('show');
+  }
+  function setBannerSub(txt) {
+    const b = $('noteBanner');
+    if (!b.classList.contains('show')) return;
+    const sub = b.querySelector('.sub'); if (sub) sub.textContent = txt;
+  }
+  function hideBanner() { $('noteBanner').classList.remove('show'); }
+
+  /* ---------- 选择/新建目标笔记 ----------
+   * Electron：独立选择窗（notepicker）返回 {action:'open'|'new', path, rel, name}；
+   * 非 Electron 回退：直接新建当日笔记（POST /api/vault/note）。 */
+  async function pickNote() {
+    if (window.llNotePicker) {
+      let sel = null;
+      try { sel = await window.llNotePicker.open(); } catch (e) { return null; }
+      if (!sel) return null;
+      // 选择页对 open/new 都回传已存在的 path（new 时已在页内创建）
+      if (sel.path) return { path: sel.path, name: sel.name || sel.path };
+      toast('未选择笔记', 2000); return null;
+    }
+    // 浏览器回退：新建当日笔记
+    const r = await api('/api/vault/note', { method: 'POST', body: JSON.stringify({ folder_path: 'vault' }) });
+    const nm = r && r.data;
+    if (!nm) { toast('新建笔记失败', 3000); return null; }
+    return { path: 'vault/' + nm, name: nm };
+  }
+
+  /* ========== 开始 / 继续 ========== */
+  async function onStart() {
+    if (rec.state === 'paused') { rec.resume(); return; }
+    if (rec.state !== 'idle') return;
+    if (!token()) { toast('未登录：请先在主窗口登录', 3000); return; }
+    if (!window.llAsr) { toast('Electron 桥不可用（请在桌面端打开）', 3000); return; }
+    const pick = await pickNote();
+    if (!pick) { setStatus('未选择笔记，已取消'); return; }
+    state.notePath = pick.path; state.noteName = pick.name;
+    const ok = await rec.start({
+      notePath: pick.path, noteName: pick.name,
+      source: $('source').value, language: $('lang').value || undefined,
+    });
+    if (!ok) return;
+    $('subs').innerHTML = '';
+    showBanner(pick.name);
+    // 段落总结定时器（引擎内部已有 60s 兜底 autosave，这里是 LLM 总结节奏）
+    const iv = Math.max(10, parseInt($('interval').value || '60', 10)) * 1000;
+    state.sumTimer = setInterval(runSummary, iv);
+  }
+
+  /* ========== 暂停 ========== */
+  function onPause() { rec.pause(); }
+
+  /* ========== 完成 ========== */
+  async function onDone() {
+    if (rec.state === 'idle') return;
+    if (state.sumTimer) { clearInterval(state.sumTimer); state.sumTimer = null; }
+    if ((rec.sinceSummary || '').trim()) await runSummary();  // 末次段落总结
+    setBannerSub('正在保存…');
+    await rec.done();
+    state.notePath = null;
+  }
+
+  /* ---------- 60s 段落总结（结果回填引擎会话块，单一写者） ---------- */
+  async function runSummary() {
+    const seg = (rec.sinceSummary || '').trim();
+    if (!seg) return;
+    setStatus('生成段落总结…');
+    const r = await api('/api/llm/summarize-text', { method: 'POST', body: JSON.stringify({ text: seg }) });
+    const el = $('sums');
+    if (r.success && r.data && r.data.success && r.data.summary) {
+      const stamp = new Date().toLocaleTimeString();
+      const block = '### ' + stamp + '\n' + r.data.summary + '\n\n';
+      rec.appendSummary(block);   // 清 sinceSummary + 防抖保存
+      el.style.color = 'var(--fg)';
+      el.innerHTML += escapeHtml(r.data.summary).replace(/\n/g, '<br>') + '<hr style="border:none;border-top:1px solid #3a4256">';
+      el.scrollTop = el.scrollHeight;
+      setStatus('段落总结已写入笔记');
+    } else {
+      rec.sinceSummary = '';  // 失败不重复提交同一段
+      el.style.color = 'var(--warn)';
+      el.textContent = '总结失败: ' + ((r.data && r.data.error) || r.error || '未知');
+      setStatus('总结失败');
+    }
+  }
+
+  /* ---------- 截屏（不传 note_path：由引擎单写者纳入会话块，避免双写覆盖） ---------- */
+  async function doScreenshot(full) {
+    if (!window.llCapture) { toast('截屏桥不可用', 2500); return; }
+    setStatus('截屏中…');
+    let shot = null;
+    try {
+      shot = full ? await window.llCapture.fullScreen() : await window.llCapture.selectRegion();
+    } catch (e) { toast('截屏异常: ' + e, 3000); return; }
+    if (!shot || !shot.rect) { setStatus('已取消截屏'); return; }
+    const cropped = await cropDataUrl(shot);
+    if (!cropped) { toast('裁切失败', 2500); return; }
+    const r = await api('/api/vault/screenshot', { method: 'POST', body: JSON.stringify({ image_b64: cropped, note_path: '' }) });
+    if (r.success && r.data && r.data.success) {
+      if (rec.state !== 'idle') {
+        rec.addScreenshot(r.data.markdown || ('![截屏](' + r.data.rel + ')'));
+        toast('截图已存入笔记（实时更新）');
+      } else {
+        toast('截图已存：' + r.data.rel);
+      }
+      setStatus('截图完成');
+    } else {
+      toast('截图保存失败: ' + ((r.data && r.data.error) || r.error || ''));
+    }
+  }
+  function cropDataUrl(shot) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const rect = shot.rect;
+        // 截图整幅 img 为物理像素，shot.width/height 为对应 CSS 全屏宽；rect 是 CSS 坐标
+        const cssW = shot.width || rect.width;
+        const cssH = shot.height || rect.height;
+        const scaleX = img.width / cssW;
+        const scaleY = img.height / cssH;
+        const px = Math.max(0, Math.round(rect.x * scaleX));
+        const py = Math.max(0, Math.round(rect.y * scaleY));
+        const pw = Math.max(1, Math.round(rect.width * scaleX));
+        const ph = Math.max(1, Math.round(rect.height * scaleY));
+        const cv = document.createElement('canvas'); cv.width = pw; cv.height = ph;
+        cv.getContext('2d').drawImage(img, px, py, pw, ph, 0, 0, pw, ph);
+        resolve(cv.toDataURL('image/png'));
+      };
+      img.onerror = () => resolve(null);
+      img.src = shot.dataUrl;
+    });
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  $('btnStart').onclick = onStart;
+  $('btnPause').onclick = onPause;
+  $('btnDone').onclick = onDone;
+  $('btnShot').onclick = () => doScreenshot(false);
+  $('btnShotFull').onclick = () => doScreenshot(true);
+  $('btnClose').onclick = async () => {
+    if (rec.state !== 'idle') {
+      if (state.sumTimer) { clearInterval(state.sumTimer); state.sumTimer = null; }
+      await rec.done();
+    }
+    if (window.overlayClose) { window.overlayClose(); } else { window.close(); }
+  };
+  $('btnMin').onclick = () => { if (window.overlayMin) window.overlayMin(); };
+
+  // 拖拽移动悬浮窗
+  (function drag() {
+    const bar = $('dragbar'); let sx = 0, sy = 0, dragging = false;
+    bar.addEventListener('mousedown', (e) => { dragging = true; sx = e.screenX; sy = e.screenY; });
+    window.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const dx = e.screenX - sx, dy = e.screenY - sy;
+      sx = e.screenX; sy = e.screenY;
+      if (window.llOverlayDrag) window.llOverlayDrag(dx, dy);
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+  })();
+
+  syncUI('idle');
+  if (!window.llAsr) setStatus('⚠ 非桌面环境：桥接口不可用（可在 Electron 中打开）');
+  else setStatus('就绪（悬浮窗）');
+})();
+</script>
+</body>
+</html>

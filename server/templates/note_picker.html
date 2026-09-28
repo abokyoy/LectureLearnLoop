@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>选择学习笔记</title>
+<style>
+  :root { --bg:#1f2430; --fg:#eef1f7; --accent:#4c8dff; --muted:#8a94a6; --ok:#37c26e; --warn:#ff6b6b; --card:#171b24; --line:#3a4256; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
+  #wrap { display:flex; flex-direction:column; height:100%; padding:14px 16px; gap:10px; }
+  h3 { margin:0; font-size:15px; }
+  #search { width:100%; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
+  #list { flex:1; overflow-y:auto; background:var(--card); border-radius:10px; padding:6px; }
+  .item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent; }
+  .item:hover { background:#20283a; }
+  .item.sel { background:#20283a; border-color:var(--accent); }
+  .item .nm { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .item .meta { font-size:11px; color:var(--muted); white-space:nowrap; }
+  .item .badge { font-size:10.5px; color:#fff; background:var(--warn); border-radius:6px; padding:1px 6px; }
+  .muted { color:var(--muted); font-size:12px; }
+  #newrow { display:flex; gap:8px; }
+  #newname { flex:1; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
+  button { border:none; border-radius:8px; padding:9px 14px; font-size:13px; cursor:pointer; }
+  button.main { background:var(--accent); color:#fff; }
+  button.main:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { background:#2b3242; color:var(--fg); border:1px solid var(--line); }
+  #foot { display:flex; justify-content:space-between; gap:8px; }
+  #err { color:var(--warn); font-size:12px; min-height:16px; }
+</style>
+</head>
+<body>
+  <div id="wrap">
+    <h3>选择学习笔记<span class="muted" style="margin-left:8px">录音内容将实时写入所选笔记</span></h3>
+    <input id="search" type="text" placeholder="搜索笔记名称…">
+    <div id="list"><div class="muted" style="padding:12px">加载中…</div></div>
+    <div id="err"></div>
+    <div id="newrow">
+      <input id="newname" type="text" placeholder="新笔记名称（可省略 .md）">
+      <button class="main" id="btnNew">新建并使用</button>
+    </div>
+    <div id="foot">
+      <button class="ghost" id="btnCancel">取消</button>
+      <button class="main" id="btnOpen" disabled>打开所选笔记</button>
+    </div>
+  </div>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const TOKEN_KEY = 'll_token';
+  let items = [];           // /api/notes/list 返回
+  let selected = null;      // 当前选中项
+
+  function token() { return localStorage.getItem(TOKEN_KEY) || ''; }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+  function fail(msg) { $('err').textContent = msg; }
+  async function api(path, opts) {
+    const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() } }, opts || {}));
+    return r.json().catch(() => ({ success: false, error: '非JSON响应' }));
+  }
+
+  function fmtTime(s) {
+    if (!s) return '';
+    try {
+      const d = new Date(s.replace(' ', 'T') + 'Z');  // 服务端 UTC 'YYYY-MM-DD HH:MM:SS'
+      if (isNaN(d)) return s;
+      const now = new Date();
+      const sameDay = d.toDateString() === now.toDateString();
+      return sameDay ? d.toLocaleTimeString().slice(0, 5) : d.toLocaleDateString();
+    } catch (e) { return s; }
+  }
+
+  function render() {
+    const kw = $('search').value.trim().toLowerCase();
+    const shown = items.filter((it) => !kw || String(it.name).toLowerCase().includes(kw) || String(it.title || '').toLowerCase().includes(kw));
+    const el = $('list');
+    if (!shown.length) { el.innerHTML = '<div class="muted" style="padding:12px">没有匹配的笔记，可在下方新建</div>'; return; }
+    el.innerHTML = shown.map((it, i) => (
+      '<div class="item' + (selected && selected.path === it.path ? ' sel' : '') + '" data-i="' + i + '">' +
+      '<span>📝</span>' +
+      '<span class="nm" title="' + esc(it.rel || it.path) + '">' + esc(it.name) +
+        (it.recording ? ' <span class="badge">录制中</span>' : '') + '</span>' +
+      '<span class="meta">' + (it.word_count ? it.word_count + ' 字 · ' : '') + esc(fmtTime(it.updated_time)) + '</span>' +
+      '</div>'
+    )).join('');
+    el.querySelectorAll('.item').forEach((node) => {
+      node.onclick = () => { selected = shown[+node.dataset.i]; render(); $('btnOpen').disabled = false; };
+      node.ondblclick = () => { selected = shown[+node.dataset.i]; chooseOpen(); };
+    });
+  }
+
+  async function load() {
+    if (!token()) { $('list').innerHTML = '<div class="muted" style="padding:12px">未登录：请先在主窗口登录后再录音</div>'; return; }
+    const r = await api('/api/notes/list');
+    if (r.success && r.data) { items = r.data.items || []; }
+    else { items = []; fail('笔记列表加载失败: ' + (r.error || (r.data && r.data.error) || '')); }
+    render();
+  }
+
+  function choose(sel) {
+    if (window.llNotePickerSel) { window.llNotePickerSel.choose(sel); }
+    else { fail('请在桌面端（Electron）中使用本窗口'); }
+  }
+  function chooseOpen() {
+    if (!selected) return;
+    choose({ action: 'open', path: selected.path, name: selected.name });
+  }
+
+  function normName(raw) {
+    let n = String(raw || '').trim().replace(/[\\/:*?"<>|]/g, '_');
+    if (!n) return null;
+    if (!/\.(md|markdown|txt)$/i.test(n)) n += '.md';
+    return n;
+  }
+
+  async function createNew() {
+    fail('');
+    const n = normName($('newname').value);
+    if (!n) { fail('请输入新笔记名称'); return; }
+    const rel = 'vault/' + n;
+    // 重名检测：库/文件任一存在即拒绝，避免覆盖既有正文
+    const cur = await api('/api/notes/content?path=' + encodeURIComponent(rel));
+    if (cur.success && cur.data && cur.data.exists) { fail('已存在同名笔记：' + n + '，请直接选择它'); return; }
+    const r = await api('/api/notes/autosave', {
+      method: 'POST',
+      body: JSON.stringify({ path: rel, content: '#' + ' ' + n.replace(/\.(md|markdown|txt)$/i, '') + '\n\n', title: n }),
+    });
+    if (!(r.success && r.data && r.data.success)) { fail('新建笔记失败: ' + ((r.data && r.data.error) || r.error || '')); return; }
+    choose({ action: 'new', path: rel, name: n });
+  }
+
+  $('btnNew').onclick = createNew;
+  $('btnOpen').onclick = chooseOpen;
+  $('btnCancel').onclick = () => {
+    if (window.llNotePickerSel) window.llNotePickerSel.cancel();
+    else if (window.close) window.close();
+  };
+  $('search').oninput = render;
+  $('newname').onkeydown = (e) => { if (e.key === 'Enter') createNew(); };
+
+  load();
+})();
+</script>
+</body>
+</html>

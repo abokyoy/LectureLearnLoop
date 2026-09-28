@@ -1,0 +1,387 @@
+# 业务规则总览
+
+> 本文档从代码事实中提取，每条规则均标注来源文件和行为。  
+> 凡标注 **[待确认]** 的规则，表示业务意图存在不确定性，必须与用户逐条对齐后方可作为开发依据。
+
+---
+
+## 一、知识点提取流程
+
+### 1.1 提取触发
+
+**来源**：`app_flask.py` L147-170，`knowledge_management.py` L2118-2167
+
+**[已确认] subject_name 来源规则**：用户在「资料学习」页面**先选择/输入学科名称**，提取时将 `subject_name` 随 `text` 一同发送到后端。当前后端 `api_extract_knowledge()` 缺少此参数，是待修复的 BUG。
+
+用户在「资料学习」页面输入文本，调用 `POST /api/knowledge/extract`，传入 `text` 字段。
+
+**后端流程**（`extract_and_process_knowledge_points`）：
+```
+1. 调用 LLM 提取核心概念（extract_knowledge_points）
+   ※ 已知 BUG：app_flask.py 调用时只传 text，缺少 subject_name 参数，实际会抱 TypeError
+   ※ 该 BUG 待修复，修复前此 API 将返回 500
+2. 对每个提取到的知识点，查找相似已有知识点（find_similar_knowledge_points）
+3. 返回格式：
+   {
+     "subject_name": "...",
+     "processed_points": [
+       {
+         "extracted_point": {concept_name, core_definition},  ※ LLM 输出字段名
+         "similar_points": [{id, point_name, score}...],
+         "match_status": "已存在相似知识点" | "无相似知识点（新知识点）"
+       }
+     ]
+   }
+```
+
+### 1.2 知识点确认（merge / new / skip）
+
+**来源**：`knowledge_management.py` L2169-2224
+
+用户对每个提取结果执行三种操作之一：
+
+| 操作 | 传入参数 | 后端行为 |
+|------|---------|---------|
+| `merge` | `existing_id: int` | 调用 `merge_to_existing_point()`，追加描述到已有知识点，建立笔记 UUID 关联 |
+| `new` | `subject_name: str` | 调用 `save_knowledge_point()`，新建知识点，建立笔记 UUID 关联 |
+| `skip` | - | 跳过，不保存 |
+
+> **[已确认]** merge 时，若用户修改了 point_name，**新名称覆盖旧名称**。用户确认弹窗中应展示当前旧名称，允许修改。
+
+### 1.3 LLM 提取 Prompt 规范
+
+**来源**：`knowledge_management.py` L318-400（KnowledgePointManager.extract_knowledge_points）
+
+Prompt 要求 LLM：
+- 仅提取学科**核心概念**，不提取举例和练习
+- 输出 JSON 数组，每个元素包含：
+  - `concept_name`（中文名）  ※ 注意：非 `point_name`，入库前靠双字段兼容读取
+  - `core_definition`（1-2句精准核心定义） ※ 注意：非 `core_description`
+- 输出数量控制：短材料 1-7 个知识点，长材料 ≤ 8 个
+- 禁止输出 Markdown 代码块，直接输出 JSON
+
+---
+
+## 二、知识点相似度匹配规则
+
+**来源**：`similarity_matcher.py`（全文263行）
+
+### 2.1 匹配算法
+
+提供两种模式，优先使用 Embedding，不可用时回退到启发式：
+
+**模式1：Embedding（Ollama nomic-embed-text）**
+```
+综合得分 = 0.3 × 余弦相似度(embedding) + 0.7 × 名称顺序比(SequenceMatcher)
+全名精确匹配（normalize后）→ 得分 ≥ 0.99
+名称 ratio ≥ 0.95 → 得分 ≥ 0.95
+```
+
+**模式2：启发式回退（无 Ollama 时）**
+```
+综合得分 = 0.75 × 名称顺序比 + 0.25 × (0.6×顺序比全文 + 0.4×Jaccard token重叠)
+```
+
+### 2.2 阈值
+
+- `best_match()` 接受阈值：`min_score = 0.35`（低于 0.35 视为无匹配）
+- 相似度结果按得分降序排列，可取 top_k
+
+> **[已确认]** 当前使用 `min_score = 0.35`。这个阈值是初步设定，实际运行中根据误匹配情况动态调整。
+
+---
+
+## 三、知识点熟练度算法（mastery_score）
+
+**来源**：`overlay_drag_corgi_app.py`（Qt版本实现，Flask版尚未迁移此 API）
+
+### 3.1 难度权重定义
+
+| 难度等级 | 权重 |
+|---------|------|
+| 容易 | 1.0 |
+| 中等 | 1.2 |
+| 困难 | 1.5 |
+
+### 3.2 计算公式
+
+```python
+weighted_score = 0
+total_weight = 0
+for result in detailed_results:
+    weight = difficulty_weights.get(result['difficulty'], 1.0)  # 未知难度默认1.0
+    if result['is_correct']:
+        weighted_score += weight
+    total_weight += weight
+
+if total_weight > 0:
+    mastery_score = int((weighted_score / total_weight) * 100)
+else:
+    mastery_score = int(accuracy * 100)  # 无题可算时用正确率兜底
+
+mastery_score = max(0, min(100, mastery_score))  # clamp [0,100]
+```
+
+**核心逻辑**：做对难题得分更高，同样正确率下做难题熟练度更高。
+
+### 3.3 调用时机
+
+用户完成一组练习后，前端调用 `submitMasteryAssessment`（Flask 版此接口**尚未实现**），传入每道题的 `difficulty` 和 `is_correct`。
+
+**[已确认]** mastery_score 采用**全量重算**：每次做完练习，从该知识点的所有历史答题记录重新计算熟练度。新答题影响整体分数，不会因单次失误归零。
+
+---
+
+## 四、错题熟练度规则
+
+**来源**：`knowledge_management.py` L1239-1252（ErrorQuestionManager.append_proficiency）
+
+**[已确认] 增量参数**：
+- 学习率（答对）：`learning_rate = 0.2` → 当前60分答对后：`60 + (100-60) × 0.2 = 68`
+- 遗忘率（答错）：`forget_rate = 0.3` → 当前60分答错后：`60 × (1-0.3) = 42`
+
+### 4.1 存储方式
+
+每次更新调用 `append_proficiency(error_question_id, proficiency)`：
+1. clamp 到 `[0, 100]`
+2. 写入 `error_proficiency_history` 表（追加，不覆盖历史）
+3. 同步更新 `error_questions.current_proficiency` 字段
+
+### 4.2 渐进式更新规则
+
+**调用方**负责计算新值，`append_proficiency` 只做 clamp + 写入。
+
+增量算法（从原 Qt 代码分析）：
+```
+初始值 = 20
+答对一题：新值 = 当前值 + (100 - 当前值) × learning_rate  （learning_rate 约 0.2）
+答错一题：新值 = 当前值 × (1 - forget_rate)               （forget_rate 约 0.3）
+```
+
+> **[待确认]** 上述 learning_rate / forget_rate 具体数值未在 Flask 版代码中直接找到，需确认是否在 `practice_service.py` 中实现。
+
+---
+
+## 五、知识脑图缓存规则
+
+**来源**：`knowledge_management.py` L2477-2538（MindmapManager）
+
+### 5.1 查询流程
+
+```
+1. 查 DB（knowledge_mindmaps 表，按 user_id + subject_name 查询）
+2. 有缓存 → 直接返回（cache_status: "from_cache"）
+3. 无缓存 → 调用 LLM 生成 → 保存 DB → 返回（cache_status: "newly_generated"）
+```
+
+### 5.2 脑图数据结构
+
+```json
+{
+  "nodes": [
+    {"id": "center", "name": "学科名", "type": "center", "level": 0, "x": 400, "y": 300},
+    {"id": "category_1", "name": "基础概念", "type": "category", "level": 1},
+    {"id": "kp_1", "name": "知识点名", "type": "knowledge_point", "level": 2}
+  ],
+  "edges": [
+    {"source": "center", "target": "category_1", "relation": "包含", "direction": "forward"},
+    {"source": "category_1", "target": "kp_1", "relation": "细分为", "direction": "forward"}
+  ]
+}
+```
+
+节点类型枚举：`center`（根）/ `category`（分类）/ `knowledge_point`（知识点）  
+关系类型枚举：`包含` / `细分为` / `依赖于` / `关联到`
+
+### 5.3 版本管理
+
+每次 `save_mindmap()` 时 `version` 字段自增（`version + 1`），可用于检测过期。
+
+> **[已确认]** 脑图永动期保持缓存，**只有用户点击“重新生成”按钮时**才触发 LLM 重新生成。新增知识点不会自动刷新脑图。
+
+---
+
+## 六、LLM 调用路由规则
+
+**来源**：`llm_provider_factory.py`（全文452行），`app_config.json`
+
+### 6.1 提供商选择
+
+当前配置（`app_config.json`）决定主提供商：
+```json
+{"llm_provider": "Qwen", ...}
+```
+
+工厂根据 `llm_provider` 字段路由到对应 Provider 实例：
+- `"Ollama"` → `OllamaProvider`（本地模型，无需 API Key）
+- `"Gemini"` → `GeminiProvider`
+- `"DeepSeek"` → `DeepSeekProvider`
+- `"Qwen"` → `QwenProvider`
+
+### 6.2 配置热重载
+
+`LLMProviderFactory.call()` 每次调用时检查 `config_hash`，若配置发生变化（用户在设置页修改了 API Key 等），自动重建 provider，无需重启服务。
+
+### 6.3 LLM 调用日志
+
+每次调用都通过 `LLMCallLogger` 单例记录，写入 `logs/llm_calls_YYYYMMDD.jsonl`，包含：
+- provider、model、prompt 前200字、response 前200字、耗时、成功/失败
+
+> **[已确认]** LLM 提供商失败时**直接报错**给用户，不尝试自动切换备选提供商。用户可在设置页面手动切换后重试。`knowledge_management.py` 中的历史手写降级链（DeepSeek→Gemini→Ollama→规则）属应收敛的技术债，应迁移到统一工厂。
+
+---
+
+## 七、笔记注册与 UUID 关联规则
+
+**来源**：`knowledge_management.py` L2226-2280（register_note）
+
+### 7.1 笔记唯一标识
+
+每个笔记在注册时生成 UUID（`uuid.uuid4()`），存入 `notes` 表的 `note_uuid` 字段。
+
+### 7.2 文件路径去重
+
+以 `file_path` 为唯一键：
+- 路径已存在 → UPDATE（更新 title、content_hash、updated_time）
+- 路径不存在 → INSERT（新建，生成新 UUID）
+
+### 7.3 知识点-笔记关联
+
+通过 `knowledge_point_sources` 表维护多对多关系：
+
+```
+知识点 ID ←→ 笔记 UUID ←→ 笔记 file_path
+```
+
+每次 `merge` 或 `new` 确认时，调用 `link_knowledge_point_to_note(point_id, note_uuid)` 建立关联。
+
+---
+
+## 八、文件存储规则
+
+**来源**：`app_flask.py` L311-353
+
+### 8.1 文件路径安全
+
+`/api/file/save` 和 `/api/file/load` 使用 `data/` 目录为基准，通过以下检查（L321-328）：
+```python
+base_dir = os.path.join(app.root_path, 'data')
+full_path = os.path.join(base_dir, file_path)
+if not full_path.startswith(base_dir):  # 路径遍历防御
+    return 403
+```
+
+> **[已知问题]** 此防御存在 `..` 绕过风险（`os.path.join` 后检查 `startswith` 不是最安全的方式，应使用 `os.path.realpath` + `os.path.commonpath`）。
+
+### 8.2 笔记文件位置
+
+学习素材（Markdown 笔记）存储在 `vault/` 目录，与 `data/` 分离。
+
+---
+
+### 九、练习系统规则
+
+**来源**：`services/practice_service.py`，`dal/practice_dao.py`
+
+**[已确认] 熟练度自动更新规则**：
+用户完成一组练习后，系统应自动更新所有涉及知识点的熟练度（全量重算），**无需用户手动提交评估**。
+
+当前状况（开发中）：
+- `PracticeAPI`（前端 `api.js`）定义了 `generate/evaluate/getHistory/getDetail/save` 五个方法
+- 后端 `app_flask.py` **未实现任何一个** 练习 API 端点
+- 两套数据库并存：`practice_history.db`（DAO用）和 `practice_data.db`（Service用）
+
+> **[待确认]** 练习三类模式（基于资料 / 基于知识点 / 基于错题）的具体业务规则（出题方式、题目类型、答题交互），需要用户提供完整描述后再录入。
+
+---
+
+## 十、多端数据同步规则
+
+**来源**：`docs/原则/多端架构原则.md`
+
+- Web 端与移动端共享同一 SQLite 数据库
+- SQLite **不支持多进程并发写入**，两端不会同时写（用户约定：同一时刻只用一端）
+- 录音/拍照等移动端产生的文件，通过 API 上传到后端 `vault/` 目录
+- 调试日志两端写入同一 `logs/debug_trace.jsonl`，通过 `source` 字段区分 `web`/`mobile`
+
+---
+
+## 十一、用户积分与充值规则（2026-09-28）
+
+**来源**：`credits_service.py`、`routes_credits.py`、`routes_admin.py`、`llm_provider_factory.py`（`_call_billed`）、`auth.py`（登录赠送 / ASR 闸口）、`database/schema_credits.py`
+
+### 11.1 换算口径
+
+- **Token → 积分**：`积分 = round(总Token / 换算比例, 1)`；换算比例默认 **4000 Token = 1 积分**，可由管理员在后台配置（`credits_token_ratio`）。比例下限为 1（防误配小数导致除零）。
+- 有 Token 消耗时**最小扣 0.1 积分**（避免微量调用免费）。
+- **录音转文字（ASR）**：`分钟 = ceil(秒/60)`，`积分 = 分钟 × 每分钟费率`（`credits_asr_per_minute` 默认 1，即 1 分钟 = 1 积分）。自报时长封顶 24 小时，防异常值。
+- **充值比例**：`credits_per_yuan` 默认 100 积分 = 1 元（仅用于展示与卡密面值参考）。
+
+### 11.2 扣费时机（所有 AI 操作统一收敛到 `call_llm`）
+
+| 场景 | 计费方式 | 来源端点/入口 |
+|------|---------|--------------|
+| AI Chat、生成练习题、答案评判、总结、脑图、提炼知识点 | 按 Token 折算扣分 | 全部经 `LLMProviderFactory.call_llm → _call_billed` |
+| 录音转文字 | 按分钟扣分 | 停止录音后前端上报 `/api/credits/asr-charge` |
+| 大模型连接测试 | 与正式调用同预检（不足即拦截，不实际扣分） | `/api/llm_test` |
+
+### 11.3 系统 Key vs 用户自备 Key
+
+- **用户自备 Key**（设置页配置，`user_llm_config`）：调用**不扣分**，但仍记一条 `delta=0, use_own_key=1` 的流水供审计；调用失败/返回空 → 自动**回落系统 Key 并按正常扣分**。
+- **系统 Key**（管理员后台配置，`system_config`）：先做**余额预检**，`balance ≤ 0` 拦截并提示充值；调用成功后按 Token 扣分。
+- **自备 Key 为空串语义**：设置页留空表示「保持原 Key 不变」；显式清除需勾选清除标记，防止误删 Key 后静默回落系统 Key 扣分。
+- **ASR 只走系统 Deepgram Key**，用户级 Key 不影响转写计费。
+
+### 11.4 余额不足的拦截
+
+- **录音前**：`/api/asr/config` 下发转写密钥前预检，`balance ≤ 0` 返回 402 拒绝开启录音。
+- **录音后**：录音已实际发生，`asr-charge` **允许扣成负余额**（欠费），后续 LLM 调用预检会拦截直至补齐。
+- **LLM 调用**：预检不过抛 `InsufficientCreditsError`，前端 Chat 显示充值引导、非 Chat 场景 toast 提示。
+
+### 11.5 每日登录赠送
+
+- 每个自然日**首次登录**赠送 `credits_daily_bonus`（默认 100 积分）。
+- 并发幂等：条件 UPDATE（`last_bonus_date <> 今日`）+ `rowcount` 判定，保证同一日只发一次。
+- 配置为 0 即关闭赠送（管理员可在后台调整）。
+
+### 11.6 卡密充值
+
+- 管理员**批量生成**卡密（`activation_codes`，面值可配），电商渠道售卖。
+- 用户在站内「我的积分」输入卡密**兑换**入账（`/api/credits/redeem`）。
+- **防并发重复兑换**：PG 用 `FOR UPDATE` 行锁，SQLite 靠事务原子性；状态流转 `active → used`，条件更新保证同一码只成功一次。
+- 卡密可**作废**（`active → void`）；已使用的不可作废。流水 note 仅保留卡密后 4 位（掩码），不泄漏全码。
+
+### 11.7 管理员豁免与审计
+
+- `is_admin=1` 用户调用系统 Key/ASR **不消耗积分**（预检直接放行、扣分为 0），但**仍记流水**（note 标注「管理员不消耗积分」），可审计用量。
+- 管理员后台可对**任意用户手工调整**积分（`/api/admin/adjust`），采用相对更新防并发覆盖，拒绝使余额变负的调整，且校验目标用户存在。
+
+### 11.8 前端呈现
+
+- **AI Chat 窗口顶部**：实时积分徽章（余额 ≤ 0 变红）。
+- **Chat 回复尾部**：打字机播完追加「本次消耗 N 积分 · 余额 M」注脚（会话被中断/取代时不追加，防串话）。
+- **非 Chat 场景**：统一 `llHandleBilling` 钩子，API 响应含计费字段时 toast 提示扣分并刷新徽章。
+
+---
+
+## 十二、确认问题历史汇总（已全部解答）
+
+| 编号 | 问题 | 确认结果 |
+|------|------|----------|
+| Q1 | merge 时 point_name 是否覆盖旧名称？ | ✅ 新名称覆盖旧名称 |
+| Q2 | 相似度阈值 0.35 是否合适？ | ✅ 先用0.35，根据实际效果调整 |
+| Q3 | mastery_score 全量还是增量？ | ✅ 全量重算（所有历史题目） |
+| Q4 | 错题熟练度 learning_rate/forget_rate | ✅ 学习率=0.2，遗忘率=0.3 |
+| Q5 | 脑图重新生成触发时机 | ✅ 用户主动点“重新生成”按钮 |
+| Q6 | LLM 失败时的处理策略 | ✅ 直接报错，不自动降级 |
+| Q7 | 练习完成后熟练度更新方式 | ✅ 自动全量重算，无需用户手动提交 |
+| Q8 | subject_name 从哪里来？ | ✅ 用户在资料学习页面选择 |
+| Q9 | 充值方式 | ✅ 卡密模式（放弃 Stripe），电商售卖→站内兑换 |
+| Q10 | 余额不足处理 | ✅ LLM/录音前拦截提示充值；录音后允许扣成负余额后补 |
+| Q11 | 管理员是否消耗积分 | ✅ 豁免不扣分，但流水留痕可审计 |
+| Q12 | ASR 走哪个 Key | ✅ 只走系统 Deepgram Key，与用户自备 Key 无关 |
+
+---
+
+*本文件最后更新：2026-09-28（新增用户积分与充值规则）*  
+*本文档基于代码事实提取，所有结论均可通过行号定位到源文件验证。*

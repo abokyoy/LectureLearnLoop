@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>框选截屏</title>
+<style>
+  html,body { margin:0; height:100%; overflow:hidden; background:#000; cursor:crosshair; font-family:"Segoe UI",sans-serif; }
+  #bg { position:fixed; inset:0; width:100%; height:100%; object-fit:fill; user-select:none; -webkit-user-drag:none; }
+  #mask { position:fixed; inset:0; background:rgba(0,0,0,.45); }
+  #sel { position:fixed; border:2px solid #4c8dff; background:rgba(76,141,255,.12); display:none; }
+  #hint { position:fixed; top:12px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,.6); padding:8px 16px; border-radius:8px; font-size:14px; z-index:10; }
+  #tip { position:fixed; color:#4c8dff; font-size:12px; background:rgba(0,0,0,.7); padding:2px 6px; border-radius:4px; display:none; z-index:10; }
+</style>
+</head>
+<body>
+  <img id="bg" alt="">
+  <div id="mask"></div>
+  <div id="sel"></div>
+  <div id="hint">拖动鼠标框选截图区域 · 松开确认 · Esc 取消</div>
+  <div id="tip"></div>
+<script>
+(function () {
+  const bg = document.getElementById('bg');
+  const mask = document.getElementById('mask');
+  const sel = document.getElementById('sel');
+  const tip = document.getElementById('tip');
+  let dragging = false, sx = 0, sy = 0, rect = null;
+
+  if (window.llCaptureSel) {
+    window.llCaptureSel.onImage((s) => { bg.src = s.dataUrl; });
+  }
+
+  function pos(e) { return { x: e.clientX, y: e.clientY }; }
+
+  window.addEventListener('mousedown', (e) => {
+    dragging = true; const p = pos(e); sx = p.x; sy = p.y;
+    sel.style.display = 'block'; tip.style.display = 'block';
+    sel.style.left = sx + 'px'; sel.style.top = sy + 'px'; sel.style.width = '0px'; sel.style.height = '0px';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const p = pos(e);
+    const x = Math.min(sx, p.x), y = Math.min(sy, p.y);
+    const w = Math.abs(p.x - sx), h = Math.abs(p.y - sy);
+    sel.style.left = x + 'px'; sel.style.top = y + 'px'; sel.style.width = w + 'px'; sel.style.height = h + 'px';
+    tip.textContent = w + ' × ' + h; tip.style.left = (x + 4) + 'px'; tip.style.top = (y - 20) + 'px';
+    rect = { x, y, width: w, height: h };
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; tip.style.display = 'none';
+    if (rect && rect.width > 4 && rect.height > 4) {
+      if (window.llCaptureSel) window.llCaptureSel.submit(rect);
+    } else {
+      sel.style.display = 'none';
+    }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { if (window.llCaptureSel) window.llCaptureSel.cancel(); }
+  });
+})();
+</script>
+</body>
+</html>

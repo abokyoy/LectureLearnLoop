@@ -1,0 +1,368 @@
+<!-- 未保存内容守卫组件 -->
+<script>
+/**
+ * 通用的未保存内容检测和提示系统
+ * 功能：
+ * 1. 检测页面中的编辑内容是否有未保存的更改
+ * 2. 在用户尝试离开页面时弹出保存提示
+ * 3. 提供保存、不保存、取消三个选项
+ */
+
+// 全局状态管理
+window.UnsavedChangesGuard = {
+    // 是否有未保存的更改
+    hasUnsavedChanges: false,
+    
+    // 原始内容缓存
+    originalContent: new Map(),
+    
+    // 监控的编辑器元素
+    monitoredElements: new Set(),
+    
+    // 当前正在编辑的文件路径
+    currentFilePath: null,
+    
+    // 保存回调函数
+    saveCallback: null,
+    
+    // 初始化
+    init: function() {
+        console.log('🛡️ 初始化未保存内容守卫系统');
+        this.createSavePromptDialog();
+        this.bindGlobalEvents();
+    },
+    
+    // 创建保存提示对话框
+    createSavePromptDialog: function() {
+        if (document.getElementById('unsavedChangesDialog')) {
+            return; // 已存在，不重复创建
+        }
+        
+        const dialog = document.createElement('div');
+        dialog.id = 'unsavedChangesDialog';
+        dialog.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden';
+        dialog.innerHTML = `
+            <div class="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
+                <div class="flex items-center mb-4">
+                    <span class="material-icons-outlined text-orange-500 mr-3">warning</span>
+                    <h3 class="text-lg font-semibold text-gray-800">保存更改</h3>
+                </div>
+                <p class="text-gray-600 mb-6">
+                    您有未保存的更改，是否要保存这些更改？
+                </p>
+                <div class="flex justify-end space-x-3">
+                    <button id="unsavedChanges_cancel" class="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                        取消
+                    </button>
+                    <button id="unsavedChanges_dontSave" class="px-4 py-2 text-red-600 border border-red-300 rounded-lg hover:bg-red-50 transition-colors">
+                        不保存
+                    </button>
+                    <button id="unsavedChanges_save" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                        保存
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        // 绑定按钮事件
+        document.getElementById('unsavedChanges_cancel').addEventListener('click', () => {
+            this.hideDialog();
+            this.navigationCallback = null; // 取消导航
+        });
+        
+        document.getElementById('unsavedChanges_dontSave').addEventListener('click', () => {
+            this.hideDialog();
+            this.hasUnsavedChanges = false;
+            if (this.navigationCallback) {
+                this.navigationCallback(); // 继续导航，不保存
+            }
+        });
+        
+        document.getElementById('unsavedChanges_save').addEventListener('click', () => {
+            this.hideDialog();
+            this.saveAndContinue();
+        });
+    },
+    
+    // 显示保存提示对话框
+    showDialog: function() {
+        const dialog = document.getElementById('unsavedChangesDialog');
+        if (dialog) {
+            dialog.classList.remove('hidden');
+        }
+    },
+    
+    // 隐藏保存提示对话框
+    hideDialog: function() {
+        const dialog = document.getElementById('unsavedChangesDialog');
+        if (dialog) {
+            dialog.classList.add('hidden');
+        }
+    },
+    
+    // 绑定全局事件
+    bindGlobalEvents: function() {
+        // 监听页面卸载前事件
+        window.addEventListener('beforeunload', (e) => {
+            if (this.hasUnsavedChanges) {
+                e.preventDefault();
+                e.returnValue = '您有未保存的更改，确定要离开吗？';
+                return e.returnValue;
+            }
+        });
+        
+        // 监听页面可见性变化（用户切换标签页）
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && this.hasUnsavedChanges && this.saveCallback) {
+                console.log('📄 页面隐藏，自动保存未保存的更改');
+                this.autoSave();
+            }
+        });
+        
+        // 监听窗口失去焦点（用户切换到其他应用）
+        window.addEventListener('blur', () => {
+            if (this.hasUnsavedChanges && this.saveCallback) {
+                console.log('🔄 窗口失去焦点，自动保存未保存的更改');
+                this.autoSave();
+            }
+        });
+    },
+    
+    // 注册需要监控的编辑器元素
+    registerEditor: function(element, filePath, saveCallback) {
+        if (!element) {
+            console.error('❌ 注册编辑器失败：元素不存在');
+            return;
+        }
+        
+        console.log(`📝 注册编辑器监控：${filePath || '未知文件'}`);
+        
+        this.monitoredElements.add(element);
+        this.currentFilePath = filePath;
+        this.saveCallback = saveCallback;
+        
+        // 保存原始内容
+        const originalContent = element.value || element.textContent || '';
+        this.originalContent.set(element, originalContent);
+        
+        // 监听内容变化
+        const handleChange = () => {
+            this.checkForChanges();
+        };
+        
+        // 根据元素类型绑定不同的事件
+        if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
+            element.addEventListener('input', handleChange);
+            element.addEventListener('change', handleChange);
+        } else {
+            // 对于contenteditable元素
+            element.addEventListener('input', handleChange);
+            element.addEventListener('blur', handleChange);
+        }
+        
+        // 标记元素已被监控
+        element.setAttribute('data-unsaved-guard', 'true');
+    },
+    
+    // 取消监控编辑器元素
+    unregisterEditor: function(element) {
+        if (element && this.monitoredElements.has(element)) {
+            console.log('📝 取消编辑器监控');
+            this.monitoredElements.delete(element);
+            this.originalContent.delete(element);
+            element.removeAttribute('data-unsaved-guard');
+        }
+    },
+    
+    // 检查是否有未保存的更改
+    checkForChanges: function() {
+        let hasChanges = false;
+        
+        for (const element of this.monitoredElements) {
+            const currentContent = element.value || element.textContent || '';
+            const originalContent = this.originalContent.get(element) || '';
+            
+            if (currentContent !== originalContent) {
+                hasChanges = true;
+                break;
+            }
+        }
+        
+        const wasChanged = this.hasUnsavedChanges;
+        this.hasUnsavedChanges = hasChanges;
+        
+        // 状态变化时触发事件
+        if (wasChanged !== hasChanges) {
+            this.onStateChange(hasChanges);
+        }
+    },
+    
+    // 状态变化回调
+    onStateChange: function(hasUnsavedChanges) {
+        console.log(`📝 未保存状态变更：${hasUnsavedChanges ? '有未保存更改' : '无未保存更改'}`);
+        
+        // 触发自定义事件
+        const event = new CustomEvent('unsavedChangesStateChange', {
+            detail: { hasUnsavedChanges }
+        });
+        window.dispatchEvent(event);
+        
+        // 更新UI指示器
+        this.updateUnsavedIndicator(hasUnsavedChanges);
+    },
+    
+    // 更新未保存指示器
+    updateUnsavedIndicator: function(hasUnsavedChanges) {
+        // 查找页面中的保存按钮或指示器
+        const saveBtn = document.getElementById('save-btn') || 
+                       document.querySelector('[data-action="save"]') ||
+                       document.querySelector('.save-button');
+        
+        if (saveBtn) {
+            if (hasUnsavedChanges) {
+                saveBtn.classList.remove('hidden');
+                saveBtn.classList.add('bg-orange-500', 'hover:bg-orange-600');
+                saveBtn.classList.remove('bg-gray-400');
+            } else {
+                saveBtn.classList.add('hidden');
+            }
+        }
+        
+        // 更新页面标题
+        const pageTitle = document.getElementById('page-title');
+        if (pageTitle) {
+            const title = pageTitle.textContent;
+            if (hasUnsavedChanges && !title.includes('*')) {
+                pageTitle.textContent = title + ' *';
+            } else if (!hasUnsavedChanges && title.includes('*')) {
+                pageTitle.textContent = title.replace(' *', '');
+            }
+        }
+    },
+    
+    // 检查是否可以导航
+    canNavigate: function(callback) {
+        if (!this.hasUnsavedChanges) {
+            callback();
+            return true;
+        }
+        
+        // 保存导航回调
+        this.navigationCallback = callback;
+        
+        // 显示保存提示对话框
+        this.showDialog();
+        return false;
+    },
+    
+    // 保存并继续导航
+    saveAndContinue: function() {
+        if (this.saveCallback) {
+            console.log('💾 保存更改并继续导航');
+            
+            // 执行保存
+            const saveResult = this.saveCallback();
+            
+            // 如果保存是异步的
+            if (saveResult && typeof saveResult.then === 'function') {
+                saveResult.then(() => {
+                    this.hasUnsavedChanges = false;
+                    if (this.navigationCallback) {
+                        this.navigationCallback();
+                    }
+                }).catch((error) => {
+                    console.error('❌ 保存失败：', error);
+                    alert('保存失败，请重试');
+                });
+            } else {
+                // 同步保存
+                this.hasUnsavedChanges = false;
+                if (this.navigationCallback) {
+                    this.navigationCallback();
+                }
+            }
+        } else {
+            console.warn('⚠️ 没有设置保存回调函数');
+            if (this.navigationCallback) {
+                this.navigationCallback();
+            }
+        }
+    },
+    
+    // 自动保存
+    autoSave: function() {
+        if (this.saveCallback && this.hasUnsavedChanges) {
+            console.log('🔄 执行自动保存');
+            const saveResult = this.saveCallback();
+            
+            if (saveResult && typeof saveResult.then === 'function') {
+                saveResult.then(() => {
+                    this.hasUnsavedChanges = false;
+                    console.log('✅ 自动保存成功');
+                }).catch((error) => {
+                    console.error('❌ 自动保存失败：', error);
+                });
+            } else {
+                this.hasUnsavedChanges = false;
+                console.log('✅ 自动保存完成');
+            }
+        }
+    },
+    
+    // 重置状态
+    reset: function() {
+        console.log('🔄 重置未保存内容守卫状态');
+        this.hasUnsavedChanges = false;
+        this.originalContent.clear();
+        this.monitoredElements.clear();
+        this.currentFilePath = null;
+        this.saveCallback = null;
+        this.navigationCallback = null;
+        this.updateUnsavedIndicator(false);
+    },
+    
+    // 手动标记为已保存
+    markAsSaved: function() {
+        console.log('✅ 手动标记为已保存');
+        
+        // 更新原始内容缓存
+        for (const element of this.monitoredElements) {
+            const currentContent = element.value || element.textContent || '';
+            this.originalContent.set(element, currentContent);
+        }
+        
+        this.hasUnsavedChanges = false;
+        this.updateUnsavedIndicator(false);
+    }
+};
+
+// 页面加载完成后初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        window.UnsavedChangesGuard.init();
+    });
+} else {
+    window.UnsavedChangesGuard.init();
+}
+
+// 导出到全局
+window.registerEditor = function(element, filePath, saveCallback) {
+    window.UnsavedChangesGuard.registerEditor(element, filePath, saveCallback);
+};
+
+window.unregisterEditor = function(element) {
+    window.UnsavedChangesGuard.unregisterEditor(element);
+};
+
+window.canNavigate = function(callback) {
+    return window.UnsavedChangesGuard.canNavigate(callback);
+};
+
+window.markAsSaved = function() {
+    window.UnsavedChangesGuard.markAsSaved();
+};
+
+console.log('🛡️ 未保存内容守卫组件已加载');
+</script>

@@ -1,0 +1,428 @@
+<!-- LLM调用日志查看器 -->
+<style>
+    .log-viewer {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+        padding: 20px;
+    }
+    .log-viewer h2 {
+        color: #2d3748;
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        border-bottom: 2px solid #32C77F;
+        padding-bottom: 8px;
+    }
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .stat-card {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 16px;
+        text-align: center;
+    }
+    .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #32C77F;
+        margin-bottom: 4px;
+    }
+    .stat-label {
+        font-size: 12px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .log-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+    }
+    .log-table th,
+    .log-table td {
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 12px;
+    }
+    .log-table th {
+        background: #f7fafc;
+        font-weight: 600;
+        color: #4a5568;
+    }
+    .log-table tr:hover {
+        background: #f7fafc;
+    }
+    .status-success {
+        color: #22543d;
+        background: #c6f6d5;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+    }
+    .status-error {
+        color: #742a2a;
+        background: #fed7d7;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+    }
+    .provider-tag {
+        background: #bee3f8;
+        color: #2a69ac;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 500;
+    }
+    .context-tag {
+        background: #fbb6ce;
+        color: #97266d;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+    }
+    .duration-fast {
+        color: #22543d;
+        font-weight: 500;
+    }
+    .duration-medium {
+        color: #d69e2e;
+        font-weight: 500;
+    }
+    .duration-slow {
+        color: #e53e3e;
+        font-weight: 500;
+    }
+    .log-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+    .refresh-btn {
+        background: #32C77F;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+    }
+    .refresh-btn:hover {
+        background: #2bb06a;
+    }
+    .filter-input {
+        padding: 6px 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        font-size: 12px;
+        width: 200px;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+    }
+    .log-detail {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 8px;
+        margin-top: 4px;
+        font-size: 11px;
+        color: #4a5568;
+        max-height: 100px;
+        overflow-y: auto;
+    }
+</style>
+
+<div class="p-8">
+    <div class="log-viewer">
+        <h2>📊 LLM调用统计</h2>
+        <div class="stats-grid" id="stats-grid">
+            <!-- 统计数据将在这里显示 -->
+        </div>
+    </div>
+
+    <div class="log-viewer">
+        <h2>📋 调用日志</h2>
+        <div class="log-controls">
+            <div>
+                <input type="text" id="filter-input" class="filter-input" placeholder="搜索日志..." onkeyup="filterLogs()">
+            </div>
+            <div>
+                <button class="refresh-btn" onclick="refreshLogs()">🔄 刷新</button>
+                <button class="refresh-btn" onclick="exportLogs()" style="margin-left: 8px; background: #4299e1;">📥 导出</button>
+            </div>
+        </div>
+        
+        <div id="logs-container">
+            <!-- 日志表格将在这里显示 -->
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+    
+    let currentLogs = [];
+    let currentStats = {};
+
+    // 调试函数
+    function debugLog(message) {
+        console.log('[LLM Logs Debug]', message);
+    }
+
+    function debugError(message) {
+        console.error('[LLM Logs Error]', message);
+    }
+
+    // 初始化日志查看器
+    function initializeLogs() {
+        debugLog('初始化LLM日志查看器');
+        loadLogs();
+    }
+
+    // 加载日志数据
+    function loadLogs() {
+        debugLog('加载LLM调用日志');
+        
+        if (!window.bridge || !window.bridge.getLLMCallLogs) {
+            debugError('Bridge对象或getLLMCallLogs方法不可用');
+            showEmptyState('日志功能不可用');
+            return;
+        }
+        
+        try {
+            window.bridge.getLLMCallLogs().then(function(result) {
+                debugLog('收到日志数据: ' + result.substring(0, 100) + '...');
+                
+                try {
+                    const data = JSON.parse(result);
+                    if (data.success) {
+                        currentLogs = data.records || [];
+                        currentStats = data.statistics || {};
+                        displayStats(currentStats);
+                        displayLogs(currentLogs);
+                    } else {
+                        debugError('获取日志失败: ' + data.error);
+                        showEmptyState('获取日志失败: ' + data.error);
+                    }
+                } catch (parseError) {
+                    debugError('解析日志数据失败: ' + parseError.message);
+                    showEmptyState('解析日志数据失败');
+                }
+            }).catch(function(error) {
+                debugError('获取日志异常: ' + error);
+                showEmptyState('获取日志异常: ' + error);
+            });
+        } catch (error) {
+            debugError('调用getLLMCallLogs时发生错误: ' + error.message);
+            showEmptyState('调用日志接口失败');
+        }
+    }
+
+    // 显示统计数据
+    function displayStats(stats) {
+        const statsGrid = document.getElementById('stats-grid');
+        
+        const successRate = stats.success_rate ? stats.success_rate.toFixed(1) : '0.0';
+        const avgDuration = stats.avg_duration ? (stats.avg_duration * 1000).toFixed(0) : '0';
+        const avgFirstByte = stats.avg_first_byte_time ? (stats.avg_first_byte_time * 1000).toFixed(0) : '0';
+        
+        statsGrid.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-value">${stats.total_calls || 0}</div>
+                <div class="stat-label">总调用次数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${stats.successful_calls || 0}</div>
+                <div class="stat-label">成功调用</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${successRate}%</div>
+                <div class="stat-label">成功率</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${avgDuration}ms</div>
+                <div class="stat-label">平均响应时间</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">${avgFirstByte}ms</div>
+                <div class="stat-label">平均首字节时间</div>
+            </div>
+        `;
+    }
+
+    // 显示日志列表
+    function displayLogs(logs) {
+        const container = document.getElementById('logs-container');
+        
+        if (!logs || logs.length === 0) {
+            showEmptyState('暂无日志记录');
+            return;
+        }
+
+        let tableHTML = `
+            <table class="log-table">
+                <thead>
+                    <tr>
+                        <th>时间</th>
+                        <th>提供商</th>
+                        <th>模型</th>
+                        <th>上下文</th>
+                        <th>状态</th>
+                        <th>耗时</th>
+                        <th>首字节</th>
+                        <th>提示词长度</th>
+                        <th>响应长度</th>
+                        <th>详情</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        logs.forEach(log => {
+            const statusClass = log.success ? 'status-success' : 'status-error';
+            const statusText = log.success ? '成功' : '失败';
+            const durationMs = (log.total_duration * 1000).toFixed(0);
+            const firstByteMs = (log.time_to_first_byte * 1000).toFixed(0);
+            
+            let durationClass = 'duration-fast';
+            if (log.total_duration > 5) durationClass = 'duration-slow';
+            else if (log.total_duration > 2) durationClass = 'duration-medium';
+
+            tableHTML += `
+                <tr onclick="toggleLogDetail('${log.call_id}')">
+                    <td>${log.timestamp}</td>
+                    <td><span class="provider-tag">${log.provider}</span></td>
+                    <td>${log.model}</td>
+                    <td><span class="context-tag">${log.context || '未知'}</span></td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td class="${durationClass}">${durationMs}ms</td>
+                    <td>${firstByteMs}ms</td>
+                    <td>${log.prompt_length}</td>
+                    <td>${log.response_length}</td>
+                    <td>
+                        <button onclick="event.stopPropagation(); toggleLogDetail('${log.call_id}')" style="background: none; border: none; color: #4299e1; cursor: pointer;">📋</button>
+                    </td>
+                </tr>
+                <tr id="detail-${log.call_id}" style="display: none;">
+                    <td colspan="10">
+                        <div class="log-detail">
+                            <strong>API端点:</strong> ${log.api_endpoint}<br>
+                            <strong>HTTP状态码:</strong> ${log.status_code}<br>
+                            <strong>提示词预览:</strong> ${log.prompt_preview}<br>
+                            <strong>响应预览:</strong> ${log.response_preview}<br>
+                            ${log.error_message ? `<strong>错误信息:</strong> ${log.error_message}<br>` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tableHTML += '</tbody></table>';
+        container.innerHTML = tableHTML;
+    }
+
+    // 显示空状态
+    function showEmptyState(message) {
+        const container = document.getElementById('logs-container');
+        container.innerHTML = `
+            <div class="empty-state">
+                <div style="font-size: 48px; margin-bottom: 16px;">📝</div>
+                <div>${message}</div>
+            </div>
+        `;
+    }
+
+    // 切换日志详情显示
+    function toggleLogDetail(callId) {
+        const detailRow = document.getElementById(`detail-${callId}`);
+        if (detailRow) {
+            detailRow.style.display = detailRow.style.display === 'none' ? 'table-row' : 'none';
+        }
+    }
+
+    // 过滤日志
+    function filterLogs() {
+        const filterValue = document.getElementById('filter-input').value.toLowerCase();
+        const filteredLogs = currentLogs.filter(log => {
+            return log.provider.toLowerCase().includes(filterValue) ||
+                   log.model.toLowerCase().includes(filterValue) ||
+                   log.context.toLowerCase().includes(filterValue) ||
+                   log.timestamp.toLowerCase().includes(filterValue);
+        });
+        displayLogs(filteredLogs);
+    }
+
+    // 刷新日志
+    function refreshLogs() {
+        debugLog('刷新日志数据');
+        loadLogs();
+    }
+
+    // 导出日志
+    function exportLogs() {
+        debugLog('导出日志数据');
+        
+        if (!currentLogs || currentLogs.length === 0) {
+            alert('没有日志数据可以导出');
+            return;
+        }
+
+        // 创建CSV内容
+        const headers = ['时间', '提供商', '模型', '上下文', '状态', '总耗时(s)', '首字节时间(s)', '提示词长度', '响应长度', 'API端点', '错误信息'];
+        const csvContent = [
+            headers.join(','),
+            ...currentLogs.map(log => [
+                log.timestamp,
+                log.provider,
+                log.model,
+                log.context || '',
+                log.success ? '成功' : '失败',
+                log.total_duration,
+                log.time_to_first_byte,
+                log.prompt_length,
+                log.response_length,
+                log.api_endpoint,
+                log.error_message || ''
+            ].map(field => `"${field}"`).join(','))
+        ].join('\n');
+
+        // 下载文件
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `llm_call_logs_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // 将函数暴露到全局作用域
+    window.toggleLogDetail = toggleLogDetail;
+    window.filterLogs = filterLogs;
+    window.refreshLogs = refreshLogs;
+    window.exportLogs = exportLogs;
+
+    // 页面初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeLogs);
+    } else {
+        initializeLogs();
+    }
+
+})();
+</script>

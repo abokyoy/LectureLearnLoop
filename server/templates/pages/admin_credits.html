@@ -1,0 +1,331 @@
+<!-- 管理后台（2026-09-28 积分系统）：积分参数 / 系统大模型 / 用户积分 / 卡密管理。
+     所有数据端点均需管理员（require_admin），非管理员访问将显示 403 提示。 -->
+<style>
+    .adm-group {
+        background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px; padding: 20px;
+    }
+    .adm-group h3 {
+        color: #2d3748; font-size: 16px; font-weight: 600; margin-bottom: 16px;
+        border-bottom: 2px solid #7048e8; padding-bottom: 8px;
+    }
+    .adm-row { display: flex; align-items: center; margin-bottom: 12px; }
+    .adm-row label { width: 200px; color: #4a5568; font-weight: 500; flex-shrink: 0; font-size: 14px; }
+    .adm-row input, .adm-row select {
+        flex: 1; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 14px;
+    }
+    .adm-desc { margin-left: 12px; color: #a0aec0; font-size: 12px; width: 260px; flex-shrink: 0; }
+    .adm-btn {
+        background: #7048e8; color: white; border: none; padding: 9px 18px;
+        border-radius: 6px; font-weight: 500; cursor: pointer;
+    }
+    .adm-btn:hover { background: #5f3dc4; }
+    .adm-btn:disabled { background: #a0aec0; cursor: not-allowed; }
+    .adm-btn-danger { background: #e03131; padding: 4px 10px; font-size: 12px; }
+    .adm-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .adm-table th, .adm-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #edf2f7; }
+    .adm-table th { color: #718096; font-weight: 500; background: #f7fafc; }
+    .adm-msg { padding: 10px 15px; border-radius: 4px; margin-top: 10px; font-size: 14px; display: none; }
+    .adm-msg.ok { display: block; background: #f0fff4; color: #22543d; border: 1px solid #9ae6b4; }
+    .adm-msg.err { display: block; background: #fed7d7; color: #742a2a; border: 1px solid #feb2b2; }
+    .code-out { font-family: Consolas, monospace; background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 4px;
+                padding: 10px; margin-top: 10px; max-height: 200px; overflow-y: auto; white-space: pre-wrap; display: none; }
+</style>
+
+<div class="p-8">
+    <h1 class="text-2xl font-bold mb-2" style="color:#2d3748;">🛠️ 管理后台 · 积分与系统配置</h1>
+    <p style="color:#718096;font-size:13px;margin-bottom:20px;">
+        仅管理员可访问。修改立即生效并记入审计流水。
+        <a href="/settings" style="color:#7048e8;">← 返回设置</a>
+    </p>
+    <div id="adm-top-msg" class="adm-msg"></div>
+
+    <!-- ============ 积分业务参数 ============ -->
+    <div class="adm-group">
+        <h3>积分业务参数</h3>
+        <div id="credit-config-rows"></div>
+        <div class="adm-row"><label></label>
+            <button type="button" class="adm-btn" id="save-credit-cfg-btn">保存积分参数</button>
+        </div>
+        <div id="credit-config-msg" class="adm-msg"></div>
+    </div>
+
+    <!-- ============ 系统大模型 ============ -->
+    <div class="adm-group">
+        <h3>系统大模型配置（全体用户回落时使用）</h3>
+        <div class="adm-row">
+            <label>说明:</label>
+            <span style="color:#4a5568;font-size:13px;">密钥以掩码显示；不修改则保持原值（原样保存不会覆盖密钥）。</span>
+        </div>
+        <div id="llm-config-rows"></div>
+        <div class="adm-row"><label></label>
+            <button type="button" class="adm-btn" id="save-llm-cfg-btn">保存系统大模型配置</button>
+        </div>
+        <div id="llm-config-msg" class="adm-msg"></div>
+    </div>
+
+    <!-- ============ 用户积分 ============ -->
+    <div class="adm-group">
+        <h3>用户积分总览</h3>
+        <table class="adm-table">
+            <thead><tr><th>用户名</th><th>昵称</th><th>余额</th><th>累计充值</th><th>累计赠送</th><th>累计消耗</th><th>操作</th></tr></thead>
+            <tbody id="users-body"><tr><td colspan="7" style="color:#a0aec0;">加载中…</td></tr></tbody>
+        </table>
+        <div id="adjust-box" style="margin-top:14px;display:none;">
+            <div class="adm-row">
+                <label>调整用户:</label><input type="text" id="adjust-user" readonly>
+            </div>
+            <div class="adm-row">
+                <label>调整积分（正数增加/负数扣减）:</label><input type="number" id="adjust-delta" step="0.1" placeholder="如 100 或 -50">
+            </div>
+            <div class="adm-row">
+                <label>备注:</label><input type="text" id="adjust-note" placeholder="调整原因（写入审计流水）">
+            </div>
+            <div class="adm-row"><label></label>
+                <button type="button" class="adm-btn" id="adjust-submit-btn">提交调整</button>
+                <button type="button" class="adm-btn" id="adjust-tx-btn" style="background:#4a5568;margin-left:8px;">查看该用户流水</button>
+            </div>
+            <div id="adjust-msg" class="adm-msg"></div>
+            <table class="adm-table" id="adjust-tx-table" style="display:none;margin-top:10px;">
+                <thead><tr><th>时间</th><th>类型</th><th>场景</th><th>积分</th><th>余额</th></tr></thead>
+                <tbody id="adjust-tx-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ============ 卡密管理 ============ -->
+    <div class="adm-group">
+        <h3>充值卡密管理</h3>
+        <div class="adm-row">
+            <label>单张面额（积分）:</label><input type="number" id="code-credits" value="100" min="1" step="1">
+        </div>
+        <div class="adm-row">
+            <label>生成数量（1-1000）:</label><input type="number" id="code-count" value="10" min="1" max="1000">
+        </div>
+        <div class="adm-row"><label></label>
+            <button type="button" class="adm-btn" id="gen-codes-btn">批量生成卡密</button>
+        </div>
+        <div id="gen-codes-msg" class="adm-msg"></div>
+        <div id="gen-codes-out" class="code-out"></div>
+        <div class="adm-row" style="margin-top:18px;">
+            <label>按状态筛选:</label>
+            <select id="codes-filter" style="flex:0 0 160px;">
+                <option value="">全部</option>
+                <option value="active">未使用</option>
+                <option value="used">已兑换</option>
+                <option value="voided">已作废</option>
+            </select>
+            <button type="button" class="adm-btn" id="refresh-codes-btn" style="margin-left:8px;background:#4a5568;">刷新列表</button>
+        </div>
+        <table class="adm-table" style="margin-top:10px;">
+            <thead><tr><th>卡密</th><th>面额</th><th>状态</th><th>使用者</th><th>创建时间</th><th>兑换时间</th><th>操作</th></tr></thead>
+            <tbody id="codes-body"><tr><td colspan="7" style="color:#a0aec0;">加载中…</td></tr></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+    function tk() { return (window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || '')); }
+    function H() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tk() }; }
+    function getJSON(url) { return fetch(url, { headers: H() }).then(function (r) { return r.json().catch(function () { return {}; }); }); }
+    function postJSON(url, body) { return fetch(url, { method: 'POST', headers: H(), body: JSON.stringify(body || {}) })
+        .then(function (r) { return r.json().catch(function () { return {}; }); }); }
+    function msg(elId, text, ok) {
+        var el = document.getElementById(elId);
+        el.className = 'adm-msg ' + (ok ? 'ok' : 'err');
+        el.textContent = text;
+        setTimeout(function () { el.className = 'adm-msg'; }, 6000);
+    }
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    // ==================== 积分业务参数 ====================
+    var CREDIT_KEYS = ['credits_daily_bonus', 'credits_token_ratio', 'credits_asr_per_minute',
+                       'credits_per_yuan', 'credits_recharge_text', 'credits_recharge_url'];
+    var CREDIT_LABELS = {
+        credits_daily_bonus: '每日登录赠送积分',
+        credits_token_ratio: '积分换算比例（Token/积分）',
+        credits_asr_per_minute: '录音转文字每分钟扣分',
+        credits_per_yuan: '1 元兑换积分数',
+        credits_recharge_text: '充值引导文案',
+        credits_recharge_url: '充值店铺链接',
+    };
+
+    function loadCreditConfig() {
+        getJSON('/api/admin/credits/config').then(function (res) {
+            if (!res || !res.success) { msg('adm-top-msg', '加载配置失败：' + ((res && res.error) || '需要管理员权限'), false); return; }
+            var d = res.data || {};
+            document.getElementById('credit-config-rows').innerHTML = CREDIT_KEYS.map(function (k) {
+                var item = d[k] || { value: '', description: '' };
+                return '<div class="adm-row"><label>' + CREDIT_LABELS[k] + '</label>' +
+                    '<input data-ckey="' + k + '" value="' + esc(item.value) + '">' +
+                    '<span class="adm-desc">' + esc(item.description || '') + '</span></div>';
+            }).join('');
+        }).catch(function (e) { msg('adm-top-msg', '加载配置异常：' + e, false); });
+    }
+
+    function saveCreditConfig() {
+        var body = {};
+        document.querySelectorAll('#credit-config-rows input[data-ckey]').forEach(function (inp) {
+            body[inp.getAttribute('data-ckey')] = inp.value.trim();
+        });
+        postJSON('/api/admin/credits/config', body).then(function (res) {
+            if (res && res.success) { msg('credit-config-msg', '已保存：' + (res.data.updated || []).join(', '), true); loadCreditConfig(); }
+            else msg('credit-config-msg', '保存失败：' + ((res && res.error) || '未知错误'), false);
+        });
+    }
+
+    // ==================== 系统大模型 ====================
+    var LLM_LABELS = {
+        llm_provider: '默认提供商',
+        deepseek_api_key: 'DeepSeek API Key', deepseek_model: 'DeepSeek 模型', deepseek_api_url: 'DeepSeek URL',
+        gemini_api_key: 'Gemini API Key', gemini_model: 'Gemini 模型',
+        qwen_api_key: '通义千问 API Key', qwen_model: '通义千问 模型', qwen_api_url: '通义千问 URL',
+        ollama_api_url: 'Ollama URL', ollama_model: 'Ollama 模型',
+    };
+    function loadLlmConfig() {
+        getJSON('/api/admin/llm-config').then(function (res) {
+            if (!res || !res.success) return;
+            var d = res.data || {};
+            document.getElementById('llm-config-rows').innerHTML = Object.keys(d).map(function (k) {
+                var isKey = /api_key$/.test(k);
+                var label = LLM_LABELS[k] || k;
+                return '<div class="adm-row"><label>' + esc(label) + '</label>' +
+                    '<input data-lkey="' + esc(k) + '" type="' + (isKey ? 'text' : 'text') + '" value="' + esc(d[k]) + '"' +
+                    (k === 'llm_provider' ? ' placeholder="DeepSeek / Gemini / Qwen / Ollama"' : '') + '>' +
+                    '<span class="adm-desc">' + (isKey ? '（掩码显示，不修改请原样保存）' : '') + '</span></div>';
+            }).join('');
+        }).catch(function () {});
+    }
+    function saveLlmConfig() {
+        var body = {};
+        document.querySelectorAll('#llm-config-rows input[data-lkey]').forEach(function (inp) {
+            body[inp.getAttribute('data-lkey')] = inp.value.trim();
+        });
+        postJSON('/api/admin/llm-config', body).then(function (res) {
+            if (res && res.success) { msg('llm-config-msg', '已保存：' + ((res.data.updated || []).join(', ') || '无变更（掩码原值已跳过）'), true); loadLlmConfig(); }
+            else msg('llm-config-msg', '保存失败：' + ((res && res.error) || '未知错误'), false);
+        });
+    }
+
+    // ==================== 用户积分 ====================
+    var TX_LABEL = { llm: 'AI调用', asr: '录音转文字', recharge: '卡密充值', gift: '每日赠送', admin_adjust: '管理员调整' };
+    function loadUsers() {
+        getJSON('/api/admin/users').then(function (res) {
+            var tbody = document.getElementById('users-body');
+            if (!res || !res.success || !res.data || !res.data.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;">暂无用户</td></tr>'; return; }
+            tbody.innerHTML = res.data.map(function (u) {
+                return '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.display_name) + '</td>' +
+                    '<td><b>' + Number(u.balance || 0).toFixed(1) + '</b></td>' +
+                    '<td>' + Number(u.total_recharged || 0).toFixed(1) + '</td>' +
+                    '<td>' + Number(u.total_granted || 0).toFixed(1) + '</td>' +
+                    '<td>' + Number(u.total_used || 0).toFixed(1) + '</td>' +
+                    '<td><button type="button" class="adm-btn" style="padding:4px 10px;font-size:12px;" ' +
+                    'data-adj-uid="' + esc(u.user_id) + '" data-adj-name="' + esc(u.username) + '">调整</button></td></tr>';
+            }).join('');
+            tbody.querySelectorAll('button[data-adj-uid]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    document.getElementById('adjust-user').value = b.getAttribute('data-adj-name') + '（' + b.getAttribute('data-adj-uid') + '）';
+                    document.getElementById('adjust-user').setAttribute('data-uid', b.getAttribute('data-adj-uid'));
+                    document.getElementById('adjust-box').style.display = 'block';
+                    document.getElementById('adjust-tx-table').style.display = 'none';
+                    document.getElementById('adjust-delta').value = '';
+                    document.getElementById('adjust-note').value = '';
+                });
+            });
+        }).catch(function () {});
+    }
+    function submitAdjust() {
+        var uid = document.getElementById('adjust-user').getAttribute('data-uid');
+        if (!uid) { msg('adjust-msg', '请先在列表中点击「调整」选择用户', false); return; }
+        var delta = parseFloat(document.getElementById('adjust-delta').value);
+        if (isNaN(delta) || delta === 0) { msg('adjust-msg', '调整积分需为非零数字', false); return; }
+        postJSON('/api/admin/adjust', { user_id: uid, delta: delta, note: document.getElementById('adjust-note').value }).then(function (res) {
+            if (res && res.success) { msg('adjust-msg', '调整成功，' + (delta > 0 ? '增加' : '扣减') + ' ' + Math.abs(delta) + ' 积分', true); loadUsers(); }
+            else msg('adjust-msg', '调整失败：' + ((res && res.error) || '未知错误'), false);
+        });
+    }
+    function showUserTx() {
+        var uid = document.getElementById('adjust-user').getAttribute('data-uid');
+        if (!uid) return;
+        getJSON('/api/admin/transactions/' + encodeURIComponent(uid) + '?limit=50').then(function (res) {
+            var tbody = document.getElementById('adjust-tx-body');
+            var rows = (res && res.success && res.data) || [];
+            tbody.innerHTML = rows.length ? rows.map(function (t) {
+                return '<tr><td>' + esc((t.created_at || '').replace('T', ' ').substring(0, 19)) + '</td>' +
+                    '<td>' + (TX_LABEL[t.type] || esc(t.type)) + '</td>' +
+                    '<td>' + esc(t.scene || t.note || '') + '</td>' +
+                    '<td>' + Number(t.credits_delta || 0).toFixed(1) + '</td>' +
+                    '<td>' + Number(t.credits_after || 0).toFixed(1) + '</td></tr>';
+            }).join('') : '<tr><td colspan="5" style="color:#a0aec0;">暂无流水</td></tr>';
+            document.getElementById('adjust-tx-table').style.display = 'table';
+        });
+    }
+
+    // ==================== 卡密 ====================
+    function genCodes() {
+        var each = parseFloat(document.getElementById('code-credits').value);
+        var count = parseInt(document.getElementById('code-count').value);
+        if (!(each > 0) || !(count >= 1 && count <= 1000)) { msg('gen-codes-msg', '面额需>0，数量范围 1-1000', false); return; }
+        var btn = document.getElementById('gen-codes-btn');
+        btn.disabled = true;
+        postJSON('/api/admin/codes/generate', { credits: each, count: count }).then(function (res) {
+            btn.disabled = false;
+            if (res && res.success) {
+                msg('gen-codes-msg', '已生成 ' + res.data.batch_count + ' 张卡密（可全选复制后上架）', true);
+                var out = document.getElementById('gen-codes-out');
+                out.textContent = res.data.codes.join('\n');
+                out.style.display = 'block';
+                loadCodes();
+            } else msg('gen-codes-msg', '生成失败：' + ((res && res.error) || '未知错误'), false);
+        }).catch(function (e) { btn.disabled = false; msg('gen-codes-msg', '生成异常：' + e, false); });
+    }
+    function loadCodes() {
+        var st = document.getElementById('codes-filter').value;
+        getJSON('/api/admin/codes?limit=200' + (st ? ('&status=' + st) : '')).then(function (res) {
+            var tbody = document.getElementById('codes-body');
+            var rows = (res && res.success && res.data) || [];
+            if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="color:#a0aec0;">暂无卡密</td></tr>'; return; }
+            var ST = { active: '未使用', used: '已兑换', voided: '已作废' };
+            tbody.innerHTML = rows.map(function (c) {
+                return '<tr><td style="font-family:Consolas,monospace;">' + esc(c.code) + '</td>' +
+                    '<td>' + Number(c.credits || 0).toFixed(0) + '</td>' +
+                    '<td>' + (ST[c.status] || esc(c.status)) + '</td>' +
+                    '<td>' + esc(c.used_by || '') + '</td>' +
+                    '<td>' + esc((c.created_at || '').replace('T', ' ').substring(0, 19)) + '</td>' +
+                    '<td>' + esc((c.used_at || '').replace('T', ' ').substring(0, 19)) + '</td>' +
+                    '<td>' + (c.status === 'active'
+                        ? '<button type="button" class="adm-btn adm-btn-danger" data-void-code="' + esc(c.code) + '">作废</button>'
+                        : '') + '</td></tr>';
+            }).join('');
+            tbody.querySelectorAll('button[data-void-code]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    if (!confirm('确认作废卡密 ' + b.getAttribute('data-void-code') + ' ？')) return;
+                    postJSON('/api/admin/codes/void', { code: b.getAttribute('data-void-code') }).then(function (res) {
+                        if (res && res.success) loadCodes();
+                        else msg('gen-codes-msg', '作废失败：' + ((res && res.error) || '未知错误'), false);
+                    });
+                });
+            });
+        }).catch(function () {});
+    }
+
+    // ==================== 初始化 ====================
+    function init() {
+        loadCreditConfig();
+        loadLlmConfig();
+        loadUsers();
+        loadCodes();
+        document.getElementById('save-credit-cfg-btn').addEventListener('click', saveCreditConfig);
+        document.getElementById('save-llm-cfg-btn').addEventListener('click', saveLlmConfig);
+        document.getElementById('adjust-submit-btn').addEventListener('click', submitAdjust);
+        document.getElementById('adjust-tx-btn').addEventListener('click', showUserTx);
+        document.getElementById('gen-codes-btn').addEventListener('click', genCodes);
+        document.getElementById('refresh-codes-btn').addEventListener('click', loadCodes);
+        document.getElementById('codes-filter').addEventListener('change', loadCodes);
+    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
+    else { init(); }
+})();
+</script>

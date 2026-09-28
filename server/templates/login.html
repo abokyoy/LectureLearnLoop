@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 柯基学习小助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+        body {
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #6a8dff 0%, #a78bfa 55%, #f0abfc 100%);
+        }
+        .card {
+            width: 400px; background: #fff; border-radius: 20px; padding: 40px 36px;
+            box-shadow: 0 20px 60px rgba(30, 41, 99, .35);
+        }
+        .logo { font-size: 44px; text-align: center; }
+        h1 { font-size: 22px; text-align: center; color: #1e2a5a; margin: 10px 0 4px; }
+        .sub { font-size: 13px; color: #8b93b8; text-align: center; margin-bottom: 26px; }
+        .tabs { display: flex; background: #f1f3fb; border-radius: 10px; padding: 4px; margin-bottom: 22px; }
+        .tabs button {
+            flex: 1; border: 0; background: transparent; padding: 9px 0; border-radius: 8px;
+            font-size: 14px; color: #6a7194; cursor: pointer; transition: all .18s;
+        }
+        .tabs button.active { background: #fff; color: #3b5bdb; font-weight: 600; box-shadow: 0 2px 8px rgba(59,91,219,.18); }
+        .field { margin-bottom: 16px; }
+        .field label { display: block; font-size: 13px; color: #4a5378; margin-bottom: 6px; }
+        .field input {
+            width: 100%; padding: 11px 14px; border: 1.5px solid #dfe3f2; border-radius: 10px;
+            font-size: 14px; outline: none; transition: border .15s;
+        }
+        .field input:focus { border-color: #6a8dff; }
+        .remember { display: flex; align-items: center; gap: 8px; margin: 2px 0 14px; font-size: 13px; color: #4a5378; cursor: pointer; }
+        .remember input { width: 15px; height: 15px; accent-color: #4c6ef5; cursor: pointer; }
+        .submit {
+            width: 100%; padding: 12px 0; border: 0; border-radius: 10px; margin-top: 6px;
+            background: linear-gradient(90deg, #4c6ef5, #7c3aed); color: #fff;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+        }
+        .submit:disabled { opacity: .6; cursor: not-allowed; }
+        .msg { min-height: 20px; font-size: 13px; margin-top: 14px; text-align: center; color: #e03131; }
+        .msg.ok { color: #2f9e44; }
+        .hint { font-size: 12px; color: #8b93b8; text-align: center; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🐕</div>
+        <h1>柯基学习小助手</h1>
+        <div class="sub">听课 · 笔记 · 练习 · 记忆 一站式闭环</div>
+        <div class="tabs">
+            <button type="button" id="tab-login" class="active">登录</button>
+            <button type="button" id="tab-register">注册</button>
+        </div>
+        <form id="auth-form" autocomplete="off">
+            <div class="field">
+                <label for="username">用户名</label>
+                <input id="username" name="username" type="text" placeholder="2-32位字母/数字/下划线/中文" required>
+            </div>
+            <div class="field">
+                <label for="password">密码</label>
+                <input id="password" name="password" type="password" placeholder="至少6位" required>
+            </div>
+            <div class="field" id="field-confirm" style="display:none">
+                <label for="password2">确认密码</label>
+                <input id="password2" name="password2" type="password" placeholder="再输入一次密码" autocomplete="new-password">
+            </div>
+            <label class="remember" id="remember-row">
+                <input id="remember" type="checkbox">
+                <span>记住登录（7 天内免登录，下次打开自动进入；不勾选则关闭程序后需重新登录）</span>
+            </label>
+            <button class="submit" id="btn-submit" type="submit">登 录</button>
+            <div class="msg" id="msg"></div>
+            <div class="hint" id="auto-hint" style="display:none">检测到已记住的账号，正在自动登录…（失败可手动登录）</div>
+        </form>
+    </div>
+    <script>
+        (function () {
+            var mode = 'login';
+            var next = new URLSearchParams(location.search).get('next') || '/';
+            if (!/^\/(?!\/)[^\x00]*$/.test(next)) next = '/';  // 只允许单斜杠开头的站内路径，防开放重定向
+            var tabLogin = document.getElementById('tab-login');
+            var tabRegister = document.getElementById('tab-register');
+            var fieldConfirm = document.getElementById('field-confirm');
+            var rememberRow = document.getElementById('remember-row');
+            var rememberBox = document.getElementById('remember');
+            var autoHint = document.getElementById('auto-hint');
+            var btn = document.getElementById('btn-submit');
+            var msg = document.getElementById('msg');
+
+            // ---- 四期修正：token 存储跟随“记住登录”勾选 ----
+            // 勾选 → localStorage.ll_token + ll_remember（免登录天数由服务端 expires_in_days 下发）；
+            // 不勾选 → 仅 sessionStorage.ll_token（关窗口/退出程序即失效）。
+            var TOKEN_KEY = 'll_token';
+            function getToken() {
+                try { return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+            }
+            function setToken(t, persist) {
+                try {
+                    if (persist) { localStorage.setItem(TOKEN_KEY, t); sessionStorage.removeItem(TOKEN_KEY); }
+                    else { sessionStorage.setItem(TOKEN_KEY, t); localStorage.removeItem(TOKEN_KEY); }
+                } catch (e) { /* ignore */ }
+            }
+
+            // ---- 记住登录：localStorage 存 base64 凭证 + 免登录过期时间戳 ----
+            var REMEMBER_KEY = 'll_remember';
+            function saveRemember(u, p, days) {
+                try {
+                    var ttl = Math.max(1, days || 7) * 24 * 3600 * 1000;
+                    localStorage.setItem(REMEMBER_KEY, btoa(unescape(encodeURIComponent(JSON.stringify({ u: u, p: p, d: days || 7, exp: Date.now() + ttl })))));
+                } catch (e) { /* ignore */ }
+            }
+            function loadRemember() {
+                try {
+                    var raw = localStorage.getItem(REMEMBER_KEY);
+                    if (!raw) return null;
+                    var obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
+                    if (!obj || !obj.u || !obj.exp || obj.exp < Date.now()) { localStorage.removeItem(REMEMBER_KEY); return null; }
+                    return obj;
+                } catch (e) { return null; }
+            }
+            function clearRemember() { localStorage.removeItem(REMEMBER_KEY); }
+
+            function setMode(m) {
+                mode = m;
+                tabLogin.classList.toggle('active', m === 'login');
+                tabRegister.classList.toggle('active', m === 'register');
+                btn.textContent = m === 'login' ? '登 录' : '注册并登录';
+                // 注册需两次输入密码；记住登录仅在登录模式生效
+                fieldConfirm.style.display = m === 'register' ? '' : 'none';
+                document.getElementById('password2').required = (m === 'register');
+                rememberRow.style.display = m === 'login' ? '' : 'none';
+                msg.textContent = ''; msg.classList.remove('ok');
+            }
+            tabLogin.addEventListener('click', function () { setMode('login'); });
+            tabRegister.addEventListener('click', function () { setMode('register'); });
+
+            function doLogin(username, password, then) {
+                fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, password: password })
+                }).then(function (r) { return r.json(); }).then(function (j) {
+                    if (j && j.success && j.data && j.data.token) {
+                        then && then({ token: j.data.token, days: j.data.expires_in_days || 7, username: j.data.username });
+                        msg.textContent = '欢迎，' + (j.data.username || username) + '！正在进入…';
+                        msg.classList.add('ok');
+                        setTimeout(function () { location.href = next; }, 200);
+                    } else {
+                        then && then(j && j.error ? { error: j.error } : { error: '登录失败' });
+                        msg.textContent = (j && j.error) || '登录失败，请重试';
+                        btn.disabled = false;
+                    }
+                }).catch(function (e) {
+                    then && then({ error: '无法连接服务器：' + e.message });
+                    msg.textContent = '无法连接服务器：' + e.message;
+                    btn.disabled = false;
+                });
+            }
+
+            document.getElementById('auth-form').addEventListener('submit', function (ev) {
+                ev.preventDefault();
+                var username = document.getElementById('username').value.trim();
+                var password = document.getElementById('password').value;
+                btn.disabled = true; msg.textContent = ''; msg.classList.remove('ok');
+                if (mode === 'register') {
+                    var password2 = document.getElementById('password2').value;
+                    if (password !== password2) {
+                        msg.textContent = '两次输入的密码不一致';
+                        btn.disabled = false;
+                        return;
+                    }
+                    fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username, password: password })
+                    }).then(function (r) { return r.json(); }).then(function (j) {
+                        if (j && j.success && j.data && j.data.token) {
+                            setToken(j.data.token, false); // 注册后默认会话级，登录页勾选记住才持久化
+                            msg.textContent = '注册成功！正在进入…';
+                            msg.classList.add('ok');
+                            setTimeout(function () { location.href = next; }, 200);
+                        } else {
+                            msg.textContent = (j && j.error) || '操作失败，请重试';
+                            btn.disabled = false;
+                        }
+                    }).catch(function (e) {
+                        msg.textContent = '无法连接服务器：' + e.message;
+                        btn.disabled = false;
+                    });
+                    return;
+                }
+                // 登录模式：成功且勾选记住 → token/凭证存 localStorage；未勾选 → 仅 sessionStorage（关程序失效）
+                if (!rememberBox.checked) clearRemember();
+                doLogin(username, password, function (j) {
+                    if (!j || j.error || !j.token) return;
+                    setToken(j.token, !!rememberBox.checked);
+                    if (rememberBox.checked) saveRemember(username, password, j.days);
+                });
+            });
+
+            // ---- 打开页面：已登录直接放行；已记住（免登录有效期内）自动登录 ----
+            if (getToken()) {
+                fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + getToken() } })
+                    .then(function (r) { if (r.ok) location.href = next; })
+                    .catch(function () { /* ignore */ });
+            } else {
+                var saved = loadRemember();
+                if (saved) {
+                    document.getElementById('username').value = saved.u;
+                    document.getElementById('password').value = saved.p;
+                    rememberBox.checked = true;
+                    autoHint.style.display = '';
+                    btn.disabled = true;
+                    doLogin(saved.u, saved.p, function (j) {
+                        btn.disabled = false;
+                        if (j && !j.error && j.token) {
+                            setToken(j.token, true);
+                            saveRemember(saved.u, saved.p, j.days);
+                        } else if (j && j.error) {
+                            // 记住的凭证已失效（如账号删除）：清掉并回到手动登录
+                            clearRemember();
+                            autoHint.style.display = 'none';
+                        }
+                    });
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

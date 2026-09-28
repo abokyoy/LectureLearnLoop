@@ -1,0 +1,32 @@
+# ===== 根 .gitignore（第0轮基线，2026-09-28）=====
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Node / Electron
+node_modules/
+desktop/boot_err.log
+desktop/*.out
+
+# 打包产物
+dist/
+
+# 运行时数据与密钥（绝不提交）
+server/.env
+server/data/
+server/logs/
+*.key
+
+# MCP 配置含密钥（见 AGENTS.md 第零节，勿提交到公开仓库）
+.qoder/mcp.json
+
+# 临时输出
+server/tests/_r*_out.txt
+server/tests/r9_out.txt
+
+# 脚本误生成的 0 字节垃圾文件
+/server/None

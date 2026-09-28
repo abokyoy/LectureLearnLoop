@@ -1,0 +1,215 @@
+<!-- 用户设置模态（四期新增）：点击侧边栏头像打开。昵称/改密/免登录管理/退出登录 -->
+<div id="user-settings-mask" class="fixed inset-0 z-[2000] hidden items-center justify-center" style="background:rgba(30,41,99,.35)">
+    <div class="bg-white rounded-2xl shadow-xl w-[420px] max-h-[86vh] overflow-y-auto p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-text-dark-brown">用户设置</h3>
+            <button id="us-close" class="text-text-gray hover:text-text-dark-brown" title="关闭">
+                <span class="material-icons-outlined">close</span>
+            </button>
+        </div>
+
+        <!-- 账号信息 -->
+        <div class="mb-4 p-3 bg-gray-50 rounded-lg text-sm">
+            <div class="flex items-center gap-2 mb-1">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                    <span class="material-icons-outlined text-white">person</span>
+                </div>
+                <div>
+                    <div>用户名：<b id="us-username">–</b></div>
+                    <div class="text-text-gray text-xs" id="us-login-mode">–</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 昵称 -->
+        <div class="mb-4">
+            <label class="block text-sm font-medium text-text-dark-brown mb-1">昵称（显示在侧边栏）</label>
+            <div class="flex gap-2">
+                <input id="us-nickname" type="text" maxlength="32" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" placeholder="给自己起个名字">
+                <button id="us-save-nick" class="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+            </div>
+        </div>
+
+        <!-- 免登录 -->
+        <div class="mb-4 p-3 border border-gray-200 rounded-lg">
+            <div class="text-sm font-medium text-text-dark-brown mb-2">免登录设置</div>
+            <div class="text-sm text-text-gray mb-2" id="us-remember-state">–</div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <label class="text-sm text-text-dark-brown">免登录时长：</label>
+                <select id="us-remember-days" class="px-2 py-1.5 border border-gray-300 rounded-lg text-sm">
+                    <option value="7">7 天</option>
+                    <option value="30">30 天</option>
+                    <option value="57">57 天</option>
+                    <option value="0">关闭（每次打开都需登录）</option>
+                </select>
+                <button id="us-remember-apply" class="px-3 py-1.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">应用</button>
+            </div>
+            <div class="text-xs text-text-gray mt-2">说明：免登录期内打开程序自动进入；时长作用于本机"记住登录"窗口。关闭程序即失效的会话登录不受此项影响。</div>
+        </div>
+
+        <!-- 修改密码 -->
+        <div class="mb-4 p-3 border border-gray-200 rounded-lg">
+            <div class="text-sm font-medium text-text-dark-brown mb-2">修改密码</div>
+            <div class="space-y-2">
+                <input id="us-pw-old" type="password" placeholder="旧密码" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <input id="us-pw-new" type="password" placeholder="新密码（至少6位）" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <input id="us-pw-new2" type="password" placeholder="确认新密码" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <div class="flex justify-between items-center">
+                    <span id="us-pw-msg" class="text-xs"></span>
+                    <button id="us-pw-submit" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">修改密码</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 退出登录 -->
+        <div class="flex justify-between items-center">
+            <a href="/logout" class="px-4 py-2 bg-red-50 text-red-600 rounded-lg text-sm hover:bg-red-100 border border-red-200">退出登录</a>
+            <span class="text-xs text-text-gray">退出后清除本机记住的登录状态</span>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    'use strict';
+    var mask = document.getElementById('user-settings-mask');
+    if (!mask) return;
+
+    function tk() { return (window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || '')); }
+    function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tk() }; }
+    function msg(el, text, ok) { el.textContent = text; el.style.color = ok ? '#2f9e44' : '#e03131'; }
+
+    // 解 JWT exp（base64url payload）
+    function jwtExp() {
+        try {
+            var t = tk(); if (!t) return 0;
+            var part = t.split('.')[1]; if (!part) return 0;
+            var pad = part.replace(/-/g, '+').replace(/_/g, '/');
+            while (pad.length % 4) pad += '=';
+            var p = JSON.parse(decodeURIComponent(escape(atob(pad))));
+            return (p && p.exp) ? p.exp * 1000 : 0;
+        } catch (e) { return 0; }
+    }
+    function loadRemember() {
+        try {
+            var raw = localStorage.getItem('ll_remember');
+            if (!raw) return null;
+            var o = JSON.parse(decodeURIComponent(escape(atob(raw))));
+            return (o && o.u) ? o : null;
+        } catch (e) { return null; }
+    }
+
+    function refreshState() {
+        // 免登录状态文案
+        var el = document.getElementById('us-remember-state');
+        var rem = loadRemember();
+        var modeEl = document.getElementById('us-login-mode');
+        if (rem && rem.exp && rem.exp > Date.now()) {
+            var daysLeft = Math.ceil((rem.exp - Date.now()) / 86400000);
+            el.textContent = '本机已记住登录，免登录剩余 ' + daysLeft + ' 天（账号：' + rem.u + '）';
+            document.getElementById('us-remember-days').value = String(rem.d || 7);
+            if (modeEl) modeEl.textContent = '记住登录模式（免登录剩余 ' + daysLeft + ' 天）';
+        } else if (tk()) {
+            var exp = jwtExp();
+            var left = exp ? Math.max(0, Math.ceil((exp - Date.now()) / 86400000)) : 0;
+            el.textContent = '当前为会话登录：关闭程序后需重新登录（令牌剩余有效期约 ' + left + ' 天）';
+            if (modeEl) modeEl.textContent = '会话登录（不记住，关程序即失效）';
+        } else {
+            el.textContent = '未处于登录状态';
+            if (modeEl) modeEl.textContent = '未登录';
+        }
+    }
+
+    function openUs() {
+        mask.classList.remove('hidden');
+        mask.style.display = 'flex';
+        refreshState();
+        // 拉取账号信息
+        fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + tk() } })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                if (j && j.success && j.data) {
+                    document.getElementById('us-username').textContent = j.data.username || '–';
+                    var nick = document.getElementById('us-nickname');
+                    if (!nick.dataset.touched) nick.value = j.data.display_name || '';
+                }
+            }).catch(function () { /* ignore */ });
+        // 同步侧边栏显示
+        try { if (window.llRefreshUserBadge) window.llRefreshUserBadge(); } catch (e) { /* ignore */ }
+    }
+    function closeUs() { mask.classList.add('hidden'); mask.style.display = 'none'; }
+
+    window.openUserSettings = openUs;
+
+    document.getElementById('us-close').addEventListener('click', closeUs);
+    mask.addEventListener('click', function (e) { if (e.target === mask) closeUs(); });
+
+    // 昵称保存
+    document.getElementById('us-nickname').addEventListener('input', function () { this.dataset.touched = '1'; });
+    document.getElementById('us-save-nick').addEventListener('click', function () {
+        var v = document.getElementById('us-nickname').value.trim();
+        fetch('/api/auth/profile', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ display_name: v }) })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                if (j && j.success) {
+                    msg(document.getElementById('us-pw-msg'), '', true); // 清错位复用
+                    try { window.llRefreshUserBadge && window.llRefreshUserBadge(); } catch (e) { /* ignore */ }
+                    toastUs('昵称已保存 ✓');
+                } else { toastUs('保存失败：' + ((j && j.error) || '未知错误')); }
+            }).catch(function (e) { toastUs('保存失败：' + e.message); });
+    });
+
+    // 免登录时长
+    document.getElementById('us-remember-apply').addEventListener('click', function () {
+        var days = parseInt(document.getElementById('us-remember-days').value, 10) || 0;
+        var rem = loadRemember();
+        if (days === 0) {
+            localStorage.removeItem('ll_remember');
+            try { (window.llClearToken ? window.llClearToken() : localStorage.removeItem('ll_token')); } catch (e) { /* ignore */ }
+            toastUs('已取消免登录，即将回到登录页');
+            setTimeout(function () { location.href = '/login'; }, 900);
+            return;
+        }
+        if (!rem) { toastUs('当前未处于"记住登录"状态：请先退出并在登录页勾选"记住登录"'); return; }
+        // 用已存凭证重写过期窗口（自动登录将按新时长生效）
+        try {
+            localStorage.setItem('ll_remember', btoa(unescape(encodeURIComponent(JSON.stringify({ u: rem.u, p: rem.p, d: days, exp: Date.now() + days * 86400000 })) )));
+            toastUs('免登录时长已更新为 ' + days + ' 天');
+            refreshState();
+        } catch (e) { toastUs('更新失败：' + e.message); }
+    });
+
+    // 修改密码
+    document.getElementById('us-pw-submit').addEventListener('click', function () {
+        var mEl = document.getElementById('us-pw-msg');
+        var oldP = document.getElementById('us-pw-old').value;
+        var np = document.getElementById('us-pw-new').value;
+        var np2 = document.getElementById('us-pw-new2').value;
+        if (!np || np.length < 6) { msg(mEl, '新密码至少6位', false); return; }
+        if (np !== np2) { msg(mEl, '两次输入的新密码不一致', false); return; }
+        fetch('/api/auth/password', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ old_password: oldP, new_password: np }) })
+            .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+            .then(function (res) {
+                var j = res.j;
+                if (j && j.success) {
+                    localStorage.removeItem('ll_remember'); // 已存凭证失效
+                    msg(mEl, '密码已修改；本机记住的凭证已清除，下次登录请重新勾选"记住登录"', true);
+                    refreshState();
+                } else { msg(mEl, (j && j.error) || ('修改失败（HTTP ' + res.s + '）'), false); }
+            }).catch(function (e) { msg(mEl, '修改失败：' + e.message, false); });
+    });
+
+    // 轻量 toast
+    function toastUs(text) {
+        var t = document.getElementById('us-toast');
+        if (!t) {
+            t = document.createElement('div');
+            t.id = 'us-toast';
+            t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2430ee;color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;z-index:2100;opacity:0;transition:opacity .2s;pointer-events:none';
+            document.body.appendChild(t);
+        }
+        t.textContent = text; t.style.opacity = '1';
+        clearTimeout(t._h); t._h = setTimeout(function () { t.style.opacity = '0'; }, 2800);
+    }
+})();
+</script>

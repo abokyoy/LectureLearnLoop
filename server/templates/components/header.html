@@ -1,0 +1,10 @@
+<!-- 顶部标题栏 -->
+<header class="flex justify-between items-center p-6 bg-white border-b border-gray-200">
+    <h2 id="page-title" class="text-2xl font-bold text-text-dark-brown">{{ page_title | default('柯基的学习乐园') }}</h2>
+    <div class="flex space-x-2">
+        <button id="btn-open-overlay" title="打开学习悬浮窗（录音/转写/截屏）"
+                class="px-3 h-8 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center text-white text-sm font-bold"
+                onclick="(function(){if(window.llShell&&window.llShell.openOverlay){window.llShell.openOverlay();}else{alert('悬浮窗需在 Electron 桌面端打开');}})()">🎧 悬浮窗</button>
+        <!-- 自绘最小化/最大化/关闭按钮已删除：窗口控制由 Electron 原生标题栏承担（产品要求：界面内部不出现窗口按钮） -->
+    </div>
+</header>
