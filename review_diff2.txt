@@ -1,0 +1,600 @@
+﻿diff --git a/server/tests/test_dashboard_b.py b/server/tests/test_dashboard_b.py
+index b326b08..8c991ee 100644
+--- a/server/tests/test_dashboard_b.py
++++ b/server/tests/test_dashboard_b.py
+@@ -77,7 +77,7 @@ class TestDashboardStats:
+         s = r.get_json()["data"]
+         assert s["knowledge_total"] == 2
+         assert s["subjects"] == 1
+-        assert s["knowledge_mastered"] == 0  # mastery=50 < 80
++        assert s["knowledge_mastered"] == 0  # 鏂板缓鐭ヨ瘑鐐?mastery=-1 鏈瘎浼?< 80
+         # batch-save find-or-create 鐧昏浜?notes 鈫?鏈懆瀛︿範璧勬枡鏁颁负鐪熷€?         assert s["materials_this_week"] == 1
+         kinds = [a["kind"] for a in s["recent_activities"]]
+diff --git a/server/tests/test_fsrs_service.py b/server/tests/test_fsrs_service.py
+new file mode 100644
+index 0000000..343b7dc
+--- /dev/null
++++ b/server/tests/test_fsrs_service.py
+@@ -0,0 +1,338 @@
++# -*- coding: utf-8 -*-
++"""fsrs_service 鍗曞厓娴嬭瘯锛團SRS-5锛夈€?+
++鏁板€兼柇瑷€鍏ㄩ儴閽夋涓?open-spaced-repetition py-fsrs 3.0.0锛團SRS-5 瀹樻柟鍙傝€?+瀹炵幇锛?9 鍙傛暟锛夊疄闄呰緭鍑猴紙鐢熸垚鑴氭湰宸茬暀瀛樹簬寮€鍙戞棩蹇楋級锛岀‘淇濆叕寮忛€愬紡瀵归綈銆?+闈炶嚜璇佹纭€侱B 灞傛祴璇曠敤涓存椂 SQLite 鏂囦欢锛屼笉瑙︾敓浜у簱銆?+"""
++import os
++import sys
++import tempfile
++import unittest
++from datetime import datetime, timedelta
++
++SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++sys.path.insert(0, SERVER_DIR)
++
++import config  # noqa: E402
++config.DB_BACKEND = "sqlite"  # 娴嬭瘯寮哄埗 sqlite锛坉b_adapter 鍔ㄦ€佽鍙栵級
++
++from database import db_adapter  # noqa: E402
++from services import fsrs_service as F  # noqa: E402
++
++BASE = datetime(2026, 9, 28, 12, 0, 0)  # naive UTC锛屼笌鏈嶅姟绾﹀畾涓€鑷?+
++
++# ---------------------------------------------------------------------------
++# 绾叕寮忓眰锛堝弬鑰冨€兼潵鑷?py-fsrs 3.0.0锛?+# ---------------------------------------------------------------------------
++
++class TestConstants(unittest.TestCase):
++    def test_decay_factor(self):
++        self.assertEqual(F.DECAY, -0.5)
++        self.assertAlmostEqual(F.FACTOR, 0.23456790123456783, places=12)
++
++    def test_default_w_is_19(self):
++        self.assertEqual(len(F.DEFAULT_W), 19)
++
++
++class TestInitFunctions(unittest.TestCase):
++    def test_init_stability_table(self):
++        self.assertEqual(F.init_stability(1), 0.4072)
++        self.assertEqual(F.init_stability(2), 1.1829)
++        self.assertEqual(F.init_stability(3), 3.1262)
++        self.assertEqual(F.init_stability(4), 15.4722)
++
++    def test_init_difficulty(self):
++        self.assertAlmostEqual(F.init_difficulty(1), 7.2102, places=6)
++        self.assertAlmostEqual(F.init_difficulty(2), 6.508547223894037, places=6)
++        self.assertAlmostEqual(F.init_difficulty(3), 5.314577829570867, places=6)
++        self.assertAlmostEqual(F.init_difficulty(4), 3.28285649513529, places=6)
++
++    def test_next_interval(self):
++        # rr=0.9 鏃?FACTOR 鎬ц川锛歩nterval == round(S)
++        self.assertEqual(F.next_interval(0.4072), 1)
++        self.assertEqual(F.next_interval(3.1262), 3)
++        self.assertEqual(F.next_interval(5.0), 5)
++        self.assertEqual(F.next_interval(15.4722), 15)
++        self.assertEqual(F.next_interval(200.0), 200)
++
++
++class TestCurve(unittest.TestCase):
++    def test_forgetting_curve(self):
++        self.assertAlmostEqual(F.retrievability(0, 5.0), 1.0, places=12)
++        # t==S 鏃舵伆涓?desired_retention 0.9
++        self.assertAlmostEqual(F.retrievability(5, 5.0), 0.9, places=12)
++        self.assertAlmostEqual(F.retrievability(10, 5.0), 0.8250286473253902, places=9)
++        self.assertAlmostEqual(F.retrievability(45, 5.0), 0.566946709513841, places=9)
++
++    def test_short_term_stability(self):
++        self.assertAlmostEqual(F.short_term_stability(3.1262, 1), 1.589789, places=6)
++        self.assertAlmostEqual(F.short_term_stability(3.1262, 2), 2.630045, places=6)
++        self.assertAlmostEqual(F.short_term_stability(3.1262, 3), 4.350979, places=6)
++        self.assertAlmostEqual(F.short_term_stability(3.1262, 4), 7.197984, places=6)
++
++    def test_next_difficulty(self):
++        self.assertAlmostEqual(F.next_difficulty(5.0, 1), 7.040172, places=6)
++        self.assertAlmostEqual(F.next_difficulty(5.0, 2), 5.999996, places=6)
++        self.assertAlmostEqual(F.next_difficulty(5.0, 3), 4.959819, places=6)
++        self.assertAlmostEqual(F.next_difficulty(5.0, 4), 3.919642, places=6)
++
++
++class TestStateMachine(unittest.TestCase):
++    def _new_card(self):
++        return {"fsrs_state": 0, "fsrs_stability": None, "fsrs_difficulty": None,
++                "fsrs_reps": 0, "fsrs_lapses": 0, "last_review_time": None}
++
++    def test_new_branches(self):
++        cases = {
++            1: dict(state=1, s=0.4072, d=7.2102, due=BASE + timedelta(minutes=1)),
++            2: dict(state=1, s=1.1829, d=6.508547, due=BASE + timedelta(minutes=5)),
++            3: dict(state=1, s=3.1262, d=5.314578, due=BASE + timedelta(minutes=10)),
++            4: dict(state=2, s=15.4722, d=3.282856, due=BASE + timedelta(days=15)),
++        }
++        for r, exp in cases.items():
++            got = F.review(self._new_card(), r, now=BASE)
++            self.assertEqual(got["fsrs_state"], exp["state"], f"rating={r}")
++            self.assertAlmostEqual(got["fsrs_stability"], exp["s"], places=6)
++            self.assertAlmostEqual(got["fsrs_difficulty"], exp["d"], places=6)
++            self.assertEqual(got["due"], exp["due"])
++            self.assertEqual(got["fsrs_reps"], 1)
++            self.assertEqual(got["fsrs_lapses"], 0)
++
++    def test_full_sequence_matches_reference(self):
++        """New鈫扜, Learn+G(鐭湡), Review+G, Review+Again(閬楀繕), Relearn+G, Review+Easy銆?+
++        鏈熸湜鍊?= py-fsrs 3.0.0 閫愭瀹為檯杈撳嚭锛堝惈 due 鏃跺埢锛夈€?+        """
++        steps = [
++            (3, BASE,                                    dict(state=1, s=3.1262,   d=5.314578, reps=1, lapses=0, sched=0, due=BASE + timedelta(minutes=10))),
++            (3, BASE + timedelta(minutes=10),            dict(state=2, s=4.350979, d=5.267036, reps=2, lapses=0, sched=4, due=BASE + timedelta(days=4, minutes=10))),
++            (3, BASE + timedelta(days=1, minutes=11),    dict(state=2, s=7.196698, d=5.220606, reps=3, lapses=0, sched=7, due=BASE + timedelta(days=8, minutes=11))),
++            (1, BASE + timedelta(days=6),                dict(state=3, s=1.678392, d=7.255616, reps=4, lapses=1, sched=0, due=BASE + timedelta(days=6, minutes=5))),
++            (3, BASE + timedelta(days=6, minutes=6),     dict(state=2, s=2.33595,  d=7.162653, reps=5, lapses=1, sched=2, due=BASE + timedelta(days=8, minutes=6))),
++            (4, BASE + timedelta(days=16),               dict(state=2, s=42.806447, d=6.031689, reps=6, lapses=1, sched=43, due=BASE + timedelta(days=59))),
++        ]
++        st = self._new_card()
++        for r, now, exp in steps:
++            st = F.review(st, r, now=now)
++            ctx = f"rating={r} now={now}"
++            self.assertEqual(st["fsrs_state"], exp["state"], ctx)
++            self.assertAlmostEqual(st["fsrs_stability"], exp["s"], places=5, msg=ctx)
++            self.assertAlmostEqual(st["fsrs_difficulty"], exp["d"], places=5, msg=ctx)
++            self.assertEqual(st["fsrs_reps"], exp["reps"], ctx)
++            self.assertEqual(st["fsrs_lapses"], exp["lapses"], ctx)
++            self.assertEqual(st["scheduled_days"], exp["sched"], ctx)
++            self.assertEqual(st["due"], exp["due"], ctx)
++
++    def test_review_hard_interval_ordering(self):
++        """Review 鎬?hard鈮ood銆乪asy鈮ood+1 鐨勯棿闅旈挸鍒讹紙鍙傝€冨疄鐜?82-83 琛岃涔夛級銆?""
++        st = {"fsrs_state": 2, "fsrs_stability": 10.0, "fsrs_difficulty": 5.0,
++              "fsrs_reps": 3, "fsrs_lapses": 0,
++              "last_review_time": BASE - timedelta(days=9)}
++        good = F.review(st, 3, now=BASE)
++        hard = F.review(st, 2, now=BASE)
++        easy = F.review(st, 4, now=BASE)
++        self.assertLessEqual(hard["scheduled_days"], good["scheduled_days"])
++        self.assertGreaterEqual(easy["scheduled_days"], good["scheduled_days"] + 1)
++
++
++class TestRatingMapping(unittest.TestCase):
++    def test_practice(self):
++        self.assertEqual(F.rating_from_practice(False, "绮惧噯娴佺晠"), 1)
++        self.assertEqual(F.rating_from_practice(True, "鍕夊己绛斿"), 2)
++        self.assertEqual(F.rating_from_practice(True, "姝ｅ父绛斿"), 3)
++        self.assertEqual(F.rating_from_practice(True, "绮惧噯娴佺晠"), 4)
++        self.assertEqual(F.rating_from_practice(True, None), 3)      # 缂哄け榛樿 Good
++        self.assertEqual(F.rating_from_practice(True, "涔卞€?), 3)
++
++    def test_card_self(self):
++        self.assertEqual(F.rating_from_card_self_assessment("not_at_all"), 1)
++        self.assertEqual(F.rating_from_card_self_assessment("perfect"), 4)
++        self.assertEqual(F.rating_from_card_self_assessment(None), 3)
++
++
++class TestMasteryView(unittest.TestCase):
++    def test_sentinel(self):
++        self.assertEqual(F.mastery_view(None), -1)
++        self.assertEqual(F.mastery_view(-1), -1)
++        self.assertEqual(F.mastery_view(0), 0)     # 0 鍒?瀹屽叏蹇樿锛屼笉寰楀垽鏈瘎浼?+        self.assertEqual(F.mastery_view("50"), 50)
++        self.assertEqual(F.mastery_view("bad"), -1)
++
++    def test_mastery_of_state(self):
++        st = {"fsrs_state": 2, "fsrs_stability": 5.0, "fsrs_difficulty": 5.0,
++              "fsrs_reps": 1, "fsrs_lapses": 0, "last_review_time": BASE}
++        self.assertEqual(F.mastery_of_state(st, BASE + timedelta(days=5)), 90)
++        self.assertIsNone(F.mastery_of_state({**st, "fsrs_state": 1}, BASE))
++        self.assertIsNone(F.mastery_of_state({"fsrs_state": 0, "fsrs_stability": None}, BASE))
++
++
++class TestSprint(unittest.TestCase):
++    def _row(self, days_ago, imp, dif, s=5.0):
++        """Review 鎬佹牱渚嬭锛歞ays_ago 澶╁墠澶嶄範锛孲=s锛坉ays_ago 瓒婂ぇ R 瓒婁綆锛夈€?""
++        return {"state": {"fsrs_state": 2, "fsrs_stability": s, "fsrs_difficulty": 5.0,
++                          "fsrs_reps": 1, "fsrs_lapses": 0,
++                          "last_review_time": BASE - timedelta(days=days_ago)},
++                "importance_score": imp, "difficulty_score": dif}
++
++    def test_pool_order(self):
++        # R 鍗囧簭 鈫?importance 闄嶅簭 鈫?difficulty 鍗囧簭
++        a = {"state": {}, "importance_score": 5, "difficulty_score": 5}            # 鏂拌 R=0 鎺掓渶鍓?+        b = self._row(20, 8, 5); c = self._row(20, 9, 5); d = self._row(1, 10, 1)
++        pool = F.build_sprint_pool([b, c, a, d], 3)
++        self.assertEqual([id(x) for x in pool], [id(a), id(c), id(b)])
++        self.assertEqual(len(F.build_sprint_pool([a], 10)), 1)  # 姹犱笉瓒宠繑鍥炲彲鐢ㄦ暟
++
++    def test_difficulty_mix(self):
++        self.assertEqual(F.question_difficulty_mix(-1), ["easy", "easy", "medium"])
++        self.assertEqual(F.question_difficulty_mix(30), ["easy", "easy", "medium"])
++        self.assertEqual(F.question_difficulty_mix(55), ["easy", "medium", "medium"])
++        self.assertEqual(F.question_difficulty_mix(85), ["medium", "hard", "hard"])
++
++
++# ---------------------------------------------------------------------------
++# DB 灞傦紙涓存椂 SQLite 鏂囦欢锛?+# ---------------------------------------------------------------------------
++
++_DDL = [
++    """CREATE TABLE knowledge_points (
++        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
++        subject_name TEXT, point_name TEXT, core_description TEXT,
++        mastery_score INTEGER DEFAULT -1,
++        difficulty_score REAL DEFAULT 5.0, importance_score REAL DEFAULT 5.0,
++        fsrs_stability REAL, fsrs_difficulty REAL, fsrs_state INTEGER DEFAULT 0,
++        fsrs_reps INTEGER DEFAULT 0, fsrs_lapses INTEGER DEFAULT 0,
++        last_review_time TEXT, due_time TEXT)""",
++    """CREATE TABLE error_questions (
++        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
++        subject_name TEXT, knowledge_point_id INTEGER,
++        current_proficiency INTEGER DEFAULT 20,
++        difficulty_score REAL DEFAULT 5.0, importance_score REAL DEFAULT 5.0,
++        question_content TEXT, question_hash TEXT,
++        fsrs_stability REAL, fsrs_difficulty REAL, fsrs_state INTEGER DEFAULT 0,
++        fsrs_reps INTEGER DEFAULT 0, fsrs_lapses INTEGER DEFAULT 0,
++        last_review_time TEXT, due_time TEXT)""",
++    """CREATE TABLE kp_proficiency_history (
++        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL,
++        knowledge_point_id INTEGER NOT NULL, timestamp TEXT,
++        mastery INTEGER NOT NULL, retrievability REAL)""",
++    """CREATE TABLE error_proficiency_history (
++        id INTEGER PRIMARY KEY AUTOINCREMENT, error_question_id INTEGER NOT NULL,
++        timestamp TEXT, proficiency INTEGER NOT NULL)""",
++    """CREATE TABLE system_config (
++        key TEXT PRIMARY KEY, value TEXT, description TEXT, updated_at TEXT)""",
++]
++
++
++class TestDbIntegration(unittest.TestCase):
++    def setUp(self):
++        fd, self.db_path = tempfile.mkstemp(suffix=".db")
++        os.close(fd)
++        self.conn = db_adapter.get_connection(self.db_path)
++        for ddl in _DDL:
++            self.conn.execute(ddl)
++        self.conn.commit()
++        self.conn.execute("INSERT INTO knowledge_points (id, user_id, subject_name, "
++                          "point_name, core_description, mastery_score) "
++                          "VALUES (1, 'u1', 's1', 'p1', 'd', -1)")
++        self.conn.execute("INSERT INTO error_questions (id, user_id, subject_name, "
++                          "knowledge_point_id) VALUES (1, 'u1', 's1', 1)")
++        self.conn.commit()
++
++    def tearDown(self):
++        self.conn.close()
++        os.unlink(self.db_path)
++
++    def test_apply_review_writes_state_and_history(self):
++        got = F.apply_review("kp", 1, "u1", 3, now=BASE, conn=self.conn)
++        self.conn.commit()
++        self.assertIsNotNone(got)
++        row = self.conn.execute("SELECT fsrs_stability, fsrs_state, due_time, "
++                                "mastery_score FROM knowledge_points WHERE id=1").fetchone()
++        self.assertAlmostEqual(row[0], 3.1262, places=6)
++        self.assertEqual(row[1], 1)                    # Learning锛堟湭鍒?due锛屾棤 R锛?+        self.assertEqual(row[2], "2026-09-28 12:10:00")
++        self.assertEqual(row[3], -1)                   # Learning 鎬佷笉瑕嗙洊鏈瘎浼板摠鍏?+        h = self.conn.execute("SELECT mastery FROM kp_proficiency_history").fetchall()
++        self.assertEqual(len(h), 1)
++
++    def test_apply_review_review_state_sets_mastery(self):
++        F.apply_review("kp", 1, "u1", 4, now=BASE, conn=self.conn)  # New+Easy鈫扲eview
++        self.conn.commit()
++        row = self.conn.execute("SELECT mastery_score, fsrs_state FROM knowledge_points "
++                                "WHERE id=1").fetchone()
++        self.assertEqual(row[1], 2)
++        self.assertEqual(row[0], 100)                  # t=0 鈫?R=1
++        # 10 澶╁悗鎯版€у洖鍐?+        st = F.load_state(self.conn, "kp", 1, "u1")
++        m = F.mastery_of_state(st, BASE + timedelta(days=15))       # S=15.47鈮坉ue
++        self.assertTrue(85 <= m <= 95)
++
++    def test_apply_review_user_isolation(self):
++        self.assertIsNone(F.apply_review("kp", 1, "u2", 3, now=BASE, conn=self.conn))
++        self.assertIsNone(F.apply_review("error", 1, "u2", 3, now=BASE, conn=self.conn))
++
++    def test_apply_review_error_history(self):
++        F.apply_review("error", 1, "u1", 4, now=BASE, conn=self.conn)
++        self.conn.commit()
++        n = self.conn.execute("SELECT COUNT(*) FROM error_proficiency_history").fetchone()[0]
++        self.assertEqual(n, 1)
++        prof = self.conn.execute("SELECT current_proficiency FROM error_questions "
++                                 "WHERE id=1").fetchone()[0]
++        self.assertEqual(prof, 100)
++
++    def test_decay_flush_row_scope(self):
++        # 鏋勯€?Review 鎬併€丼=5銆佷笂娆″涔?10 澶╁墠 鈫?R鈮?.825 鈫?mastery 82/83
++        self.conn.execute("UPDATE knowledge_points SET fsrs_state=2, fsrs_stability=5.0, "
++                          "fsrs_difficulty=5.0, fsrs_reps=1, last_review_time=? "
++                          "WHERE id=1", (F.fmt_ts(BASE - timedelta(days=10)),))
++        self.conn.commit()
++        n = F.decay_flush("u1", ref_ids={"kp": [1]}, conn=self.conn, now=BASE)
++        self.assertEqual(n["kp"], 1)
++        m = self.conn.execute("SELECT mastery_score FROM knowledge_points "
++                              "WHERE id=1").fetchone()[0]
++        self.assertIn(m, (82, 83))
++        # 骞傜瓑锛氬啀娆?flush 鍊间笉鍐嶅彉鍖栵紙鏃犳柊鍥炲啓锛?+        n2 = F.decay_flush("u1", ref_ids={"kp": [1]}, conn=self.conn, now=BASE)
++        self.assertEqual(n2["kp"], 0)
++
++    def test_decay_flush_full_skips_new_rows(self):
++        F.decay_flush("u1", conn=self.conn)  # 鍏ㄩ噺锛歂ew 鎬佽涓嶅弬涓?+        m = self.conn.execute("SELECT mastery_score FROM knowledge_points "
++                              "WHERE id=1").fetchone()[0]
++        self.assertEqual(m, -1)
++
++    def test_set_stars_clamp(self):
++        F.set_stars("kp", 1, "u1", difficulty=0.3, importance=12.4, conn=self.conn)
++        row = self.conn.execute("SELECT difficulty_score, importance_score FROM "
++                                "knowledge_points WHERE id=1").fetchone()
++        self.assertEqual(row[0], 1.0)    # 鏈€浣?1 鍒嗭紙0.5 鏄燂級
++        self.assertEqual(row[1], 10.0)   # 鏈€楂?10 鍒嗭紙5 鏄燂級
++        F.set_stars("kp", 1, "u1", difficulty=7.0, conn=self.conn)
++        row = self.conn.execute("SELECT difficulty_score, importance_score FROM "
++                                "knowledge_points WHERE id=1").fetchone()
++        self.assertEqual(row[0], 7.0)
++        self.assertEqual(row[1], 10.0)   # 鏈紶鐨勫垪涓嶅姩
++
++    def test_throttle_helpers(self):
++        self.assertTrue(F._flush_due(self.conn, "u1"))          # 鏃犺褰?绔嬪嵆鍙窇
++        F._touch_flush(self.conn, "u1")
++        self.conn.commit()
++        self.assertFalse(F._flush_due(self.conn, "u1"))          # 鍒氳窇杩団啋10 鍒嗛挓鍐呰妭娴?+        # sqlite 鍚庣鍏ㄩ噺 flush 涓嶅彈鑺傛祦闃绘柇锛坉ecay_flush 鍐呴儴鍙 PG 搴旂敤鑺傛祦锛?+        n = F.decay_flush("u1", conn=self.conn)
++        self.assertIn("kp", n)
++
++
++class TestTimeHelpers(unittest.TestCase):
++    def test_parse_fmt(self):
++        self.assertEqual(F.parse_ts("2026-09-28 12:00:00"), BASE)
++        self.assertEqual(F.parse_ts("2026-09-28T12:00:00"), BASE)
++        self.assertEqual(F.parse_ts(None), None)
++        self.assertEqual(F.parse_ts("鍨冨溇"), None)
++        self.assertEqual(F.fmt_ts(BASE), "2026-09-28 12:00:00")
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+diff --git a/server/tests/test_p1_auth_isolation.py b/server/tests/test_p1_auth_isolation.py
+index 8fde830..626d2de 100644
+--- a/server/tests/test_p1_auth_isolation.py
++++ b/server/tests/test_p1_auth_isolation.py
+@@ -121,13 +121,13 @@ class TestUserIsolation:
+ 
+         # B 璇诲彇 A 閿欓鐨勭啛缁冨害鍘嗗彶 鈫?绌?         assert system.get_proficiency_history(eq_id, user_id=UB) == []
+-        # B 鏇存柊 A 閿欓鐔熺粌搴?鈫?鏃犳晥
+-        system.append_proficiency(eq_id, 80, user_id=UB)
++        # B 缁?A 閿欓鎵?FSRS rating 鈫?鏃犳晥锛堝敮涓€鍐欏叆鍙ｆ寜 user_id 闅旂锛?+        system.append_proficiency(eq_id, 3, user_id=UB)
+         assert system.get_proficiency_history(eq_id, user_id=UA) == []
+         # B 鍒犻櫎 A 閿欓 鈫?澶辫触
+         assert system.error_manager.delete_error_question(eq_id, user_id=UB) is False
+-        # A 鎿嶄綔姝ｅ父
+-        system.append_proficiency(eq_id, 80, user_id=UA)
++        # A 鎿嶄綔姝ｅ父锛歂ew鈫?Good)Learning 涓嶈鐩栫啛缁冨害锛屾洸绾垮繀鍐欎竴鏉★紙璁扮幇鍊?20锛?+        system.append_proficiency(eq_id, 3, user_id=UA)
+         hist = system.get_proficiency_history(eq_id, user_id=UA)
+-        assert len(hist) == 1 and hist[0][1] == 80
++        assert len(hist) == 1 and hist[0][1] == 20
+         assert system.error_manager.delete_error_question(eq_id, user_id=UA) is True
+diff --git a/server/tests/test_p3_api.py b/server/tests/test_p3_api.py
+index 0c28a85..3109423 100644
+--- a/server/tests/test_p3_api.py
++++ b/server/tests/test_p3_api.py
+@@ -3,10 +3,11 @@ P3 涓氬姟 API 鍏ㄩ摼璺祴璇曪紙鐪熷疄璋冪敤 DeepSeek锛夈€? 
+ 瑕嗙洊锛氶厤缃鍙?/ 绉戠洰CRUD / 鎻愬彇(D1鍚玸ubject_name) / 纭 / 鐭ヨ瘑鐐瑰垪琛?/
+ 缁熻 / vault 鏂囦欢璇诲啓涓庣洰褰曠┛瓒婇槻鎶?/ 缁冧範鍑洪涓庣瓟棰樺叆搴撻敊棰?/ 鏈璇?01銆?-杩愯鍓嶇疆锛氭湇鍔＄宸插湪 127.0.0.1:6001 杩愯銆?+杩愯鍓嶇疆锛氭湇鍔＄宸插湪 127.0.0.1:6001 杩愯锛堝彲鐢ㄧ幆澧冨彉閲?LL_SERVER 瑕嗙洊锛夈€? """
+ from __future__ import annotations
+ 
++import os
+ import sys
+ import time
+ import unittest
+@@ -16,7 +17,7 @@ import requests
+ if hasattr(sys.stdout, "reconfigure"):
+     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+ 
+-BASE = "http://127.0.0.1:6001"
++BASE = os.environ.get("LL_SERVER", "http://127.0.0.1:6001")
+ SUBJECT = f"P3娴嬭瘯瀛︾{int(time.time())}"
+ 
+ NOTE_TEXT = (
+@@ -173,12 +174,14 @@ class TestP3Api(unittest.TestCase):
+     def test_11_error_history_and_reviewed(self):
+         if not hasattr(type(self), "error_id"):
+             self.skipTest("鏃犻敊棰?ID")
+-        r = self._post(f"/api/kb/errors/{self.error_id}/proficiency", json={"proficiency": 45})
++        # FSRS rating 璇箟锛堟柟妗?搂2.3锛夛細鍗曟 Good(3) 浠?New鈫扡earning锛屼笉瑕嗙洊鐔熺粌搴︼紝鏇茬嚎璁扮幇鍊?20
++        r = self._post(f"/api/kb/errors/{self.error_id}/proficiency", json={"rating": 3})
+         self.assertTrue(r.json()["success"], r.text)
++        self.assertEqual(r.json()["data"]["proficiency"], 20)
+         r = self._get(f"/api/kb/errors/{self.error_id}/history")
+         hist = r.json()["data"]
+         self.assertEqual(len(hist), 1)
+-        self.assertEqual(hist[0]["proficiency"], 45)
++        self.assertEqual(hist[0]["proficiency"], 20)
+         r = self._post(f"/api/kb/errors/{self.error_id}/reviewed")
+         self.assertTrue(r.json()["data"]["reviewed"])
+ 
+diff --git a/server/tests/test_p5_practice_loop.py b/server/tests/test_p5_practice_loop.py
+index 068e266..314bc48 100644
+--- a/server/tests/test_p5_practice_loop.py
++++ b/server/tests/test_p5_practice_loop.py
+@@ -3,17 +3,18 @@ P5 缁冧範闂幆绔埌绔祴璇曪紙鐪熷疄 DeepSeek 浠呯敤浜庡彲閫夊嚭棰樻楠わ紱
+ 
+ 瑕嗙洊锛? 1. 鍒涘缓瀛︾ + 鐭ヨ瘑鐐癸紙point-new锛屾棤 LLM锛?-2. 闅惧害鍔犳潈鐔熺粌搴﹂噸绠楋細POST assessment 鈫?mastery = round(earned_w/total_w*100)锛屾墜绠楁瘮瀵?+2. FSRS-5 鐔熺粌搴﹂噸绠楋細POST assessment 鈫?姣忛 rating 璧板敮涓€鍐欏叆鍙ｏ紝鍚岀鎵瑰唴绛斿娲剧敓=100
+ 3. 鐔熺粌搴﹁惤搴撴牎楠岋細GET 鐭ヨ瘑鐐硅鎯?mastery_score 宸叉洿鏂? 4. 绛旈鍏ュ簱閿欓锛歅OST /api/practice/results(is_correct=False) 鈫?閿欓搴撳嚭鐜拌棰?-5. 閿欓鐔熺粌搴︼細append 鈫?history 鈫?reviewed 鍏ㄦ祦绋嬶紱澶嶄範鍚庝笉鍐嶅嚭鐜板湪寰呭涔犳睜
++5. 閿欓 FSRS rating 娴侊細New鈫扡earning鈫扲eview锛屾洸绾垮繀鍐欏巻鍙诧紱reviewed 鏍囪
+ 6. 閿欓鎺ㄨ崘姹狅細search_error_questions 杩斿洖鏈涔犻敊棰? 7. 10 棰樿瘎浼扮敓鎴愶紙DeepSeek锛岀粨鏋勬牎楠岋紝瀹归敊璺宠繃锛? 
+-杩愯鍓嶇疆锛氭湇鍔＄宸插湪 127.0.0.1:6001 杩愯銆?+杩愯鍓嶇疆锛氭湇鍔＄宸插湪 127.0.0.1:6001 杩愯锛坒srs-core 鍒嗘敮瀹炰緥璇风敤 LL_SERVER 瑕嗙洊锛夈€? """
+ from __future__ import annotations
+ 
++import os
+ import sys
+ import time
+ import unittest
+@@ -24,8 +25,10 @@ import requests
+ if hasattr(sys.stdout, "reconfigure"):
+     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+ 
+-BASE = "http://127.0.0.1:6001"
+-SUBJECT = f"P5缁冧範瀛︾{int(time.time()) % 100000}_{uuid.uuid4().hex[:4]}"
++BASE = os.environ.get("LL_SERVER", "http://127.0.0.1:6001")
++# 娉細涓嶇敤 f-string 鎷兼帴鈥斺€旀湰鏈?CPython 3.12.0 鐨勬柊 f-string tokenizer 瀵瑰惈涓枃鍓嶇紑+宓屽鍒囩墖鐨?+# f-string 浼氳鎶?"expecting '}'"锛堜富宸ヤ綔鏍戝悓瀛楄妭琛屽嵈鍙€氳繃缂栬瘧锛屽睘鐗堟湰 bug锛夛紝鏀圭敤鏅€氭嫾鎺ャ€?+SUBJECT = "P5缁冧範瀛︾" + str(int(time.time()) % 100000) + "_" + uuid.uuid4().hex[:4]
+ 
+ 
+ def register_and_token(username: str) -> str:
+@@ -38,9 +41,6 @@ def register_and_token(username: str) -> str:
+     return r.json()["data"]["token"]
+ 
+ 
+-WEIGHTS = {"瀹规槗": 1.0, "涓瓑": 1.2, "鍥伴毦": 1.5}
+-
+-
+ class TestP5PracticeLoop(unittest.TestCase):
+     @classmethod
+     def setUpClass(cls):
+@@ -62,7 +62,7 @@ class TestP5PracticeLoop(unittest.TestCase):
+         type(self).kp_id = int(data["knowledge_id"])
+         self.assertGreater(self.kp_id, 0)
+ 
+-    # ---------- 闅惧害鍔犳潈鐔熺粌搴﹂噸绠楋紙纭畾鎬ф墜绠楁瘮瀵癸級 ----------
++    # ---------- FSRS 鐔熺粌搴﹂噸绠楋紙纭畾鎬у彛寰勶細绔偣鍐呭悓鎵瑰叡鐢ㄤ竴鏃堕挓锛岀瓟瀵归摼灏炬淳鐢?R=1.0锛?----------
+     def test_02_weighted_mastery(self):
+         questions = [
+             {"question": "Q1鏄?, "correct_answer": "A", "difficulty": "瀹规槗", "explanation": ""},
+@@ -70,25 +70,24 @@ class TestP5PracticeLoop(unittest.TestCase):
+             {"question": "Q3闅?, "correct_answer": "C", "difficulty": "鍥伴毦", "explanation": ""},
+             {"question": "Q4涓?, "correct_answer": "D", "difficulty": "涓瓑", "explanation": ""},
+         ]
+-        # 绛斿锛歈1(鏄撯垰) Q2(涓? Q3(闅锯垰) Q4(涓垰)
++        # 绛斿锛歈1(鏄撯垰) Q2(涓? Q3(闅锯垰) Q4(涓垰)锛涙棤 answer_quality 鏃?瀵光啋Good(3) 閿欌啋Again(1)
+         answers = ["A", "X", "C", "D"]
+-        earned = WEIGHTS["瀹规槗"] * 1 + WEIGHTS["鍥伴毦"] * 1 + WEIGHTS["涓瓑"] * 1  # Q1,Q3,Q4
+-        total = sum(WEIGHTS[q["difficulty"]] for q in questions)
+-        expected = int(round(earned / total * 100))
+ 
+         r = self._post(f"/api/knowledge/points/{self.kp_id}/assessment",
+                        json={"questions": questions, "answers": answers})
+         body = r.json()
+         self.assertTrue(body["success"], r.text)
+         data = body["data"]
+-        self.assertEqual(data["mastery_score"], expected, f"鏈熸湜{expected} 瀹炲緱{data['mastery_score']}")
++        # New鈫?G)Learning鈫?A)Learning鈫?G)Review鈫?G)Review锛涘悓绉掑唴 R=1 鈫?鐔熺粌搴︽淳鐢?100
++        self.assertEqual(data["mastery_score"], 100, f"瀹炲緱{data['mastery_score']}")
+         self.assertEqual(data["correct_count"], 3)
+         self.assertEqual(data["total_count"], 4)
+         self.assertAlmostEqual(data["accuracy"], 0.75, places=3)
+-        # 閫愰 is_correct 鏍￠獙
++        # 閫愰 is_correct / rating 鏍￠獙
+         flags = [d["is_correct"] for d in data["detailed_results"]]
+         self.assertEqual(flags, [True, False, True, True])
+-        type(self).expected_mastery = expected
++        self.assertEqual([d["rating"] for d in data["detailed_results"]], [3, 1, 3, 3])
++        type(self).expected_mastery = data["mastery_score"]
+ 
+     # ---------- 鐔熺粌搴﹁惤搴?----------
+     def test_03_mastery_persisted(self):
+@@ -116,17 +115,20 @@ class TestP5PracticeLoop(unittest.TestCase):
+         self.assertEqual(int(e0.get("current_proficiency", 20)), 20, "鏂伴敊棰橀粯璁ょ啛缁冨害20")
+         type(self).error_id = int(e0["id"])
+ 
+-    # ---------- 閿欓鐔熺粌搴﹀巻鍙?+ 澶嶄範 ----------
++    # ---------- 閿欓 FSRS rating 娴?+ 鐔熺粌搴︽洸绾?----------
+     def test_05_error_proficiency_flow(self):
+         if not hasattr(type(self), "error_id"):
+             self.skipTest("鏃犻敊棰?ID")
+-        # 娓愯繘寮忔洿鏂帮細妯℃嫙澶嶄範鍋氬锛岀啛缁冨害 20 鈫?50 鈫?80
+-        for p in (50, 80):
+-            r = self._post(f"/api/kb/errors/{self.error_id}/proficiency", json={"proficiency": p})
++        # 涓ゆ Good(3) 璇勫垎锛歂ew鈫扡earning锛堜笉瑕嗙洊鏂伴敊棰橀粯璁?20锛夆啋Review锛堝悓绉掑彲妫€绱㈡€ф淳鐢?100锛?+        profs = []
++        for rating in (3, 3):
++            r = self._post(f"/api/kb/errors/{self.error_id}/proficiency", json={"rating": rating})
+             self.assertTrue(r.json()["success"], r.text)
++            profs.append(r.json()["data"]["proficiency"])
++        self.assertEqual(profs, [20, 100], "棣栨 Learning 淇濇寔鐜板€硷紝浜屾鍒?Review 娲剧敓 100")
+         r = self._get(f"/api/kb/errors/{self.error_id}/history")
+         hist = r.json()["data"]
+-        self.assertEqual([h["proficiency"] for h in hist][-2:], [50, 80], "鍘嗗彶鎸夊簭璁板綍")
++        self.assertEqual([h["proficiency"] for h in hist][-2:], [20, 100], "鍘嗗彶鎸夊簭璁板綍")
+         # 鏍囪澶嶄範
+         r = self._post(f"/api/kb/errors/{self.error_id}/reviewed")
+         self.assertTrue(r.json()["data"]["reviewed"])
+@@ -138,9 +140,9 @@ class TestP5PracticeLoop(unittest.TestCase):
+         self.assertGreaterEqual(len(errors), 1)
+         mine = {int(e["id"]): e for e in errors}
+         self.assertIn(self.error_id, mine, "閿欓搴斿嚭鐜板湪鎺ㄨ崘/澶嶄範姹?)
+-        # 澶嶄範鍋氬鍚庯紝閿欓鐔熺粌搴﹀凡浠庨粯璁?20 娓愯繘鏇存柊鍒?80锛堝垪琛ㄧ鐐瑰洖鏄?current_proficiency锛?-        self.assertEqual(int(mine[self.error_id]["current_proficiency"]), 80,
+-                         "澶嶄範鍚庨敊棰樼啛缁冨害搴旀洿鏂颁负 80")
++        # 澶嶄範涓ゆ鍋氬鍚庯紝鐔熺粌搴︾敱 FSRS 娲剧敓锛堝悓绉掓绱㈡垚鍔熲啋楂樺垎锛?+        self.assertEqual(int(mine[self.error_id]["current_proficiency"]), 100,
++                         "澶嶄範鍚庨敊棰樼啛缁冨害搴斾负 FSRS 娲剧敓鍊?100")
+ 
+     # ---------- 10 棰樿瘎浼扮敓鎴愶紙DeepSeek锛屽閿欙級 ----------
+     def test_07_generate_assessment_questions(self):
+diff --git a/server/tools/apply_fsrs_schema.py b/server/tools/apply_fsrs_schema.py
+new file mode 100644
+index 0000000..ac90712
+--- /dev/null
++++ b/server/tools/apply_fsrs_schema.py
+@@ -0,0 +1,87 @@
++# -*- coding: utf-8 -*-
++"""缁?璁扮郴缁熸敼閫狅紙2026-09-28锛夋寮忓簱鍙樻洿鑴氭湰锛氬箓绛?DDL + question_hash 瀛橀噺鍥炲～銆?+
++鐢ㄩ€旓細
++1. 鎵ц database/schema_postgres.py 鐨?PG_TABLES 鍏ㄩ噺娓呭崟锛堟墍鏈夎鍙ュ潎涓?+   IF NOT EXISTS / ADD COLUMN IF NOT EXISTS锛屽箓绛夊彲閲嶈窇锛夛紱
++2. 鍥炲～ error_questions.question_content / question_hash 涓?practice_records.question_hash
++   锛坢d5 棰樺共锛夛紝宸插洖濉繃鐨勮鑷姩璺宠繃銆?+
++鐢ㄦ硶锛堝湪 server 鐩綍涓嬶級锛?+    python -m tools.apply_fsrs_schema            # 寤哄垪寤鸿〃 + 鍥炲～
++    python -m tools.apply_fsrs_schema --no-backfill
++
++鍥炴粴棰勬锛堟柟妗?搂6锛夛細涓嶅垹鍒椾笉鍒犺〃锛屽洖婊?鍋滅敤 fsrs_service 鍐欏洖璺緞銆?+"""
++import argparse
++import hashlib
++import os
++import sys
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++import config  # noqa: E402
++from database import db_adapter, schema_postgres  # noqa: E402
++
++
++def qhash(text):
++    return hashlib.md5(str(text or "").encode("utf-8")).hexdigest()
++
++
++def apply_ddl(conn):
++    n = 0
++    for stmt in schema_postgres.PG_TABLES:
++        conn.execute(stmt)
++        n += 1
++    conn.commit()
++    print(f"[ddl] 鎵ц {n} 鏉″箓绛夎鍙ュ畬鎴?)
++
++
++def backfill(conn):
++    # 1) practice_records.question_hash锛氭寜 md5(棰樺共) 鍥炲～
++    rows = conn.execute(
++        "SELECT id, question_content FROM practice_records "
++        "WHERE question_hash IS NULL AND question_content IS NOT NULL").fetchall()
++    cur = conn.cursor()
++    cur.executemany("UPDATE practice_records SET question_hash = ? WHERE id = ?",
++                    [(qhash(r[1]), r[0]) for r in rows])
++    cur.close()
++    print(f"[backfill] practice_records.question_hash 鍥炲～ {len(rows)} 琛?)
++
++    # 2) error_questions锛氶骞蹭粠鍏宠仈缁冧範璁板綍琛ラ綈锛屽啀绠?hash
++    rows = conn.execute(
++        "SELECT e.id, e.practice_record_id FROM error_questions e "
++        "WHERE e.question_hash IS NULL").fetchall()
++    done = 0
++    for eid, prid in rows:
++        row = conn.execute("SELECT question_content FROM practice_records WHERE id = ?",
++                           (prid,)).fetchone()
++        if row and row[0]:
++            conn.execute("UPDATE error_questions SET question_content = ?, question_hash = ? "
++                         "WHERE id = ?", (row[0], qhash(row[0]), eid))
++            done += 1
++    conn.commit()
++    print(f"[backfill] error_questions 棰樺共/hash 鍥炲～ {done}/{len(rows)} 琛?
++          f"锛堟棤鍏宠仈缁冧範璁板綍鐨勯敊棰樿烦杩囷紝鍚庣画鍙粡琛ュ綍鍏ュ彛澶勭悊锛?)
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--no-backfill", action="store_true")
++    args = ap.parse_args()
++    if not db_adapter.is_postgres():
++        print("[warn] 褰撳墠鍚庣闈?postgres锛歅G 鏉冨▉璺緞涓嬫墠闇€瑕佹墽琛屾湰鑴氭湰锛?
++              "SQLite 鐢?knowledge_management.init_database 鑷姩琛ュ垪")
++        return 1
++    conn = db_adapter.get_connection(str(config.DB_PATH))
++    try:
++        apply_ddl(conn)
++        if not args.no_backfill:
++            backfill(conn)
++    finally:
++        conn.close()
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
