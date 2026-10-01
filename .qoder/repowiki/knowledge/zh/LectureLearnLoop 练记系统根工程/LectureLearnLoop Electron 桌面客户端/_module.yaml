@@ -1,0 +1,11 @@
+schema_version: 1
+module_path: desktop_electron
+title: LectureLearnLoop Electron 桌面客户端
+scope:
+    - desktop/
+source_files: []
+depends_on: []
+related_to:
+    - path: server_backend/auth_and_credits
+    - path: server_backend/knowledge_management
+    - path: server_backend/notes_and_practice

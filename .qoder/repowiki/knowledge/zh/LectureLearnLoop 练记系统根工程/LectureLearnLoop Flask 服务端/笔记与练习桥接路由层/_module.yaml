@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: server_backend/notes_and_practice
+title: 笔记与练习桥接路由层
+scope:
+    - server/routes_notes.py
+    - server/routes_bridge.py
+    - server/services/error_slicer.py
+source_files: []
+depends_on: []
+related_to:
+    - path: desktop_electron
+    - path: server_backend/auth_and_credits
+    - path: server_backend/flask_app_entrypoint

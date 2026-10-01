@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: server_backend/knowledge_management
+title: 知识点与错题知识管理系统
+scope:
+    - server/knowledge_management.py
+    - server/routes_knowledge.py
+    - server/similarity_matcher.py
+source_files: []
+depends_on: []
+related_to:
+    - path: desktop_electron
+    - path: server_backend/flask_app_entrypoint

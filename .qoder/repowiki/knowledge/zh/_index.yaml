@@ -1,0 +1,121 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-09-29T07:40:23Z"
+modules:
+    "":
+        dir_name: LectureLearnLoop 练记系统根工程
+        title: LectureLearnLoop 练记系统根工程
+        scope:
+            - AGENTS.md
+            - .gitignore
+            - start_app.ps1
+            - review_diff2.txt
+            - _aj.js
+            - _km.py
+            - _rb.py
+            - _rk.py
+            - _tf.py
+            - review_diff.txt
+            - review_diff_fsrs2.txt
+        source_files: []
+        children:
+            - desktop_electron
+            - docs
+            - server_backend
+        depends_on: []
+        related_to: []
+    desktop_electron:
+        dir_name: LectureLearnLoop Electron 桌面客户端
+        title: LectureLearnLoop Electron 桌面客户端
+        scope:
+            - desktop/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: server_backend/auth_and_credits
+            - path: server_backend/knowledge_management
+            - path: server_backend/notes_and_practice
+    docs:
+        dir_name: 项目文档与架构规范
+        title: 项目文档与架构规范
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server_backend:
+        dir_name: LectureLearnLoop Flask 服务端
+        title: LectureLearnLoop Flask 服务端
+        scope:
+            - server/
+        source_files: []
+        children:
+            - server_backend/auth_and_credits
+            - server_backend/flask_app_entrypoint
+            - server_backend/knowledge_management
+            - server_backend/notes_and_practice
+        depends_on: []
+        related_to: []
+    server_backend/auth_and_credits:
+        dir_name: 多用户认证与积分计费服务
+        title: 多用户认证与积分计费服务
+        scope:
+            - server/auth.py
+            - server/credits_service.py
+            - server/routes_credits.py
+            - server/routes_admin.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: desktop_electron
+            - path: server_backend/flask_app_entrypoint
+            - path: server_backend/notes_and_practice
+    server_backend/flask_app_entrypoint:
+        dir_name: Flask 应用入口与配置_日志基础设施
+        title: Flask 应用入口与配置/日志基础设施
+        scope:
+            - server/app.py
+            - server/config.py
+            - server/logger_module.py
+            - server/llm_call_logger.py
+            - server/llm_logger.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: server_backend/auth_and_credits
+            - path: server_backend/knowledge_management
+            - path: server_backend/notes_and_practice
+    server_backend/knowledge_management:
+        dir_name: 知识点与错题知识管理系统
+        title: 知识点与错题知识管理系统
+        scope:
+            - server/knowledge_management.py
+            - server/routes_knowledge.py
+            - server/similarity_matcher.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: desktop_electron
+            - path: server_backend/flask_app_entrypoint
+    server_backend/notes_and_practice:
+        dir_name: 笔记与练习桥接路由层
+        title: 笔记与练习桥接路由层
+        scope:
+            - server/routes_notes.py
+            - server/routes_bridge.py
+            - server/services/error_slicer.py
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: desktop_electron
+            - path: server_backend/auth_and_credits
+            - path: server_backend/flask_app_entrypoint
