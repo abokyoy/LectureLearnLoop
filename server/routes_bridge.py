@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import base64
 import datetime as dt
+import hashlib
+import hmac
 import json
 import re
 import shutil
+import time as _walltime
 from pathlib import Path
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, send_file
 
 from auth import require_auth
 from config import DATA_DIR, VAULT_DIR, load_config, save_runtime_config
@@ -432,6 +435,18 @@ def vault_import():
             imp.update_task(tid, status="failed", error="正文入库失败，笔记列表可能不可见，请删除后重新导入")
             return _ok({"success": False, "error": "正文入库失败（文件已落盘），请删除后重新导入"})
         # PDF/DOCX：原件落附件目录，同名 .md 为目标产物，后台 worker 转换（两路径同模式）
+        # 2026-10-04 大PDF分段：PDF 先按“页数+体积”三态分流（≤20 页分支代码路径零改动）
+        if ext == ".pdf":
+            try:
+                total = imp.pdf_page_count(data)
+            except Exception:  # noqa: BLE001 打不开（异常 PDF）→当作小文件走现状流程，由 worker 兑错
+                total = None
+            from config import PDF_BOOK_PAGE_MIN, PDF_BOOK_EXEMPT_PAGES, PDF_BOOK_EXEMPT_SIZE_MB
+            size_mb = len(data) / 1024 / 1024
+            is_small = (total is None) or (total <= PDF_BOOK_PAGE_MIN) or \
+                (total <= PDF_BOOK_EXEMPT_PAGES and size_mb <= PDF_BOOK_EXEMPT_SIZE_MB)
+            if not is_small:
+                return _import_pdf_book(imp, g.user_id, folder, name, data, total)
         att_dir = folder / imp.ATTACH_DIR_NAME
         att_dir.mkdir(parents=True, exist_ok=True)
         orig_name = imp.uniquify_name(att_dir, name)
@@ -451,6 +466,200 @@ def vault_import():
     except Exception as e:  # noqa: BLE001
         log.log_error("bridge", "import_failed", e)
         return _ok({"success": False, "error": f"导入失败: {e}"})
+
+
+def _import_pdf_book(imp, user_id: str, folder: Path, name: str, data: bytes, total: int):
+    """大 PDF（>20 页且非小文件豁免）→ 建书籍文件夹（方案 §4.1/§4.2）。
+
+    结构：<落点>/<书>/<书>.pdf + <书>·0001-0020.md…预生成空占位 + 附件/。
+    文本层→投递整书串行 worker；扫描件→主任务即置 done（等前端逐段手动转）。
+    """
+    from config import PDF_SEG_PAGE_SIZE
+    base = imp.uniquify_name(folder, Path(name).stem)
+    book_dir = folder / base
+    book_dir.mkdir(parents=True, exist_ok=True)
+    orig = book_dir / (base + ".pdf")
+    orig.write_bytes(data)
+    (book_dir / imp.ATTACH_DIR_NAME).mkdir(parents=True, exist_ok=True)
+    is_text = imp.pdf_is_text_layer(data)
+    segs = imp.compute_pdf_segments(total, PDF_SEG_PAGE_SIZE)
+    for sf, st in segs:
+        (book_dir / imp.segment_md_name(base, sf, st)).write_text("", encoding="utf-8")
+    init_prog = json.dumps({"done": 0, "total": len(segs), "is_text_layer": is_text, "pages": total})
+    # 文本层：主任务 pending，投递整书 worker；扫描：占位建好即 done（审核 P2-G）
+    tid = imp.create_task(user_id, base + ".pdf", str(book_dir), "pdf_book",
+                          result_pdf=str(orig), status=("pending" if is_text else "done"),
+                          progress_json=init_prog)
+    if is_text:
+        imp.start_pdf_book_task(tid, user_id, orig, book_dir, base, total)
+    log.log("import", "pdf_book_created", "success",
+            {"task": tid, "pages": total, "segs": len(segs), "is_text": is_text})
+    return _ok({"success": True, "task_id": tid, "file_name": base + ".pdf", "is_book": True,
+                "total_pages": total, "segments": len(segs), "is_text_layer": is_text})
+
+
+def _load_book(imp, main_task_id: str, user_id: str):
+    """加载书籍主任务并定位原件/文件夹/base/总页数；非法返回 None。"""
+    task = imp.get_book_task(main_task_id, user_id)
+    if not task or task["kind"] != "pdf_book" or not task["result_pdf"]:
+        return None
+    orig = Path(task["result_pdf"])
+    if not orig.is_file():
+        return None
+    from config import PDF_SEG_PAGE_SIZE  # noqa: F401 段大小由 compute_pdf_segments 默认取
+    prog = json.loads(task["progress_json"] or "{}")
+    total = prog.get("pages") or imp.pdf_page_count(orig)
+    return {"task": task, "prog": prog, "orig": orig, "book_dir": orig.parent,
+            "base": orig.stem, "total": total}
+
+
+def _seg_index_pairs(imp, bk, segs_idx) -> list[tuple[int, int]]:
+    """将前端传入的 1-based 段序号解析为 (seg_from, seg_to) 物理页区间。"""
+    segs = imp.compute_pdf_segments(bk["total"])
+    out: list[tuple[int, int]] = []
+    for idx in (segs_idx or []):
+        try:
+            i = int(idx) - 1
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < len(segs):
+            out.append(segs[i])
+    return out
+
+
+def _book_convert_plan(imp, bk, main_task_id: str, user_id: str, segs_idx, force_ocr: bool):
+    """算出待转段与方法（text/ocr）。返回 (method, to_convert[(sf,st)], ocr_pages)。
+
+    已转且非强制且非失败的段跳过；method 按“非文本层或 force_ocr → ocr”。
+    """
+    is_text = bk["prog"].get("is_text_layer")
+    method = "text" if (is_text and not force_ocr) else "ocr"
+    acts = imp.active_segment_states(main_task_id, user_id)
+    to_convert: list[tuple[int, int]] = []
+    for sf, st in _seg_index_pairs(imp, bk, segs_idx):
+        p = bk["book_dir"] / imp.segment_md_name(bk["base"], sf, st)
+        converted = p.exists() and p.stat().st_size > 0
+        failed = acts.get((sf, st)) == "failed"
+        if converted and not force_ocr and not failed:
+            continue
+        to_convert.append((sf, st))
+    ocr_pages = sum(st - sf + 1 for sf, st in to_convert) if method == "ocr" else 0
+    return method, to_convert, ocr_pages
+
+
+@bridge_bp.route("/api/import/pdf/book")
+@require_auth
+def pdf_book_status():
+    """书籍段状态列表（前端轮询）：文件系统为已转权威，叠加活跃 convert 任务行 running/failed 态。"""
+    from services import import_service as imp
+    main = (request.args.get("main_task_id") or "").strip()
+    bk = _load_book(imp, main, g.user_id)
+    if not bk:
+        return _ok({"success": False, "error": "书籍任务不存在或原件缺失"})
+    fs = imp.book_segment_status(bk["book_dir"], bk["base"], bk["total"])
+    acts = imp.active_segment_states(main, g.user_id)
+    for i, it in enumerate(fs, start=1):
+        it["index"] = i
+        it["state"] = "converted" if it["converted"] else acts.get((it["from"], it["to"]), "pending")
+    return _ok({"success": True,
+        "main_task_id": main, "status": bk["task"]["status"], "error": bk["task"]["error"],
+        "is_text_layer": bk["prog"].get("is_text_layer"), "total_pages": bk["total"],
+        "pdf_path": _rel_to_root(bk["orig"], g.user_id), "segments": fs, "progress": bk["prog"]})
+
+
+@bridge_bp.route("/api/import/pdf/segments/estimate", methods=["POST"])
+@require_auth
+def pdf_segments_estimate():
+    """转换前估算（不落任务，确认3=B）：返回待转段数/需 OCR 页数/方法。"""
+    from services import import_service as imp
+    body = request.get_json(silent=True) or {}
+    main = (body.get("main_task_id") or "").strip()
+    bk = _load_book(imp, main, g.user_id)
+    if not bk:
+        return _ok({"success": False, "error": "书籍任务不存在"})
+    method, to_convert, ocr_pages = _book_convert_plan(imp, bk, main, g.user_id, body.get("segs"), bool(body.get("force_ocr")))
+    return _ok({"success": True,
+        "method": method, "segs": len(to_convert), "ocr_pages": ocr_pages,
+        "need_confirm": method == "ocr",
+        "note": "扫描段将调用云端 OCR（消耗官方免费额度，不扣积分）" if method == "ocr" else "本地文本层提取，无额外消耗"})
+
+
+@bridge_bp.route("/api/import/pdf/segments/convert", methods=["POST"])
+@require_auth
+def pdf_segments_convert():
+    """段转换（确认3=B）：不带 confirm 返回消耗预估；带 confirm=true 才建 convert_segment 任务投递 worker。"""
+    from services import import_service as imp
+    body = request.get_json(silent=True) or {}
+    main = (body.get("main_task_id") or "").strip()
+    bk = _load_book(imp, main, g.user_id)
+    if not bk:
+        return _ok({"success": False, "error": "书籍任务不存在"})
+    method, to_convert, ocr_pages = _book_convert_plan(imp, bk, main, g.user_id, body.get("segs"), bool(body.get("force_ocr")))
+    if not to_convert:
+        return _ok({"success": False, "error": "无待转段（已转或无选中）"})
+    if not body.get("confirm"):
+        return _ok({"success": True,
+            "need_confirm": method == "ocr", "method": method, "segs": len(to_convert), "ocr_pages": ocr_pages,
+            "note": "扫描段将调用云端 OCR（消耗官方免费额度，不扣积分）" if method == "ocr" else "本地文本层提取，无额外消耗"})
+    created = []
+    for sf, st in to_convert:
+        nm = imp.segment_md_name(bk["base"], sf, st)
+        tid = imp.create_task(g.user_id, nm, str(bk["book_dir"]), "convert_segment",
+                              parent_task_id=main, seg_from=sf, seg_to=st)
+        imp.start_segment_convert(tid, g.user_id, main, bk["orig"], bk["book_dir"], bk["base"], sf, st, method)
+        created.append({"task_id": tid, "from": sf, "to": st, "method": method})
+    log.log("import", "pdf_segments_convert", "success", {"main": main, "n": len(created), "method": method})
+    return _ok({"success": True, "created": created})
+
+
+# ---------------------------------------------------------------- PDF 原件阅读（签名 token + 流式 Range，方案 §4.6）
+
+def _pdf_secret() -> bytes:
+    s = current_app.secret_key
+    return s.encode() if isinstance(s, str) else (s or b"")
+
+
+def _pdf_sign(user_id: str, path_str: str, exp: int) -> str:
+    msg = f"{user_id}|{path_str}|{exp}"
+    return hmac.new(_pdf_secret(), msg.encode(), hashlib.sha256).hexdigest()
+
+
+@bridge_bp.route("/api/vault/pdf/sign")
+@require_auth
+def pdf_sign():
+    """为当前用户签发某 vault PDF 的 60 分钟阅读 token（iframe 无法带 Authorization 头，审核 P0-2）。"""
+    raw = (request.args.get("path") or "").strip()
+    p = _bridge_path(g.user_id, raw)
+    if not p or p.suffix.lower() != ".pdf":
+        return _ok({"success": False, "error": "路径非法（仅 vault 内 .pdf）"})
+    path_str = str(p)
+    exp = int(_walltime.time()) + 3600
+    return _ok({"success": True, "u": g.user_id, "path": path_str, "exp": exp, "t": _pdf_sign(g.user_id, path_str, exp)})
+
+
+@bridge_bp.route("/api/vault/pdf")
+def pdf_stream():
+    """流式返回 vault 内 PDF（支持 HTTP Range，供 pdf.js 分片）。鉴权=签名 token（非 Authorization）。
+
+    新路径，不复用 routes_knowledge 的 /api/vault/file（审核 P0-1）；校验签名+过期+用户隔离子。
+    """
+    u = (request.args.get("u") or "").strip()
+    path = (request.args.get("path") or "").strip()
+    t = (request.args.get("t") or "").strip()
+    try:
+        exp = int(request.args.get("exp") or "0")
+    except ValueError:
+        exp = 0
+    if not u or not path or not t or exp <= 0:
+        return jsonify({"error": "签名参数缺失"}), 400
+    if exp < int(_walltime.time()):
+        return jsonify({"error": "签名已过期，请重新打开"}), 401
+    if not hmac.compare_digest(_pdf_sign(u, path, exp), t):
+        return jsonify({"error": "签名无效"}), 403
+    p = _bridge_path(u, path)
+    if not p or p.suffix.lower() != ".pdf" or not p.is_file():
+        return jsonify({"error": "文件不存在"}), 404
+    return send_file(str(p), mimetype="application/pdf", conditional=True)
 
 
 @bridge_bp.route("/api/vault/import-url", methods=["POST"])

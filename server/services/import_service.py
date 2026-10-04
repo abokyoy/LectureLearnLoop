@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import ipaddress
+import io
 import json
 import os
 import re
@@ -62,10 +63,11 @@ def _db():
 
 def create_task(user_id: str, file_name: str, folder_path: str, kind: str,
                 result_md: str = "", result_pdf: str = "", status: str = "pending",
-                parent_task_id: str = "", seg_from: int | None = None, seg_to: int | None = None) -> str:
+                parent_task_id: str = "", seg_from: int | None = None, seg_to: int | None = None,
+                progress_json: str = "") -> str:
     """创建任务，返回对外业务键 task_id（非自增 id，适配层兼容见 schema_import 注释）。
 
-    2026-10-04 大PDF分段：新增 status/parent_task_id/seg_from/seg_to，支持主任务与段子任务登记。
+    2026-10-04 大PDF分段：新增 status/parent_task_id/seg_from/seg_to/progress_json，支持主任务与段子任务登记。
     """
     tid = uuid.uuid4().hex[:16]
     now = _now()
@@ -75,7 +77,7 @@ def create_task(user_id: str, file_name: str, folder_path: str, kind: str,
             "INSERT INTO import_tasks (task_id, user_id, file_name, folder_path, kind, status,"
             " progress_json, result_md, result_pdf, remote_job_id, error, parent_task_id, seg_from, seg_to, created_at, updated_at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (tid, user_id, file_name, folder_path, kind, status, "", result_md, result_pdf, "", "",
+            (tid, user_id, file_name, folder_path, kind, status, progress_json, result_md, result_pdf, "", "",
              parent_task_id, seg_from, seg_to, now, now),
         )
     return tid
@@ -111,6 +113,43 @@ def get_task(task_id: str, user_id: str) -> dict | None:
         "error": row[3] or "",
         "file_name": row[4] or "",
     }
+
+
+def get_book_task(task_id: str, user_id: str) -> dict | None:
+    """书籍主任务完整行（供 book/convert 接口定位原件与段信息）。强制用户隔离。"""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT kind, status, progress_json, result_pdf, folder_path, file_name, error"
+            " FROM import_tasks WHERE task_id = ? AND user_id = ?",
+            (task_id, user_id),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"kind": row[0], "status": row[1], "progress_json": row[2] or "",
+            "result_pdf": row[3] or "", "folder_path": row[4] or "", "file_name": row[5] or "", "error": row[6] or ""}
+
+
+def active_segment_states(main_task_id: str, user_id: str) -> dict[tuple[int, int], str]:
+    """查该书籍下未清理的 convert_segment 任务行，返回 {(seg_from,seg_to): status}。
+
+    仅供面板展示“转换中/失败”态；已转判定仍以文件系统为权威（审核 P1-5）。
+    """
+    out: dict[tuple[int, int], str] = {}
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT seg_from, seg_to, status, error FROM import_tasks"
+            " WHERE parent_task_id = ? AND user_id = ? AND kind = 'convert_segment'",
+            (main_task_id, user_id),
+        ).fetchall()
+    for r in rows:
+        if r[0] is None or r[1] is None:
+            continue
+        st = r[2]
+        if st == "failed":
+            out[(int(r[0]), int(r[1]))] = "failed"
+        elif st in ("pending", "running") and (int(r[0]), int(r[1])) not in out:
+            out[(int(r[0]), int(r[1]))] = "running"
+    return out
 
 
 def recover_tasks_on_startup(conn_factory) -> None:
@@ -1043,10 +1082,11 @@ def _paddle_convert(file_path: str, task_id: str) -> str:
     return jsonl_text
 
 
-def pdf_page_count(pdf_path: Path) -> int:
-    """pypdf 打开取总页数（xref 级，秒级，无需逐页读内容）。"""
+def pdf_page_count(pdf_path) -> int:
+    """pypdf 打开取总页数（xref 级，秒级，无需逐页读内容）。pdf_path 可为 Path 或 bytes。"""
     from pypdf import PdfReader
-    r = PdfReader(str(pdf_path))
+    src = io.BytesIO(pdf_path) if isinstance(pdf_path, (bytes, bytearray)) else str(pdf_path)
+    r = PdfReader(src)
     try:
         return len(r.pages)
     finally:
@@ -1056,16 +1096,17 @@ def pdf_page_count(pdf_path: Path) -> int:
             pass
 
 
-def pdf_is_text_layer(pdf_path: Path) -> bool:
+def pdf_is_text_layer(pdf_path) -> bool:
     """文本层采样判定（审核 P1-7）：前3/中3/后3（去重）逐页 extract_text，≥ 4 页各自 ≥300 字符才判文本层。
 
-    防“扫描书+文字版权页/目录页”误判；避免 547 页全量探测的 20s 等待。
+    防“扫描书+文字版权页/目录页”误判；避免 547 页全量探测的 20s 等待。pdf_path 可为 Path 或 bytes。
     """
     from pypdf import PdfReader
+    src = io.BytesIO(pdf_path) if isinstance(pdf_path, (bytes, bytearray)) else str(pdf_path)
     try:
-        r = PdfReader(str(pdf_path))
+        r = PdfReader(src)
     except Exception as e:  # noqa: BLE001
-        log.log_error("import", "pdf_sample_open_failed", e, {"pdf": pdf_path.name})
+        log.log_error("import", "pdf_sample_open_failed", e, {"pdf": getattr(pdf_path, "name", "<bytes>")})
         return False
     try:
         n = len(r.pages)
