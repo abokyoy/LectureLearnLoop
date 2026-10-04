@@ -34,6 +34,8 @@ bridge_bp = Blueprint("bridge", __name__)
 # ---------------------------------------------------------------- 路径工具
 
 _MD_EXT = {".md", ".markdown", ".txt"}
+import re as _re_mod
+_SEG_EMPTY_RE = _re_mod.compile(r"\u00b7\d{4}-\d{4}\.md$")
 _IMAGE_MIME = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
@@ -113,6 +115,14 @@ def vault_tree_nested():
                 })
             else:
                 ext = e.suffix.lower()
+                # 大PDF分段（S5）：仅隐藏书籍文件夹内“段命名且 0 字节”的空段（·NNNN-NNNN.md）；
+                # 该命名仅书籍段文件使用，不影响 ≤20 页普通占位（审核 P2-11）。
+                if ext == ".md" and _SEG_EMPTY_RE.search(e.name):
+                    try:
+                        if e.stat().st_size == 0:
+                            continue
+                    except OSError:
+                        continue
                 items.append({
                     "name": e.name, "type": "file", "path": str(e), "level": level,
                     "is_markdown": ext in _MD_EXT, "extension": ext,

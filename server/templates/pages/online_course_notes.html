@@ -4925,13 +4925,14 @@ window.handleRenameKeydown = function(event, input) {
         }).then(function (j) {
             var d = (j && j.data) || {};
             if (!d.success) { _impSetLine(key, '❌ ' + file.name + '：' + (d.error || '导入失败'), true, true); return; }
-            _impTrack(d.task_id || key, file.name, d.file_name || file.name, key);
+            _impTrack(d.task_id || key, file.name, d.file_name || file.name, key, { is_book: d.is_book, segments: d.segments, is_text_layer: d.is_text_layer });
         }).catch(function (e) {
             _impSetLine(key, '❌ ' + file.name + '：' + e.message, true, true);
         });
     }
 
-    function _impTrack(taskId, origName, resultName, key) {
+    function _impTrack(taskId, origName, resultName, key, meta) {
+        meta = meta || {};
         // 评审 Minor-3：落点快照，轮询期间用户切换选中节点不再影响最终 selectFile 路径
         var target = _impTargetPath || 'vault';
         var sep = target.indexOf('\\') >= 0 ? '\\' : '/';
@@ -4949,6 +4950,15 @@ window.handleRenameKeydown = function(event, input) {
                     if (!d.success) { clearInterval(timer); _impSetLine(key, '❌ ' + origName + '：' + (d.error || '任务不存在'), true, true); return; }
                     if (d.status === 'done') {
                         clearInterval(timer);
+                        // 书籍分支：文案区分文本层/扫描版，不自动按 Markdown 打开原件
+                        if (meta.is_book) {
+                            var bmsg = meta.is_text_layer
+                                ? ('📚 ' + origName + '：已创建书籍文件夹，文本版已转换 ' + (meta.segments || 0) + ' 段')
+                                : ('📚 ' + origName + '：已创建书籍文件夹，扫描版请在阅读器中逐段转换');
+                            _impSetLine(key, bmsg, false, true);
+                            loadFileStructure();
+                            return;
+                        }
                         // URL 导入产物文件名取文章标题，创建时无法预知，完成时以 result_name 为准
                         var finalName = d.result_name || d.file_name || resultName;
                         _impSetLine(key, '✅ ' + origName + ' → ' + finalName, false, true);
@@ -4960,8 +4970,13 @@ window.handleRenameKeydown = function(event, input) {
                         _impSetLine(key, '❌ ' + origName + '：' + (d.error || '转换失败'), true, true);
                     } else {
                         var p = d.progress || {};
-                        _impSetLine(key, p.total ? ('🔄 ' + origName + ' 转换中 ' + (p.done || 0) + '/' + p.total + ' 页…')
-                                                   : ('🔄 ' + origName + ' 排队转换中…'));
+                        if (meta.is_book) {
+                            _impSetLine(key, p.total ? ('🔄 ' + origName + ' 逐段转换中 ' + (p.done || 0) + '/' + p.total + ' 段…')
+                                                       : ('🔄 ' + origName + ' 排队转换中…'));
+                        } else {
+                            _impSetLine(key, p.total ? ('🔄 ' + origName + ' 转换中 ' + (p.done || 0) + '/' + p.total + ' 页…')
+                                                       : ('🔄 ' + origName + ' 排队转换中…'));
+                        }
                     }
                 })
                 .catch(function () { /* 轮询网络错误容忍，下一轮继续 */ });
@@ -5041,6 +5056,14 @@ window.handleRenameKeydown = function(event, input) {
         // 标准化文件路径 - 确保使用正确的分隔符
         let normalizedPath = filePath.replace(/\\/g, '/');
         debugLog('标准化后的路径: ' + normalizedPath);
+
+        // 大PDF/小PDF 原件：走 pdf.js viewer（确认4=B，附件/与书籍根两位置一致）
+        if (/\.pdf$/i.test(normalizedPath)) {
+            if (typeof closePdfSegPanel === 'function') { /* 保留面板状态供同书回切 */ }
+            openPdfViewer(normalizedPath, (normalizedPath.split('/').pop() || 'PDF'));
+            return;
+        }
+        if (typeof closePdfViewer === 'function') closePdfViewer({ keepSelection: true });
         
         // 检查是否切换到不同文件，如果是则进行未保存内容检测
         if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== normalizedPath) {
