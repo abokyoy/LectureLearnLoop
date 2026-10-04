@@ -4550,14 +4550,18 @@ window.handleRenameKeydown = function(event, input) {
                 updateSelectionPath(node);
                 
                 if (node.data.type === 'file') {
-                    // 检查是否为md文件
+                    const isPdf = /\.pdf$/i.test(node.data.path || '') || node.data.extension === '.pdf';
                     if (node.data.is_markdown) {
                         addDebugLog('✅ 这是md文件，可以打开');
                         // 只有md文件才能被打开和追踪
                         selectFile(node.data.path);
+                    } else if (isPdf) {
+                        // 大PDF/小PDF 原件：交给 selectFile 内的 .pdf 分支打开 pdf.js viewer（确认4=B）
+                        addDebugLog('✅ 这是PDF原件，打开阅读器');
+                        selectFile(node.data.path);
                     } else {
-                        addDebugLog('❌ 这不是md文件，不支持打开');
-                        showToast('只支持打开Markdown文件(.md)，其他文件类型暂不支持编辑', 'warning');
+                        addDebugLog('❌ 这不是md或pdf文件，不支持打开');
+                        showToast('只支持打开Markdown文件(.md)或PDF文件(.pdf)，其他文件类型暂不支持编辑', 'warning');
                         // 取消选中
                         $('#file-tree').jstree('deselect_node', node);
                     }
@@ -10888,6 +10892,13 @@ window.handleRenameKeydown = function(event, input) {
     window.retryEvaluation = retryEvaluation;
     window.importFiles = importFiles;
     window.closeImportBar = closeImportBar;
+    // PDF 阅读器/分段转换：被 HTML 内联 onclick 引用（1609/1612/1626/1632/1636/1648/1649），必须导出
+    window.openPdfViewer = openPdfViewer;
+    window.closePdfViewer = closePdfViewer;
+    window.togglePdfSegPanel = togglePdfSegPanel;
+    window.selectAllUnconverted = selectAllUnconverted;
+    window.convertSelectedSegments = convertSelectedSegments;
+    window.closePdfConfirm = closePdfConfirm;
 
 })();
 </script>
