@@ -20,9 +20,8 @@
   .chip { font-size:13px; color:#6b7280; padding:0 4px; white-space:nowrap; }
   #pageInput { width:48px; height:30px; border:1px solid var(--line); border-radius:8px;
     text-align:center; font-size:14px; }
-  #stage { height:calc(100% - 51px); overflow:auto; display:flex; justify-content:center;
-    align-items:flex-start; padding:18px; }
-  #cv { background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.10); border-radius:4px; max-width:100%; height:auto; }
+  #stage { height:calc(100% - 51px); overflow:auto; padding:18px; }
+  #cv { display:block; margin:0 auto; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.10); border-radius:4px; }
   #msg { padding:24px; text-align:center; color:#9ca3af; font-size:14px; }
 </style>
 </head>
@@ -46,7 +45,7 @@
 
   var params = new URLSearchParams(location.search);
   var fileUrl = params.get('file');
-  var pdf = null, pageNum = 1, scale = 1.5, pendingPage = null;
+  var pdf = null, pageNum = 1, scale = 1.5, baseScale = 1.5, pendingPage = null;
   var renderTask = null, renderSeq = 0;
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var elTotal = document.getElementById('total'), elPage = document.getElementById('pageInput');
@@ -71,7 +70,7 @@
       if (mySeq !== renderSeq) return;
       renderTask = null;
       elTotal.textContent = pdf.numPages; elPage.value = pageNum; elPage.max = pdf.numPages;
-      elScale.textContent = Math.round(scale / 1.5 * 100) + '%';
+      elScale.textContent = Math.round(scale / baseScale * 100) + '%';
       document.getElementById('prev').disabled = pageNum <= 1;
       document.getElementById('next').disabled = pageNum >= pdf.numPages;
       report({ type: 'pdf-page', page: pageNum, total: pdf.numPages });
@@ -87,7 +86,15 @@
     elMsg.hidden = false; elMsg.textContent = '正在加载…'; cv.hidden = true;
     pdfjsLib.getDocument({ url: url, cMapUrl: 'cmaps/', cMapPacked: true,
       standardFontDataUrl: 'standard_fonts/' }).promise.then(function (doc) {
-      pdf = doc; pageNum = pendingPage || hashPage() || 1; pendingPage = null; render();
+      pdf = doc;
+      // 适应宽度：根据容器宽度计算初始 scale（缺陷C修复）
+      pdf.getPage(1).then(function (p1) {
+        var nat = p1.getViewport({ scale: 1 });
+        var avail = (document.getElementById('stage').clientWidth || 600) - 36;
+        baseScale = scale = Math.min(3, Math.max(0.5, avail / nat.width));
+        pageNum = pendingPage || hashPage() || 1; pendingPage = null;
+        render();
+      });
     }).catch(function (e) {
       elMsg.hidden = false;
       var s = String((e && e.message) || e);
