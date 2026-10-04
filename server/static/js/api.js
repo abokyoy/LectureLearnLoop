@@ -335,6 +335,26 @@
         return req('POST', '/api/vault/copy', { source_path: sourcePath, target_folder: targetFolder });
     }, { as: 'bool', name: 'copyFileOrFolder' });
 
+    // ---- 大PDF分段阅读/转换（2026-10-04 S4）----
+    bridge.pdfSign = bridgeFn(function (path) {
+        return req('GET', '/api/vault/pdf/sign?path=' + encodeURIComponent(path));
+    }, { as: 'json', name: 'pdfSign' });
+
+    bridge.pdfBook = bridgeFn(function (mainTaskId, path) {
+        let q = '';
+        if (mainTaskId) q += 'main_task_id=' + encodeURIComponent(mainTaskId);
+        else if (path) q += 'path=' + encodeURIComponent(path);
+        return req('GET', '/api/import/pdf/book?' + q);
+    }, { as: 'json', name: 'pdfBook' });
+
+    bridge.pdfSegmentsEstimate = bridgeFn(function (body) {
+        return req('POST', '/api/import/pdf/segments/estimate', body);
+    }, { as: 'json', name: 'pdfSegmentsEstimate' });
+
+    bridge.pdfSegmentsConvert = bridgeFn(function (body) {
+        return req('POST', '/api/import/pdf/segments/convert', body);
+    }, { as: 'json', name: 'pdfSegmentsConvert' });
+
     bridge.getImageAsBase64 = bridgeFn(function (imagePath) {
         return req('GET', '/api/vault/image?path=' + encodeURIComponent(imagePath));
     }, { as: 'json', name: 'getImageAsBase64' });

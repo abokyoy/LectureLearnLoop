@@ -553,6 +553,13 @@ def pdf_book_status():
     """书籍段状态列表（前端轮询）：文件系统为已转权威，叠加活跃 convert 任务行 running/failed 态。"""
     from services import import_service as imp
     main = (request.args.get("main_task_id") or "").strip()
+    if not main:
+        # 树中只有 pdf 路径时反查主任务（viewer/转换面板从笔记树直接打开）
+        raw = (request.args.get("path") or "").strip()
+        p = _bridge_path(g.user_id, raw) if raw else None
+        found = imp.find_book_task_by_pdf(g.user_id, str(p)) if p else None
+        if found:
+            main = found["task_id"]
     bk = _load_book(imp, main, g.user_id)
     if not bk:
         return _ok({"success": False, "error": "书籍任务不存在或原件缺失"})

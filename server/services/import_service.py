@@ -129,6 +129,23 @@ def get_book_task(task_id: str, user_id: str) -> dict | None:
             "result_pdf": row[3] or "", "folder_path": row[4] or "", "file_name": row[5] or "", "error": row[6] or ""}
 
 
+def find_book_task_by_pdf(user_id: str, result_pdf: str) -> dict | None:
+    """按原件绝对路径反查书籍主任务行（前端从笔记树 pdf 路径打开 viewer/转换面板时定位 main_task_id）。
+
+    强制 (user_id, kind='pdf_book', result_pdf) 三条件，避免跨用户/跨类型命中。
+    """
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT task_id, status, progress_json, folder_path, file_name, error"
+            " FROM import_tasks WHERE user_id = ? AND kind = 'pdf_book' AND result_pdf = ?",
+            (user_id, result_pdf),
+        ).fetchone()
+    if row is None:
+        return None
+    return {"kind": "pdf_book", "task_id": row[0], "status": row[1], "progress_json": row[2] or "",
+            "result_pdf": result_pdf, "folder_path": row[3] or "", "file_name": row[4] or "", "error": row[5] or ""}
+
+
 def active_segment_states(main_task_id: str, user_id: str) -> dict[tuple[int, int], str]:
     """查该书籍下未清理的 convert_segment 任务行，返回 {(seg_from,seg_to): status}。
 

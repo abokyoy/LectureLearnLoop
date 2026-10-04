@@ -1600,6 +1600,54 @@ window.jsTreeLoading = false;
                     </div>
                 </div>
                 <textarea id="edit-content" class="w-full h-full border border-cl-border rounded-cl p-4 font-mono text-sm resize-none hidden focus:ring-2 focus:ring-cl-primary/30 focus:border-cl-primary" placeholder="在此编辑 Markdown 内容..."></textarea>
+
+                <!-- 大PDF原件阅读器（2026-10-04 S4）：点任意 .pdf 时显示，替代 Markdown 预览 -->
+                <div id="pdf-viewer-wrap" class="hidden h-full flex flex-col -m-4">
+                    <div class="flex items-center justify-between px-3 py-2 bg-cl-bg border-b border-cl-border">
+                        <span class="text-xs text-cl-text-2 truncate" id="pdf-viewer-name"></span>
+                        <div class="flex items-center gap-2">
+                            <button id="pdf-seg-toggle" class="hidden px-3 py-1.5 flex items-center gap-1 rounded-clbtn text-xs font-medium bg-cl-secondary text-white transition-colors hover:opacity-90" onclick="togglePdfSegPanel()">
+                                <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layers"/></svg>分段转换
+                            </button>
+                            <button class="px-2 py-1.5 rounded-clbtn text-xs text-cl-text-2 hover:bg-cl-surface" onclick="closePdfViewer()">
+                                <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-x"/></svg>关闭
+                            </button>
+                        </div>
+                    </div>
+                    <iframe id="pdf-viewer-frame" class="flex-1 w-full border-0" title="PDF 阅读器"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分段转换滑出面板（仅书籍，2026-10-04 S4） -->
+        <div id="pdf-seg-panel" class="hidden fixed top-0 right-0 h-full w-[340px] bg-cl-surface shadow-2xl z-50 flex flex-col border-l border-cl-border">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-cl-border">
+                <h3 class="text-sm font-medium text-cl-text">分段转换</h3>
+                <button class="text-cl-text-2 hover:text-cl-text" onclick="togglePdfSegPanel(false)">
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-x"/></svg>
+                </button>
+            </div>
+            <div class="px-4 py-2 text-xs text-cl-text-2 border-b border-cl-border flex items-center justify-between">
+                <span id="pdf-seg-summary">加载中…</span>
+                <button class="text-cl-primary hover:underline" onclick="selectAllUnconverted()">全选未转</button>
+            </div>
+            <div id="pdf-seg-grid" class="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2 content-start"></div>
+            <div class="p-3 border-t border-cl-border">
+                <button class="w-full px-3 py-2 flex items-center justify-center gap-1 rounded-clbtn text-sm font-medium bg-cl-primary text-white transition-colors hover:opacity-90 disabled:opacity-40" id="pdf-seg-convert-btn" onclick="convertSelectedSegments()">
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-refresh-cw"/></svg>转换所选
+                </button>
+            </div>
+        </div>
+
+        <!-- 转换消耗确认弹层（确认3=B，扫描段转换前） -->
+        <div id="pdf-confirm-modal" class="hidden fixed inset-0 z-[60] items-center justify-center bg-black/40">
+            <div class="bg-cl-surface rounded-cl shadow-xl w-[420px] max-w-[92vw] p-5">
+                <h4 class="text-base font-medium text-cl-text mb-2">确认转换</h4>
+                <p class="text-sm text-cl-text-2 leading-relaxed whitespace-pre-line" id="pdf-confirm-text"></p>
+                <div class="flex justify-end gap-2 mt-5">
+                    <button class="px-4 py-2 rounded-clbtn text-sm text-cl-text-2 hover:bg-cl-bg" onclick="closePdfConfirm(false)">取消</button>
+                    <button class="px-4 py-2 rounded-clbtn text-sm font-medium bg-cl-primary text-white hover:opacity-90" onclick="closePdfConfirm(true)">确认转换</button>
+                </div>
             </div>
         </div>
         
@@ -5387,6 +5435,14 @@ window.handleRenameKeydown = function(event, input) {
         // 添加选中状态
         element.classList.add('selected');
         
+        // 大PDF/小PDF 原件：走 pdf.js viewer（确认4=B，两位置一致）
+        if (type === 'file' && /\.pdf$/i.test(path)) {
+            openPdfViewer(path, name);
+            return;
+        }
+        // 切换到非 pdf：先收起阅读器面板
+        if (typeof closePdfViewer === 'function') closePdfViewer({ keepSelection: true });
+
         if (type === 'file' && path.endsWith('.md')) {
             // 使用新的未保存内容守卫系统检查
             if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== path) {
@@ -5420,6 +5476,141 @@ window.handleRenameKeydown = function(event, input) {
             }
         }
     }
+
+    // ================= 大PDF viewer + 分段转换（2026-10-04 S4）=================
+    var __pdf = { path: '', name: '', mainId: '', isBook: false, isText: false, total: 0, segs: [], sel: new Set(), pollTimer: null, confirmCb: null, signedUrl: '' };
+
+    async function openPdfViewer(path, name) {
+        const frame = document.getElementById('pdf-viewer-frame');
+        const wrap = document.getElementById('pdf-viewer-wrap');
+        if (!frame || !wrap) return;
+        const pc = document.getElementById('preview-content'), ec = document.getElementById('edit-content');
+        if (pc) pc.classList.add('hidden');
+        if (ec) ec.classList.add('hidden');
+        ['preview-btn', 'edit-btn', 'save-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = 'hidden'; });
+        const title = document.getElementById('preview-title'); if (title) title.textContent = name;
+        document.getElementById('pdf-viewer-name').textContent = name;
+        wrap.classList.remove('hidden');
+        closePdfSegPanel(); stopSegPoll();
+        __pdf.path = path; __pdf.name = name; __pdf.mainId = ''; __pdf.isBook = false; __pdf.sel.clear();
+        try {
+            const book = JSON.parse(await window.pybridge.pdfBook('', path));
+            if (book && book.success && book.main_task_id) {
+                __pdf.mainId = book.main_task_id; __pdf.isBook = true; __pdf.isText = !!book.is_text_layer;
+                __pdf.total = book.total_pages; __pdf.segs = book.segments || [];
+            }
+        } catch (e) { /* 非书籍或查询失败：仅阅读，无转换面板 */ }
+        const segBtn = document.getElementById('pdf-seg-toggle');
+        if (segBtn) segBtn.classList.toggle('hidden', !__pdf.isBook);
+        await loadPdfIntoFrame(path);
+    }
+
+    async function loadPdfIntoFrame(path) {
+        const frame = document.getElementById('pdf-viewer-frame');
+        if (!frame) return;
+        try {
+            const s = JSON.parse(await window.pybridge.pdfSign(path));
+            if (!s || !s.success || !s.t) { frame.src = 'about:blank'; return; }
+            const stream = '/api/vault/pdf?u=' + encodeURIComponent(s.u) + '&path=' + encodeURIComponent(s.path) +
+                '&exp=' + encodeURIComponent(s.exp) + '&t=' + encodeURIComponent(s.t);
+            __pdf.signedUrl = stream;
+            frame.src = '/static/pdfjs/viewer.html?file=' + encodeURIComponent(stream);
+        } catch (e) { frame.src = 'about:blank'; }
+    }
+
+    function closePdfViewer(opts) {
+        opts = opts || {};
+        const wrap = document.getElementById('pdf-viewer-wrap');
+        if (!wrap || wrap.classList.contains('hidden')) { if (opts.force) { /* fallthrough reset */ } else return; }
+        wrap.classList.add('hidden');
+        const frame = document.getElementById('pdf-viewer-frame'); if (frame) frame.src = 'about:blank';
+        ['preview-btn', 'edit-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = ''; });
+        closePdfSegPanel(); stopSegPoll();
+    }
+
+    function togglePdfSegPanel(force) {
+        const p = document.getElementById('pdf-seg-panel'); if (!p || !__pdf.isBook) return;
+        const show = (force === undefined) ? p.classList.contains('hidden') : force;
+        if (show) { p.classList.remove('hidden'); p.classList.add('flex'); refreshPdfSegments(); }
+        else closePdfSegPanel();
+    }
+    function closePdfSegPanel() { const p = document.getElementById('pdf-seg-panel'); if (p) { p.classList.add('hidden'); p.classList.remove('flex'); } }
+
+    async function refreshPdfSegments() {
+        try {
+            const b = JSON.parse(await window.pybridge.pdfBook(__pdf.mainId, ''));
+            if (!b || !b.success) { document.getElementById('pdf-seg-summary').textContent = '原件丢失或不可用'; return; }
+            __pdf.segs = b.segments || []; __pdf.isText = !!b.is_text_layer;
+            renderSegGrid(b);
+        } catch (e) { document.getElementById('pdf-seg-summary').textContent = '加载失败'; }
+    }
+
+    function renderSegGrid(b) {
+        const grid = document.getElementById('pdf-seg-grid'); if (!grid) return;
+        grid.innerHTML = '';
+        const color = { converted: 'border-emerald-200 bg-emerald-50 text-emerald-700', running: 'border-amber-200 bg-amber-50 text-amber-700', failed: 'border-red-200 bg-red-50 text-red-700', pending: 'border-cl-border bg-cl-bg text-cl-text-2' };
+        const label = { converted: '已转', running: '转换中', failed: '失败', pending: '未转' };
+        let done = 0; const total = (b.segments || []).length;
+        (b.segments || []).forEach(s => {
+            const st = s.state || 'pending'; if (st === 'converted') done++;
+            const selectable = (st === 'pending' || st === 'failed');
+            const box = document.createElement('div');
+            box.className = 'rounded-cl border ' + color[st] + ' p-2 text-xs flex flex-col gap-1';
+            const head = document.createElement('div'); head.className = 'flex items-center justify-between';
+            head.innerHTML = '<span class="font-medium">' + s.from + '-' + s.to + '</span><span>' + label[st] + '</span>';
+            box.appendChild(head);
+            if (st === 'failed' && s.error) { const e = document.createElement('div'); e.className = 'text-[11px] text-red-500 truncate'; e.title = s.error; e.textContent = s.error; box.appendChild(e); }
+            const jump = document.createElement('button'); jump.className = 'text-left text-[11px] text-cl-primary hover:underline'; jump.textContent = '跳到第 ' + s.from + ' 页'; jump.onclick = () => gotoViewerPage(s.from); box.appendChild(jump);
+            if (selectable) {
+                const lab = document.createElement('label'); lab.className = 'flex items-center gap-1 text-[11px] mt-0.5 cursor-pointer';
+                const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = __pdf.sel.has(s.index);
+                inp.onchange = () => { if (inp.checked) __pdf.sel.add(s.index); else __pdf.sel.delete(s.index); updateConvertBtn(); };
+                lab.appendChild(inp); lab.appendChild(document.createTextNode(' 选择转换')); box.appendChild(lab);
+            }
+            grid.appendChild(box);
+        });
+        const sum = document.getElementById('pdf-seg-summary');
+        if (sum) sum.textContent = '共 ' + total + ' 段 · 已转 ' + done + (b.is_text_layer ? '（文本层，导入即自动完成）' : '');
+        updateConvertBtn();
+    }
+
+    function gotoViewerPage(page) {
+        const frame = document.getElementById('pdf-viewer-frame');
+        if (frame && frame.contentWindow) { try { frame.contentWindow.postMessage({ type: 'pdf-goto', page: page }, '*'); } catch (e) {} }
+    }
+    function updateConvertBtn() { const btn = document.getElementById('pdf-seg-convert-btn'); if (btn) btn.disabled = __pdf.sel.size === 0; }
+    function selectAllUnconverted() { (__pdf.segs || []).forEach(s => { const st = s.state || 'pending'; if (st === 'pending' || st === 'failed') __pdf.sel.add(s.index); }); refreshPdfSegments(); }
+
+    async function convertSelectedSegments() {
+        const sel = [...__pdf.sel]; if (!sel.length) return;
+        let est;
+        try { est = JSON.parse(await window.pybridge.pdfSegmentsEstimate({ main_task_id: __pdf.mainId, segs: sel })); }
+        catch (e) { est = null; }
+        if (!est || est.success === false) { alert('估算失败：' + ((est && est.error) || '')); return; }
+        if (!est.segs) { __pdf.sel.clear(); refreshPdfSegments(); return; }
+        __pdf.sel.clear();
+        if (est.need_confirm) {
+            askPdfConfirm('本次将转换 ' + est.segs + ' 段，约 ' + est.ocr_pages + ' 页（扫描件云端 OCR，消耗官方免费额度，不扣积分）。\n确认开始？', async (ok) => { if (ok) await doSegmentConvert(sel, false); });
+        } else {
+            await doSegmentConvert(sel, false);
+        }
+    }
+    async function doSegmentConvert(sel, forceOcr) {
+        try {
+            const r = JSON.parse(await window.pybridge.pdfSegmentsConvert({ main_task_id: __pdf.mainId, segs: sel, confirm: true, force_ocr: forceOcr }));
+            if (r && r.success) startSegPoll(); else if (r && r.error) alert(r.error);
+            refreshPdfSegments();
+        } catch (e) { alert('转换请求失败：' + e.message); }
+    }
+
+    function startSegPoll() { stopSegPoll(); __pdf.pollTimer = setInterval(async () => { await refreshPdfSegments(); if (!(__pdf.segs || []).some(s => s.state === 'running')) stopSegPoll(); }, 2000); }
+    function stopSegPoll() { if (__pdf.pollTimer) { clearInterval(__pdf.pollTimer); __pdf.pollTimer = null; } }
+
+    function askPdfConfirm(text, cb) { __pdf.confirmCb = cb; const m = document.getElementById('pdf-confirm-modal'); document.getElementById('pdf-confirm-text').textContent = text; m.classList.remove('hidden'); m.classList.add('flex'); }
+    function closePdfConfirm(ok) { const m = document.getElementById('pdf-confirm-modal'); m.classList.add('hidden'); m.classList.remove('flex'); const cb = __pdf.confirmCb; __pdf.confirmCb = null; if (cb) cb(!!ok); }
+
+    // viewer iframe 报告错误（如签名过期）→ 重签并回到当前页
+    window.addEventListener('message', (ev) => { const d = ev.data || {}; if (d.type === 'pdf-error' && __pdf.path) { loadPdfIntoFrame(__pdf.path); } });
 
     // 加载文件内容
     function loadFileContent(filePath, fileName) {
