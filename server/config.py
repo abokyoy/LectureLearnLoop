@@ -43,7 +43,14 @@ HTTP_PROXY_URL = os.getenv("HTTP_PROXY_URL", "")
 PADDLE_OCR_JOB_URL = os.getenv("PADDLE_OCR_JOB_URL", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs")
 PADDLE_OCR_TOKEN = os.getenv("PADDLE_OCR_TOKEN", "")
 PADDLE_OCR_MODEL = os.getenv("PADDLE_OCR_MODEL", "PaddleOCR-VL-1.6")
-IMPORT_MAX_BYTES = 50 * 1024 * 1024        # 单文件上限 50MB（Flask MAX_CONTENT_LENGTH 同值）
+IMPORT_MAX_BYTES = 200 * 1024 * 1024        # 单文件上限 200MB（2026-10-04 大PDF分段；Flask MAX_CONTENT_LENGTH 同值）
+
+# 大 PDF 书籍分段导入（2026-10-04 方案：docs/计划/2026-10-04-大PDF分段导入与阅读基础版方案.md）
+PDF_SEG_PAGE_SIZE = 20        # 固定 20 页一个桶段（数字=真实页码，所有落段计算唯一来源）
+PDF_BOOK_PAGE_MIN = 20        # 分流门槛：页数 > 此值才可能走书籍文件夹（与体积门槛双条件）
+PDF_BOOK_SIZE_MIN_MB = 10     # 分流门槛：体积 > 此 MB 才可能走书籍文件夹
+PDF_BOOK_EXEMPT_PAGES = 60    # 小文件豁免：页数 ≤ 此值且体积达标以下时不建文件夹（纯文字大书仍走分段的关键）
+PDF_BOOK_EXEMPT_SIZE_MB = 10  # 小文件豁免体积上限（MB），与 EXEMPT_PAGES 同时满足才豁免
 
 # ---------------------------------------------------------------- 数据库全局配置（适配层唯一后端开关）
 # DB_BACKEND：网站全局配置项，postgres | sqlite（默认 sqlite 保留回退能力；

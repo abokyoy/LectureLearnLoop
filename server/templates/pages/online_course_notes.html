@@ -4851,10 +4851,10 @@ window.handleRenameKeydown = function(event, input) {
             var files = Array.prototype.slice.call(input.files || []);
             input.remove();
             if (!files.length) return;
-            // 评审 Minor-2：本地预检体积，超 50MB 的直接标红不发起上传（与后端 MAX_CONTENT_LENGTH 对齐）
-            var MAXB = 50 * 1024 * 1024;
+            // 评审 Minor-2：本地预检体积，超 200MB 的直接标红不发起上传（与后端 MAX_CONTENT_LENGTH 对齐）
+            var MAXB = 200 * 1024 * 1024;
             files.forEach(function (f, i) {
-                if (f.size > MAXB) { _impSetLine('big' + f.name, '❌ ' + f.name + '：超过 50MB 上传上限', true, true); return; }
+                if (f.size > MAXB) { _impSetLine('big' + f.name, '❌ ' + f.name + '：超过 200MB 上传上限', true, true); return; }
                 setTimeout(function () { _impUploadOne(f); }, i * 300);
             });
         };
@@ -4872,7 +4872,7 @@ window.handleRenameKeydown = function(event, input) {
             headers: { 'Authorization': 'Bearer ' + _impToken() },
             body: fd
         }).then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 413 ? '（文件过大，上限 50MB）' : ''));
+            if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 413 ? '（文件过大，上限 200MB）' : ''));
             return r.json();
         }).then(function (j) {
             var d = (j && j.data) || {};

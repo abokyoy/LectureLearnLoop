@@ -59,24 +59,30 @@ def _db():
 # ---------------------------------------------------------------- 任务表 CRUD
 
 def create_task(user_id: str, file_name: str, folder_path: str, kind: str,
-                result_md: str = "", result_pdf: str = "") -> str:
-    """创建任务，返回对外业务键 task_id（非自增 id，适配层兼容见 schema_import 注释）。"""
+                result_md: str = "", result_pdf: str = "", status: str = "pending",
+                parent_task_id: str = "", seg_from: int | None = None, seg_to: int | None = None) -> str:
+    """创建任务，返回对外业务键 task_id（非自增 id，适配层兼容见 schema_import 注释）。
+
+    2026-10-04 大PDF分段：新增 status/parent_task_id/seg_from/seg_to，支持主任务与段子任务登记。
+    """
     tid = uuid.uuid4().hex[:16]
     now = _now()
     # 必须 with 上下文（__exit__ commit）；close() 对 PG 是 rollback 归还，写入会丢失
     with _db() as conn:
         conn.execute(
             "INSERT INTO import_tasks (task_id, user_id, file_name, folder_path, kind, status,"
-            " progress_json, result_md, result_pdf, remote_job_id, error, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (tid, user_id, file_name, folder_path, kind, "pending", "", result_md, result_pdf, "", "", now, now),
+            " progress_json, result_md, result_pdf, remote_job_id, error, parent_task_id, seg_from, seg_to, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (tid, user_id, file_name, folder_path, kind, status, "", result_md, result_pdf, "", "",
+             parent_task_id, seg_from, seg_to, now, now),
         )
     return tid
 
 
 def update_task(task_id: str, **fields) -> None:
     """字段名限定为表列（代码内常量使用，不接受外部输入作列名）。"""
-    allowed = {"status", "progress_json", "result_md", "result_pdf", "remote_job_id", "error", "updated_at"}
+    allowed = {"status", "progress_json", "result_md", "result_pdf", "remote_job_id", "error",
+               "updated_at", "parent_task_id", "seg_from", "seg_to"}
     fields = {k: v for k, v in fields.items() if k in allowed}
     fields["updated_at"] = _now()
     cols = ", ".join(f"{k} = ?" for k in fields)
@@ -113,7 +119,11 @@ def recover_tasks_on_startup(conn_factory) -> None:
                 "UPDATE import_tasks SET status = 'failed', error = '服务重启中断，请重新导入', updated_at = ?"
                 " WHERE status IN ('pending', 'running')", (_now(),))
             cutoff = (dt.datetime.utcnow() - dt.timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute("DELETE FROM import_tasks WHERE created_at < ?", (cutoff,))
+            # 2026-10-04 大PDF分段：书籍主任务永不删（产物文件在，但主任务聚合依赖此行）；
+            # 有 error 的失败行也不删（保留标红供用户重转）；仅清理正常完成/取消的早期普通导入。
+            conn.execute(
+                "DELETE FROM import_tasks WHERE created_at < ?"
+                " AND NOT (kind = 'pdf_book' OR error <> '')", (cutoff,))
     except Exception as e:  # noqa: BLE001 建表失败不阻断启动（与 schema 初始化同层级容错）
         log.log_error("import", "startup_recover_failed", e)
 
