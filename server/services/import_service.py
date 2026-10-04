@@ -19,8 +19,10 @@ from __future__ import annotations
 import datetime as dt
 import ipaddress
 import json
+import os
 import re
 import socket
+import tempfile
 import threading
 import time
 import unicodedata
@@ -392,87 +394,126 @@ def start_pdf_task(task_id: str, user_id: str, pdf_path: Path, target_md: Path) 
     t.start()
 
 
-def extract_pdf_text_layer(pdf_path: Path, att_dir: Path | None = None, task_id: str = "") -> str | None:
+def _extract_layer_blocks(reader, att_dir: Path | None, task_id: str, start_idx: int, end_idx: int):
+    """按页索引范围 [start_idx, end_idx)（0-based）逐页提取原始文本层（含 \x00IMG 标记）。
+
+    返回 (blocks, images_map)：blocks=[(abs_pno0, raw_text)]，images_map={序号: 附件文件名}。
+    2026-10-04 从 extract_pdf_text_layer 抽公共核心，供整文件与小 PDF 段路径共用（不重复图片交织逻辑）。
+    """
+    from pypdf.generic import ContentStream
+    blocks: list[tuple[int, str]] = []
+    images_map: dict[int, str] = {}
+    img_seq = 0
+    n_pages = len(reader.pages)
+    for pno in range(max(0, start_idx), min(n_pages, end_idx)):
+        pg = reader.pages[pno]
+        run_ys: list[float] = []
+
+        def vt(text, cm, tm, fd, fs, _ys=run_ys):
+            # 页面真实 y = 文本空间 y 经 CTM 变换（行向量约定：tm[5]*cm[3]+cm[5]）
+            try:
+                _ys.append(float(tm[5]) * float(cm[3]) + float(cm[5]))
+            except (TypeError, ValueError, IndexError):
+                pass
+
+        txt = (pg.extract_text(visitor_text=vt) or "").strip()
+        if not txt:
+            continue
+        if att_dir is not None and task_id:
+            events: list = []
+            try:
+                cs = ContentStream(pg["/Contents"].get_object(), pg)
+                _walk_image_events(cs, pg["/Resources"], (1, 0, 0, 1, 0, 0), 0, events, set())
+            except Exception as e:  # noqa: BLE001
+                log.log_error("import", "pdf_img_events_failed", e, {"page": pno})
+                events = []
+            events = [(y, x) for (x, y, _a, _d) in events if not _pdf_img_noise(x)]
+            if events:
+                lines = txt.split("\n")
+                # 文本 run 的 y 降序分桶（2pt 合并同一行），用比例秩把图插到最近行前
+                buckets: list[float] = []
+                for y in sorted(run_ys, reverse=True):
+                    if not buckets or abs(buckets[-1] - y) > 2.0:
+                        buckets.append(y)
+                B = len(buckets)
+                ok = B >= max(3, len(lines) // 4)
+                if not ok:
+                    log.log("import", "pdf_img_pos_fallback", "warn",
+                            {"page": pno, "lines": len(lines), "buckets": B})
+                slots: dict[int, list[str]] = {}
+
+                def emit(xobj, idx):
+                    nonlocal img_seq
+                    img_seq += 1
+                    fname = _save_pdf_image(xobj, att_dir, f"img_{task_id}_{pno}_{img_seq}")
+                    if fname:
+                        images_map[img_seq] = fname
+                        slots.setdefault(idx, []).append(f"\x00IMG{img_seq}")
+                    else:
+                        img_seq -= 1
+
+                for top_y, xobj in sorted(events, key=lambda t: -t[0]):
+                    if ok:
+                        rank = sum(1 for by in buckets if by > top_y + 2.0)
+                        idx = min(len(lines), round(rank * len(lines) / B))
+                    else:
+                        idx = len(lines)          # 兜底：页尾追加，不失败整单
+                    emit(xobj, idx)
+                markers: list[str] = []
+                for i, line in enumerate(lines):
+                    markers.extend(slots.pop(i, []))
+                    markers.append(line)
+                for extra in slots.values():
+                    markers.extend(extra)
+                txt = "\n".join(markers)
+        blocks.append((pno, txt))
+    return blocks, images_map
+
+
+def extract_pdf_text_layer(pdf_path: Path, att_dir: Path | None = None, task_id: str = "",
+                           page_from: int | None = None, page_to: int | None = None,
+                           with_anchors: bool = False, reader=None) -> tuple[str | None, int]:
     """文本层优先（2026-10-01）：网页打印导出 PDF 内嵌完整文本，视觉 OCR 对超长单页大幅降采样会严重丢字。
 
-    返回可用正文（足够长）；None 表示文本层不足（扫描/拍照版），调用方回落 PaddleOCR。
-    att_dir+task_id 提供时同步提取内嵌图片：按内容流坐标交织进正文，图存附件目录。
+    2026-10-04 大PDF分段：新增页码范围（page_from/page_to 为 1-based 闭区间，None=全文）与锚点开关。
+    返回契约改为 `(text, non_empty_page_count)`：
+      - with_anchors=False（≤20 页旧路径）：行为与原实现一致，text 为清洗后全文或 None（文本层不足），
+        non_empty_page_count 供旧调用忽略；产物形态零 diff；
+      - with_anchors=True（书籍段路径）：逐页独立清洗后拼 `<!-- llpage:N -->`，text 为带锚点段文本，
+        non_empty_page_count = 清洗后非空页数（供覆盖率门槛判定）。
+    reader 可外部传入（整书 worker 一次打开多次复用，审核 P1-4）；为 None 时自行打开。
     """
+    own_reader = reader is None
     try:
-        from pypdf import PdfReader
-        from pypdf.generic import ContentStream
-        reader = PdfReader(str(pdf_path))
-        page_blocks: list[str] = []
-        images_map: dict[int, str] = {}
-        img_seq = 0
-        for pno, pg in enumerate(reader.pages):
-            run_ys: list[float] = []
-
-            def vt(text, cm, tm, fd, fs, _ys=run_ys):
-                # 页面真实 y = 文本空间 y 经 CTM 变换（行向量约定：tm[5]*cm[3]+cm[5]）
-                try:
-                    _ys.append(float(tm[5]) * float(cm[3]) + float(cm[5]))
-                except (TypeError, ValueError, IndexError):
-                    pass
-
-            txt = (pg.extract_text(visitor_text=vt) or "").strip()
-            if not txt:
-                continue
-            if att_dir is not None and task_id:
-                events: list = []
-                try:
-                    cs = ContentStream(pg["/Contents"].get_object(), pg)
-                    _walk_image_events(cs, pg["/Resources"], (1, 0, 0, 1, 0, 0), 0, events, set())
-                except Exception as e:  # noqa: BLE001
-                    log.log_error("import", "pdf_img_events_failed", e, {"page": pno})
-                    events = []
-                events = [(y, x) for (x, y, _a, _d) in events if not _pdf_img_noise(x)]
-                if events:
-                    lines = txt.split("\n")
-                    # 文本 run 的 y 降序分桶（2pt 合并同一行），用比例秩把图插到最近行前
-                    buckets: list[float] = []
-                    for y in sorted(run_ys, reverse=True):
-                        if not buckets or abs(buckets[-1] - y) > 2.0:
-                            buckets.append(y)
-                    B = len(buckets)
-                    ok = B >= max(3, len(lines) // 4)
-                    if not ok:
-                        log.log("import", "pdf_img_pos_fallback", "warn",
-                                {"page": pno, "lines": len(lines), "buckets": B})
-                    slots: dict[int, list[str]] = {}
-
-                    def emit(xobj, idx):
-                        nonlocal img_seq
-                        img_seq += 1
-                        fname = _save_pdf_image(xobj, att_dir, f"img_{task_id}_{pno}_{img_seq}")
-                        if fname:
-                            images_map[img_seq] = fname
-                            slots.setdefault(idx, []).append(f"\x00IMG{img_seq}")
-                        else:
-                            img_seq -= 1
-
-                    for top_y, xobj in sorted(events, key=lambda t: -t[0]):
-                        if ok:
-                            rank = sum(1 for by in buckets if by > top_y + 2.0)
-                            idx = min(len(lines), round(rank * len(lines) / B))
-                        else:
-                            idx = len(lines)          # 兜底：页尾追加，不失败整单
-                        emit(xobj, idx)
-                    markers: list[str] = []
-                    for i, line in enumerate(lines):
-                        markers.extend(slots.pop(i, []))
-                        markers.append(line)
-                    for extra in slots.values():
-                        markers.extend(extra)
-                    txt = "\n".join(markers)
-            page_blocks.append(txt)
-        text = "\n\n".join(x for x in page_blocks if x.strip())
+        if own_reader:
+            from pypdf import PdfReader
+            reader = PdfReader(str(pdf_path))
+        start_idx = 0 if page_from is None else page_from - 1
+        end_idx = 10 ** 9 if page_to is None else page_to   # range 右开，page_to 闭
+        blocks, images_map = _extract_layer_blocks(reader, att_dir, task_id, start_idx, end_idx)
+        if with_anchors:
+            parts: list[str] = []
+            non_empty = 0
+            for pno0, txt in blocks:
+                seg = postprocess_pdf_text_layer(txt, images=images_map)
+                if seg.strip():
+                    parts.append(f"<!-- llpage:{pno0 + 1} -->\n{seg}")
+                    non_empty += 1
+            return ("\n\n".join(parts), non_empty)
+        # 整文件旧语义：全文一次性清洗，阀值判据不变
+        text = "\n\n".join(x for _, x in blocks if x.strip())
         if len(text) >= PDF_TEXT_MIN_CHARS:
-            return postprocess_pdf_text_layer(text, images=images_map)
-        return None
+            return (postprocess_pdf_text_layer(text, images=images_map), sum(1 for _, x in blocks if x.strip()))
+        return (None, sum(1 for _, x in blocks if x.strip()))
     except Exception as e:  # noqa: BLE001 解析失败不致命，回落 OCR
         log.log_error("import", "pdf_text_layer_failed", e, {"pdf": pdf_path.name})
-        return None
+        return (None, 0)
+    finally:
+        if own_reader and reader is not None:
+            try:
+                reader.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _pdf_worker(task_id: str, user_id: str, pdf_path: Path, target_md: Path) -> None:
@@ -481,48 +522,13 @@ def _pdf_worker(task_id: str, user_id: str, pdf_path: Path, target_md: Path) -> 
         update_task(task_id, status="running")
         md_text = None
         # 文本层优先：命中则不耗远端额度、全文零丢失；内嵌图同步提取；本地解析不占转换并发信号量
-        layer_text = extract_pdf_text_layer(pdf_path, target_md.parent / ATTACH_DIR_NAME, task_id)
+        layer_text, _ = extract_pdf_text_layer(pdf_path, target_md.parent / ATTACH_DIR_NAME, task_id)
         if layer_text is not None:
             md_text = layer_text
             log.log("import", "pdf_text_layer_hit", "success", {"task": task_id, "chars": len(md_text)})
         else:
             with _SEM:
-                job_id = paddle.submit_job(str(pdf_path))
-                update_task(task_id, remote_job_id=job_id)
-                deadline = time.time() + POLL_TIMEOUT_S
-                transient_fails = 0
-                while time.time() < deadline:
-                    try:
-                        data = paddle.query_job(job_id)
-                        state = data.get("state")
-                        if state == "done":
-                            json_url = (data.get("resultUrl") or {}).get("jsonUrl")
-                            if not json_url:
-                                raise paddle.PaddleDocError("结果中没有 jsonUrl")
-                            jsonl_text = paddle.download_jsonl(json_url)
-                        elif state == "failed":
-                            raise paddle.PaddleDocError(f"解析任务失败: {data.get('errorMsg') or '未知原因'}")
-                    except paddle.PaddleDocTransientError as e:
-                        # 2026-10-01 用户误报根因：外网瞬时抖动（V2RAYN SSL 失败）不得一次判死整单
-                        transient_fails += 1
-                        log.log("import", "pdf_poll_transient", "warn",
-                                {"task": task_id, "consecutive": transient_fails, "err": str(e)[:150]})
-                        if transient_fails >= POLL_TRANSIENT_MAX_FAILS:
-                            raise paddle.PaddleDocError(
-                                f"网络连续 {transient_fails} 次不可用，任务终止，请检查网络后重新导入")
-                        time.sleep(POLL_INTERVAL_S)
-                        continue
-                    if jsonl_text is not None:
-                        break
-                    transient_fails = 0
-                    ep = data.get("extractProgress") or {}
-                    update_task(task_id, progress_json=json.dumps({
-                        "done": ep.get("extractedPages") or 0,
-                        "total": ep.get("totalPages") or 0,
-                    }))
-                    time.sleep(POLL_INTERVAL_S)
-                if jsonl_text is None:
-                    raise paddle.PaddleDocError(f"转换超时（>{POLL_TIMEOUT_S // 60} 分钟），请稍后重试")
+                jsonl_text = _paddle_convert(str(pdf_path), task_id)
             md_text = _jsonl_to_markdown(jsonl_text, target_md.parent / ATTACH_DIR_NAME, task_id)
         if not md_text.strip():
             raise paddle.PaddleDocError("PDF 无有效内容（可能为空白文档）")
@@ -565,12 +571,16 @@ def sync_note_content(user_id: str, md_path: Path, content: str) -> bool:
         return False
 
 
-def _jsonl_to_markdown(jsonl_text: str, att_dir: Path, task_id: str) -> str:
+def _jsonl_to_markdown(jsonl_text: str, att_dir: Path, task_id: str,
+                       page_from: int = 1, with_anchors: bool = False) -> str:
     """JSONL → 完整 Markdown。
 
     结构（评审优化项 3/4）：逐行 × 逐 result.layoutParsingResults[] 两级循环；
     markdown.images = {MD内相对路径: 可下载URL}，图片下载重命名为
     img_<task>_<页>_<序><ext> 存附件目录，并把 MD 中引用（原样 + URL 编码变体）替换。
+
+    2026-10-04 大PDF分段（审核 P1-6）：with_anchors=True 时每页块前注 `<!-- llpage:page_from+局部页序 -->`，
+    使 OCR 段与文本层段同构；page_from 为该段起始物理页（1-based）。默认 with_anchors=False 保持整文件产物零 diff。
     """
     att_dir.mkdir(parents=True, exist_ok=True)
     parts: list[str] = []
@@ -596,7 +606,10 @@ def _jsonl_to_markdown(jsonl_text: str, att_dir: Path, task_id: str) -> str:
                 ref = f"{ATTACH_DIR_NAME}/{new_name}"
                 for variant in {rel_key, quote(rel_key), rel_key.lstrip("./"), quote(rel_key.lstrip("./"))}:
                     md = md.replace(variant, ref)
-            parts.append(md)
+            if with_anchors:
+                parts.append(f"<!-- llpage:{page_from + page} -->\n{md}")
+            else:
+                parts.append(md)
             page += 1
     if bad_lines:
         log.log("import", "jsonl_partial_skip", "warn", {"task": task_id, "bad_lines": bad_lines})
@@ -961,3 +974,340 @@ def _url_worker(task_id: str, user_id: str, url: str, folder: Path) -> None:
     except Exception as e:  # noqa: BLE001
         update_task(task_id, status="failed", error=str(e)[:300])
         log.log_error("import", "url_task_failed", e, {"task": task_id})
+
+
+# ============================================================ 大 PDF 书籍分段（2026-10-04）
+#
+# 方案：docs/计划/2026-10-04-大PDF分段导入与阅读基础版方案.md
+# 设计要点：段状态权威=文件系统（0 字节=待转，非空=已转）；整书文本层一个串行 worker；
+# 扫描段前端逐段手动触发；页锚点合并保证重转只覆盖当次页；失败保留旧内容。
+
+_LLPAGE_RE = re.compile(r"<!-- llpage:(\d+) -->")
+_SEG_LOCKS: dict[str, threading.Lock] = {}
+_SEG_LOCKS_GUARD = threading.Lock()
+
+
+def _seg_lock(path: Path) -> threading.Lock:
+    """按段文件绝对路径管理写锁（同段串行，防并发重转互覆）。"""
+    key = str(Path(path).resolve())
+    with _SEG_LOCKS_GUARD:
+        lk = _SEG_LOCKS.get(key)
+        if lk is None:
+            lk = _SEG_LOCKS[key] = threading.Lock()
+        return lk
+
+
+def _paddle_convert(file_path: str, task_id: str) -> str:
+    """提交 Paddle 作业→轮询→下载 jsonl，返回原始 jsonl 文本（调用方负责 _SEM）。
+
+    2026-10-04 从 _pdf_worker 抽出，供整文件扫描转换与书籍段转换共用（架构收敛，不重复轮询逻辑）。
+    轮询中同步回写 task 的 remote_job_id 与 progress_json（前端通用进度条依赖）。
+    """
+    job_id = paddle.submit_job(file_path)
+    update_task(task_id, remote_job_id=job_id)
+    deadline = time.time() + POLL_TIMEOUT_S
+    transient_fails = 0
+    jsonl_text = None
+    while time.time() < deadline:
+        try:
+            data = paddle.query_job(job_id)
+            state = data.get("state")
+            if state == "done":
+                json_url = (data.get("resultUrl") or {}).get("jsonUrl")
+                if not json_url:
+                    raise paddle.PaddleDocError("结果中没有 jsonUrl")
+                jsonl_text = paddle.download_jsonl(json_url)
+            elif state == "failed":
+                raise paddle.PaddleDocError(f"解析任务失败: {data.get('errorMsg') or '未知原因'}")
+        except paddle.PaddleDocTransientError as e:
+            # 2026-10-01 用户误报根因：外网瞬时抖动（V2RAYN SSL 失败）不得一次判死整单
+            transient_fails += 1
+            log.log("import", "pdf_poll_transient", "warn",
+                    {"task": task_id, "consecutive": transient_fails, "err": str(e)[:150]})
+            if transient_fails >= POLL_TRANSIENT_MAX_FAILS:
+                raise paddle.PaddleDocError(
+                    f"网络连续 {transient_fails} 次不可用，任务终止，请检查网络后重新导入")
+            time.sleep(POLL_INTERVAL_S)
+            continue
+        if jsonl_text is not None:
+            break
+        transient_fails = 0
+        ep = data.get("extractProgress") or {}
+        update_task(task_id, progress_json=json.dumps({
+            "done": ep.get("extractedPages") or 0,
+            "total": ep.get("totalPages") or 0,
+        }))
+        time.sleep(POLL_INTERVAL_S)
+    if jsonl_text is None:
+        raise paddle.PaddleDocError(f"转换超时（>{POLL_TIMEOUT_S // 60} 分钟），请稍后重试")
+    return jsonl_text
+
+
+def pdf_page_count(pdf_path: Path) -> int:
+    """pypdf 打开取总页数（xref 级，秒级，无需逐页读内容）。"""
+    from pypdf import PdfReader
+    r = PdfReader(str(pdf_path))
+    try:
+        return len(r.pages)
+    finally:
+        try:
+            r.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def pdf_is_text_layer(pdf_path: Path) -> bool:
+    """文本层采样判定（审核 P1-7）：前3/中3/后3（去重）逐页 extract_text，≥ 4 页各自 ≥300 字符才判文本层。
+
+    防“扫描书+文字版权页/目录页”误判；避免 547 页全量探测的 20s 等待。
+    """
+    from pypdf import PdfReader
+    try:
+        r = PdfReader(str(pdf_path))
+    except Exception as e:  # noqa: BLE001
+        log.log_error("import", "pdf_sample_open_failed", e, {"pdf": pdf_path.name})
+        return False
+    try:
+        n = len(r.pages)
+        mid = n // 2
+        cands = sorted({0, 1, 2, mid - 1, mid, mid + 1, n - 1, n - 2, n - 3} & set(range(n)))
+        rich = 0
+        for i in cands:
+            try:
+                t = (r.pages[i].extract_text() or "").strip()
+            except Exception:  # noqa: BLE001 单页探测失败当作非文本页
+                t = ""
+            if len(t) >= PDF_TEXT_MIN_CHARS:
+                rich += 1
+        return rich >= 4
+    finally:
+        try:
+            r.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def compute_pdf_segments(total_pages: int, seg_size: int | None = None) -> list[tuple[int, int]]:
+    """按固定 seg_size 页切段，返回 [(from, to)] 1-based 闭区间（尾段不足保留真实页数）。"""
+    if seg_size is None:
+        from config import PDF_SEG_PAGE_SIZE
+        seg_size = PDF_SEG_PAGE_SIZE
+    segs: list[tuple[int, int]] = []
+    s = 1
+    while s <= total_pages:
+        e = min(s + seg_size - 1, total_pages)
+        segs.append((s, e))
+        s = e + 1
+    return segs
+
+
+def segment_md_name(base: str, seg_from: int, seg_to: int) -> str:
+    """段文件名：书·0001-0020.md（页码 4 位补零，字典序=页序）。"""
+    return f"{base}\u00b7{seg_from:04d}-{seg_to:04d}.md"
+
+
+def _split_anchors(text: str) -> dict[int, str]:
+    """按 `<!-- llpage:N -->` 切为 {页码: 内容}；首锤子（标题行）与锤子前内容忽略。"""
+    out: dict[int, str] = {}
+    if not text:
+        return out
+    parts = _LLPAGE_RE.split(text)
+    for i in range(1, len(parts), 2):
+        try:
+            num = int(parts[i])
+        except ValueError:
+            continue
+        out[num] = parts[i + 1] if i + 1 < len(parts) else ""
+    return out
+
+
+def write_segment_md(seg_md_path: Path, title: str, anchored_md: str,
+                     attempted: list[int] | None = None) -> tuple[int, str]:
+    """页锚点合并（§4.4）：读现有→按 llpage 切字典→本次页覆盖→升序重组→.tmp+os.replace 原子写。
+
+    attempted（本次尝试的页集合）：集合内但本次为空的页 → 显式覆盖为空节（审核 P2-9，重转可修脏页）。
+    返回 (本次非空页数, 最终写入内容)；调用方拿内容去 sync_note_content。
+    """
+    newpages = _split_anchors(anchored_md)
+    with _seg_lock(seg_md_path):
+        existing = ""
+        if seg_md_path.exists():
+            try:
+                existing = seg_md_path.read_text(encoding="utf-8")
+            except OSError:
+                existing = ""
+        pages = _split_anchors(existing)
+        if attempted is not None:
+            for p in attempted:
+                pages[p] = newpages.get(p, "")
+        else:
+            pages.update(newpages)
+        body = "\n\n".join(f"<!-- llpage:{p} -->\n{pages[p].strip()}" for p in sorted(pages))
+        out = (title.rstrip() + "\n\n" + body + "\n") if body else (title.rstrip() + "\n")
+        seg_md_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = seg_md_path.with_suffix(seg_md_path.suffix + ".tmp")
+        tmp.write_text(out, encoding="utf-8")
+        os.replace(tmp, seg_md_path)
+    return sum(1 for v in newpages.values() if v.strip()), out
+
+
+def _ocr_convert_segment(pdf_path: Path, seg_from: int, seg_to: int, att_dir: Path, task_id: str) -> tuple[str, int]:
+    """扫描段：pypdf 切段临时 PDF→_paddle_convert→_jsonl_to_markdown(带锚点)。返回 (anchored_md, 非空页数)。
+
+    调用方负责 with _SEM；临时 PDF 落系统 temp，提交后删除。
+    """
+    from pypdf import PdfReader, PdfWriter
+    r = PdfReader(str(pdf_path))
+    tmp = ""
+    try:
+        w = PdfWriter()
+        for i in range(seg_from - 1, min(seg_to, len(r.pages))):
+            w.add_page(r.pages[i])
+        fd, tmp = tempfile.mkstemp(suffix=".pdf")
+        os.close(fd)
+        with open(tmp, "wb") as f:
+            w.write(f)
+        jsonl = _paddle_convert(tmp, task_id)
+    finally:
+        try:
+            r.close()
+        except Exception:  # noqa: BLE001
+            pass
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    md = _jsonl_to_markdown(jsonl, att_dir, task_id, page_from=seg_from, with_anchors=True)
+    non_empty = sum(1 for v in _split_anchors(md).values() if v.strip())
+    return md, non_empty
+
+
+def _convert_one_segment(pdf_path: Path, att_dir: Path, seg_from: int, seg_to: int,
+                         task_id: str, method: str, reader=None) -> tuple[str, int, int, str]:
+    """转一个段（不自动回退，回退策略由调用方按覆盖率决定）。method in {"text","ocr"}。
+
+    返回 (anchored_md, covered_pages, requested_pages, method)。reader 仅文本层路径传入（整书复用）。
+    """
+    requested = seg_to - seg_from + 1
+    if method == "text":
+        own = reader is None
+        rr = reader
+        try:
+            if own:
+                from pypdf import PdfReader
+                rr = PdfReader(str(pdf_path))
+            md, covered = extract_pdf_text_layer(
+                pdf_path, att_dir, task_id, page_from=seg_from, page_to=seg_to, with_anchors=True, reader=rr)
+        finally:
+            if own and rr is not None:
+                try:
+                    rr.close()
+                except Exception:  # noqa: BLE001
+                    pass
+        return (md or ""), covered, requested, "text"
+    with _SEM:
+        md, covered = _ocr_convert_segment(pdf_path, seg_from, seg_to, att_dir, task_id)
+    return md, covered, requested, "ocr"
+
+
+def book_segment_status(book_dir: Path, base: str, total_pages: int,
+                        seg_size: int | None = None) -> list[dict]:
+    """逐段探测文件系统非空状态（权威），供 book 接口与 worker 聚合。"""
+    segs = compute_pdf_segments(total_pages, seg_size)
+    items = []
+    for sf, st in segs:
+        p = Path(book_dir) / segment_md_name(base, sf, st)
+        items.append({"from": sf, "to": st, "name": p.name,
+                      "converted": p.exists() and p.stat().st_size > 0})
+    return items
+
+
+def start_pdf_book_task(main_task_id: str, user_id: str, pdf_path: Path, book_dir: Path,
+                        base: str, total_pages: int) -> None:
+    """投递整书串行 worker（仅文本层大书）。daemon 线程，立即返回。"""
+    t = threading.Thread(
+        target=_pdf_book_worker, args=(main_task_id, user_id, pdf_path, book_dir, base, total_pages),
+        daemon=True, name=f"import-pdf-book-{main_task_id}",
+    )
+    t.start()
+
+
+def _pdf_book_worker(main_task_id: str, user_id: str, pdf_path: Path, book_dir: Path,
+                     base: str, total_pages: int) -> None:
+    """整书文本层串行逐段转换（审核 P1-4：单线程打开一次原件，避免 N 线程并发 PdfReader）。
+
+    单段失败（含覆盖率不足）仅标记该段，不影响其余段（确认5=A：成功段永远保留）。
+    """
+    from config import PDF_SEG_PAGE_SIZE
+    segs = compute_pdf_segments(total_pages, PDF_SEG_PAGE_SIZE)
+    att_dir = Path(book_dir) / ATTACH_DIR_NAME
+    update_task(main_task_id, status="running")
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(pdf_path))
+    except Exception as e:  # noqa: BLE001 原件打不开→整书失败
+        update_task(main_task_id, status="failed", error=f"打开原件失败：{str(e)[:200]}")
+        return
+    done_segs = 0
+    failed_segs = 0
+    try:
+        for (sf, st) in segs:
+            seg_md = Path(book_dir) / segment_md_name(base, sf, st)
+            title = f"# {base} ({sf:04d}-{st:04d}页)"
+            try:
+                md, covered, requested, _m = _convert_one_segment(pdf_path, att_dir, sf, st, main_task_id, "text", reader=reader)
+                if requested <= 0 or covered / requested < 0.5:
+                    raise RuntimeError(f"文本层覆盖率不足（{covered}/{requested}），可强制 OCR 重转")
+                _cnt, out = write_segment_md(seg_md, title, md, attempted=list(range(sf, st + 1)))
+                if not sync_note_content(user_id, seg_md, out):
+                    raise RuntimeError("正文入库失败")
+                done_segs += 1
+            except Exception as e:  # noqa: BLE001 单段失败不致命
+                failed_segs += 1
+                log.log_error("import", "pdf_book_seg_failed", e, {"main": main_task_id, "seg": f"{sf}-{st}"})
+            update_task(main_task_id, progress_json=json.dumps({
+                "done": done_segs, "failed": failed_segs, "total": len(segs), "is_text_layer": True}))
+        final_err = "" if failed_segs == 0 else f"{failed_segs} 个段失败，可重转"
+        update_task(main_task_id, status="done", error=final_err, progress_json=json.dumps({
+            "done": done_segs, "failed": failed_segs, "total": len(segs), "is_text_layer": True}))
+        log.log("import", "pdf_book_worker_done", "success", {"main": main_task_id, "done": done_segs, "failed": failed_segs})
+    finally:
+        try:
+            reader.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def start_segment_convert(task_id: str, user_id: str, main_task_id: str, pdf_path: Path,
+                          book_dir: Path, base: str, seg_from: int, seg_to: int, method: str) -> None:
+    """手动转单个段（扫描书逐段 / 失败段重转 / force_ocr）。daemon 线程。"""
+    t = threading.Thread(
+        target=_segment_convert_worker, args=(task_id, user_id, main_task_id, pdf_path, book_dir, base,
+                                              seg_from, seg_to, method),
+        daemon=True, name=f"import-seg-convert-{task_id}",
+    )
+    t.start()
+
+
+def _segment_convert_worker(task_id: str, user_id: str, main_task_id: str, pdf_path: Path,
+                            book_dir: Path, base: str, seg_from: int, seg_to: int, method: str) -> None:
+    """单段转换 worker：转→覆盖率门槛→页锚点合并写盘→入库；失败保留旧文件内容（审核 P2-F）。"""
+    att_dir = Path(book_dir) / ATTACH_DIR_NAME
+    seg_md = Path(book_dir) / segment_md_name(base, seg_from, seg_to)
+    title = f"# {base} ({seg_from:04d}-{seg_to:04d}页)"
+    update_task(task_id, status="running")
+    try:
+        md, covered, requested, _m = _convert_one_segment(pdf_path, att_dir, seg_from, seg_to, task_id, method)
+        if requested <= 0 or covered / requested < 0.5:
+            raise RuntimeError(f"覆盖率不足（{covered}/{requested}），未达 50% 门槛")
+        _cnt, out = write_segment_md(seg_md, title, md, attempted=list(range(seg_from, seg_to + 1)))
+        if not sync_note_content(user_id, seg_md, out):
+            raise RuntimeError("正文入库失败")
+        update_task(task_id, status="done", error="")
+        log.log("import", "segment_convert_done", "success",
+                {"task": task_id, "main": main_task_id, "seg": f"{seg_from}-{seg_to}", "covered": covered})
+    except Exception as e:  # noqa: BLE001
+        update_task(task_id, status="failed", error=str(e)[:300])
+        log.log_error("import", "segment_convert_failed", e,
+                      {"task": task_id, "main": main_task_id, "seg": f"{seg_from}-{seg_to}"})
