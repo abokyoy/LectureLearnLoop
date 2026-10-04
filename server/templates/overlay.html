@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>学习悬浮窗</title>
 <style>
-  :root { --bg:#1f2430; --fg:#eef1f7; --accent:#4c8dff; --muted:#8a94a6; --ok:#37c26e; --warn:#ff6b6b; }
+  /* 批7 重设计：桌面悬浮工具窗保留暗窗形态，主题色统一设计系统橙/薄荷绿；图标去 emoji 改 sprite */
+  :root { --bg:#1f2430; --fg:#eef1f7; --accent:#F97316; --accent-press:#B45309; --muted:#8a94a6; --ok:#10B981; --warn:#EF4444; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); overflow:hidden; }
   #dragbar { height:34px; background:#171b24; display:flex; align-items:center; justify-content:space-between; padding:0 10px; cursor:move; -webkit-user-select:none; user-select:none; }
@@ -17,8 +18,9 @@
   button.main { flex:1; background:var(--accent); color:#fff; border:none; border-radius:8px; padding:9px 10px; font-size:14px; cursor:pointer; }
   button.main.stop { background:var(--warn); }
   button.main:disabled { opacity:.45; cursor:not-allowed; }
-  button.main.pressed { background:#2456a8; box-shadow:inset 0 2px 6px #0008; opacity:1; cursor:default; }
-  button.ghost { background:#2b3242; color:var(--fg); border:1px solid #3a4256; border-radius:8px; padding:8px 10px; font-size:13px; cursor:pointer; }
+  button.main.pressed { background:var(--accent-press); box-shadow:inset 0 2px 6px #0008; opacity:1; cursor:default; }
+  button.ghost { background:#2b3242; color:var(--fg); border:1px solid #3a4256; border-radius:8px; padding:8px 10px; font-size:13px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  button.ghost svg { width:14px; height:14px; }
   button.ghost:disabled { opacity:.45; cursor:not-allowed; }
   select, input[type=file] { background:#2b3242; color:var(--fg); border:1px solid #3a4256; border-radius:6px; padding:5px 6px; font-size:12px; }
   #noteBanner { display:none; background:#12301c; border:1px solid var(--ok); color:#bff3cf; border-radius:8px; padding:6px 10px; font-size:12.5px; line-height:1.4; }
@@ -66,8 +68,8 @@
     </div>
     <div id="noteBanner"></div>
     <div class="row">
-      <button class="ghost" id="btnShot" disabled>📷 截屏（框选）</button>
-      <button class="ghost" id="btnShotFull" disabled>📷 全屏截屏</button>
+      <button class="ghost" id="btnShot" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-camera"/></svg>截屏（框选）</button>
+      <button class="ghost" id="btnShotFull" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-camera"/></svg>全屏截屏</button>
     </div>
     <canvas id="wave"></canvas>
     <div class="panel">
@@ -128,7 +130,7 @@
     const data = new Uint8Array(an ? an.frequencyBinCount : bars);
     if (an) an.getByteFrequencyData(data);
     const active = rec.state !== 'idle';
-    ctx.fillStyle = rec.state === 'recording' ? '#4c8dff' : (rec.state === 'paused' ? '#8a94a6' : '#3a4256');
+    ctx.fillStyle = rec.state === 'recording' ? '#F97316' : (rec.state === 'paused' ? '#8a94a6' : '#3a4256');
     for (let i = 0; i < bars; i++) {
       const v = an ? data[Math.floor(i * data.length / bars)] / 255 : 0.05;
       const bh = Math.max(2, v * (h - 8));
@@ -191,7 +193,7 @@
   /* ---------- "正在保存到 <doc>" 横幅 ---------- */
   function showBanner(name) {
     const b = $('noteBanner');
-    b.innerHTML = '📝 正在保存到 <b>' + escapeHtml(name) + '</b><span class="sub">实时更新中</span>';
+    b.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-file-text"/></svg> 正在保存到 <b>' + escapeHtml(name) + '</b><span class="sub">实时更新中</span>';
     b.classList.add('show');
   }
   function setBannerSub(txt) {

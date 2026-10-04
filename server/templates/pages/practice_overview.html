@@ -1,0 +1,63 @@
+<!-- u8 练·科目统计首页：以科目为维度展示知识点/练习/错题/熟练度概况，含三种练习模式入口（数据源 /api/practice/overview，真实统计无假兜底） -->
+<div class="cl-page space-y-6" data-pm-page="practice_overview">
+
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h1 class="text-[22px] font-bold text-cl-text flex items-center gap-2">
+                <svg class="w-6 h-6 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dumbbell"/></svg>
+                练习总览
+            </h1>
+            <p class="text-sm text-cl-text-2 mt-1" data-role="subtitle">按科目查看练习进度，选择一种方式开始练习</p>
+        </div>
+        <span class="cl-badge bg-cl-primary-soft text-cl-primary" data-role="count"></span>
+    </div>
+
+    <!-- 子模式入口：从知识点练 / 从脑图练 / 从错题练 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="cl-card p-5 flex flex-col">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-9 h-9 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-target"/></svg>
+                </div>
+                <h3 class="text-[15px] font-semibold text-cl-text">从知识点练</h3>
+            </div>
+            <p class="text-xs text-cl-text-2 mb-4">挑一个掌握度还不高的知识点，做专项练习</p>
+            <button class="cl-btn-ghost w-full !h-9 text-xs mt-auto" data-go="practice_knowledge">
+                选知识点去练
+                <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+            </button>
+        </div>
+        <div class="cl-card p-5 flex flex-col">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-9 h-9 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layers"/></svg>
+                </div>
+                <h3 class="text-[15px] font-semibold text-cl-text">从脑图练</h3>
+            </div>
+            <p class="text-xs text-cl-text-2 mb-4">在知识脑图里点亮节点，按图谱顺序系统练习</p>
+            <button class="cl-btn-ghost w-full !h-9 text-xs mt-auto" data-go="practice_materials">
+                打开知识脑图
+                <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+            </button>
+        </div>
+        <div class="cl-card p-5 flex flex-col">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-9 h-9 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-alert-circle"/></svg>
+                </div>
+                <h3 class="text-[15px] font-semibold text-cl-text">从错题练</h3>
+            </div>
+            <p class="text-xs text-cl-text-2 mb-4">把答错的题再练一遍，直到真正掌握（举一反三）</p>
+            <button class="cl-btn-ghost w-full !h-9 text-xs mt-auto" data-go="practice_errors">
+                去练错题
+                <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 科目统计卡区 -->
+    <div data-role="main">
+        <p class="text-sm text-cl-text-3 py-6">加载中…</p>
+    </div>
+</div>
+<script src="/static/js/pm_pages.js"></script>

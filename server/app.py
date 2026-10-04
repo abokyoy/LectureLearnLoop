@@ -19,12 +19,14 @@ from flask_cors import CORS
 import config
 from auth import auth_bp, init_auth_table, require_auth
 from database.schema_credits import init_credits_tables
+from database.schema_import import init_import_tables
 from knowledge_management import DatabaseManager
 from logger_module import debug_logger
 from routes_bridge import bridge_bp
 from routes_credits import credits_bp
 from routes_admin import admin_bp
 from routes_knowledge import kb_bp
+from routes_memory import memory_bp
 from routes_notes import notes_bp
 from routes_pages import pages_bp
 
@@ -32,6 +34,7 @@ from routes_pages import pages_bp
 def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = config.get_flask_secret_key()  # D3：持久化 SECRET_KEY
+    app.config["MAX_CONTENT_LENGTH"] = config.IMPORT_MAX_BYTES  # 文件导入单文件上限 50MB（2026-09-30）
     CORS(app)  # Electron 客户端与本机调试页均需跨域
 
     # 单一 DatabaseManager：users 表与业务表同库，避免多库碎片化（D5 收敛方向）
@@ -42,6 +45,10 @@ def create_app() -> Flask:
     init_auth_table(db_manager.get_connection)
     # 积分体系建表 + 存量大模型密钥迁移（2026-09-28 积分功能）
     init_credits_tables(db_manager.get_connection)
+    # 文件导入任务表 + 启动恢复：上次进程中断时 running 任务置 failed（2026-09-30 导入功能）
+    init_import_tables(db_manager.get_connection)
+    from services import import_service
+    import_service.recover_tasks_on_startup(db_manager.get_connection)
 
     # 积分功能：请求入口清理上一请求的计费上下文（worker 线程复用，防缓存命中路径串读旧 billing）
     import credits_service as _credits
@@ -57,6 +64,7 @@ def create_app() -> Flask:
     app.register_blueprint(notes_bp)  # 二期：笔记正文入库/实时自动保存/录制状态
     app.register_blueprint(credits_bp)  # 2026-09-28 积分：余额/流水/兑换/ASR扣分/用户级Key
     app.register_blueprint(admin_bp)  # 2026-09-28 积分：管理后台（仅管理员）
+    app.register_blueprint(memory_bp)  # 记忆库卡片（集成线回归 2026-10-01）
 
     @app.route("/api/health", methods=["GET"])
     def health():

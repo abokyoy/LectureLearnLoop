@@ -13,6 +13,7 @@ from llm_logger import log_gemini_call
 from dataclasses import dataclass
 
 from database import db_adapter, schema_postgres
+from services import fsrs_service as _fsrs
 
 
 class DatabaseManager:
@@ -75,6 +76,8 @@ class DatabaseManager:
                 question_content TEXT NOT NULL,
                 user_answer TEXT NOT NULL,
                 is_correct INTEGER NOT NULL,
+                question_type TEXT DEFAULT '',
+                options_json TEXT,
                 practice_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (knowledge_point_id) REFERENCES knowledge_points (id)
             )
@@ -160,6 +163,44 @@ class DatabaseManager:
                 cursor.execute(_col_ddl)
             except Exception:
                 pass  # 列已存在
+
+        # 错题翻卡：practice_records 补题型/选项列（与 PG 分支同口径，存量 SQLite 库幂等迁移）
+        for _col_ddl in (
+            "ALTER TABLE practice_records ADD COLUMN question_type TEXT DEFAULT ''",
+            "ALTER TABLE practice_records ADD COLUMN options_json TEXT",
+        ):
+            try:
+                cursor.execute(_col_ddl)
+            except Exception:
+                pass  # 列已存在
+
+        # 记忆内核 FSRS-5（集成线回归 2026-10-01）：kp/eq 状态列+星值，与 PG 分支同口径幂等补列
+        for _col_ddl in (
+            "ALTER TABLE knowledge_points ADD COLUMN difficulty_score REAL DEFAULT 5.0",
+            "ALTER TABLE knowledge_points ADD COLUMN importance_score REAL DEFAULT 5.0",
+            "ALTER TABLE knowledge_points ADD COLUMN fsrs_stability REAL",
+            "ALTER TABLE knowledge_points ADD COLUMN fsrs_difficulty REAL",
+            "ALTER TABLE knowledge_points ADD COLUMN fsrs_state INTEGER DEFAULT 0",
+            "ALTER TABLE knowledge_points ADD COLUMN fsrs_reps INTEGER DEFAULT 0",
+            "ALTER TABLE knowledge_points ADD COLUMN fsrs_lapses INTEGER DEFAULT 0",
+            "ALTER TABLE knowledge_points ADD COLUMN last_review_time TEXT",
+            "ALTER TABLE knowledge_points ADD COLUMN due_time TEXT",
+            "ALTER TABLE knowledge_points ADD COLUMN mastery_manual INTEGER DEFAULT 0",
+            "ALTER TABLE error_questions ADD COLUMN difficulty_score REAL DEFAULT 5.0",
+            "ALTER TABLE error_questions ADD COLUMN importance_score REAL DEFAULT 5.0",
+            "ALTER TABLE error_questions ADD COLUMN fsrs_stability REAL",
+            "ALTER TABLE error_questions ADD COLUMN fsrs_difficulty REAL",
+            "ALTER TABLE error_questions ADD COLUMN fsrs_state INTEGER DEFAULT 0",
+            "ALTER TABLE error_questions ADD COLUMN fsrs_reps INTEGER DEFAULT 0",
+            "ALTER TABLE error_questions ADD COLUMN fsrs_lapses INTEGER DEFAULT 0",
+            "ALTER TABLE error_questions ADD COLUMN last_review_time TEXT",
+            "ALTER TABLE error_questions ADD COLUMN due_time TEXT",
+            "ALTER TABLE error_questions ADD COLUMN mastery_manual INTEGER DEFAULT 0",
+        ):
+            try:
+                cursor.execute(_col_ddl)
+            except Exception:
+                pass  # 列已存在
         
         # 数据迁移：将现有的note_id关联转换为note_uuid关联
         try:
@@ -222,6 +263,41 @@ class DatabaseManager:
                 FOREIGN KEY (error_question_id) REFERENCES error_questions (id)
             )
         ''')
+
+        # 知识点熟练度历史（FSRS 曲线，与错题历史对称；集成线回归）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS kp_proficiency_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                knowledge_point_id INTEGER NOT NULL,
+                timestamp TEXT DEFAULT (datetime('now')),
+                mastery INTEGER NOT NULL,
+                retrievability REAL
+            )
+        ''')
+        try:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_kph_kp_time ON kp_proficiency_history (knowledge_point_id, timestamp)")
+        except Exception:
+            pass
+
+        # 记忆库卡片（用户标注入池；正/反面为标注时快照；集成线回归）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS memory_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL DEFAULT '0001',
+                card_type TEXT NOT NULL,
+                ref_id INTEGER NOT NULL,
+                subject_name TEXT NOT NULL,
+                front_text TEXT NOT NULL,
+                back_text TEXT NOT NULL,
+                added_time TEXT DEFAULT (datetime('now')),
+                UNIQUE(user_id, card_type, ref_id)
+            )
+        ''')
+        try:
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_mc_user_type ON memory_cards (user_id, card_type, subject_name)")
+        except Exception:
+            pass
 
         # 收藏题目表
         cursor.execute('''
@@ -1054,16 +1130,21 @@ class PracticeRecordManager:
                              question_content: str, user_answer: str, is_correct: bool,
                              user_id: str = "0001",
                              correct_answer: Optional[str] = None,
-                             explanation: Optional[str] = None) -> int:
-        """保存练习记录，并在错误时写入错题表（含正确答案与解析）"""
+                             explanation: Optional[str] = None,
+                             question_type: str = "",
+                             options: Optional[List[str]] = None) -> int:
+        """保存练习记录，并在错误时写入错题表（含正确答案与解析）。
+        question_type/options 随流水留存，供错题翻卡复习时还原选择题选项。"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
 
+        options_json = json.dumps(options, ensure_ascii=False) if options else None
         cursor.execute(
             """INSERT INTO practice_records 
-               (user_id, subject_name, knowledge_point_id, question_content, user_answer, is_correct) 
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (user_id, subject_name, knowledge_point_id, question_content, user_answer, int(is_correct))
+               (user_id, subject_name, knowledge_point_id, question_content, user_answer, is_correct, question_type, options_json) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, subject_name, knowledge_point_id, question_content, user_answer, int(is_correct),
+             question_type or "", options_json)
         )
         record_id = cursor.lastrowid
 
@@ -1824,7 +1905,9 @@ class KnowledgeManagementSystem:
                 correct = r.get('correct_answer')
                 expl = r.get('explanation')
                 rec_id = self.practice_manager.save_practice_record(
-                    subject_name, kp_id, q, a, is_correct, user_id, correct, expl
+                    subject_name, kp_id, q, a, is_correct, user_id, correct, expl,
+                    question_type=r.get('question_type') or "",
+                    options=r.get('options') if isinstance(r.get('options'), list) else None
                 )
                 saved_ids.append(rec_id)
             except Exception as e:
@@ -2007,7 +2090,7 @@ class KnowledgeManagementSystem:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         base_sql = (
-            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id "
+            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id, eq.review_status, pr.question_type, pr.options_json "
             "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
             "WHERE eq.user_id = ? AND eq.subject_name = ?"
         )
@@ -2022,6 +2105,17 @@ class KnowledgeManagementSystem:
         cursor.execute(base_sql, params)
         rows = cursor.fetchall()
         conn.close()
+
+        def _safe_opts(v):
+            """选项 JSON 损坏时降级为无选项（单行脏数据不得打挂整个错题列表接口）"""
+            if not v:
+                return None
+            try:
+                o = json.loads(v)
+                return o if isinstance(o, list) else None
+            except Exception:
+                return None
+
         return [{
             "id": r[0],
             "question_content": r[1],
@@ -2031,6 +2125,11 @@ class KnowledgeManagementSystem:
             "correct_answer": r[5],
             "explanation": r[6],
             "knowledge_point_id": r[7],
+            # 批4：练/记页面需要区分待强化/已复习（口径与 dashboard errors_pending 一致 review_status=0）
+            "review_status": r[8],
+            # 错题翻卡：题型与选项（存量旧题未落库时为 None，前端降级显示）
+            "question_type": r[9] or "",
+            "options": _safe_opts(r[10]),
         } for r in rows]
 
     def get_favorite_questions(self, subject_name: str, knowledge_point_id: Optional[int] = None,
@@ -2483,6 +2582,14 @@ class KnowledgeManagementSystem:
         if not knowledge_points:
             print(f"⚠️ 学科 '{subject_name}' 没有知识点数据")
             return None
+        
+        # FSRS 两阶段口径：重建前先对该学科知识点行级衰减回写，有更新则重取（着色用最新可检索性）
+        try:
+            flushed = _fsrs.decay_flush(user_id, ref_ids={"kp": [p.get("id") for p in knowledge_points if p.get("id") is not None]})
+            if flushed.get("kp"):
+                knowledge_points = self.get_knowledge_points_by_subject(subject_name, user_id=user_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️ 脑图重建前 decay_flush 失败（不影响生成）: {e}")
         
         print(f"📊 找到 {len(knowledge_points)} 个知识点，调用LLM生成脑图...")
         

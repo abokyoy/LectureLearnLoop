@@ -17,6 +17,7 @@ from auth import require_auth
 import credits_service as cr
 from config import VAULT_DIR, load_config
 from logger_module import debug_logger as log
+from services import fsrs_service as F
 
 kb_bp = Blueprint("kb", __name__)
 
@@ -123,6 +124,16 @@ def dashboard_stats():
     conn = kms.db_manager.get_connection()
     try:
         cur = conn.cursor()
+        # FSRS 两阶段口径：先全量衰减回写再统计（PG 下 10 分钟节流，避免每请求重算）
+        try:
+            F.decay_flush(uid, conn=conn)
+        except Exception as fe:  # noqa: BLE001
+            # CodeReview c2 Major-1：PG 事务 aborted 必须回滚重置，否则后续同连接统计查询全被拖崩
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            log.log_error("dashboard", "decay_flush_failed", fe)
         cur.execute(
             "SELECT COUNT(DISTINCT id) FROM notes WHERE user_id = ? AND (created_time >= ? OR updated_time >= ?)",
             (uid, ws, ws))
@@ -183,6 +194,273 @@ def dashboard_stats():
         "errors_pending": errors_pending,
         "recent_activities": activities[:5],
     })
+
+
+@kb_bp.route("/api/practice/overview", methods=["GET"])
+@require_auth
+def practice_overview():
+    """u8 练·科目统计首页数据：按科目聚合知识点/笔记/练习/错题与熟练度概况。
+
+    口径（与 dashboard 一致，绝不用假数据兑底）：
+    - mastery_score = -1 是「未评估」哨兵值，不参与均值；推荐位未评估点优先；
+    - 推荐练习（业务规则）：每科取最多 3 个 —— 先推未评估（还没测过掌握度），
+      再按掌握度升序推最低者；若该科有待强化错题，在首条推荐理由中追加提示；
+    - 学习次数 = practice_records 总题数；本周口径同 dashboard（UTC 周一起）。
+    """
+    import datetime as _dt
+    uid = g.user_id
+    now = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+    week_start = (now - _dt.timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    ws = week_start.strftime("%Y-%m-%d %H:%M:%S")
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        # FSRS 两阶段口径：先按用户全量衰减回写再统计（与 dashboard/memory_overview 同法，PG 节流）
+        try:
+            F.decay_flush(uid, conn=conn)
+        except Exception as fe:  # noqa: BLE001
+            try:
+                conn.rollback()  # CodeReview c2 Major-1：aborted 事务必须重置后同连接才可用
+            except Exception:  # noqa: BLE001
+                pass
+            log.log_error("api", "practice_overview_decay_flush_failed", fe)
+        cur = conn.cursor()
+        cur.execute("SELECT subject_name FROM user_subjects WHERE user_id = ? ORDER BY subject_name", (uid,))
+        subject_names = [r[0] for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT subject_name, COUNT(*), "
+            "AVG(CASE WHEN mastery_score >= 0 THEN mastery_score END), "
+            "SUM(CASE WHEN mastery_score IS NULL OR mastery_score < 0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN mastery_score >= 80 THEN 1 ELSE 0 END) "
+            "FROM knowledge_points WHERE user_id = ? GROUP BY subject_name", (uid,))
+        kp_stats = {r[0]: {"knowledge_count": r[1], "avg_mastery": r[2], "unrated": r[3] or 0, "mastered": r[4] or 0}
+                    for r in cur.fetchall()}
+
+        cur.execute(
+            "SELECT kp.subject_name, COUNT(DISTINCT kps.note_id) "
+            "FROM knowledge_point_sources kps JOIN knowledge_points kp ON kp.id = kps.knowledge_point_id "
+            "WHERE kp.user_id = ? GROUP BY kp.subject_name", (uid,))
+        notes_stats = {r[0]: r[1] for r in cur.fetchall()}
+
+        cur.execute(
+            "SELECT subject_name, COUNT(*), SUM(CASE WHEN practice_time >= ? THEN 1 ELSE 0 END), MAX(practice_time) "
+            "FROM practice_records WHERE user_id = ? GROUP BY subject_name", (ws, uid))
+        pr_stats = {r[0]: {"practice_count": r[1], "practice_this_week": r[2] or 0, "last_practice_time": r[3]}
+                    for r in cur.fetchall()}
+
+        cur.execute(
+            "SELECT subject_name, COUNT(*), SUM(CASE WHEN review_status = 0 THEN 1 ELSE 0 END) "
+            "FROM error_questions WHERE user_id = ? GROUP BY subject_name", (uid,))
+        eq_stats = {r[0]: {"errors_total": r[1], "errors_pending": r[2] or 0} for r in cur.fetchall()}
+
+        cur.execute(
+            "SELECT id, subject_name, point_name, mastery_score FROM knowledge_points WHERE user_id = ?",
+            (uid,))
+        all_points = cur.fetchall()
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        log.log_error("api", "practice_overview_failed", exc)
+        return _err(f"统计失败: {exc}", 500)
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    points_by_subject = {}
+    for pid, subj, name, score in all_points:
+        points_by_subject.setdefault(subj, []).append({"id": pid, "name": name, "score": score})
+
+    subjects_out = []
+    for subj in subject_names:
+        kp = kp_stats.get(subj, {"knowledge_count": 0, "avg_mastery": None, "unrated": 0, "mastered": 0})
+        pr = pr_stats.get(subj, {"practice_count": 0, "practice_this_week": 0, "last_practice_time": None})
+        eq = eq_stats.get(subj, {"errors_total": 0, "errors_pending": 0})
+        pts = points_by_subject.get(subj, [])
+        for p in pts:
+            p["unrated"] = p["score"] is None or p["score"] < 0
+        rated = [p for p in pts if not p["unrated"]]
+        best = max(rated, key=lambda p: p["score"]) if rated else None
+        worst = min(rated, key=lambda p: p["score"]) if rated else None
+        # 推荐练习：未评估优先，再按掌握度升序，最多 3 个
+        unrated_pts = [p for p in pts if p["unrated"]]
+        ranked = unrated_pts + sorted(rated, key=lambda p: p["score"])
+        recommend = []
+        for p in ranked[:3]:
+            if p["unrated"]:
+                reason = "尚未评估掌握度，先测一测"
+            else:
+                reason = f"掌握度仅 {p['score']}%，建议巩固"
+            recommend.append({"id": p["id"], "name": p["name"], "score": p["score"], "reason": reason})
+        if recommend and eq["errors_pending"] > 0:
+            recommend[0]["reason"] += f"；另有 {eq['errors_pending']} 道错题待强化"
+        subjects_out.append({
+            "subject": subj,
+            "knowledge_count": kp["knowledge_count"],
+            "knowledge_mastered": kp["mastered"],
+            "unrated_count": kp["unrated"],
+            "avg_mastery": round(kp["avg_mastery"]) if kp["avg_mastery"] is not None else None,
+            "notes_count": notes_stats.get(subj, 0),
+            "practice_count": pr["practice_count"],
+            "practice_this_week": pr["practice_this_week"],
+            "last_practice_time": pr["last_practice_time"],
+            "errors_total": eq["errors_total"],
+            "errors_pending": eq["errors_pending"],
+            "best_point": {"id": best["id"], "name": best["name"], "score": best["score"]} if best else None,
+            "worst_point": {"id": worst["id"], "name": worst["name"], "score": worst["score"]} if worst else None,
+            "recommend": recommend,
+        })
+
+    summary = {
+        "subjects": len(subject_names),
+        "knowledge_total": sum(s["knowledge_count"] for s in subjects_out),
+        "practice_total": sum(s["practice_count"] for s in subjects_out),
+        "errors_pending_total": sum(s["errors_pending"] for s in subjects_out),
+    }
+    return _ok({"success": True, "subjects": subjects_out, "summary": summary})
+
+
+@kb_bp.route("/api/memory/overview", methods=["GET"])
+@require_auth
+def memory_overview():
+    """u9 记·科目统计首页数据：每科待记知识点/错题待复习/复习进度与推荐。
+
+    口径（全部真实数据，无假兑底；对齐 pm_pages.js 头注释：无 FSRS/到期复习引擎，
+    禁止编造「今日到期」类字段，推荐一律基于掌握度/熟练度/复习状态）：
+    - 待记知识点 = mastery_score < 80（含 -1 未评估哨兵）；均值/熟练点判断排除 -1；
+    - 错题卡片 = error_questions 行数（错题复练即记忆卡片本体）；题干需 JOIN practice_records；
+      last_error_time = 该科最后一条错题入库时间（表无复习时刻列，字段名如实命名）；
+    - 错得最多 = 同科目下同一题干积累的 error_questions 行数 ≥ 2 中的最多者；
+    - 推荐复习 = 待复习错题中熟练度升序（null 视作最弱排前），最多 3 条。
+    """
+    uid = g.user_id
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        # FSRS 两阶段口径：先按用户全量衰减回写再统计（与 dashboard 同法，PG 节流）
+        try:
+            F.decay_flush(uid, conn=conn)
+        except Exception as fe:  # noqa: BLE001
+            try:
+                conn.rollback()  # CodeReview c2 Major-1：aborted 事务必须重置后同连接才可用
+            except Exception:  # noqa: BLE001
+                pass
+            log.log_error("api", "memory_overview_decay_flush_failed", fe)
+        cur = conn.cursor()
+        cur.execute("SELECT subject_name FROM user_subjects WHERE user_id = ? ORDER BY subject_name", (uid,))
+        subject_names = [r[0] for r in cur.fetchall()]
+
+        cur.execute(
+            "SELECT subject_name, COUNT(*), "
+            "AVG(CASE WHEN mastery_score >= 0 THEN mastery_score END), "
+            "SUM(CASE WHEN mastery_score IS NULL OR mastery_score < 0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN mastery_score >= 80 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN mastery_score >= 0 AND mastery_score < 80 THEN 1 ELSE 0 END) "
+            "FROM knowledge_points WHERE user_id = ? GROUP BY subject_name", (uid,))
+        kp_stats = {r[0]: {"total": r[1], "avg": r[2], "unrated": r[3] or 0, "mastered": r[4] or 0, "weak": r[5] or 0}
+                    for r in cur.fetchall()}
+
+        cur.execute(
+            "SELECT subject_name, COUNT(*), "
+            "SUM(CASE WHEN review_status = 0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN review_status = 1 THEN 1 ELSE 0 END), "
+            "AVG(CASE WHEN current_proficiency >= 0 THEN current_proficiency END), "
+            "MAX(created_time) "
+            "FROM error_questions WHERE user_id = ? GROUP BY subject_name", (uid,))
+        eq_stats = {r[0]: {"cards": r[1], "pending": r[2] or 0, "reviewed": r[3] or 0, "avg_prof": r[4], "last_err": r[5]}
+                    for r in cur.fetchall()}
+
+        # 错得最多：同科目同题干答错次数（JOIN 原句取题干，题干空则回落占位）
+        cur.execute(
+            "SELECT e.subject_name, COALESCE(NULLIF(p.question_content, ''), '（题干缺失）'), COUNT(*) "
+            "FROM error_questions e LEFT JOIN practice_records p ON p.id = e.practice_record_id "
+            "WHERE e.user_id = ? GROUP BY e.subject_name, COALESCE(NULLIF(p.question_content, ''), '（题干缺失）') "
+            "HAVING COUNT(*) >= 2", (uid,))
+        most_freq_by_subj = {}
+        for subj, qtext, cnt in cur.fetchall():
+            best = most_freq_by_subj.get(subj)
+            if best is None or cnt > best["count"]:
+                most_freq_by_subj[subj] = {"question": qtext, "count": cnt}
+
+        cur.execute(
+            "SELECT id, subject_name, point_name, mastery_score FROM knowledge_points WHERE user_id = ?",
+            (uid,))
+        all_points = cur.fetchall()
+
+        cur.execute(
+            "SELECT e.id, e.subject_name, e.current_proficiency, COALESCE(NULLIF(p.question_content, ''), '（题干缺失）') "
+            "FROM error_questions e LEFT JOIN practice_records p ON p.id = e.practice_record_id "
+            "WHERE e.user_id = ? AND e.review_status = 0", (uid,))
+        pending_errors = cur.fetchall()
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        log.log_error("api", "memory_overview_failed", exc)
+        return _err(f"统计失败: {exc}", 500)
+    finally:
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+    pts_by_subj = {}
+    for pid, subj, name, score in all_points:
+        pts_by_subj.setdefault(subj, []).append({"id": pid, "name": name, "score": score})
+    errs_by_subj = {}
+    for eid, subj, prof, qtext in pending_errors:
+        errs_by_subj.setdefault(subj, []).append({"id": eid, "prof": prof, "question": qtext})
+
+    subjects_out = []
+    for subj in subject_names:
+        kp = kp_stats.get(subj, {"total": 0, "avg": None, "unrated": 0, "mastered": 0, "weak": 0})
+        eq = eq_stats.get(subj, {"cards": 0, "pending": 0, "reviewed": 0, "avg_prof": None, "last_err": None})
+        pts = pts_by_subj.get(subj, [])
+        to_learn = sum(1 for p in pts if p["score"] is None or p["score"] < 80)
+        rated = [p for p in pts if p["score"] is not None and p["score"] >= 0]
+        strongest = max(rated, key=lambda p: p["score"]) if rated else None
+        # 推荐记忆：未评估优先，再按掌握度升序，最多 3 个
+        unrated_pts = [p for p in pts if p["score"] is None or p["score"] < 0]
+        ranked = unrated_pts + sorted(rated, key=lambda p: p["score"])
+        rec_points = []
+        for p in ranked[:3]:
+            reason = "尚未评估掌握度，先测一测" if p["score"] is None or p["score"] < 0 else f"掌握度仅 {p['score']}%，待加强"
+            rec_points.append({"id": p["id"], "name": p["name"], "score": p["score"], "reason": reason})
+        # 推荐复习错题：熟练度升序（null 视作最弱排前），最多 3 条
+        perrs = errs_by_subj.get(subj, [])
+        ordered = sorted(perrs, key=lambda e: (e["prof"] is not None, e["prof"] if e["prof"] is not None else 0))
+        rec_errors = [{"id": e["id"], "question": e["question"][:90],
+                       "proficiency": e["prof"]}
+                      for e in ordered[:3]]
+        for i, r in enumerate(rec_errors):
+            prof_txt = "未记录熟练度" if r["proficiency"] is None or r["proficiency"] < 0 else f"熟练度 {r['proficiency']}%"
+            r["reason"] = f"待复习错题 · {prof_txt}" + ("，建议优先" if i == 0 else "")
+        subjects_out.append({
+            "subject": subj,
+            "knowledge_total": kp["total"],
+            "to_learn_count": to_learn,
+            "unrated_count": kp["unrated"],
+            "mastered_count": kp["mastered"],
+            "weak_count": kp["weak"],
+            "avg_mastery": round(kp["avg"]) if kp["avg"] is not None else None,
+            "error_cards": eq["cards"],
+            "errors_pending": eq["pending"],
+            "errors_reviewed": eq["reviewed"],
+            "avg_error_proficiency": round(eq["avg_prof"]) if eq["avg_prof"] is not None else None,
+            "last_error_time": eq["last_err"],
+            "strongest_point": {"id": strongest["id"], "name": strongest["name"], "score": strongest["score"]} if strongest else None,
+            "weakest_point": ({"id": ranked[0]["id"], "name": ranked[0]["name"], "score": ranked[0]["score"]} if ranked else None),
+            "most_frequent_error": most_freq_by_subj.get(subj),
+            "recommend_points": rec_points,
+            "recommend_errors": rec_errors,
+        })
+
+    summary = {
+        "subjects": len(subject_names),
+        "to_learn_total": sum(s["to_learn_count"] for s in subjects_out),
+        "error_cards_total": sum(s["error_cards"] for s in subjects_out),
+        "errors_pending_total": sum(s["errors_pending"] for s in subjects_out),
+    }
+    return _ok({"success": True, "subjects": subjects_out, "summary": summary})
 
 
 # ---------------------------------------------------------------- 知识点提取/确认
@@ -277,6 +555,112 @@ def error_append_proficiency(eid):
 def error_mark_reviewed(eid):
     ok = get_kms().mark_error_reviewed(eid, user_id=g.user_id)
     return _ok({"reviewed": bool(ok)})
+
+
+# --------------------------------------------- 记忆内核共享：星值/手动熟练度/曲线/四档自评（kind=kp|error）
+_FSR_KINDS = ("kp", "error")
+
+
+@kb_bp.route("/api/kb/<kind>/<int:rid>/stars", methods=["POST"])
+@require_auth
+def fsr_set_stars(kind, rid):
+    """调星唯一 HTTP 入口（知识点/错题共用）：入参为 0-10 存储分（星×2），服务端截断。"""
+    if kind not in _FSR_KINDS:
+        return _err("kind 必须为 kp 或 error", 400)
+    body = request.get_json(silent=True) or {}
+    dif, imp = body.get("difficulty"), body.get("importance")
+    if dif is None and imp is None:
+        return _err("difficulty/importance 至少给一项", 400)
+    try:
+        ok = F.set_stars(kind, rid, g.user_id, difficulty=dif, importance=imp)
+    except (ValueError, TypeError) as e:
+        return _err(f"星值非法: {e}", 400)
+    if not ok:
+        return _err("记录不存在或不属于当前用户", 404)
+    return _ok({"updated": True})
+
+
+@kb_bp.route("/api/kb/<kind>/<int:rid>/mastery_manual", methods=["POST"])
+@require_auth
+def fsr_set_mastery_manual(kind, rid):
+    """滑杆手动设定熟练度（手动=最高优先级，持续至下次真实复习）。value 0-100 整数。"""
+    if kind not in _FSR_KINDS:
+        return _err("kind 必须为 kp 或 error", 400)
+    body = request.get_json(silent=True) or {}
+    try:
+        ok = F.set_mastery_manual(kind, rid, g.user_id, body.get("value"))
+    except ValueError as e:
+        return _err(str(e), 400)
+    if not ok:
+        return _err("记录不存在或不属于当前用户", 404)
+    return _ok({"mastery": int(body.get("value")), "manual": True})
+
+
+@kb_bp.route("/api/kb/<kind>/<int:rid>/curve", methods=["GET"])
+@require_auth
+def fsr_proficiency_curve(kind, rid):
+    """熟练度曲线：kp 含复习时点 retrievability；error 表无该列返回 None。"""
+    if kind not in _FSR_KINDS:
+        return _err("kind 必须为 kp 或 error", 400)
+    # 与 stars/mastery_manual 统一 404 口径（不存在/非本人不得静默空曲线）
+    if not F.entity_exists(kind, rid, g.user_id):
+        return _err("记录不存在或不属于当前用户", 404)
+    conn = get_kms().db_manager.get_connection()
+    try:
+        if kind == "kp":
+            rows = conn.execute(
+                "SELECT timestamp, mastery, retrievability FROM kp_proficiency_history "
+                "WHERE knowledge_point_id = ? AND user_id = ? "
+                "ORDER BY timestamp ASC, id ASC", (rid, g.user_id)).fetchall()
+            pts = [{"ts": r[0], "mastery": int(r[1]), "retrievability": r[2]} for r in rows]
+        else:
+            rows = conn.execute(
+                "SELECT eph.timestamp, eph.proficiency FROM error_proficiency_history eph "
+                "JOIN error_questions eq ON eph.error_question_id = eq.id "
+                "WHERE eph.error_question_id = ? AND eq.user_id = ? "
+                "ORDER BY eph.timestamp ASC, eph.id ASC", (rid, g.user_id)).fetchall()
+            pts = [{"ts": r[0], "mastery": int(r[1]), "retrievability": None} for r in rows]
+    finally:
+        conn.close()
+    return _ok({"points": pts, "count": len(pts)})
+
+
+@kb_bp.route("/api/kb/<kind>/<int:rid>/fsrs", methods=["GET"])
+@require_auth
+def fsr_entity_view(kind, rid):
+    """记忆数据面板快照：星值/熟练度/状态/到期/手动标记（曲线端点的同伴只读入口）。"""
+    if kind not in _FSR_KINDS:
+        return _err("kind 必须为 kp 或 error", 400)
+    info = F.get_fsrs_view(kind, rid, g.user_id)
+    if info is None:
+        return _err("记录不存在或不属于当前用户", 404)
+    return _ok(info)
+
+
+@kb_bp.route("/api/kb/<kind>/<int:rid>/rate", methods=["POST"])
+@require_auth
+def fsr_rate_entity(kind, rid):
+    """翻卡四档自评（无卡片行的裸实体入口，与 /api/memory/cards/<id>/rate 同口径）。
+
+    body {self_assessment: 'not_at_all'|'vague'|'familiar'|'perfect'} → F.apply_review。
+    """
+    if kind not in _FSR_KINDS:
+        return _err("kind 必须为 kp 或 error", 400)
+    body = request.get_json(silent=True) or {}
+    key = (body.get("self_assessment") or "").strip()
+    if key not in F.CARD_SELF_RATINGS:
+        return _err("self_assessment 必须为 not_at_all/vague/familiar/perfect 之一", 400)
+    new_st = F.apply_review(kind, rid, g.user_id, F.CARD_SELF_RATINGS[key])
+    if new_st is None:
+        return _err("记录不存在或不属于当前用户", 404)
+    # 复习后读回熟练度展示值（评审 M-2：走公共函数，不跨模块访问私有表映射）
+    mastery = F.get_mastery(kind, rid, g.user_id)
+    log.log("api", "fsr_rate_entity", "success",
+            {"kind": kind, "rid": rid, "self_assessment": key, "state": new_st["fsrs_state"], "mastery": mastery})
+    return _ok({
+        "kind": kind, "ref_id": rid, "self_assessment": key,
+        "mastery": mastery, "state": new_st["fsrs_state"],
+    })
 
 
 @kb_bp.route("/api/kb/errors/<int:eid>", methods=["PUT"])

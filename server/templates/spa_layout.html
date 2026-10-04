@@ -3,18 +3,18 @@
 {% block title %}柯基学习小助手{% endblock %}
 
 {% block content %}
-<div class="flex h-screen bg-white">
+<div class="flex h-screen bg-cl-bg">
     {% include "components/sidebar.html" %}
     
     <!-- 右侧内容区域 -->
-    <main class="flex-1 flex flex-col">
+    <main class="flex-1 flex flex-col min-w-0">
         {% include "components/header.html" %}
         
         <!-- 动态内容区域 -->
-        <div id="content-area" class="flex-1 bg-bg-light-blue-gray overflow-auto">
+        <div id="content-area" class="flex-1 bg-cl-bg overflow-auto">
             {% block page_content %}
             <!-- 工作台：首帧由脚本异步加载 /fragments/dashboard（真实统计单一数据源，四期：默认块假数据已删） -->
-            <div class="p-8 text-sm text-text-gray">工作台加载中…</div>
+            <div class="p-8 text-sm text-cl-text-2">工作台加载中…</div>
             {% endblock %}
         </div>
     </main>
@@ -33,6 +33,9 @@
                 .then(function (r) { return r.json(); })
                 .then(function (j) {
                     if (!j || !j.success || !j.data) return;
+                    // 批1：窄栏改版后头像 title 携带账号信息（评审 Minor-1）
+                    var avatarBtn = document.getElementById('user-avatar-btn');
+                    if (avatarBtn) avatarBtn.title = (j.data.display_name || j.data.username || '已登录') + ' · 用户设置';
                     var nameEl = document.getElementById('user-name');
                     var subEl = document.getElementById('user-sub');
                     if (nameEl) nameEl.textContent = (j.data.display_name || j.data.username || '已登录');
@@ -63,10 +66,12 @@
     })();
 </script>
 <script>
-    // 四期：首帧异步加载真实工作台片段（/fragments/dashboard 内含 /api/dashboard/stats 填充）
+    // 批1 G5修复：仅工作台根路径首帧异步加载 dashboard 片段；
+    // 直访其他 SPA URL 时服务端已渲染目标片段，不得再覆盖
     (function () {
         function boot() {
-            if (window.bridge && typeof window.bridge.loadContent === 'function') {
+            try { setActiveMenuItem('{{ active_menu | default("dashboard") }}'); } catch (e) { /* noop */ }
+            if (location.pathname === '/' && window.bridge && typeof window.bridge.loadContent === 'function') {
                 try { window.bridge.loadContent('dashboard'); } catch (e) { /* ignore */ }
             }
         }
@@ -75,114 +80,18 @@
     })();
 </script>
 <script>
-    let sidebarCollapsed = false;
-    
-    // 侧边栏收缩/展开
-    window.toggleSidebar = function() {
-        console.log('toggleSidebar被调用，当前状态:', sidebarCollapsed);
-        const sidebar = document.getElementById('sidebar');
-        const appTitle = document.getElementById('app-title');
-        const userInfo = document.getElementById('user-info');
-        const menuTexts = document.querySelectorAll('.menu-text');
-        const expandIcons = document.querySelectorAll('.expand-icon');
-        const toggleIcon = document.getElementById('toggle-icon');
-        
-        console.log('找到的元素:', {sidebar, appTitle, userInfo, menuTexts: menuTexts.length, expandIcons: expandIcons.length, toggleIcon});
-        
-        sidebarCollapsed = !sidebarCollapsed;
-        
-        if (sidebarCollapsed) {
-            // 收缩状态
-            sidebar.classList.remove('w-64');
-            sidebar.classList.add('w-16');
-            sidebar.classList.add('collapsed');
-            
-            // 隐藏文字元素
-            appTitle.classList.add('hidden');
-            userInfo.classList.add('hidden');
-            menuTexts.forEach(text => text.classList.add('hidden'));
-            expandIcons.forEach(icon => icon.classList.add('hidden'));
-            
-            // 隐藏所有子菜单
-            document.querySelectorAll('.submenu').forEach(submenu => {
-                submenu.classList.add('hidden');
-            });
-            
-            // 更改图标
-            if (toggleIcon) {
-                toggleIcon.textContent = 'chevron_right';
-            }
-        } else {
-            // 展开状态
-            sidebar.classList.remove('w-16');
-            sidebar.classList.add('w-64');
-            sidebar.classList.remove('collapsed');
-            
-            // 显示文字元素
-            appTitle.classList.remove('hidden');
-            userInfo.classList.remove('hidden');
-            menuTexts.forEach(text => text.classList.remove('hidden'));
-            expandIcons.forEach(icon => icon.classList.remove('hidden'));
-            
-            // 更改图标
-            if (toggleIcon) {
-                toggleIcon.textContent = 'chevron_left';
-            }
-        }
-    }
-    
-    // 处理菜单点击（对齐 Qt 行为：父菜单展开/收起，叶子菜单加载对应页面片段）
-    function handleMenuClick(menuId) {
-        if (sidebarCollapsed) {
-            // 如果侧边栏收缩，先展开
-            toggleSidebar();
-            return;
-        }
-        
-        // 父级菜单：仅切换子菜单展开状态
-        const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
-        if (menuItem) {
-            const submenu = menuItem.parentElement.querySelector('.submenu');
-            const expandIcon = menuItem.querySelector('.expand-icon');
-            if (submenu && expandIcon) {
-                submenu.classList.toggle('hidden');
-                expandIcon.textContent = submenu.classList.contains('hidden') ? 'expand_more' : 'expand_less';
-                return;
-            }
-        }
-        
-        // 叶子菜单：通过桥兼容层加载 SPA 片段（内部含未保存改动守卫 + fetch /fragments/<id>）
+    // 批1：窄图标侧边栏，父项直达模块落地页（子功能入口由各落地页承担）
+    function handleMenuClick(cid) {
         if (window.bridge && typeof window.bridge.loadContent === 'function') {
-            try { setActiveMenuItem(menuId); } catch (e) { /* noop */ }
-            window.bridge.loadContent(menuId);
-        } else if (window.PAGE_ROUTES && window.PAGE_ROUTES[menuId]) {
-            location.href = window.PAGE_ROUTES[menuId];
+            try { setActiveMenuItem(cid); } catch (e) { /* noop */ }
+            window.bridge.loadContent(cid);
+        } else if (window.PAGE_ROUTES && window.PAGE_ROUTES[cid]) {
+            location.href = window.PAGE_ROUTES[cid];
         } else {
-            console.warn('未找到菜单路由:', menuId);
+            console.warn('未找到菜单路由:', cid);
         }
     }
-    
-    // 更新菜单显示状态
-    function updateMenuDisplay(menuState) {
-        Object.keys(menuState).forEach(menuId => {
-            const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
-            if (menuItem) {
-                const submenu = menuItem.parentElement.querySelector('.submenu');
-                const expandIcon = menuItem.querySelector('.expand-icon');
-                
-                if (submenu && expandIcon) {
-                    if (menuState[menuId].expanded) {
-                        submenu.classList.remove('hidden');
-                        expandIcon.textContent = 'expand_less';
-                    } else {
-                        submenu.classList.add('hidden');
-                        expandIcon.textContent = 'expand_more';
-                    }
-                }
-            }
-        });
-    }
-    
+
     // 更新内容区域（确保动态插入的<script>被执行）
     function updateContentArea(htmlContent) {
         const contentArea = document.getElementById('content-area');
@@ -193,47 +102,77 @@
 
         // 注入HTML
         contentArea.innerHTML = htmlContent;
+        // 批1：程序化切换片段时同步窄栏激活态（子功能 cid 归组到窄栏主项）
+        try {
+            if (window.current_page) {
+                var _map = {
+                    practice_overview: 'practice_overview',
+                    practice_materials: 'practice_overview', practice_knowledge: 'practice_overview', practice_errors: 'practice_overview',
+                    memory_knowledge: 'memory_overview', memory_errors: 'memory_overview', memory_overview: 'memory_overview'
+                };
+                setActiveMenuItem(_map[window.current_page] || window.current_page);
+            }
+        } catch (e) { /* noop */ }
         console.log('[SPA] 已注入HTML，开始处理脚本');
 
-        // 选出当前容器内的所有<script>，逐个重新创建执行
+        // 选出当前容器内的所有<script>，串行重新创建执行：
+        // 批6 修复：动态插入的 script 默认 async，外部脚本未加载完就执行后续内联脚本会报
+        // undefined（如 pmUtil 依赖）。改为外部脚本 onload 后再执行下一个，保证文档顺序。
         const scripts = Array.from(contentArea.querySelectorAll('script'));
         console.log(`[SPA] 发现脚本数量: ${scripts.length}`);
 
-        scripts.forEach((oldScript, idx) => {
+        function execScript(idx) {
+            if (idx >= scripts.length) {
+                console.log('[SPA] 脚本处理完成');
+                // 调用注入页面的挂载钩子（如有）
+                try {
+                    if (typeof window.onPageMounted === 'function') {
+                        console.log('[SPA] 发现 onPageMounted 钩子，开始调用');
+                        window.onPageMounted();
+                        console.log('[SPA] onPageMounted 调用结束');
+                    } else {
+                        console.log('[SPA] 未发现 onPageMounted 钩子');
+                    }
+                } catch (hookErr) {
+                    console.error('[SPA] 调用 onPageMounted 出错:', hookErr);
+                }
+                return;
+            }
+            const oldScript = scripts[idx];
+            // CodeReview 批6 M-3：链跨越片段生命周期（外部脚本下载期间用户切页），
+            // 旧片段节点已脱离文档则整链停机，不再 replaceChild / 不再回调 onPageMounted，避免污染新页面
+            if (!oldScript.parentNode || !document.contains(oldScript)) {
+                console.warn('[SPA] 片段已切换，中断旧脚本链');
+                return;
+            }
             const newScript = document.createElement('script');
-            // 复制属性（如type、src、async等）
+            // 复制属性（如type等）
             Array.from(oldScript.attributes).forEach(attr => {
                 newScript.setAttribute(attr.name, attr.value);
             });
 
             if (oldScript.src) {
-                // 外部脚本：重新加载
-                newScript.onload = () => console.log(`[SPA] 外部脚本加载完成(${idx+1}/${scripts.length}):`, oldScript.src);
-                newScript.onerror = (e) => console.error(`[SPA] 外部脚本加载失败:`, oldScript.src, e);
+                // 外部脚本：等加载完成再执行下一个
+                newScript.onload = () => {
+                    console.log(`[SPA] 外部脚本加载完成(${idx+1}/${scripts.length}):`, oldScript.src);
+                    execScript(idx + 1);
+                };
+                newScript.onerror = (e) => {
+                    console.error(`[SPA] 外部脚本加载失败:`, oldScript.src, e);
+                    execScript(idx + 1); // 失败不阻断后续脚本
+                };
                 newScript.src = oldScript.src;
+                oldScript.parentNode.replaceChild(newScript, oldScript);
             } else {
-                // 内联脚本：直接复制文本以触发执行
+                // 内联脚本：直接复制文本以触发执行（同步），随后继续链
                 newScript.text = oldScript.textContent || '';
+                // CodeReview 批6 m-3：替换/执行异常不阻断后续脚本链
+                try { oldScript.parentNode.replaceChild(newScript, oldScript); }
+                catch (e) { console.error('[SPA] 内联脚本插入异常:', e); }
+                execScript(idx + 1);
             }
-
-            // 用新脚本替换旧脚本节点
-            oldScript.parentNode.replaceChild(newScript, oldScript);
-        });
-
-        console.log('[SPA] 脚本处理完成');
-
-        // 调用注入页面的挂载钩子（如有）
-        try {
-            if (typeof window.onPageMounted === 'function') {
-                console.log('[SPA] 发现 onPageMounted 钩子，开始调用');
-                window.onPageMounted();
-                console.log('[SPA] onPageMounted 调用结束');
-            } else {
-                console.log('[SPA] 未发现 onPageMounted 钩子');
-            }
-        } catch (hookErr) {
-            console.error('[SPA] 调用 onPageMounted 出错:', hookErr);
         }
+        execScript(0);
     }
     
     // 更新页面标题
@@ -244,20 +183,13 @@
         }
     }
     
-    // 设置活动菜单项
-    function setActiveMenuItem(menuId) {
-        // 移除所有活动状态
-        document.querySelectorAll('.menu-item a').forEach(item => {
-            item.classList.remove('text-white', 'bg-primary');
-            item.classList.add('text-text-gray');
+    // 设置活动菜单项（批1：按 data-cid 匹配窄栏导航项；无图标管理页别名归组到设置，评审 Minor-4）
+    function setActiveMenuItem(cid) {
+        var _alias = { llm_logs: 'settings', admin_credits: 'settings' };
+        var target = _alias[cid] || cid;
+        document.querySelectorAll('.cl-nav-item').forEach(function (el) {
+            el.classList.toggle('cl-active', el.getAttribute('data-cid') === target);
         });
-        
-        // 设置当前活动项
-        const activeItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
-        if (activeItem) {
-            activeItem.classList.remove('text-text-gray');
-            activeItem.classList.add('text-white', 'bg-primary');
-        }
     }
 </script>
 

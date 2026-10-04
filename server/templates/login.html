@@ -5,47 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - 柯基学习小助手</title>
     <style>
+        /* 批7 重设计：接入设计系统 token（橙主色 + 奶油底），自包含不依赖 cl.css；认证逻辑零改动 */
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
         body {
             min-height: 100vh; display: flex; align-items: center; justify-content: center;
-            background: linear-gradient(135deg, #6a8dff 0%, #a78bfa 55%, #f0abfc 100%);
+            background: #FAF7F2;
         }
         .card {
-            width: 400px; background: #fff; border-radius: 20px; padding: 40px 36px;
-            box-shadow: 0 20px 60px rgba(30, 41, 99, .35);
+            width: 400px; background: #fff; border-radius: 16px; padding: 40px 36px;
+            border: 1px solid #EFE9E0; box-shadow: 0 12px 40px rgba(41, 37, 36, .08);
         }
-        .logo { font-size: 44px; text-align: center; }
-        h1 { font-size: 22px; text-align: center; color: #1e2a5a; margin: 10px 0 4px; }
-        .sub { font-size: 13px; color: #8b93b8; text-align: center; margin-bottom: 26px; }
-        .tabs { display: flex; background: #f1f3fb; border-radius: 10px; padding: 4px; margin-bottom: 22px; }
+        .logo { display: flex; justify-content: center; }
+        .logo svg { width: 52px; height: 52px; color: #F97316; }
+        h1 { font-size: 22px; text-align: center; color: #292524; margin: 10px 0 4px; }
+        .sub { font-size: 13px; color: #A8A29E; text-align: center; margin-bottom: 26px; }
+        .tabs { display: flex; background: #F5F0E8; border-radius: 10px; padding: 4px; margin-bottom: 22px; }
         .tabs button {
             flex: 1; border: 0; background: transparent; padding: 9px 0; border-radius: 8px;
-            font-size: 14px; color: #6a7194; cursor: pointer; transition: all .18s;
+            font-size: 14px; color: #78716C; cursor: pointer; transition: all .18s;
         }
-        .tabs button.active { background: #fff; color: #3b5bdb; font-weight: 600; box-shadow: 0 2px 8px rgba(59,91,219,.18); }
+        .tabs button.active { background: #fff; color: #F97316; font-weight: 600; box-shadow: 0 2px 8px rgba(249, 115, 22, .16); }
         .field { margin-bottom: 16px; }
-        .field label { display: block; font-size: 13px; color: #4a5378; margin-bottom: 6px; }
+        .field label { display: block; font-size: 13px; color: #78716C; margin-bottom: 6px; }
         .field input {
-            width: 100%; padding: 11px 14px; border: 1.5px solid #dfe3f2; border-radius: 10px;
-            font-size: 14px; outline: none; transition: border .15s;
+            width: 100%; padding: 11px 14px; border: 1.5px solid #EFE9E0; border-radius: 10px;
+            font-size: 14px; outline: none; transition: border .15s, box-shadow .15s; color: #292524;
         }
-        .field input:focus { border-color: #6a8dff; }
-        .remember { display: flex; align-items: center; gap: 8px; margin: 2px 0 14px; font-size: 13px; color: #4a5378; cursor: pointer; }
-        .remember input { width: 15px; height: 15px; accent-color: #4c6ef5; cursor: pointer; }
+        .field input:focus { border-color: #F97316; box-shadow: 0 0 0 3px rgba(249, 115, 22, .12); }
+        .remember { display: flex; align-items: center; gap: 8px; margin: 2px 0 14px; font-size: 13px; color: #78716C; cursor: pointer; }
+        .remember input { width: 15px; height: 15px; accent-color: #F97316; cursor: pointer; }
         .submit {
             width: 100%; padding: 12px 0; border: 0; border-radius: 10px; margin-top: 6px;
-            background: linear-gradient(90deg, #4c6ef5, #7c3aed); color: #fff;
-            font-size: 15px; font-weight: 600; cursor: pointer;
+            background: #F97316; color: #fff;
+            font-size: 15px; font-weight: 600; cursor: pointer; transition: background .15s;
         }
+        .submit:hover { background: #EA6C0B; }
         .submit:disabled { opacity: .6; cursor: not-allowed; }
-        .msg { min-height: 20px; font-size: 13px; margin-top: 14px; text-align: center; color: #e03131; }
-        .msg.ok { color: #2f9e44; }
-        .hint { font-size: 12px; color: #8b93b8; text-align: center; margin-top: 10px; }
+        .msg { min-height: 20px; font-size: 13px; margin-top: 14px; text-align: center; color: #EF4444; }
+        .msg.ok { color: #10B981; }
+        .hint { font-size: 12px; color: #A8A29E; text-align: center; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <div class="logo">🐕</div>
+        <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dog"/></svg></div>
         <h1>柯基学习小助手</h1>
         <div class="sub">听课 · 笔记 · 练习 · 记忆 一站式闭环</div>
         <div class="tabs">

@@ -1794,11 +1794,11 @@ async function showKnowledgePointDetail(node) {
                 updateKnowledgePointDetail(detail, node);
                 log(`✅ 成功获取知识点详情`);
             } else {
-                // 显示基本信息
+                // 显示基本信息（CodeReview 批9c m-3：无掌握度时传 -1 哨兵，降级展示为“未评估”而非误显 0 分）
                 updateKnowledgePointDetail({
                     name: node.name,
                     description: `无法获取详细信息: ${result.error || '数据不存在'}`,
-                    mastery_score: node.mastery_score || 0,
+                    mastery_score: (node.mastery_score == null ? -1 : node.mastery_score),
                     created_time: '未知'
                 }, node);
                 log(`⚠️ 获取详情失败: ${result.error}`);
@@ -1821,7 +1821,7 @@ async function showKnowledgePointDetail(node) {
             updateKnowledgePointDetail({
                 name: node.name,
                 description: description,
-                mastery_score: node.mastery_score || 0,
+                mastery_score: (node.mastery_score == null ? -1 : node.mastery_score),
                 created_time: '未知'
             }, node);
             log(`ℹ️ 显示基本节点信息`);
@@ -1831,7 +1831,8 @@ async function showKnowledgePointDetail(node) {
         updateKnowledgePointDetail({
             name: node.name,
             description: `获取详情时出错: ${error.message}`,
-            mastery_score: 0,
+            // u10 CodeReview m-5：catch 分支同步 -1 哨兵口径，禁止未评估降级为 0 分展示
+            mastery_score: (node.mastery_score == null ? -1 : node.mastery_score),
             created_time: '未知'
         }, node);
     }
@@ -4623,6 +4624,9 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+// u10：原「批9 旗标消费 pm_pending_point → 自动弹详情层」已下线。
+// 直达知识点改用独立页 knowledge_point（pm_pages.js bootKnowledgePoint 消费旗标），
+// 不再先跳脑图再弹层（用户明确否定的路径）；本页内点脑图节点弹详情层行为保持不变。
 </script>
 </body>
 </html>

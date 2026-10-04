@@ -1,0 +1,70 @@
+/* 柯基学习乐园 预编译入口：Tailwind 三层 + 设计系统组件类（DESIGN.md 契约） */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --cl-primary: #F97316;
+    --cl-primary-hover: #EA6C0B;
+    --cl-primary-soft: #FFF1E7;
+    --cl-secondary: #10B981;
+    --cl-secondary-soft: #E7F8F1;
+    --cl-bg: #FAF7F2;
+    --cl-surface: #FFFFFF;
+    --cl-border: #EFE9E0;
+    --cl-text: #292524;
+    --cl-text-2: #78716C;
+    --cl-text-3: #A8A29E;
+  }
+  body {
+    @apply font-cl text-cl-text;
+  }
+}
+
+@layer components {
+  /* 主按钮：橙底白字（每屏至多 1 个） */
+  .cl-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 h-10 px-5 rounded-clbtn bg-cl-primary text-white text-sm font-semibold border border-transparent shadow-cl hover:bg-cl-primary-hover transition-colors cursor-pointer;
+  }
+  /* 次按钮：白底橙字橙边 */
+  .cl-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 h-10 px-5 rounded-clbtn bg-cl-surface text-cl-primary text-sm font-semibold border border-cl-primary/40 hover:bg-cl-primary-soft transition-colors cursor-pointer;
+  }
+  /* 卡片 */
+  .cl-card {
+    @apply bg-cl-surface border border-cl-border rounded-cl shadow-cl hover:shadow-cl-hover transition-shadow;
+  }
+  /* 徽标 */
+  .cl-badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  .cl-badge-orange { @apply cl-badge bg-cl-primary-soft text-cl-primary; }
+  .cl-badge-green { @apply cl-badge bg-cl-secondary-soft text-cl-secondary; }
+  /* 进度条 */
+  .cl-progress {
+    @apply h-1.5 w-full rounded-full bg-cl-secondary-soft overflow-hidden;
+  }
+  .cl-progress > .cl-progress-bar {
+    @apply h-full rounded-full bg-cl-secondary transition-all;
+  }
+  /* 侧边栏导航项（72px 窄栏：图标在上文字在下） */
+  .cl-nav-item {
+    @apply flex flex-col items-center justify-center gap-1 w-14 h-14 rounded-cl text-cl-text-2 hover:bg-cl-primary-soft hover:text-cl-primary transition-colors cursor-pointer select-none;
+  }
+  .cl-nav-item.cl-active {
+    @apply bg-cl-primary-soft text-cl-primary font-semibold;
+  }
+  /* 页面骨架 */
+  .cl-page {
+    @apply p-8 max-w-[1120px] mx-auto;
+  }
+  /* 区块标题 */
+  .cl-section-title {
+    @apply text-[17px] font-semibold text-cl-text flex items-center gap-2;
+  }
+  /* 空态 */
+  .cl-empty {
+    @apply flex flex-col items-center justify-center gap-3 py-16 text-cl-text-2 text-sm;
+  }
+}

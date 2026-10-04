@@ -1,0 +1,5 @@
+USER_COLS: ["text", "text", "text", "integer", "text", "text"]
+TABLES_HAS_SESSION: ["practice_sessions"]
+SAMPLE_practice_sessions: [["67", "b47d538ecb83", "eps-f3ce7402243b", "2026-09-29 06:55:56", "{\"kind\": \"err_sprint\", \"subject\": \"errp_470a37d8_学科\", \"requested\": 3, \"generated\": 3, \"pool_total\": 5, \"pool_short\": false}", "[{\"index\": 1, \"error_question_id\": 285, \"subject_name\": \"errp_470a37d8_学科\", \"knowledge_point_id\": 740, \"kp_name\": \"特征分解\", \"question_content\": \"错题二 特征多项式-errp_470a37d8\", \"question_hash\": \"5fbdc621e4a9fa1a4a860de1e5f101e4\", \"difficulty_score\": 9.0, \"importance_score\": 10.0, \"mastery\": 15, \"difficulty_mix\": [\"easy\", \"easy\", \"medium\"], \"retrievability\":
+GRANT_aboykyo(604ac3a97206): {"success": true, "balance": 500.0}
+GRANT_aboykoy(5b22ff93dcc5): {"success": true, "balance": 700.0}

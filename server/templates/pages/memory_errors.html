@@ -1,103 +1,24 @@
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <div class="text-center py-16">
-        <span class="material-icons-outlined text-6xl text-gray-400 mb-4">history</span>
-        <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于错题记忆</h3>
-        <p class="text-text-gray mb-6">重点记忆容易出错的知识点，建立深度记忆</p>
-        
-        <div class="max-w-2xl mx-auto">
-            <div class="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg p-6 mb-6">
-                <h4 class="text-lg font-semibold text-red-800 mb-4">错题记忆统计</h4>
-                
-                <div class="grid grid-cols-3 gap-4 mb-4">
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-red-600">23</div>
-                        <div class="text-sm text-red-500">错题总数</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-orange-600">8</div>
-                        <div class="text-sm text-orange-500">已强化记忆</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-yellow-600">15</div>
-                        <div class="text-sm text-yellow-500">待强化记忆</div>
-                    </div>
-                </div>
-                
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div class="bg-gradient-to-r from-red-500 to-orange-500 h-2 rounded-full" style="width: 35%"></div>
-                </div>
-                <p class="text-sm text-gray-600 mt-2">错题记忆完成度: 35%</p>
-            </div>
-            
-            <div class="space-y-4 mb-6">
-                <h5 class="font-semibold text-text-dark-brown text-left">错题记忆计划</h5>
-                
-                <div class="bg-red-50 border-l-4 border-red-500 p-4 text-left">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-red-800">线性回归 - 损失函数概念</span>
-                        <span class="text-xs bg-red-100 text-red-800 px-2 py-1 rounded">紧急</span>
-                    </div>
-                    <p class="text-sm text-red-600 mb-2">错误次数: 3次 | 最近错误: 2小时前</p>
-                    <div class="flex items-center text-xs text-red-500">
-                        <span class="material-icons-outlined text-xs mr-1">schedule</span>
-                        <span>建议今日强化记忆</span>
-                    </div>
-                </div>
-                
-                <div class="bg-orange-50 border-l-4 border-orange-500 p-4 text-left">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-orange-800">神经网络 - 反向传播算法</span>
-                        <span class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">重要</span>
-                    </div>
-                    <p class="text-sm text-orange-600 mb-2">错误次数: 2次 | 最近错误: 1天前</p>
-                    <div class="flex items-center text-xs text-orange-500">
-                        <span class="material-icons-outlined text-xs mr-1">schedule</span>
-                        <span>建议明日复习</span>
-                    </div>
-                </div>
-                
-                <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 text-left">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-yellow-800">决策树 - 剪枝策略</span>
-                        <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">一般</span>
-                    </div>
-                    <p class="text-sm text-yellow-600 mb-2">错误次数: 1次 | 最近错误: 3天前</p>
-                    <div class="flex items-center text-xs text-yellow-500">
-                        <span class="material-icons-outlined text-xs mr-1">schedule</span>
-                        <span>建议本周复习</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <h5 class="font-semibold text-blue-800 mb-2">记忆技巧推荐</h5>
-                <div class="text-left space-y-2 text-sm text-blue-700">
-                    <div class="flex items-center">
-                        <span class="material-icons-outlined text-xs mr-2">lightbulb</span>
-                        <span>使用联想记忆法记住损失函数的作用</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="material-icons-outlined text-xs mr-2">repeat</span>
-                        <span>通过间隔重复强化反向传播概念</span>
-                    </div>
-                    <div class="flex items-center">
-                        <span class="material-icons-outlined text-xs mr-2">draw</span>
-                        <span>绘制思维导图理解决策树剪枝</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="flex space-x-4 justify-center">
-                <button class="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors">
-                    <span class="material-icons-outlined mr-2">psychology</span>
-                    开始错题记忆
-                </button>
-                
-                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors">
-                    <span class="material-icons-outlined mr-2">search</span>
-                    搜索错题
-                </button>
-            </div>
-        </div>
+<!-- 错题翻卡复习：默认卡片模式按熟练度升序逐张翻转（正=题干选项，背=答案解析+标记已复习）；可切列表模式。数据源 /api/kb/errors，回写 POST /api/kb/errors/<id>/reviewed -->
+<div class="cl-page space-y-6" data-pm-page="memory_errors">
+
+    <div>
+        <h1 class="text-[22px] font-bold text-cl-text flex items-center gap-2">
+            <svg class="w-6 h-6 text-cl-secondary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-history"/></svg>
+            错题记忆
+        </h1>
+        <p class="text-sm text-cl-text-2 mt-1">卡片一道道翻着复习：点卡片看答案与解析，复习过就标记一下</p>
+    </div>
+
+    <!-- 复习完成度概览（当前学科真实数据） -->
+    <div class="cl-card p-6" data-role="stat">
+        <p class="text-xs text-cl-text-3">加载中…</p>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap" data-role="subjects"></div>
+
+    <div data-role="main">
+        <p class="text-sm text-cl-text-3 py-6">加载中…</p>
     </div>
 </div>
+<script src="/static/js/widgets.js"></script>
+<script src="/static/js/pm_pages.js"></script>

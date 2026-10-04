@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>选择学习笔记</title>
 <style>
-  :root { --bg:#1f2430; --fg:#eef1f7; --accent:#4c8dff; --muted:#8a94a6; --ok:#37c26e; --warn:#ff6b6b; --card:#171b24; --line:#3a4256; }
+  /* 批7 重设计：暗窗形态保留，主题色统一设计系统橙/薄荷绿；图标去 emoji 改 sprite */
+  :root { --bg:#1f2430; --fg:#eef1f7; --accent:#F97316; --muted:#8a94a6; --ok:#10B981; --warn:#EF4444; --card:#171b24; --line:#3a4256; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
   #wrap { display:flex; flex-direction:column; height:100%; padding:14px 16px; gap:10px; }
@@ -17,7 +18,8 @@
   .item.sel { background:#20283a; border-color:var(--accent); }
   .item .nm { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .item .meta { font-size:11px; color:var(--muted); white-space:nowrap; }
-  .item .badge { font-size:10.5px; color:#fff; background:var(--warn); border-radius:6px; padding:1px 6px; }
+  .item .badge { font-size:10.5px; color:#fff; background:var(--accent); border-radius:6px; padding:1px 6px; }
+  .item svg.ic { width:14px; height:14px; color:var(--muted); flex-shrink:0; }
   .muted { color:var(--muted); font-size:12px; }
   #newrow { display:flex; gap:8px; }
   #newname { flex:1; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
@@ -77,7 +79,7 @@
     if (!shown.length) { el.innerHTML = '<div class="muted" style="padding:12px">没有匹配的笔记，可在下方新建</div>'; return; }
     el.innerHTML = shown.map((it, i) => (
       '<div class="item' + (selected && selected.path === it.path ? ' sel' : '') + '" data-i="' + i + '">' +
-      '<span>📝</span>' +
+      '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-file-text"/></svg>' +
       '<span class="nm" title="' + esc(it.rel || it.path) + '">' + esc(it.name) +
         (it.recording ? ' <span class="badge">录制中</span>' : '') + '</span>' +
       '<span class="meta">' + (it.word_count ? it.word_count + ' 字 · ' : '') + esc(fmtTime(it.updated_time)) + '</span>' +

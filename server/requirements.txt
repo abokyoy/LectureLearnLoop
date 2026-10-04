@@ -5,5 +5,12 @@ python-dotenv>=1.0
 httpx>=0.27
 requests
 psycopg2-binary>=2.9
+pypdf>=4.0                # PDF 文本层直读（导入文本层优先路径，2026-10-01）
+Pillow>=10.0              # PDF 内嵌图解码存附件（导入图片提取，2026-10-01）
 deepgram-sdk>=3.7
 websockets
+trafilatura>=2.0           # URL 导入正文提取（第七轮追加需求：网页/公众号文章转笔记）
+beautifulsoup4>=4.12       # 微信懒加载预处理/正文兜底解析（html_to_markdown_note 直接依赖，显式声明，不依赖 trafilatura 传递依赖）
+lxml_html_clean            # lxml>=6 拆包，trafilatura/justext 需要，否则 import 报 ImportError
+markdownify>=1.2           # HTML→Markdown（URL 兜底与 DOCX 转换共用）
+mammoth>=1.13              # DOCX→HTML 含内嵌图提取（本地导入 DOCX 支持）

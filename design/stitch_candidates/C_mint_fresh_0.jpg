@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>柯基的学习乐园 - 智能工作台</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "primary-fixed-dim": "#4edea3",
+            "surface-tint": "#006c49",
+            "on-tertiary-fixed": "#2a1700",
+            "on-tertiary": "#ffffff",
+            "surface": "#f8f9ff",
+            "on-error": "#ffffff",
+            "on-secondary": "#ffffff",
+            "background": "#f8f9ff",
+            "outline-variant": "#bbcabf",
+            "on-tertiary-fixed-variant": "#653e00",
+            "tertiary-fixed": "#ffddb8",
+            "surface-dim": "#cbdbf5",
+            "surface-container-lowest": "#ffffff",
+            "inverse-surface": "#213145",
+            "on-primary": "#ffffff",
+            "primary-container": "#10b981",
+            "on-primary-container": "#00422b",
+            "inverse-on-surface": "#eaf1ff",
+            "on-surface": "#0b1c30",
+            "surface-bright": "#f8f9ff",
+            "surface-container": "#e5eeff",
+            "on-secondary-container": "#006172",
+            "error": "#ba1a1a",
+            "surface-variant": "#d3e4fe",
+            "on-primary-fixed": "#002113",
+            "primary-fixed": "#6ffbbe",
+            "inverse-primary": "#4edea3",
+            "secondary-container": "#57dffe",
+            "on-background": "#0b1c30",
+            "primary": "#006c49",
+            "surface-container-high": "#dce9ff",
+            "secondary-fixed": "#acedff",
+            "secondary": "#00687a",
+            "on-primary-fixed-variant": "#005236",
+            "on-secondary-fixed-variant": "#004e5c",
+            "on-error-container": "#93000a",
+            "outline": "#6c7a71",
+            "on-secondary-fixed": "#001f26",
+            "surface-container-highest": "#d3e4fe",
+            "on-tertiary-container": "#523200",
+            "on-surface-variant": "#3c4a42",
+            "error-container": "#ffdad6",
+            "secondary-fixed-dim": "#4cd7f6",
+            "tertiary": "#855300",
+            "tertiary-fixed-dim": "#ffb95f",
+            "tertiary-container": "#e29100",
+            "surface-container-low": "#eff4ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "gutter-sm": "1rem",
+            "space-md": "1rem",
+            "margin-sm": "1rem",
+            "gutter": "1.5rem",
+            "space-xs": "0.25rem",
+            "margin": "2rem",
+            "space-lg": "1.5rem",
+            "space-xl": "2.5rem",
+            "space-sm": "0.5rem"
+          },
+          "fontFamily": {
+            "label-md": ["Plus Jakarta Sans"],
+            "body-lg": ["Plus Jakarta Sans"],
+            "display-mobile": ["Plus Jakarta Sans"],
+            "body-sm": ["Plus Jakarta Sans"],
+            "headline-lg-mobile": ["Plus Jakarta Sans"],
+            "title-lg": ["Plus Jakarta Sans"],
+            "label-lg": ["Plus Jakarta Sans"],
+            "headline-md": ["Plus Jakarta Sans"],
+            "headline-sm": ["Plus Jakarta Sans"],
+            "headline-lg": ["Plus Jakarta Sans"],
+            "display": ["Plus Jakarta Sans"],
+            "label-sm": ["Plus Jakarta Sans"],
+            "title-md": ["Plus Jakarta Sans"],
+            "body-md": ["Plus Jakarta Sans"]
+          },
+          "fontSize": {
+            "label-md": ["12px", { "lineHeight": "16px", "fontWeight": "500" }],
+            "body-lg": ["16px", { "lineHeight": "26px", "fontWeight": "400" }],
+            "display-mobile": ["32px", { "lineHeight": "40px", "fontWeight": "700" }],
+            "body-sm": ["12px", { "lineHeight": "18px", "fontWeight": "400" }],
+            "headline-lg-mobile": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "title-lg": ["18px", { "lineHeight": "26px", "fontWeight": "600" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "fontWeight": "500" }],
+            "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+            "headline-lg": ["32px", { "lineHeight": "40px", "fontWeight": "600" }],
+            "display": ["48px", { "lineHeight": "56px", "fontWeight": "700" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "600" }],
+            "title-md": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+            "body-md": ["14px", { "lineHeight": "22px", "fontWeight": "400" }]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      line-height: 1;
+    }
+    body {
+      background-color: #F8FBF9;
+      color: #0b1c30;
+    }
+  </style>
+</head>
+<body class="bg-background min-h-screen antialiased flex selection:bg-primary-fixed selection:text-on-primary-fixed">
+<!-- Left SideNavBar (Shared Component JSON mapped) -->
+<aside class="fixed left-0 top-0 h-screen w-20 flex flex-col items-center justify-between z-40 bg-surface-container-lowest border-r border-outline-variant shadow-sm py-5">
+<!-- Brand / Mascot Logo -->
+<div class="flex flex-col items-center gap-1.5 cursor-pointer group">
+<div class="relative w-11 h-11 rounded-2xl bg-emerald-50 border border-emerald-100/80 flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform duration-200">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="A charming high-end minimalist vector 3D illustration portrait of a cute corgi puppy wearing warm round study spectacles, gentle mint green and cream white background, soft ambient studio lighting, friendly edtech companion aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOqDaOH95Y_tWQM_gRFqmMe6aKvfD6EzSJlwvU2lTSnpqzO7h1CA4L140seb1tjEcEOreuarneZMqYIhF5FKXt8LTurfOVjS-ONB-Rd3f4IDnYF-AjFroaWakwtuqMpncJ8zmwQJCWdK7yc78K4Z12WTYc5JbjCgvQa3PnGLObrxatdgJ1Voyp05wAaY__qPHe5BmttfeW4h8GcFCEk9Aut6guHsEdY9wtrHbVOvWQE7ACvhEXcFL7bWZn1NYkuhxGPDxEDx1gmzLW"/>
+<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-primary-container border-2 border-surface-container-lowest rounded-full ring-1 ring-primary/20"></span>
+</div>
+<span class="font-title-lg text-title-lg text-primary text-[11px] font-bold tracking-tight">柯基乐园</span>
+<span class="text-[9px] text-outline font-label-sm leading-none scale-90">AI学习伴侣</span>
+</div>
+<!-- Main Navigation Icons -->
+<nav class="flex flex-col items-center gap-2 w-full px-2">
+<!-- 1. 工作台 (Active state mapped from JSON) -->
+<a class="w-full flex flex-col items-center justify-center p-2 rounded-xl bg-primary-container text-on-primary-container font-title-md transition-all shadow-sm group" href="#" title="工作台">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+<span class="text-[11px] font-semibold mt-0.5 tracking-tight">工作台</span>
+</a>
+<!-- 2. 学习 -->
+<a class="w-full flex flex-col items-center justify-center p-2 rounded-xl text-on-surface-variant font-label-md hover:bg-surface-container-low hover:text-on-surface transition-all duration-150 group" href="#" title="学习">
+<span class="material-symbols-outlined text-[22px] group-hover:text-primary transition-colors">school</span>
+<span class="text-[11px] mt-0.5">学习</span>
+</a>
+<!-- 3. 练习 -->
+<a class="w-full flex flex-col items-center justify-center p-2 rounded-xl text-on-surface-variant font-label-md hover:bg-surface-container-low hover:text-on-surface transition-all duration-150 group" href="#" title="练习">
+<span class="material-symbols-outlined text-[22px] group-hover:text-primary transition-colors">edit_note</span>
+<span class="text-[11px] mt-0.5">练习</span>
+</a>
+<!-- 4. 记忆 -->
+<a class="w-full flex flex-col items-center justify-center p-2 rounded-xl text-on-surface-variant font-label-md hover:bg-surface-container-low hover:text-on-surface transition-all duration-150 group" href="#" title="记忆">
+<span class="material-symbols-outlined text-[22px] group-hover:text-primary transition-colors">psychology</span>
+<span class="text-[11px] mt-0.5">记忆</span>
+</a>
+<!-- 5. 知识库 -->
+<a class="w-full flex flex-col items-center justify-center p-2 rounded-xl text-on-surface-variant font-label-md hover:bg-surface-container-low hover:text-on-surface transition-all duration-150 group" href="#" title="知识库">
+<span class="material-symbols-outlined text-[22px] group-hover:text-primary transition-colors">local_library</span>
+<span class="text-[11px] mt-0.5">知识库</span>
+</a>
+<!-- 6. 设置 -->
+<a class="w-full flex flex-col items-center justify-center p-2 rounded-xl text-on-surface-variant font-label-md hover:bg-surface-container-low hover:text-on-surface transition-all duration-150 group" href="#" title="设置">
+<span class="material-symbols-outlined text-[22px] group-hover:text-primary transition-colors">settings</span>
+<span class="text-[11px] mt-0.5">设置</span>
+</a>
+</nav>
+<!-- Footer Profile Tab (from JSON footer_tab_labels) -->
+<div class="flex flex-col items-center gap-1.5 w-full px-2">
+<button class="relative w-10 h-10 rounded-xl overflow-hidden border border-outline-variant hover:border-primary-container p-0.5 transition-colors focus:outline-none" title="个人主页 - 林小柯 (Lv.12 冲刺中)">
+<img class="w-full h-full object-cover rounded-lg" data-alt="A clean, friendly anime aesthetic avatar portrait of a modern Asian high school student named Xiao Ke, holding a clean digital stylus pen, wearing a mint green jacket, softly lit against an architectural off-white study background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCLTlrR9S6mqwTrRnu4Dp4M5lPCtG61-64uKtWbpLuTpTVBVc0T6cX-L0FjXcqMO7YZRbZmfMhuvUk--T9NVfeQNKohoCp6f62u-_1FOsMzY7WBRiiixoqS7mB8MzwTEomtYmDAqywtGq4mB6Go4vrae5WJzX_Z2GbOLvDb5mvG9G4ywDGlMtue8UfcNpzNYZQihXIV_nmmEYy9D2NvXAZr06y4E0kJYgbgDnLD5pFamBosuyMcQpU5y4Z_oEuz-zMeFivCrYgTCMLP"/>
+<span class="absolute bottom-0 right-0 w-2.5 h-2.5 bg-primary-container rounded-full ring-2 ring-surface-container-lowest"></span>
+</button>
+<span class="text-[10px] text-outline font-label-sm">个人主页</span>
+</div>
+</aside>
+<!-- Right Primary Workstation Shell -->
+<div class="ml-20 flex-1 flex flex-col min-h-screen max-w-[1200px]">
+<!-- TopNavBar (Shared Component JSON mapped) -->
+<header class="sticky top-0 h-16 px-8 flex justify-between items-center bg-surface-container-lowest border-b border-outline-variant/60 shadow-sm z-30">
+<!-- Left: Friendly Greeting & Global Search -->
+<div class="flex items-center gap-6 flex-1">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container animate-pulse"></span>
+<span class="font-title-md text-title-md text-on-surface font-semibold tracking-tight text-sm">早安，小柯！🌱</span>
+<span class="font-body-sm text-body-sm text-outline hidden xl:inline">今天也是元气满满攻克考点的一天</span>
+</div>
+<!-- Global Search Bar with ⌘K -->
+<div class="relative w-72">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-outline">
+<span class="material-symbols-outlined text-[18px]">search</span>
+</div>
+<input class="w-full bg-surface-container-low/70 border border-outline-variant/60 rounded-xl pl-9 pr-14 py-1.5 text-xs text-on-surface placeholder:text-outline/70 focus:outline-none focus:border-primary-container focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary-container/20 transition-all font-body-sm" placeholder="搜索知识点、考点错题或题型总结..." type="text"/>
+<div class="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none">
+<kbd class="px-1.5 py-0.5 text-[10px] font-label-sm font-semibold text-outline bg-surface-container-lowest border border-outline-variant/60 rounded shadow-xs">⌘K</kbd>
+</div>
+</div>
+</div>
+<!-- Right: Learning Quick Badges & AI Action Button -->
+<div class="flex items-center gap-4">
+<!-- Streak Metric -->
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-tertiary-fixed/40 border border-tertiary-fixed text-tertiary font-label-md text-xs" title="连续学习 14 天达成">
+<span class="material-symbols-outlined text-[16px] text-tertiary-container" style="font-variation-settings: 'FILL' 1;">local_fire_department</span>
+<span class="font-semibold">连续 14 天</span>
+</div>
+<!-- Focus Timer Metric (Shared component trailing_secondary_action) -->
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-secondary-fixed/30 border border-secondary-fixed text-secondary font-label-md text-xs" title="今日已专注 45 分钟">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+<span class="font-medium">专注计时 25:00</span>
+</div>
+<!-- Notification Icon (from JSON trailing_icon_actions) -->
+<button class="relative p-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded-xl transition-colors" title="系统消息与批改通知">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-primary-container rounded-full ring-2 ring-surface-container-lowest"></span>
+</button>
+<div class="h-5 w-[1px] bg-outline-variant/50"></div>
+<!-- Trailing Primary Action: AI 学习助手 (Shared component trailing_primary_action) -->
+<button class="flex items-center gap-2 px-4 py-2 bg-primary-container hover:bg-surface-tint text-on-primary font-title-md text-xs font-semibold rounded-xl shadow-sm hover:shadow-md transition-all duration-200 active:scale-95">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">psychology</span>
+<span>AI 学习助手</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary-fixed"></span>
+</button>
+</div>
+</header>
+<!-- Main Workspace Content Canvas -->
+<main class="flex-1 px-8 py-6 space-y-6 overflow-y-auto">
+<!-- 1. Hero Banner: 今日核心攻坚推荐 -->
+<section class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-50 via-white to-emerald-50/40 border border-emerald-100 shadow-sm p-6">
+<div class="absolute -right-6 -bottom-6 w-48 h-48 bg-primary-container/10 rounded-full blur-2xl pointer-events-none"></div>
+<div class="relative z-10 flex items-center justify-between gap-6">
+<div class="space-y-3 max-w-2xl">
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-on-primary-container border border-emerald-200">
+<span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">target</span>
+                今日自适应重点突破
+              </span>
+<span class="text-xs text-outline font-label-md">高频考纲覆盖 · 难点阻击</span>
+</div>
+<h1 class="font-headline-sm text-headline-sm text-on-surface font-bold tracking-tight">
+              高中物理《电磁感应与楞次定律》自适应攻关
+            </h1>
+<div class="flex items-center gap-6 pt-1">
+<!-- Mastery Progress Bar -->
+<div class="w-64 space-y-1.5">
+<div class="flex justify-between text-xs font-label-md">
+<span class="text-outline">当前考点掌握度</span>
+<span class="font-bold text-primary">68%</span>
+</div>
+<div class="w-full h-2 bg-surface-container-highest/60 rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full transition-all duration-500" style="width: 68%;"></div>
+</div>
+</div>
+<!-- Estimated time -->
+<div class="flex items-center gap-1.5 text-xs text-on-surface-variant font-label-md bg-white/80 px-3 py-1.5 rounded-lg border border-slate-200/60 shadow-xs">
+<span class="material-symbols-outlined text-[16px] text-primary">timelapse</span>
+<span>预计耗时 <b>25 min</b></span>
+</div>
+</div>
+</div>
+<!-- Hero Action Button Cluster -->
+<div class="flex items-center gap-3 flex-shrink-0">
+<button class="px-4 py-2.5 rounded-xl border border-emerald-200 bg-white hover:bg-emerald-50 text-primary font-label-lg text-xs font-semibold shadow-xs hover:border-emerald-300 transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">menu_book</span>
+              查看考点讲义
+            </button>
+<button class="px-5 py-2.5 rounded-xl bg-primary-container hover:bg-surface-tint text-on-primary font-title-md text-xs font-semibold shadow-sm hover:shadow-md transition-all active:scale-95 flex items-center gap-2">
+<span>开始攻克</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- 2. Core Closed-Loop Engine: 学 · 练 · 记 (3-Column Bento Cards) -->
+<section class="space-y-3.5">
+<!-- Section Header with Adaptive Sync Indicator -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2.5">
+<h2 class="font-title-lg text-title-lg text-on-surface font-bold tracking-tight text-base">
+              『学 · 练 · 记』闭环引擎
+            </h2>
+<div class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-100 text-primary text-[11px] font-label-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container animate-ping"></span>
+<span>AI 自适应实时同步中</span>
+</div>
+</div>
+<span class="text-xs text-outline font-label-md">今日闭环达成度 2/3</span>
+</div>
+<!-- The 3 Core Pillar Cards -->
+<div class="grid grid-cols-3 gap-5">
+<!-- Card 1: 学 · 新知探索与精读 -->
+<div class="group relative rounded-2xl bg-surface-container-lowest border border-slate-200/70 p-5 hover:border-emerald-300/80 hover:shadow-md transition-all duration-200 flex flex-col justify-between">
+<div class="space-y-3">
+<div class="flex items-start justify-between">
+<div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+<span class="material-symbols-outlined text-[22px]">explore</span>
+</div>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-sm font-semibold bg-blue-50 text-blue-700">新知精讲</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface font-bold group-hover:text-primary transition-colors">
+                  学 · 知识图谱深度精读
+                </h3>
+<p class="font-body-sm text-body-sm text-outline mt-1.5 text-xs leading-relaxed line-clamp-2">
+                  理清核心考点逻辑链条，拆解导图架构，快速消除理解盲区。
+                </p>
+</div>
+<div class="pt-2 border-t border-slate-100">
+<div class="flex items-center justify-between text-xs font-label-md">
+<span class="text-outline">当前模块掌握度</span>
+<span class="font-bold text-on-surface">85%</span>
+</div>
+<div class="w-full h-1.5 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
+<div class="h-full bg-blue-500 rounded-full" style="width: 85%;"></div>
+</div>
+</div>
+</div>
+<div class="pt-5">
+<button class="w-full py-2 px-3 rounded-xl border border-slate-200 hover:border-primary-container hover:bg-emerald-50 text-on-surface hover:text-primary font-label-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5">
+<span>开启今日精读</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Card 2: 练 · 靶向自适应刷题 (Hero Highlight Pillar) -->
+<div class="group relative rounded-2xl bg-white border-2 border-primary-container shadow-sm p-5 hover:shadow-md transition-all duration-200 flex flex-col justify-between ring-4 ring-emerald-50">
+<!-- Focus Tag -->
+<div class="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full bg-primary-container text-white text-[10px] font-bold tracking-wide uppercase shadow-xs">
+              今日重点攻防
+            </div>
+<div class="space-y-3">
+<div class="flex items-start justify-between">
+<div class="w-10 h-10 rounded-xl bg-emerald-50 text-primary-container flex items-center justify-center border border-emerald-100">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">track_changes</span>
+</div>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-sm font-semibold bg-emerald-100/70 text-on-primary-container">弱项动态组卷</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface font-bold">
+                  练 · 靶向自适应刷题
+                </h3>
+<p class="font-body-sm text-body-sm text-outline mt-1.5 text-xs leading-relaxed line-clamp-2">
+                  基于薄弱考点动态演练试题，精准阻断错因惯性与步骤陷阱。
+                </p>
+</div>
+<div class="pt-2 border-t border-emerald-50">
+<div class="flex items-center justify-between text-xs font-label-md">
+<span class="text-outline">精选攻关题量</span>
+<span class="font-bold text-primary">12 题 <span class="font-normal text-outline text-[11px]">(预测正答率 78%)</span></span>
+</div>
+<div class="w-full h-1.5 bg-emerald-50 rounded-full mt-1.5 overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 78%;"></div>
+</div>
+</div>
+</div>
+<div class="pt-5">
+<button class="w-full py-2 px-3 rounded-xl bg-primary-container hover:bg-surface-tint text-white font-title-md text-xs font-semibold shadow-sm transition-all flex items-center justify-center gap-1.5 active:scale-98">
+<span>开始自适应练习</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Card 3: 记 · 闪卡智能记忆仓 -->
+<div class="group relative rounded-2xl bg-surface-container-lowest border border-slate-200/70 p-5 hover:border-emerald-300/80 hover:shadow-md transition-all duration-200 flex flex-col justify-between">
+<div class="space-y-3">
+<div class="flex items-start justify-between">
+<div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+<span class="material-symbols-outlined text-[22px]">style</span>
+</div>
+<span class="px-2 py-0.5 rounded text-[11px] font-label-sm font-semibold bg-amber-50 text-amber-700">艾宾浩斯曲线</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface font-bold group-hover:text-primary transition-colors">
+                  记 · 闪卡智能记忆仓
+                </h3>
+<p class="font-body-sm text-body-sm text-outline mt-1.5 text-xs leading-relaxed line-clamp-2">
+                  碎片化温故知新，对抗遗忘临界点，长效内化核心公式与词汇。
+                </p>
+</div>
+<div class="pt-2 border-t border-slate-100">
+<div class="flex items-center justify-between text-xs font-label-md">
+<span class="text-outline">今日待过卡数量</span>
+<span class="font-bold text-amber-600">18 张 <span class="font-normal text-outline text-[11px]">(预计仅 6 min)</span></span>
+</div>
+<div class="w-full h-1.5 bg-slate-100 rounded-full mt-1.5 overflow-hidden">
+<div class="h-full bg-amber-500 rounded-full" style="width: 45%;"></div>
+</div>
+</div>
+</div>
+<div class="pt-5">
+<button class="w-full py-2 px-3 rounded-xl border border-slate-200 hover:border-amber-400 hover:bg-amber-50/60 text-on-surface hover:text-amber-800 font-label-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5">
+<span>进入快速过卡</span>
+<span class="material-symbols-outlined text-[16px]">bolt</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- 3. Recent Learning Activity List Section -->
+<section class="space-y-3 pb-6">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-outline text-[18px]">history</span>
+<h2 class="font-title-md text-title-md text-on-surface font-bold tracking-tight text-sm">
+              最近学习活动
+            </h2>
+</div>
+<a class="text-xs font-label-md text-primary hover:text-surface-tint flex items-center gap-1 transition-colors" href="#">
+<span>查看全部历程</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</a>
+</div>
+<div class="space-y-2.5">
+<!-- Activity Item 1 -->
+<div class="rounded-xl bg-surface-container-lowest border border-slate-200/60 p-3.5 hover:border-emerald-200 transition-colors flex items-center justify-between gap-4 shadow-2xs">
+<div class="flex items-center gap-3.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-emerald-50 text-primary flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-label-lg text-label-lg font-semibold text-on-surface truncate text-xs">《函数单调性与极值》自适应闯关</span>
+<span class="px-2 py-0.2 rounded-full text-[10px] font-semibold bg-emerald-50 text-primary border border-emerald-200">得分 90%</span>
+</div>
+<div class="flex items-center gap-3 text-[11px] text-outline mt-0.5 font-label-sm">
+<span>数学 · 必修一考点</span>
+<span>•</span>
+<span>耗时 15 分钟</span>
+<span>•</span>
+<span>今日 08:30 完成</span>
+</div>
+</div>
+</div>
+<button class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-primary-container text-xs font-label-md text-on-surface hover:text-primary transition-colors flex items-center gap-1">
+<span>错因解析</span>
+<span class="material-symbols-outlined text-[14px]">arrow_outward</span>
+</button>
+</div>
+<!-- Activity Item 2 -->
+<div class="rounded-xl bg-surface-container-lowest border border-slate-200/60 p-3.5 hover:border-emerald-200 transition-colors flex items-center justify-between gap-4 shadow-2xs">
+<div class="flex items-center gap-3.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">psychology</span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-label-lg text-label-lg font-semibold text-on-surface truncate text-xs">《高考核心英语词汇 List 14》艾宾浩斯复习</span>
+<span class="px-2 py-0.2 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">第 3 节点达标</span>
+</div>
+<div class="flex items-center gap-3 text-[11px] text-outline mt-0.5 font-label-sm">
+<span>英语 · 高频词库</span>
+<span>•</span>
+<span>巩固 24 词</span>
+<span>•</span>
+<span>昨日 21:40</span>
+</div>
+</div>
+</div>
+<button class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-amber-400 text-xs font-label-md text-on-surface hover:text-amber-800 transition-colors flex items-center gap-1">
+<span>回顾卡片</span>
+<span class="material-symbols-outlined text-[14px]">replay</span>
+</button>
+</div>
+<!-- Activity Item 3 -->
+<div class="rounded-xl bg-surface-container-lowest border border-slate-200/60 p-3.5 hover:border-emerald-200 transition-colors flex items-center justify-between gap-4 shadow-2xs">
+<div class="flex items-center gap-3.5 min-w-0">
+<div class="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">account_tree</span>
+</div>
+<div class="min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-label-lg text-label-lg font-semibold text-on-surface truncate text-xs">《近代史纲要脉络全景图》思维导图</span>
+<span class="px-2 py-0.2 rounded-full text-[10px] font-semibold bg-cyan-50 text-cyan-800 border border-cyan-200">已归档 5 考点</span>
+</div>
+<div class="flex items-center gap-3 text-[11px] text-outline mt-0.5 font-label-sm">
+<span>历史 · 体系构建</span>
+<span>•</span>
+<span>已自动同步至个人知识库</span>
+<span>•</span>
+<span>昨天下午</span>
+</div>
+</div>
+</div>
+<button class="px-3 py-1.5 rounded-lg border border-slate-200 hover:border-cyan-400 text-xs font-label-md text-on-surface hover:text-cyan-800 transition-colors flex items-center gap-1">
+<span>查看导图</span>
+<span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+</div>
+<!-- Specialized Component: AI Study Companion Floating Dock (From Style Guidance) -->
+<aside class="fixed bottom-5 right-8 z-30 flex items-center gap-3 px-4 py-2.5 rounded-2xl backdrop-blur-md bg-white/95 border border-emerald-200/80 shadow-lg text-on-surface">
+<div class="relative w-8 h-8 rounded-full overflow-hidden border border-emerald-200">
+<img class="w-full h-full object-cover" data-alt="Close up macro icon of an energetic corgi puppy wearing tiny study glasses and an ear-piece headset, ready to offer cheerful AI tutoring advice, soft bright aesthetic, clean emerald gradient background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2V2ID35vphVlWBxhfro0Eaown25XL8HcdOR0krnmiTrQM3xfEV6EAHFIjrYlMM0fdJ8TQlhpGxE9q_jKCcur8K1AaJdPkWqDoQiPbODdSLjRMuCoiws6dvTM8moarhD1USU57Wcj8TgKhd7S9cb13k8BpCbv7m3pxvHvM4j3g0n9xR5Uh9IuMCh3jYLOotzivxF_9oWg1-sB_GPRtqb0gJzBMJgc8fhdfelOstbldRhcyfKrJslsMm1QRYa4kLq9WWGINocdQh20v"/>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="text-xs font-bold text-on-surface">伴学小柯 AI</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span>
+</div>
+<p class="text-[11px] text-outline font-label-sm">有疑问随时按空格召唤我哦</p>
+</div>
+<button class="ml-2 p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-primary transition-colors">
+<span class="material-symbols-outlined text-[16px]">chat</span>
+</button>
+</aside>
+</body></html>

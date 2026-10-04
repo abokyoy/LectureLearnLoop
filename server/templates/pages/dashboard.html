@@ -1,68 +1,95 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    <div class="bg-white p-6 rounded-xl shadow-sm">
-        <div class="flex items-center mb-4">
-            <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-                <span class="material-icons-outlined text-blue-600">school</span>
+<!-- 批2 工作台重设计：对齐 design/DESIGN.md 与定稿稿 D_orange_mint_mix；数据源仍为 /api/dashboard/stats（真实统计，无假兜底） -->
+<div class="cl-page space-y-6">
+
+    <!-- 问候条（按时段问候，非数据字段，不算假数据） -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-[22px] font-bold text-cl-text" id="dash-greeting">你好，欢迎回来</h1>
+            <p class="text-sm text-cl-text-2 mt-1">今天也和我一起，把学过的知识练熟、记住吧</p>
+        </div>
+        <svg class="w-12 h-12 text-cl-primary/80 hidden sm:block" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dog"/></svg>
+    </div>
+
+    <!-- 三功能卡：学 / 练（本屏唯一主按钮）/ 记 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <!-- 学 -->
+        <div class="cl-card p-6 flex flex-col">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-graduation-cap"/></svg>
+                </div>
+                <div>
+                    <h3 class="text-[17px] font-semibold text-cl-text leading-tight">学习模块</h3>
+                    <p class="text-xs text-cl-text-3">从资料和音视频中学习</p>
+                </div>
             </div>
-            <div>
-                <h3 class="text-lg font-semibold text-text-dark-brown">学习模块</h3>
-                <p class="text-sm text-text-gray">从资料和音视频中学习</p>
+            <div class="text-[28px] font-bold text-cl-primary leading-none mb-1" id="dash-materials-week">–</div>
+            <p class="text-xs text-cl-text-2 mb-4">本周新增学习资料（实时统计）</p>
+            <div class="mt-auto">
+                <button class="cl-btn-ghost w-full" onclick="handleMenuClick('online_course_notes')">
+                    开始学习
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+                </button>
             </div>
         </div>
-        <div class="text-2xl font-bold text-blue-600 mb-2" id="dash-materials-week">–</div>
-        <p class="text-sm text-text-gray">本周学习资料数（实时统计）</p>
-        <div class="mt-4">
-            <button class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700" onclick="handleMenuClick('online_course_notes')">
-                开始学习
-            </button>
+
+        <!-- 练（主行动卡） -->
+        <div class="cl-card p-6 flex flex-col ring-1 ring-cl-primary/25">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                        <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dumbbell"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-[17px] font-semibold text-cl-text leading-tight">练习模块</h3>
+                        <p class="text-xs text-cl-text-3">知识点和错题练习</p>
+                    </div>
+                </div>
+                <span class="cl-badge bg-cl-primary-soft text-cl-primary">今日推荐</span>
+            </div>
+            <div class="text-[28px] font-bold text-cl-primary leading-none mb-1" id="dash-accuracy">–</div>
+            <p class="text-xs text-cl-text-2 mb-4" id="dash-accuracy-sub">本周练习正确率（无记录时显示 —）</p>
+            <div class="mt-auto">
+                <button class="cl-btn-primary w-full" onclick="handleMenuClick('practice_overview')">
+                    开始练习
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- 记 -->
+        <div class="cl-card p-6 flex flex-col">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-10 h-10 rounded-cl bg-cl-secondary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-secondary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
+                </div>
+                <div>
+                    <h3 class="text-[17px] font-semibold text-cl-text leading-tight">记忆模块</h3>
+                    <p class="text-xs text-cl-text-3">知识点记忆和复习</p>
+                </div>
+            </div>
+            <div class="text-[28px] font-bold text-cl-secondary leading-none mb-1"><span id="dash-mastered">–</span><span class="text-sm font-normal text-cl-text-3" id="dash-kp-total"></span></div>
+            <p class="text-xs text-cl-text-2 mb-4">已掌握知识点数（掌握度≥80）</p>
+            <div class="mt-auto">
+                <button class="cl-btn-ghost w-full" onclick="handleMenuClick('memory_overview')">
+                    开始记忆
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+                </button>
+            </div>
         </div>
     </div>
 
-    <div class="bg-white p-6 rounded-xl shadow-sm">
-        <div class="flex items-center mb-4">
-            <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mr-4">
-                <span class="material-icons-outlined text-green-600">fitness_center</span>
-            </div>
-            <div>
-                <h3 class="text-lg font-semibold text-text-dark-brown">练习模块</h3>
-                <p class="text-sm text-text-gray">知识点和错题练习</p>
-            </div>
+    <!-- 最近学习活动 -->
+    <div class="cl-card p-6">
+        <div class="cl-section-title mb-4">
+            <svg class="w-4 h-4 text-cl-text-2" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-clock"/></svg>
+            最近学习活动
         </div>
-        <div class="text-2xl font-bold text-green-600 mb-2" id="dash-accuracy">–</div>
-        <p class="text-sm text-text-gray" id="dash-accuracy-sub">本周练习正确率（无记录时显示 —）</p>
-        <div class="mt-4">
-            <button class="bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700" onclick="handleMenuClick('practice_knowledge')">
-                开始练习
-            </button>
-        </div>
-    </div>
-
-    <div class="bg-white p-6 rounded-xl shadow-sm">
-        <div class="flex items-center mb-4">
-            <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mr-4">
-                <span class="material-icons-outlined text-purple-600">psychology</span>
-            </div>
-            <div>
-                <h3 class="text-lg font-semibold text-text-dark-brown">记忆模块</h3>
-                <p class="text-sm text-text-gray">知识点记忆和复习</p>
-            </div>
-        </div>
-        <div class="text-2xl font-bold text-purple-600 mb-2"><span id="dash-mastered">–</span><span class="text-sm font-normal text-text-gray" id="dash-kp-total"></span></div>
-        <p class="text-sm text-text-gray">已掌握知识点数（掌握度≥80）</p>
-        <div class="mt-4">
-            <button class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700" onclick="handleMenuClick('memory_knowledge')">
-                开始记忆
-            </button>
-        </div>
-    </div>
-
-    <div class="bg-white p-6 rounded-xl shadow-sm col-span-full">
-        <h3 class="text-lg font-semibold text-text-dark-brown mb-4">最近学习活动</h3>
-        <div class="space-y-3" id="dash-activities">
-            <p class="text-sm text-text-gray">加载中…</p>
+        <div class="space-y-1" id="dash-activities">
+            <p class="text-sm text-cl-text-3 py-4">加载中…</p>
         </div>
     </div>
 </div>
@@ -84,6 +111,12 @@
             return Math.floor(h / 24) + ' 天前';
         } catch (e) { return String(ts || ''); }
     }
+    // 时段问候（纯展示逻辑，非业务数据）
+    try {
+        var hh = new Date().getHours();
+        var g = document.getElementById('dash-greeting');
+        if (g) g.textContent = (hh < 6 ? '夜深了' : hh < 12 ? '早上好' : hh < 14 ? '中午好' : hh < 18 ? '下午好' : '晚上好') + '，欢迎回来';
+    } catch (e) { /* ignore */ }
     fetch('/api/dashboard/stats', { headers: { 'Authorization': 'Bearer ' + tk() } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
@@ -95,26 +128,34 @@
             if (e2) e2.textContent = (s.practice_accuracy == null) ? '—' : (s.practice_accuracy + '%');
             var e2s = document.getElementById('dash-accuracy-sub');
             if (e2s) e2s.textContent = (s.practice_count_this_week > 0)
-                ? '本周练习 ' + s.practice_count_this_week + ' 题正确率'
+                ? '本周已练 ' + s.practice_count_this_week + ' 题的正确率'
                 : '本周暂无练习记录';
             var e3 = document.getElementById('dash-mastered');
             if (e3) e3.textContent = s.knowledge_mastered;
             var e3t = document.getElementById('dash-kp-total');
-            if (e3t) e3t.textContent = ' / ' + s.knowledge_total + '（在学科目 ' + s.subjects + '）';
+            if (e3t) e3t.textContent = ' / ' + s.knowledge_total + '（在学 ' + s.subjects + ' 科）';
             var box = document.getElementById('dash-activities');
             if (box) {
                 var acts = s.recent_activities || [];
                 if (!acts.length) {
-                    box.innerHTML = '<p class="text-sm text-text-gray">还没有学习活动，从「网课笔记」开始第一次录制吧。</p>';
+                    box.innerHTML = '<div class="cl-empty">'
+                        + '<svg class="w-10 h-10 text-cl-text-3" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-notebook-pen"/></svg>'
+                        + '<p>还没有学习活动，从「网课笔记」开始第一次录制吧</p>'
+                        + '<button class="cl-btn-ghost !h-9 !text-xs" onclick="handleMenuClick(\'online_course_notes\')">去录网课笔记</button>'
+                        + '</div>';
                 } else {
-                    box.innerHTML = acts.map(function (a) {
-                        var color = a.kind === 'note' ? 'blue' : 'green';
-                        var icon = a.kind === 'note' ? 'article' : 'quiz';
-                        return '<div class="flex items-center p-3 bg-gray-50 rounded-lg">'
-                            + '<div class="w-8 h-8 bg-' + color + '-100 rounded-full flex items-center justify-center mr-3">'
-                            + '<span class="material-icons-outlined text-' + color + '-600 text-sm">' + icon + '</span></div>'
-                            + '<div class="flex-1"><p class="font-medium text-text-dark-brown">' + esc(a.title) + '</p>'
-                            + '<p class="text-sm text-text-gray">' + esc(relTime(a.time)) + '</p></div></div>';
+                    box.innerHTML = acts.map(function (a, i) {
+                        var isNote = a.kind === 'note';
+                        var soft = isNote ? 'bg-cl-primary-soft' : 'bg-cl-secondary-soft';
+                        var fg = isNote ? 'text-cl-primary' : 'text-cl-secondary';
+                        var icon = isNote ? 'li-file-text' : 'li-pen-line';
+                        return '<div class="flex items-center py-3' + (i ? ' border-t border-cl-border' : '') + '">'
+                            + '<div class="w-10 h-10 rounded-full ' + soft + ' flex items-center justify-center mr-3 shrink-0">'
+                            + '<svg class="w-5 h-5 ' + fg + '" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#' + icon + '"/></svg></div>'
+                            + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-cl-text truncate">' + esc(a.title) + '</p>'
+                            + '<p class="text-xs text-cl-text-3">' + esc(relTime(a.time)) + '</p></div>'
+                            + '<span class="cl-badge ' + soft + ' ' + fg + '">' + (isNote ? '学习' : '练习') + '</span>'
+                            + '</div>';
                     }).join('');
                 }
             }

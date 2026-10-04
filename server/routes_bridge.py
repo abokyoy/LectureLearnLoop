@@ -23,6 +23,7 @@ from auth import require_auth
 from config import DATA_DIR, VAULT_DIR, load_config, save_runtime_config
 from logger_module import debug_logger as log
 import credits_service as cr
+from services import fsrs_service as F
 from routes_knowledge import _ok, _err, get_kms, _user_vault_root
 
 bridge_bp = Blueprint("bridge", __name__)
@@ -357,6 +358,157 @@ def vault_screenshot():
         return _ok({"success": False, "error": f"截图保存失败: {e}"})
 
 
+# ---------------------------------------------------------------- 一·六、文件导入（PDF/DOCX/MD/TXT/图片 + URL，2026-09-30；第七轮扩展）
+
+_IMPORT_TEXT_EXTS = {".md", ".txt"}
+_IMPORT_IMG_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+_IMPORT_EXTS = {".pdf", ".docx"} | _IMPORT_TEXT_EXTS | _IMPORT_IMG_EXTS
+
+
+@bridge_bp.route("/api/vault/import", methods=["POST"])
+@require_auth
+def vault_import():
+    """文件导入：上传 PDF/DOCX/MD/TXT/图片 到用户 vault 指定目录（方案 §3.3）。
+
+    multipart: file + folder_path（嵌套树返回的绝对路径或相对 root 路径，经 _bridge_path 校验）。
+    - MD/TXT：解码直接落盘+入库，任务即时 done；
+    - 图片：原图存 <目标>/附件/，新建同名 .md 嵌入图片引用（用户确认：不做 OCR），即时 done；
+    - PDF：原件存 <目标>/附件/，后台 worker 文本层优先/OCR 回落转 MD；
+    - DOCX：原件存附件/，后台 worker 本地 mammoth+markdownify 转 MD（不耗远端额度）。
+    前端轮询状态端点。返回 {success, task_id, file_name}。
+    """
+    from services import import_service as imp
+
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return _ok({"success": False, "error": "未选择文件"})
+    folder = _bridge_path(g.user_id, request.form.get("folder_path") or "vault")
+    if folder is None or (folder.exists() and not folder.is_dir()) or folder == _user_vault_root(g.user_id).parent:
+        return _ok({"success": False, "error": "目标位置不合法"})
+    # 文件名清洗（MF-2）：先取 basename 去路径分隔符注入，再白名单字符；不用 secure_filename（会清空纯中文名）
+    raw_name = Path(f.filename.replace("\\", "/")).name
+    name = re.sub(r"[^\w\u4e00-\u9fa5. -]", "_", raw_name).strip(" .") or "文件"
+    ext = Path(name).suffix.lower()
+    if ext not in _IMPORT_EXTS:
+        return _ok({"success": False, "error": f"不支持的文件类型：{ext or '无扩展名'}（仅 PDF/DOCX/MD/TXT/图片）"})
+    data = f.read()
+    if not data:
+        return _ok({"success": False, "error": "文件内容为空"})
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        if ext in _IMPORT_TEXT_EXTS:
+            target_name = imp.uniquify_name(folder, name)
+            target = folder / target_name
+            content = imp.decode_text_bytes(data)
+            if not content.strip():
+                return _ok({"success": False, "error": "文件内容为空"})
+            target.write_text(content, encoding="utf-8")
+            tid = imp.create_task(g.user_id, target_name, str(folder), ext[1:], result_md=str(target))
+            # 评审 MF-1：入库失败不得报假成功（任务置 failed，前端可见原因）
+            if imp.sync_note_content(g.user_id, target, content):
+                imp.update_task(tid, status="done", progress_json='{"done": 1, "total": 1}')
+                log.log("import", "text_imported", "success", {"task": tid, "name": target_name})
+                return _ok({"success": True, "task_id": tid, "file_name": target_name})
+            imp.update_task(tid, status="failed", error="正文入库失败，笔记列表可能不可见，请删除后重新导入")
+            return _ok({"success": False, "error": "正文入库失败（文件已落盘），请删除后重新导入"})
+        if ext in _IMPORT_IMG_EXTS:
+            # 图片导入（用户确认）：仅嵌入建新笔记，不做 OCR；原图存附件保留
+            att_dir = folder / imp.ATTACH_DIR_NAME
+            att_dir.mkdir(parents=True, exist_ok=True)
+            img_name = imp.uniquify_name(att_dir, name)
+            (att_dir / img_name).write_bytes(data)
+            md_name = imp.uniquify_name(folder, Path(img_name).stem + ".md")
+            target = folder / md_name
+            # 评审 R2 必改：文件名含空格/括号等会使 MD link destination 不合法、marked 不渲染；
+            # 仅百分号编码这些不安全字符（中文不动，与既有附件引用形态一致）
+            safe_ref = re.sub(r"[ \t\r\n()<>\"']", lambda m: f"%{ord(m.group(0)):02X}", img_name)
+            content = f"![图片]({imp.ATTACH_DIR_NAME}/{safe_ref})"
+            target.write_text(content, encoding="utf-8")
+            tid = imp.create_task(g.user_id, md_name, str(folder), "img", result_md=str(target))
+            if imp.sync_note_content(g.user_id, target, content):
+                imp.update_task(tid, status="done", progress_json='{"done": 1, "total": 1}')
+                log.log("import", "image_imported", "success", {"task": tid, "name": md_name})
+                return _ok({"success": True, "task_id": tid, "file_name": md_name})
+            imp.update_task(tid, status="failed", error="正文入库失败，笔记列表可能不可见，请删除后重新导入")
+            return _ok({"success": False, "error": "正文入库失败（文件已落盘），请删除后重新导入"})
+        # PDF/DOCX：原件落附件目录，同名 .md 为目标产物，后台 worker 转换（两路径同模式）
+        att_dir = folder / imp.ATTACH_DIR_NAME
+        att_dir.mkdir(parents=True, exist_ok=True)
+        orig_name = imp.uniquify_name(att_dir, name)
+        (att_dir / orig_name).write_bytes(data)
+        md_name = imp.uniquify_name(folder, Path(orig_name).stem + ".md")
+        target_md = folder / md_name
+        target_md.write_text("", encoding="utf-8")  # 评审 O-2：占位预先占名，防并发同名导入互相覆盖
+        tid = imp.create_task(g.user_id, md_name, str(folder), ext[1:],
+                              result_md=str(target_md), result_pdf=str(att_dir / orig_name))
+        if ext == ".docx":
+            imp.start_docx_task(tid, g.user_id, att_dir / orig_name, target_md)
+            log.log("import", "docx_task_started", "success", {"task": tid, "docx": orig_name})
+        else:
+            imp.start_pdf_task(tid, g.user_id, att_dir / orig_name, target_md)
+            log.log("import", "pdf_task_started", "success", {"task": tid, "pdf": orig_name})
+        return _ok({"success": True, "task_id": tid, "file_name": md_name})
+    except Exception as e:  # noqa: BLE001
+        log.log_error("bridge", "import_failed", e)
+        return _ok({"success": False, "error": f"导入失败: {e}"})
+
+
+@bridge_bp.route("/api/vault/import-url", methods=["POST"])
+@require_auth
+def vault_import_url():
+    """URL 导入：抓取网页（重点：公众号文章）转 MD 笔记（第七轮追加需求）。
+
+    JSON: {url, folder_path}。任务即时返回，后台 worker 抓取/提取/图本地化，
+    产物文件名取文章标题（创建时无法预知），前端沿用 /api/vault/import/<task_id> 轮询。
+    """
+    from urllib.parse import urlparse
+
+    from services import import_service as imp
+
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return _ok({"success": False, "error": "请输入 http(s) 网页链接"})
+    if not imp.is_safe_http_url(url, allow_http=True):
+        return _ok({"success": False, "error": "链接指向内网地址，不支持"})
+    folder = _bridge_path(g.user_id, body.get("folder_path") or "vault")
+    if folder is None or (folder.exists() and not folder.is_dir()) or folder == _user_vault_root(g.user_id).parent:
+        return _ok({"success": False, "error": "目标位置不合法"})
+    p = urlparse(url)
+    display = (p.netloc or "url") + (p.path or "")[:40]
+    try:
+        tid = imp.create_task(g.user_id, display[:80], str(folder), "url")
+        imp.start_url_task(tid, g.user_id, url, folder)
+        log.log("import", "url_task_started", "success", {"task": tid, "url": url[:150]})
+        return _ok({"success": True, "task_id": tid, "file_name": display})
+    except Exception as e:  # noqa: BLE001
+        log.log_error("bridge", "import_url_failed", e)
+        return _ok({"success": False, "error": f"URL 导入失败: {e}"})
+
+
+@bridge_bp.route("/api/vault/import/<task_id>", methods=["GET"])
+@require_auth
+def vault_import_status(task_id):
+    """导入任务状态（前端轮询）；get_task 内部强制 user_id 隔离。"""
+    from services import import_service as imp
+
+    t = imp.get_task(re.sub(r"[^\w-]", "", task_id), g.user_id)
+    if t is None:
+        return _ok({"success": False, "error": "任务不存在"})
+    try:
+        progress = json.loads(t["progress_json"] or "{}")
+    except ValueError:
+        progress = {}
+    return _ok({
+        "success": True,
+        "status": t["status"],
+        "progress": progress,
+        "file_name": t["file_name"],
+        "result_name": Path(t["result_md"]).name if t["result_md"] else "",
+        "error": t["error"],
+    })
+
+
 # ---------------------------------------------------------------- 二、知识提取 / 相似 / 合并 / 批量
 
 @bridge_bp.route("/api/knowledge/extract-file", methods=["POST"])
@@ -418,6 +570,9 @@ def similar_points():
         all_points = kms.get_knowledge_points_by_subject(subject, user_id=g.user_id)
         if not all_points:
             return _ok([])
+        # FSRS 两阶段口径：先按涉及行惰性回写衰减后的 mastery，再取数
+        F.decay_flush(g.user_id, ref_ids={"kp": [p.get("id") for p in all_points if p.get("id") is not None]})
+        all_points = kms.get_knowledge_points_by_subject(subject, user_id=g.user_id)
         ranked = rank_matches(question=point_name, knowledge_points=all_points,
                               cfg=load_config(), top_k=limit, min_score=0.0)
         by_id = {p.get("id"): p for p in all_points}
@@ -749,7 +904,8 @@ def point_questions(pid):
             "   AND p2.question_content = p1.question_content AND p2.user_id = p1.user_id "
             " ORDER BY p2.practice_time DESC LIMIT 1) AS last_correct "
             "FROM practice_records p1 WHERE knowledge_point_id = ? AND user_id = ? "
-            "GROUP BY question_content ORDER BY last_time DESC", (pid, g.user_id)).fetchall()
+            "GROUP BY question_content, p1.knowledge_point_id, p1.user_id "
+            "ORDER BY last_time DESC", (pid, g.user_id)).fetchall()
         favorites = {r[0] for r in conn.execute(
             "SELECT question_content FROM favorite_questions WHERE knowledge_point_id = ? AND user_id = ?",
             (pid, g.user_id)).fetchall()}
@@ -803,7 +959,14 @@ def mindmap_save():
 @bridge_bp.route("/api/knowledge/points/<int:pid>/assessment", methods=["POST"])
 @require_auth
 def mastery_assessment(pid):
-    """submitMasteryAssessment：难度加权评分 → UPDATE mastery_score → 失效脑图缓存。"""
+    """submitMasteryAssessment：整批折叠为一次 FSRS 复习 → 失效脑图缓存。
+
+    集成线回归（2026-10-01）：不再难度加权直写 mastery_score；每题按 is_correct +
+    可选 answer_quality 映射 rating(1-4)，同一知识点一次测评折叠为一次 apply_review
+    （批内取最保守 rating，有答错必 Again），避免同日逐题短期路径互相抵消；
+    实测正确率封顶 mastery（0929 A 方案：到期前 R≈100 时 0/8 仍显示精通与感知不符）。
+    留痕（0929 A 方案补履）：逐题写入练习记录，答错自动入错题池，选项随流水留存。
+    """
     body = request.get_json(silent=True) or {}
     questions = body.get("questions") or []
     answers = body.get("answers") or []
@@ -818,21 +981,19 @@ def mastery_assessment(pid):
         if not row:
             return _ok({"success": False, "error": "未找到该知识点"})
         subject = row[0]
-        weights = {"容易": 1.0, "中等": 1.2, "困难": 1.5}
-        total_w = 0.0
-        earned_w = 0.0
         correct_count = 0
         detailed = []
+        ratings = []
+        now = F.utcnow()  # 同一批题共用时钟，保证状态机链式推演一致
         for i, (q, a) in enumerate(zip(questions, answers)):
             difficulty = q.get("difficulty") or "中等"
-            w = weights.get(difficulty, 1.2)
-            total_w += w
             user_ans = (a or "").strip()
             correct_ans = (q.get("correct_answer") or "").strip()
             is_correct = bool(user_ans) and user_ans.upper() == correct_ans.upper()
             if is_correct:
-                earned_w += w
                 correct_count += 1
+            rating = F.rating_from_practice(is_correct, q.get("answer_quality"))
+            ratings.append(rating)
             detailed.append({
                 "question_index": i,
                 "question": q.get("question", ""),
@@ -841,13 +1002,26 @@ def mastery_assessment(pid):
                 "is_correct": is_correct,
                 "difficulty": difficulty,
                 "explanation": q.get("explanation", ""),
+                "rating": rating,
             })
+            # 9-29 A 方案补履：评估通道同样全量留痕（答对进流水，答错自动入错题池）；选项随流水留存供翻卡复习
+            try:
+                kms.practice_manager.save_practice_record(
+                    subject, pid, q.get("question", ""), user_ans, is_correct,
+                    g.user_id, correct_ans, q.get("explanation", ""),
+                    question_type="single", options=q.get("options") if isinstance(q.get("options"), list) else None)
+            except Exception as e:  # noqa: BLE001
+                log.log_error("bridge", "assessment_persist", f"pid={pid} i={i} err={e}")
+        # 整批折叠为一次复习（取批内最保守 rating）：有答错→Again，全对按最低质量档
         accuracy = (correct_count / len(questions)) if questions else 0.0
-        mastery_score = int(round((earned_w / total_w) * 100)) if total_w else 0
-        conn.execute(
-            "UPDATE knowledge_points SET mastery_score = ?, updated_time = CURRENT_TIMESTAMP "
-            "WHERE id = ? AND user_id = ?", (mastery_score, pid, g.user_id))
+        if ratings:
+            F.apply_review("kp", pid, g.user_id, min(ratings), now=now, conn=conn,
+                           mastery_cap=round(100 * accuracy))
         conn.commit()
+        r2 = conn.execute(
+            "SELECT mastery_score FROM knowledge_points WHERE id = ? AND user_id = ?",
+            (pid, g.user_id)).fetchone()
+        mastery_score = F.mastery_view(r2[0] if r2 else None)
     finally:
         conn.close()
     # 掌握度已变化：失效该学科脑图缓存（下次访问按新分数重建）
@@ -1499,17 +1673,23 @@ def practice_new():
         except Exception:  # noqa: BLE001
             questions = _gen_fallback(recent_content)
         if questions:
+            # u7 修复：前端 base.html generateNewPractice 契约要求内层 {success:true, data:{...}}
+            # （与 getPracticeHistory 等 Qt 桥方法一致）；旧形状无 success 字段导致成功时也弹
+            # “生成新练习失败: 未知错误”并停留空白练习面板（白页）。
             return _ok({
-                "id": f"TECH-{int(time.time())}",
-                "question": questions,
-                "questions": questions,  # 兼容两种字段名
-                "related_content": "基于最近学习的机器学习基础概念生成",
-                "selectedText": recent_content,
+                "success": True,
+                "data": {
+                    "id": f"TECH-{int(time.time())}",
+                    "question": questions,
+                    "questions": questions,  # 兼容两种字段名
+                    "related_content": "基于最近学习的机器学习基础概念生成",
+                    "selectedText": recent_content,
+                },
                 **cr.billing_for_response(),
             })
         return _ok({"success": False, "error": "生成练习题目失败"})
     except Exception as e:  # noqa: BLE001
-        return _ok({"success": False, "error": str(e)})
+        return _ok({"success": False, "error": str(e) or f"未知异常: {type(e).__name__}"})
 
 
 def _gen_fallback(selected_text: str) -> str:
@@ -1723,3 +1903,331 @@ def knowledge_generate_assessment(pid):
     except Exception as e:  # noqa: BLE001
         log.log_error("bridge", "generate_assessment_failed", str(e))
         return _ok({"success": False, "error": str(e)})
+
+
+# ---------------------------------------------------------------- 七、知识点结构化练习（多题型答题模板）
+# 业务规则（2026-10-02 用户裁定）：
+# - 「基于笔记练习」「举一反三」生成 8 道混合题型题（单选3/判断2/填空2/简答1），
+#   页内逐题作答；客观题服务端自动判分，简答题走 LLM 批量判分。
+# - 三通道（含熟练度评估）提交后全部落 practice_records，答错经 save_practice_record
+#   自动写 error_questions 错题池（2026-09-29 A 方案全量留痕口径）。
+# - 掌握度 = 难度加权正确率（与评估同一公式），天然满足实测正确率封顶。
+
+_PRAC_TYPES = {"single", "judge", "fill", "short"}
+_JUDGE_TRUE = {"正确", "对", "√", "true", "t", "yes"}
+_JUDGE_FALSE = {"错误", "错", "×", "x", "false", "f", "no"}
+
+
+def _fill_norm(s):
+    """填空题答案归一：去空白、小写、全角括号/冒号转半角，便于宽松匹配。"""
+    t = "".join(str(s or "").split()).lower()
+    return t.translate(str.maketrans("（）：；，－", "():;,-"))
+
+
+def _judge_norm(s):
+    v = "".join(str(s or "").split()).lower()
+    if v in _JUDGE_TRUE:
+        return "正确"
+    if v in _JUDGE_FALSE:
+        return "错误"
+    return None
+
+
+def _parse_llm_json_array(response: str):
+    """剥 ```json 围栏并解析为数组（与 generate-assessment 同一口径）。"""
+    r = (response or "").strip()
+    if r.startswith("```json"):
+        r = r[7:]
+    elif r.startswith("```"):
+        r = r[3:]
+    if r.endswith("```"):
+        r = r[:-3]
+    return json.loads(r.strip())
+
+
+def _validate_practice_questions(questions):
+    """严格校验 8 题×题型结构，归一 correct_answer；非法抛 ValueError。"""
+    if not isinstance(questions, list) or len(questions) != 8:
+        raise ValueError("题目数量不正确（应为 8 题）")
+    for i, q in enumerate(questions):
+        if not isinstance(q, dict):
+            raise ValueError(f"题目{i + 1}格式不完整")
+        for key in ("type", "question", "correct_answer", "difficulty", "explanation"):
+            if key not in q or not str(q.get(key) or "").strip():
+                raise ValueError(f"题目{i + 1}缺少字段 {key}")
+        t = q["type"]
+        if t not in _PRAC_TYPES:
+            raise ValueError(f"题目{i + 1}题型非法: {t}")
+        ans = str(q["correct_answer"]).strip()
+        if t == "single":
+            opts = q.get("options")
+            if not isinstance(opts, list) or len(opts) != 4:
+                raise ValueError(f"题目{i + 1}选项数量不正确（应为 4 个）")
+            if ans[:1].upper() not in "ABCD" or not ans[:1].strip():
+                raise ValueError(f"题目{i + 1}正确答案应为 A/B/C/D")
+            q["correct_answer"] = ans[:1].upper()
+        elif t == "judge":
+            nv = _judge_norm(ans)
+            if nv is None:
+                raise ValueError(f"题目{i + 1}判断题答案非法（应为 正确/错误）")
+            q["correct_answer"] = nv
+        elif t == "fill":
+            if "____" not in str(q["question"]):
+                raise ValueError(f"题目{i + 1}填空题干应包含空格 ______")
+            if not ans.strip("| ｜").strip():
+                raise ValueError(f"题目{i + 1}填空答案为空")
+        # short：correct_answer 即参考答案要点，仅要求非空（开头已校验）
+    return questions
+
+
+def _collect_point_notes_text(kms, pid):
+    """组装知识点关联笔记正文（最多 5 篇，每篇截 3000 字）；无笔记返回 None。"""
+    conn = kms.db_manager.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT n.title, n.file_name, n.file_path "
+            "FROM knowledge_point_sources kps JOIN notes n ON n.note_uuid = kps.note_uuid "
+            "WHERE kps.knowledge_point_id = ? AND n.user_id = ? "
+            "ORDER BY kps.extraction_time DESC LIMIT 5", (pid, g.user_id)).fetchall()
+    finally:
+        conn.close()
+    blocks = []
+    for title, file_name, file_path in rows:
+        try:
+            p = Path(file_path)
+            body = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else ""
+        except Exception:  # noqa: BLE001
+            body = ""
+        body = body.strip()
+        if not body:
+            continue
+        blocks.append(f"【笔记标题】: {title or file_name}\n【笔记内容】:\n{body[:3000]}")
+    return "\n\n---\n\n".join(blocks) if blocks else None
+
+
+def _collect_point_errors_text(kms, pid):
+    """组装知识点错题记录（做过的题中正确率<100% 者）；无错题返回 None。"""
+    conn = kms.db_manager.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT question_content, COUNT(*) AS practice_count, "
+            "SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct_count "
+            "FROM practice_records WHERE knowledge_point_id = ? AND user_id = ? "
+            "GROUP BY question_content ORDER BY MAX(practice_time) DESC LIMIT 20",
+            (pid, g.user_id)).fetchall()
+    finally:
+        conn.close()
+    errs = [(q, pc, cc or 0) for q, pc, cc in rows if pc and (pc - cc) > 0]
+    if not errs:
+        return None
+    return "\n\n".join(
+        f"【错题{i + 1}】\n题目内容: {q}\n练习 {pc} 次，正确 {cc} 次"
+        for i, (q, pc, cc) in enumerate(errs))
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/generate-practice", methods=["POST"])
+@require_auth
+def point_generate_practice(pid):
+    """generatePointPractice：结构化多题型出题（source=notes|analogy），严格 JSON 校验。"""
+    body = request.get_json(silent=True) or {}
+    source = (body.get("source") or "notes").strip()
+    if source not in ("notes", "analogy"):
+        return _ok({"success": False, "error": "source 必须为 notes 或 analogy"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT point_name, core_description, subject_name FROM knowledge_points "
+            "WHERE id = ? AND user_id = ?", (pid, g.user_id)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return _ok({"success": False, "error": "未找到该知识点"})
+    point_name, core_desc, subject_name = row[0], row[1], row[2]
+
+    if source == "notes":
+        ref_text = _collect_point_notes_text(kms, pid)
+        if not ref_text:
+            return _ok({"success": False, "no_notes": True,
+                        "error": "该知识点暂无关联笔记，无法生成练习"})
+        material = ("**关联笔记内容（出题必须严格基于以下原文，不超出范畴）：**\n" + ref_text)
+        extra = "题目考点须覆盖笔记中的关键概念与结论。"
+    else:
+        ref_text = _collect_point_errors_text(kms, pid)
+        if not ref_text:
+            return _ok({"success": False, "no_errors": True,
+                        "error": "该知识点暂无错题记录，无需举一反三"})
+        material = ("**该知识点的错题记录（保持与错题相同的考查点与难度，出类似但不相同的题）：**\n" + ref_text)
+        extra = "优先针对错题暴露的薄弱考点设计题目。"
+
+    prompt = f"""请为知识点「{point_name}」（学科：{subject_name}；描述：{core_desc}）生成一套 8 道练习题。
+
+{material}
+
+**题型构成（共 8 题，按此顺序排列）：**
+1. 选择题 3 道：type="single"，必须有 options 数组（4 个选项），correct_answer 为 A/B/C/D
+2. 判断题 2 道：type="judge"，correct_answer 只能是 "正确" 或 "错误"
+3. 填空题 2 道：type="fill"，题干必须包含一个空格 "______"，correct_answer 为答案文本（若可接受多种写法用 | 分隔，如 "A|B"）
+4. 简答题 1 道：type="short"，correct_answer 为参考答案要点（3-5 个要点）
+
+**每题 JSON 字段：** type, question, options（仅选择题）, correct_answer, difficulty（容易/中等/困难）, explanation（答案解析）
+{extra}
+
+只返回 JSON 数组，不要任何其他文字：
+[
+  {{"type": "single", "question": "...", "options": ["...", "...", "...", "..."], "correct_answer": "A", "difficulty": "容易", "explanation": "..."}}
+]"""
+
+    try:
+        response = _llm_call(prompt, "知识点结构化练习出题")
+    except cr.InsufficientCreditsError as e:
+        return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+    except Exception as e:  # noqa: BLE001
+        return _ok({"success": False, "error": f"LLM调用失败: {e}"})
+    if not response:
+        return _ok({"success": False, "error": "LLM调用失败"})
+    try:
+        questions = _validate_practice_questions(_parse_llm_json_array(response))
+        return _ok({"success": True, "questions": questions, **cr.billing_for_response()})
+    except json.JSONDecodeError:
+        log.log_error("bridge", "generate_practice_badjson", f"source={source} pid={pid}")
+        return _ok({"success": False, "error": "题目格式解析失败，请重试"})
+    except ValueError as e:
+        return _ok({"success": False, "error": f"题目格式校验失败: {e}"})
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/practice-submit", methods=["POST"])
+@require_auth
+def point_practice_submit(pid):
+    """submitPointPractice：多题型判分（客观题本地、简答题 LLM）→ 全量落库 → 整批折叠一次 FSRS 复习更新掌握度。"""
+    body = request.get_json(silent=True) or {}
+    questions = body.get("questions") or []
+    answers = body.get("answers") or []
+    if not isinstance(questions, list) or not questions or len(questions) != len(answers):
+        return _ok({"success": False, "error": "题目和答案数量不匹配"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT subject_name FROM knowledge_points WHERE id = ? AND user_id = ?",
+            (pid, g.user_id)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return _ok({"success": False, "error": "未找到该知识点"})
+    subject = row[0]
+
+    # ---- 1) 客观题本地判分；简答题收集待 LLM 判 ----
+    results = []  # 与 questions 对齐：{is_correct, comment}
+    short_items = []
+    for i, (q, a) in enumerate(zip(questions, answers)):
+        t = (q.get("type") or "single") if isinstance(q, dict) else "single"
+        user_ans = str(a if a is not None else "").strip()
+        correct_raw = str((q.get("correct_answer") if isinstance(q, dict) else "") or "").strip()
+        if t == "single":
+            ok = bool(user_ans) and user_ans[:1].upper() == correct_raw[:1].upper()
+            results.append({"is_correct": ok, "comment": ""})
+        elif t == "judge":
+            ok = _judge_norm(user_ans) is not None and _judge_norm(user_ans) == _judge_norm(correct_raw)
+            results.append({"is_correct": ok, "comment": ""})
+        elif t == "fill":
+            un = _fill_norm(user_ans)
+            ok = bool(un) and any(un == _fill_norm(v) for v in correct_raw.replace("｜", "|").split("|") if v.strip())
+            results.append({"is_correct": ok, "comment": ""})
+        else:
+            short_items.append((i, q, user_ans))
+            results.append({"is_correct": False, "comment": ""})  # 占位，稍后由 LLM 判分覆盖
+
+    # ---- 2) 简答题 LLM 批量判分（失败则整体报错，不落库，避免半套留痕） ----
+    if short_items:
+        lines = "\n\n".join(
+            f"[题序{j}]\n题目: {str(q.get('question') or '')[:500]}\n参考答案: {str(q.get('correct_answer') or '')[:500]}\n学生答案: {(ua or '（未作答）')[:500]}"
+            for j, (idx, q, ua) in enumerate([(si[0], si[1], si[2]) for si in short_items]))
+        grade_prompt = f"""你是判题助手。请逐题判断简答题学生答案是否答对（与参考答案要点一致即可，措辞可不同；漏掉多数要点或答非所问判错）。
+
+{lines}
+
+只返回 JSON 数组（每项含 index=题序、is_correct=布尔、comment=一句中文点评），不要其他文字：
+[{{"index": 0, "is_correct": true, "comment": "..."}}]"""
+        try:
+            resp = _llm_call(grade_prompt, "简答题LLM判分")
+            graded = _parse_llm_json_array(resp)
+            graded_list = [g for g in graded if isinstance(g, dict)] if isinstance(graded, list) else []
+            # m-1: LLM 返回的 index 可能错位（1 基/越界/缺失），按 index 排序后按位置对齐回写，避免静默判错
+            try:
+                graded_list.sort(key=lambda g: int(g.get("index", 0)))
+            except (TypeError, ValueError):
+                pass
+            if len(graded_list) < len(short_items):
+                raise ValueError("判分结果不完整")
+            for (idx, _q, _ua), g_item in zip(short_items, graded_list):
+                results[idx] = {"is_correct": bool(g_item.get("is_correct")),
+                                "comment": str(g_item.get("comment") or "")}
+        except cr.InsufficientCreditsError as e:
+            return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+        except Exception as e:  # noqa: BLE001
+            log.log_error("bridge", "practice_short_grade", f"pid={pid} err={e}")
+            return _ok({"success": False, "error": f"简答题判分失败，请重试: {e}"})
+
+    # ---- 3) 全量落库：practice_records 流水 + 答错自动入 error_questions 错题池；逐题收集 rating ----
+    correct_count = 0
+    detailed = []
+    ratings = []
+    now = F.utcnow()  # 同一批题共用时钟（整批折叠为一次复习）
+    for i, (q, a) in enumerate(zip(questions, answers)):
+        difficulty = (q.get("difficulty") if isinstance(q, dict) else "") or "中等"
+        ok = results[i]["is_correct"]
+        if ok:
+            correct_count += 1
+        ratings.append(F.rating_from_practice(ok))
+        user_ans = str(a if a is not None else "").strip()
+        q_text = str((q.get("question") if isinstance(q, dict) else "") or "")
+        c_ans = str((q.get("correct_answer") if isinstance(q, dict) else "") or "")
+        expl = str((q.get("explanation") if isinstance(q, dict) else "") or "")
+        try:
+            kms.practice_manager.save_practice_record(
+                subject, pid, q_text, user_ans, ok, g.user_id, c_ans, expl,
+                question_type=(q.get("type") if isinstance(q, dict) else "") or "",
+                options=(q.get("options") if isinstance(q, dict) and isinstance(q.get("options"), list) else None))
+        except Exception as e:  # noqa: BLE001
+            log.log_error("bridge", "practice_persist", f"pid={pid} i={i} err={e}")
+        detailed.append({
+            "question_index": i, "question": q_text, "type": (q.get("type") if isinstance(q, dict) else "single"),
+            "user_answer": user_ans, "correct_answer": c_ans, "is_correct": ok,
+            "difficulty": difficulty, "explanation": expl, "comment": results[i]["comment"],
+            "rating": ratings[i],
+        })
+
+    # ---- 4) 整批折叠为一次 FSRS 复习（与评估同口径）：取批内最保守 rating，实测正确率封顶 ----
+    accuracy = (correct_count / len(questions)) if questions else 0.0
+    mastery_updated = True
+    mastery_score = -1
+    conn = kms.db_manager.get_connection()
+    try:
+        if ratings:
+            F.apply_review("kp", pid, g.user_id, min(ratings), now=now, conn=conn,
+                           mastery_cap=round(100 * accuracy))
+        conn.commit()
+        r2 = conn.execute(
+            "SELECT mastery_score FROM knowledge_points WHERE id = ? AND user_id = ?",
+            (pid, g.user_id)).fetchone()
+        mastery_score = F.mastery_view(r2[0] if r2 else None)
+    except Exception as e:  # noqa: BLE001
+        # m-4: 留痕已逐题提交，掌握度写回失败不冒泡 500（否则用户重试会双留痕），标记降级供前端辨识
+        mastery_updated = False
+        log.log_error("bridge", "practice_mastery_update", f"pid={pid} err={e}")
+    finally:
+        conn.close()
+    try:
+        kms.clear_mindmap_cache(subject, user_id=g.user_id)
+    except Exception:  # noqa: BLE001
+        pass
+    log.log("api", "practice_submit", "success",
+            {"pid": pid, "source_types": [q.get("type") for q in questions if isinstance(q, dict)],
+             "correct": correct_count, "total": len(questions), "mastery": mastery_score})
+    return _ok({
+        "success": True, "mastery_score": mastery_score, "mastery_updated": mastery_updated,
+        "correct_count": correct_count, "total_count": len(questions),
+        "accuracy": accuracy, "detailed_results": detailed,
+        **cr.billing_for_response(),
+    })

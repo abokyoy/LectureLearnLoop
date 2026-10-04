@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+
+<html class="h-full bg-background" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>柯基的学习乐园 - 工作台</title>
+<!-- Google Fonts: Plus Jakarta Sans & Inter -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols Outlined -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "surface-tint": "#4d44e3",
+            "primary-container": "#4f46e5",
+            "on-secondary-fixed-variant": "#3f465c",
+            "on-secondary-fixed": "#131b2e",
+            "secondary-fixed": "#dae2fd",
+            "on-primary": "#ffffff",
+            "on-error": "#ffffff",
+            "on-surface-variant": "#464555",
+            "error-container": "#ffdad6",
+            "surface-container-high": "#dce9ff",
+            "outline": "#777587",
+            "on-surface": "#0b1c30",
+            "on-tertiary": "#ffffff",
+            "on-secondary-container": "#5c647a",
+            "tertiary-fixed-dim": "#4edea3",
+            "tertiary-container": "#006e4b",
+            "primary": "#3525cd",
+            "secondary-container": "#dae2fd",
+            "inverse-surface": "#213145",
+            "surface-container-highest": "#d3e4fe",
+            "on-secondary": "#ffffff",
+            "surface-container": "#e5eeff",
+            "on-primary-fixed-variant": "#3323cc",
+            "surface-container-lowest": "#ffffff",
+            "on-primary-fixed": "#0f0069",
+            "surface-bright": "#f8f9ff",
+            "surface-variant": "#d3e4fe",
+            "error": "#ba1a1a",
+            "surface": "#f8f9ff",
+            "primary-fixed": "#e2dfff",
+            "secondary": "#565e74",
+            "surface-dim": "#cbdbf5",
+            "tertiary": "#005338",
+            "on-error-container": "#93000a",
+            "on-background": "#0b1c30",
+            "outline-variant": "#c7c4d8",
+            "on-tertiary-fixed-variant": "#005236",
+            "surface-container-low": "#eff4ff",
+            "on-primary-container": "#dad7ff",
+            "on-tertiary-container": "#67f4b7",
+            "primary-fixed-dim": "#c3c0ff",
+            "inverse-primary": "#c3c0ff",
+            "background": "#f8f9ff",
+            "on-tertiary-fixed": "#002113",
+            "tertiary-fixed": "#6ffbbe",
+            "secondary-fixed-dim": "#bec6e0",
+            "inverse-on-surface": "#eaf1ff"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "margin-mobile": "1rem",
+            "gutter-mobile": "1rem",
+            "space-sm": "0.5rem",
+            "margin": "2rem",
+            "space-md": "1rem",
+            "gutter": "1.5rem",
+            "space-xs": "0.25rem",
+            "space-lg": "1.5rem",
+            "space-xl": "2.5rem"
+          },
+          "fontFamily": {
+            "headline-lg": ["Plus Jakarta Sans"],
+            "headline-lg-mobile": ["Plus Jakarta Sans"],
+            "label-sm": ["Inter"],
+            "headline-md": ["Plus Jakarta Sans"],
+            "body-lg": ["Inter"],
+            "display-lg": ["Plus Jakarta Sans"],
+            "body-sm": ["Inter"],
+            "label-lg": ["Inter"],
+            "body-md": ["Inter"],
+            "display-lg-mobile": ["Plus Jakarta Sans"],
+            "headline-sm": ["Plus Jakarta Sans"],
+            "label-md": ["Inter"]
+          },
+          "fontSize": {
+            "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-lg-mobile": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+            "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+            "headline-md": ["22px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+            "body-lg": ["16px", { "lineHeight": "26px", "letterSpacing": "0em", "fontWeight": "400" }],
+            "display-lg": ["40px", { "lineHeight": "48px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "body-sm": ["12px", { "lineHeight": "18px", "letterSpacing": "0.005em", "fontWeight": "400" }],
+            "label-lg": ["14px", { "lineHeight": "20px", "letterSpacing": "0.01em", "fontWeight": "500" }],
+            "body-md": ["14px", { "lineHeight": "22px", "letterSpacing": "0em", "fontWeight": "400" }],
+            "display-lg-mobile": ["30px", { "lineHeight": "38px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+            "headline-sm": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.005em", "fontWeight": "600" }],
+            "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.015em", "fontWeight": "500" }]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-full bg-background text-on-surface antialiased overflow-x-hidden selection:bg-primary/10 selection:text-primary">
+<!-- ==================== 左侧窄导航栏 (SideNavBar - Shared Component) ==================== -->
+<aside aria-label="侧边全局导航" class="fixed top-0 left-0 h-screen w-20 flex flex-col justify-between py-6 items-center z-40 bg-surface-container-lowest border-r border-outline-variant/30 shadow-sm">
+<!-- Brand / Logo -->
+<div class="flex flex-col items-center gap-1.5">
+<div class="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center text-on-primary shadow-sm shadow-primary/20">
+<!-- 柯基几何微标 -->
+<span class="material-symbols-outlined text-[24px]">school</span>
+</div>
+<span class="font-label-md text-label-md font-semibold text-primary tracking-tight">柯基学习</span>
+</div>
+<!-- Main Navigation Icons -->
+<nav class="flex flex-col items-center gap-3">
+<!-- 1. 工作台 (Active) -->
+<a class="flex flex-col items-center justify-center w-12 h-12 rounded-xl bg-primary text-on-primary shadow-sm transition-all duration-200" href="#" title="工作台">
+<span class="material-symbols-outlined text-[20px]" data-icon="dashboard">dashboard</span>
+<span class="font-label-sm text-label-sm mt-0.5 font-medium">工作台</span>
+</a>
+<!-- 2. 学 (Inactive + Status Dot) -->
+<a class="relative flex flex-col items-center justify-center w-12 h-12 rounded-xl text-secondary hover:text-on-surface hover:bg-surface-container transition-all duration-200 group" href="#" title="学">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-105 transition-transform" data-icon="school">school</span>
+<span class="font-label-sm text-label-sm mt-0.5">学</span>
+<span class="absolute top-2 right-2 w-1.5 h-1.5 bg-primary-container rounded-full ring-2 ring-surface-container-lowest"></span>
+</a>
+<!-- 3. 练 (Inactive + Badge 12) -->
+<a class="relative flex flex-col items-center justify-center w-12 h-12 rounded-xl text-secondary hover:text-on-surface hover:bg-surface-container transition-all duration-200 group" href="#" title="练">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-105 transition-transform" data-icon="edit_note">edit_note</span>
+<span class="font-label-sm text-label-sm mt-0.5">练</span>
+<span class="absolute -top-0.5 -right-0.5 bg-primary-container text-on-primary font-label-sm text-[10px] leading-tight px-1.5 py-0.5 rounded-full font-bold shadow-sm">12</span>
+</a>
+<!-- 4. 记 (Inactive + Badge 18) -->
+<a class="relative flex flex-col items-center justify-center w-12 h-12 rounded-xl text-secondary hover:text-on-surface hover:bg-surface-container transition-all duration-200 group" href="#" title="记">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-105 transition-transform" data-icon="style">style</span>
+<span class="font-label-sm text-label-sm mt-0.5">记</span>
+<span class="absolute -top-0.5 -right-0.5 bg-secondary text-on-primary font-label-sm text-[10px] leading-tight px-1.5 py-0.5 rounded-full font-bold shadow-sm">18</span>
+</a>
+<!-- 5. 知识库 (Inactive) -->
+<a class="flex flex-col items-center justify-center w-12 h-12 rounded-xl text-secondary hover:text-on-surface hover:bg-surface-container transition-all duration-200 group" href="#" title="知识库">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-105 transition-transform" data-icon="menu_book">menu_book</span>
+<span class="font-label-sm text-label-sm mt-0.5">知识库</span>
+</a>
+<!-- 6. 设置 (Inactive) -->
+<a class="flex flex-col items-center justify-center w-12 h-12 rounded-xl text-secondary hover:text-on-surface hover:bg-surface-container transition-all duration-200 group" href="#" title="设置">
+<span class="material-symbols-outlined text-[20px] group-hover:scale-105 transition-transform" data-icon="settings">settings</span>
+<span class="font-label-sm text-label-sm mt-0.5">设置</span>
+</a>
+</nav>
+<!-- Footer Profile Area -->
+<div class="flex flex-col items-center gap-2 pt-2 border-t border-outline-variant/30 w-12">
+<div class="relative group cursor-pointer">
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center text-primary font-semibold text-sm border border-outline-variant/40 shadow-sm">
+          柯
+        </div>
+<!-- 伴学柯基状态指示灯 -->
+<span class="absolute bottom-0 right-0 w-3 h-3 bg-tertiary-fixed-dim border-2 border-surface-container-lowest rounded-full" title="伴学柯基在线守护"></span>
+</div>
+<span class="font-label-sm text-label-sm text-secondary truncate max-w-full text-center">个人中心</span>
+</div>
+</aside>
+<!-- ==================== 顶部导航栏 (TopNavBar - Shared Component) ==================== -->
+<header class="fixed top-0 left-20 right-0 h-16 z-30 bg-surface-container-lowest/80 backdrop-blur-md border-b border-outline-variant/30 px-8 flex items-center justify-between shadow-sm">
+<!-- Left: Greetings & Subtitle -->
+<div class="flex items-center gap-3">
+<div class="flex items-baseline gap-2.5">
+<h1 class="font-headline-sm text-headline-sm font-bold text-on-surface tracking-tight">早安，小柯！✨</h1>
+<span class="text-outline-variant">|</span>
+<p class="font-body-md text-body-md text-secondary hidden lg:inline-flex items-center gap-1.5">
+<span>今日攻坚核心：</span>
+<span class="text-on-surface font-medium bg-surface-container px-2 py-0.5 rounded-md text-xs">高三物理动生电动势综合推导</span>
+</p>
+</div>
+</div>
+<!-- Center: Search Pill (Command+K) -->
+<div class="hidden md:flex items-center">
+<button class="flex items-center justify-between w-80 px-3.5 py-1.5 bg-surface-container-low hover:bg-surface-container border border-outline-variant/40 rounded-full text-secondary transition-all group shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-outline group-hover:text-primary transition-colors">search</span>
+<span class="font-body-sm text-body-sm text-secondary">快速检索考点、错题与闪卡...</span>
+</div>
+<kbd class="font-label-sm text-[10px] bg-surface-container-lowest px-1.5 py-0.5 rounded border border-outline-variant/40 text-on-surface-variant font-mono shadow-xs">⌘K</kbd>
+</button>
+</div>
+<!-- Right: Stats & Actions -->
+<div class="flex items-center gap-4">
+<!-- 连续打卡 14 天 -->
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-low border border-outline-variant/40 text-secondary" title="保持专注习惯">
+<span class="material-symbols-outlined text-[16px] text-amber-500 fill-1" style="font-variation-settings: 'FILL' 1;">local_fire_department</span>
+<span class="font-label-sm text-label-sm font-semibold text-on-surface">14 天连续</span>
+</div>
+<!-- 专注计时 45 min -->
+<div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-low border border-outline-variant/40 text-secondary" title="今日有效专注时长">
+<span class="material-symbols-outlined text-[16px] text-primary" data-icon="timer">timer</span>
+<span class="font-label-sm text-label-sm font-semibold text-on-surface">专注 45 min</span>
+</div>
+<!-- 通知铃铛 (trailing_icon_actions) -->
+<button class="relative p-2 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors" title="通知中心">
+<span class="material-symbols-outlined text-[20px]" data-icon="notifications">notifications</span>
+<span class="absolute top-1.5 right-1.5 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<!-- 帮助中心 (trailing_icon_actions) -->
+<button class="p-2 rounded-lg text-secondary hover:text-on-surface hover:bg-surface-container-low transition-colors" title="使用指引">
+<span class="material-symbols-outlined text-[20px]" data-icon="help_outline">help_outline</span>
+</button>
+<!-- AI 伴学助手在线 (trailing_primary_action) -->
+<div class="flex items-center gap-2 pl-2 border-l border-outline-variant/30">
+<button class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary-container text-on-primary shadow-sm hover:bg-primary transition-all duration-150 active:scale-98">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-on-tertiary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary-fixed-dim"></span>
+</span>
+<span class="font-label-md text-label-md font-semibold tracking-tight">AI 伴学助手在线</span>
+</button>
+</div>
+</div>
+</header>
+<!-- ==================== 主内容工作台 Canvas (1280px Container) ==================== -->
+<main class="ml-20 pt-20 pb-12 px-8 min-h-screen">
+<div class="max-w-[1200px] mx-auto space-y-6">
+<!-- 3. 【今日核心冲刺 Banner（焦点驱动）】 -->
+<section class="relative overflow-hidden rounded-2xl bg-surface-container-lowest border border-outline-variant/50 p-6 shadow-sm hover:shadow transition-shadow">
+<!-- 背景微光微装饰 -->
+<div class="absolute -right-16 -top-16 w-64 h-64 bg-primary/5 rounded-full blur-3xl pointer-events-none"></div>
+<div class="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+<div class="space-y-2.5 max-w-2xl">
+<!-- 标签与状态 -->
+<div class="flex items-center gap-2.5">
+<span class="px-2.5 py-0.5 rounded-full bg-primary-fixed text-primary font-label-sm text-label-sm font-semibold tracking-wide">
+                今日核心重点攻坚
+              </span>
+<span class="flex items-center gap-1 font-label-sm text-label-sm text-secondary">
+<span class="material-symbols-outlined text-[14px]">psychology</span>
+                自适应难度：8.5 / 10
+              </span>
+</div>
+<!-- 标题 -->
+<h2 class="font-headline-md text-headline-md font-bold text-on-surface tracking-tight">
+              高中物理《电磁感应与楞次定律》动态受力与能量突破
+            </h2>
+<!-- 说明文案 -->
+<p class="font-body-md text-body-md text-secondary leading-relaxed">
+              基于昨日自适应诊断与错题图谱重构，AI 伴学柯基已精选 3 道阻尼变式题，强化切割磁感线瞬时安培力与动能守恒综合推演。
+            </p>
+<!-- 进度与指标 -->
+<div class="pt-2 flex flex-wrap items-center gap-6">
+<!-- 考点突破度 -->
+<div class="flex items-center gap-3">
+<div class="w-28 bg-surface-container rounded-full h-2 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 68%;"></div>
+</div>
+<span class="font-label-md text-label-md font-semibold text-on-surface">突破度 68%</span>
+</div>
+<!-- 预估用时 -->
+<div class="flex items-center gap-1.5 text-secondary font-label-md text-label-md">
+<span class="material-symbols-outlined text-[16px] text-outline">schedule</span>
+<span>预估用时 <strong class="text-on-surface font-semibold">25 min</strong></span>
+</div>
+<!-- 今日靶向收益 -->
+<div class="flex items-center gap-1.5 text-secondary font-label-md text-label-md">
+<span class="material-symbols-outlined text-[16px] text-tertiary-fixed-dim">verified</span>
+<span>目标提分预测 <strong class="text-primary font-semibold">+4~6分</strong></span>
+</div>
+</div>
+</div>
+<!-- 主行动区域 -->
+<div class="flex flex-col sm:flex-row lg:flex-col gap-3 justify-center shrink-0">
+<button class="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-label-lg text-label-lg font-semibold shadow-md shadow-primary/25 hover:shadow-primary/35 transition-all duration-150 active:scale-98 group">
+<span>立即冲刺 · 开启攻关</span>
+<span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+<button class="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-surface-container-low hover:bg-surface-container text-secondary hover:text-on-surface font-label-md text-label-md transition-colors">
+<span class="material-symbols-outlined text-[16px]">menu_book</span>
+<span>查看前置知识导图</span>
+</button>
+</div>
+</div>
+</section>
+<!-- 4. 【主区域核心三张功能卡片——「学·练·记」闭环引擎】 -->
+<section aria-label="核心学习闭环引擎">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- 卡片 1（学·新知探索与精读） -->
+<div class="group relative flex flex-col justify-between rounded-2xl bg-surface-container-lowest border border-outline-variant/40 p-6 shadow-sm hover:shadow-md hover:border-outline-variant/80 transition-all duration-200">
+<div>
+<!-- 顶部图标与分类标签 -->
+<div class="flex items-center justify-between mb-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low text-primary flex items-center justify-center group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-[24px]">account_tree</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-medium">
+                  认知输入
+                </span>
+</div>
+<!-- 标题与描述 -->
+<h3 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+                新知探索与精读
+              </h3>
+<p class="font-body-md text-body-md text-secondary line-clamp-2 mb-6">
+                AI 知识图谱深度拆解，理清考点逻辑链条，扫除高三一轮复习中的深层理解盲区。
+              </p>
+<!-- 关键数字与指标 -->
+<div class="space-y-2 py-3 px-3.5 rounded-xl bg-surface-container-low border border-outline-variant/20 mb-6">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-secondary">考点掌握度</span>
+<span class="font-headline-sm text-headline-sm font-bold text-primary">85%</span>
+</div>
+<!-- 细进度条 -->
+<div class="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 85%;"></div>
+</div>
+<p class="font-label-sm text-[11px] text-secondary flex items-center gap-1 pt-1">
+<span class="material-symbols-outlined text-[13px] text-amber-500">pending</span>
+                  尚有 <span class="text-on-surface font-semibold">3 个核心难点</span> 待点亮
+                </p>
+</div>
+</div>
+<!-- 操作按钮 -->
+<button class="w-full py-2.5 px-4 rounded-xl border border-outline-variant/70 text-on-surface hover:bg-surface-container-low hover:border-outline font-label-md text-label-md font-semibold flex items-center justify-center gap-2 transition-all active:scale-98">
+<span>开启今日精读</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<!-- 卡片 2（练·靶向自适应刷题 - 核心攻防 焦点卡片） -->
+<div class="group relative flex flex-col justify-between rounded-2xl bg-surface-container-lowest border-2 border-primary-container p-6 shadow-sm hover:shadow-md transition-all duration-200 ring-4 ring-primary-container/5">
+<!-- 视觉焦点微标签 -->
+<div class="absolute -top-3 left-6 px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary font-label-sm text-[11px] font-bold tracking-wider shadow-sm">
+              FOCUS · 核心攻防
+            </div>
+<div>
+<!-- 顶部图标与分类标签 -->
+<div class="flex items-center justify-between mb-4 mt-1">
+<div class="w-12 h-12 rounded-xl bg-primary-fixed text-primary flex items-center justify-center group-hover:scale-105 transition-transform shadow-xs">
+<span class="material-symbols-outlined text-[24px]">fitness_center</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full bg-primary-fixed text-primary font-label-sm text-label-sm font-bold">
+                  核心突破
+                </span>
+</div>
+<!-- 标题与描述 -->
+<h3 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+                靶向专项刷题
+              </h3>
+<p class="font-body-md text-body-md text-secondary line-clamp-2 mb-6">
+                基于近期薄弱考点动态组卷，攻防自适应演练，实时诊断思维断层并阻断错因惯性。
+              </p>
+<!-- 关键数字与指标 -->
+<div class="space-y-2 py-3 px-3.5 rounded-xl bg-surface-container-low border border-primary/20 mb-6">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-secondary">今日精选演练</span>
+<div class="flex items-baseline gap-1">
+<span class="font-headline-sm text-headline-sm font-extrabold text-primary">12</span>
+<span class="font-label-sm text-label-sm text-secondary">题</span>
+</div>
+</div>
+<!-- 细进度条 -->
+<div class="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+<div class="bg-primary-container h-full rounded-full" style="width: 40%;"></div>
+</div>
+<p class="font-label-sm text-[11px] text-secondary flex items-center justify-between pt-1">
+<span>已完成 5/12 题</span>
+<span class="text-tertiary-container font-semibold">预测正确率 78%</span>
+</p>
+</div>
+</div>
+<!-- 主视觉操作按钮 -->
+<button class="w-full py-2.5 px-4 rounded-xl bg-primary-container hover:bg-primary text-on-primary font-label-md text-label-md font-semibold flex items-center justify-center gap-2 shadow-sm transition-all duration-150 active:scale-98">
+<span>开始自适应练习</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+<!-- 卡片 3（记·闪卡智能记忆仓） -->
+<div class="group relative flex flex-col justify-between rounded-2xl bg-surface-container-lowest border border-outline-variant/40 p-6 shadow-sm hover:shadow-md hover:border-outline-variant/80 transition-all duration-200">
+<div>
+<!-- 顶部图标与分类标签 -->
+<div class="flex items-center justify-between mb-4">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low text-primary flex items-center justify-center group-hover:scale-105 transition-transform">
+<span class="material-symbols-outlined text-[24px]">style</span>
+</div>
+<span class="px-2.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm font-medium">
+                  艾宾浩斯抗遗忘
+                </span>
+</div>
+<!-- 标题与描述 -->
+<h3 class="font-headline-sm text-headline-sm font-bold text-on-surface mb-2 tracking-tight group-hover:text-primary transition-colors">
+                闪卡记忆胶囊
+              </h3>
+<p class="font-body-md text-body-md text-secondary line-clamp-2 mb-6">
+                基于艾宾浩斯黄金记忆曲线与间隔复现算法，在脑神经临界遗忘点精准唤醒长效记忆。
+              </p>
+<!-- 关键数字与指标 -->
+<div class="space-y-2 py-3 px-3.5 rounded-xl bg-surface-container-low border border-outline-variant/20 mb-6">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-secondary">今日待复习</span>
+<div class="flex items-baseline gap-1">
+<span class="font-headline-sm text-headline-sm font-bold text-on-surface">18</span>
+<span class="font-label-sm text-label-sm text-secondary">张</span>
+</div>
+</div>
+<!-- 细进度条 -->
+<div class="w-full bg-surface-container rounded-full h-1.5 overflow-hidden">
+<div class="bg-secondary h-full rounded-full" style="width: 25%;"></div>
+</div>
+<p class="font-label-sm text-[11px] text-secondary flex items-center gap-1 pt-1">
+<span class="material-symbols-outlined text-[13px] text-outline">timer</span>
+                  预估耗时 <span class="text-on-surface font-semibold">6 分钟</span> · 即刻通关
+                </p>
+</div>
+</div>
+<!-- 操作按钮 -->
+<button class="w-full py-2.5 px-4 rounded-xl border border-outline-variant/70 text-on-surface hover:bg-surface-container-low hover:border-outline font-label-md text-label-md font-semibold flex items-center justify-center gap-2 transition-all active:scale-98">
+<span>进入快速过卡</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- 5. 【下方：「最近学习活动」列表区】 -->
+<section aria-label="近期学习记录" class="rounded-2xl bg-surface-container-lowest border border-outline-variant/40 p-6 shadow-sm">
+<!-- 列表头部 -->
+<div class="flex items-center justify-between pb-4 border-b border-outline-variant/20 mb-4">
+<div class="flex items-center gap-2.5">
+<span class="w-2.5 h-2.5 rounded-full bg-primary-container"></span>
+<h3 class="font-headline-sm text-headline-sm font-bold text-on-surface tracking-tight">最近学习活动</h3>
+<span class="font-label-sm text-label-sm text-secondary bg-surface-container px-2 py-0.5 rounded-full">实时同步中</span>
+</div>
+<a class="inline-flex items-center gap-1 font-label-md text-label-md text-primary hover:text-primary-container font-semibold transition-colors group" href="#">
+<span>查看全部学习历程</span>
+<span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+</a>
+</div>
+<!-- 3 条典型活动卡片 (排版克制精致) -->
+<div class="divide-y divide-outline-variant/20">
+<!-- 活动 1 -->
+<div class="py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-surface-container-low/50 px-3 rounded-xl transition-colors">
+<div class="flex items-center gap-3.5">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[20px]">insights</span>
+</div>
+<div class="space-y-1">
+<div class="flex items-center gap-2 flex-wrap">
+<h4 class="font-body-md text-body-md font-semibold text-on-surface">《函数单调性与极值》自适应闯关</h4>
+<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-tertiary-fixed text-on-tertiary-fixed">已掌握</span>
+</div>
+<div class="flex items-center gap-3 text-secondary font-label-sm text-label-sm">
+<span>耗时 15 分钟</span>
+<span>·</span>
+<span>得分 <strong class="text-on-surface font-semibold">90%</strong></span>
+<span>·</span>
+<span>今日 08:30 完成</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-3 self-end md:self-center">
+<button class="px-3 py-1.5 rounded-lg border border-outline-variant/50 hover:border-outline text-secondary hover:text-on-surface font-label-sm text-label-sm font-medium transition-colors">
+                错因解析
+              </button>
+</div>
+</div>
+<!-- 活动 2 -->
+<div class="py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-surface-container-low/50 px-3 rounded-xl transition-colors">
+<div class="flex items-center gap-3.5">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary shrink-0">
+<span class="material-symbols-outlined text-[20px]">translate</span>
+</div>
+<div class="space-y-1">
+<div class="flex items-center gap-2 flex-wrap">
+<h4 class="font-body-md text-body-md font-semibold text-on-surface">《高考核心英语词汇 List 14》艾宾浩斯复习</h4>
+<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-primary-fixed text-primary">第3节点达标</span>
+</div>
+<div class="flex items-center gap-3 text-secondary font-label-sm text-label-sm">
+<span>巩固 24 词</span>
+<span>·</span>
+<span>记忆保持率 <strong class="text-on-surface font-semibold">94%</strong></span>
+<span>·</span>
+<span>昨日 21:15 完成</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-3 self-end md:self-center">
+<button class="px-3 py-1.5 rounded-lg border border-outline-variant/50 hover:border-outline text-secondary hover:text-on-surface font-label-sm text-label-sm font-medium transition-colors">
+                回顾卡片
+              </button>
+</div>
+</div>
+<!-- 活动 3 -->
+<div class="py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-surface-container-low/50 px-3 rounded-xl transition-colors">
+<div class="flex items-center gap-3.5">
+<div class="w-10 h-10 rounded-xl bg-surface-container flex items-center justify-center text-secondary shrink-0">
+<span class="material-symbols-outlined text-[20px]">hub</span>
+</div>
+<div class="space-y-1">
+<div class="flex items-center gap-2 flex-wrap">
+<h4 class="font-body-md text-body-md font-semibold text-on-surface">《近代史纲要脉络全景图》思维导图构建</h4>
+<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-container text-on-surface-variant">深度评级：A级</span>
+</div>
+<div class="flex items-center gap-3 text-secondary font-label-sm text-label-sm">
+<span>已完成 5 个考点归档</span>
+<span>·</span>
+<span>关联 12 道历年真题</span>
+<span>·</span>
+<span>2天前 完成</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-3 self-end md:self-center">
+<button class="px-3 py-1.5 rounded-lg border border-outline-variant/50 hover:border-outline text-secondary hover:text-on-surface font-label-sm text-label-sm font-medium transition-colors">
+                查看导图
+              </button>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</body></html>

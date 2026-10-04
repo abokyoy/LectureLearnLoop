@@ -1,7 +1,6 @@
 <!-- 网课笔记页面 - 基于从资料学习的完整功能 + 录音转写功能 -->
 
-<!-- Material Icons 字体 - 直接引用 -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined">
+<!-- 批3：Material Icons 字体由壳层 base.html 本地化提供（去 CDN 依赖，Electron 离线可用） -->
 
 <!-- Markdown增强功能的CSS和JS库 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
@@ -93,17 +92,21 @@ window.jsTreeLoading = false;
         /* 垂直滚动控制 */
         display: flex !important;
         flex-direction: column !important;
-        height: 100vh !important;
+        height: calc(100vh - 56px) !important;
     }
     
     #file-structure.collapsed {
         width: 60px !important;
         min-width: 60px !important;
     }
+    /* 评审 Minor-5：收缩态隐藏导入状态条，避免撑破 60px 面板 */
+#file-structure.collapsed #import-status-bar {
+        display: none;
+    }
     
     #file-structure.collapsed .file-structure-text,
     #file-structure.collapsed #file-tree,
-    #file-structure.collapsed .space-x-2 button:not(#collapse-toggle-btn) {
+    #file-structure.collapsed .panel-actions button:not(#collapse-toggle-btn) {
         display: none;
     }
     
@@ -994,24 +997,8 @@ window.jsTreeLoading = false;
         border: none !important;
     }
     
-    /* 激活状态的按钮 */
-    #document-area .bg-gray-100 button.active {
-        background-color: #3b82f6 !important; /* 蓝色背景 */
-        color: white !important;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
-    }
-    
-    /* 非激活状态的按钮 */
-    #document-area .bg-gray-100 button:not(.active) {
-        background-color: transparent !important;
-        color: #6b7280 !important;
-    }
-    
-    /* 悬停效果 */
-    #document-area .bg-gray-100 button:not(.active):hover {
-        background-color: white !important;
-        color: #374151 !important;
-    }
+    /* 批3：预览/编辑分段按钮样式已改由 JS classList 直接切换（bg-cl-surface/text-cl-primary/shadow-cl vs text-cl-text-2），
+       删除旧 #document-area button 硬编码规则，避免 !important 覆盖 classList 方案 */
     
     /* 按钮图标样式 */
     #document-area .bg-gray-100 button .material-icons-outlined {
@@ -1095,7 +1082,7 @@ window.jsTreeLoading = false;
         overflow-x: hidden !important;
         /* 垂直滚动控制 */
         overflow-y: auto !important;
-        height: 100vh !important;
+        height: calc(100vh - 56px) !important;
         display: flex !important;
         flex-direction: column !important;
     }
@@ -1115,7 +1102,7 @@ window.jsTreeLoading = false;
         /* 垂直滚动控制 */
         display: flex !important;
         flex-direction: column !important;
-        height: 100vh !important;
+        height: calc(100vh - 56px) !important;
     }
     
     /* Markdown编辑器宽度和溢出控制 */
@@ -1546,23 +1533,26 @@ window.jsTreeLoading = false;
     }
 </style>
 
-<div class="flex h-screen bg-white">
+<div class="flex h-[calc(100vh-56px)] bg-cl-bg">
     <!-- 主内容区域 -->
-    <div class="flex-1 flex bg-bg-light-blue-gray" id="main-content">
+    <div class="flex-1 flex bg-cl-bg" id="main-content">
         
         <!-- 左侧文件结构面板 -->
-        <div class="bg-white border-r border-gray-200 p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
+        <div class="bg-cl-surface border-r border-cl-border p-4 flex flex-col transition-all duration-300 relative" id="file-structure">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-lg font-semibold text-text-dark-brown file-structure-text">文件结构</h2>
-                <div class="space-x-2">
-                    <button class="text-text-gray hover:text-primary" onclick="createNewFolderInRoot()" title="新建文件夹">
-                        <span class="material-icons-outlined">create_new_folder</span>
+                <h2 class="text-[17px] font-semibold text-cl-text file-structure-text">文件结构</h2>
+                <div class="flex items-center gap-1 panel-actions">
+                    <button class="p-1.5 rounded-clbtn text-cl-text-2 hover:text-cl-primary hover:bg-cl-primary-soft transition-colors" onclick="createNewFolderInRoot()" title="新建文件夹">
+                        <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-folder-plus"/></svg>
                     </button>
-                    <button class="text-text-gray hover:text-primary" onclick="createNewNoteInRoot()" title="新建笔记">
-                        <span class="material-icons-outlined">note_add</span>
+                    <button class="p-1.5 rounded-clbtn text-cl-text-2 hover:text-cl-primary hover:bg-cl-primary-soft transition-colors" onclick="createNewNoteInRoot()" title="新建笔记">
+                        <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-file-plus"/></svg>
                     </button>
-                    <button class="text-text-gray hover:text-primary" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
-                        <span class="material-icons-outlined">chevron_left</span>
+                    <button class="p-1.5 rounded-clbtn text-cl-text-2 hover:text-cl-primary hover:bg-cl-primary-soft transition-colors" onclick="importFiles()" title="导入（本地文件 / URL 网页）">
+                        <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-upload"/></svg>
+                    </button>
+                    <button class="p-1.5 rounded-clbtn text-cl-text-2 hover:text-cl-primary hover:bg-cl-primary-soft transition-colors" onclick="toggleFileStructurePanel()" title="收缩/展开面板" id="collapse-toggle-btn">
+                        <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-chevron-left"/></svg>
                     </button>
                 </div>
             </div>
@@ -1570,32 +1560,32 @@ window.jsTreeLoading = false;
             <!-- jsTree 文件树 - 直接显示，无外层容器 -->
             <div id="loading-indicator" class="flex items-center justify-center py-8">
                 <div class="animate-spin">
-                    <span class="material-icons-outlined text-primary">refresh</span>
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-refresh-cw"/></svg>
                 </div>
-                <span class="ml-2 text-text-medium-brown">加载文件结构中...</span>
+                <span class="ml-2 text-sm text-cl-text-2">加载文件结构中...</span>
             </div>
             <div id="file-tree" class="flex-1"></div>
         </div>
         
         <!-- 中间文档预览/编辑区域 -->
-        <div class="flex-1 bg-white border-r border-gray-200 flex flex-col" id="document-area">
+        <div class="flex-1 bg-cl-surface border-r border-cl-border flex flex-col" id="document-area">
             <!-- 顶部工具栏 -->
-            <div class="border-b border-gray-200 p-3 flex justify-between items-center">
+            <div class="border-b border-cl-border p-3 flex justify-between items-center">
                 <div class="flex items-center space-x-2">
-                    <h2 class="text-sm font-medium text-text-dark-brown" id="preview-title">文档预览区</h2>
-                    <span id="unsaved-indicator" class="text-orange-500 text-xs hidden">● 未保存</span>
+                    <h2 class="text-sm font-medium text-cl-text" id="preview-title">文档预览区</h2>
+                    <span id="unsaved-indicator" class="text-cl-primary text-xs hidden">● 未保存</span>
                 </div>
-                <div class="flex items-center bg-gray-100 rounded-lg p-1">
-                    <button id="save-btn" class="px-3 py-1 bg-green-500 text-white rounded text-xs mr-2 hidden" onclick="handleSaveButton()" title="保存文件">
-                        <span class="material-icons-outlined text-xs mr-1">save</span>
+                <div class="flex items-center bg-cl-bg rounded-clbtn p-1">
+                    <button id="save-btn" class="px-3 py-1 flex items-center gap-1 bg-cl-secondary text-white rounded-clbtn text-xs mr-2 hidden" onclick="handleSaveButton()" title="保存文件">
+                        <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-save"/></svg>
                         保存
                     </button>
-                    <button id="preview-btn" class="px-3 py-1.5 bg-primary text-white rounded text-xs transition-colors" onclick="switchToPreview()">
-                        <span class="material-icons-outlined text-xs mr-1">visibility</span>
+                    <button id="preview-btn" class="px-3 py-1.5 flex items-center gap-1 rounded-clbtn text-xs font-medium transition-colors hover:bg-cl-surface bg-cl-surface text-cl-primary shadow-cl" onclick="switchToPreview()">
+                        <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-eye"/></svg>
                         预览
                     </button>
-                    <button id="edit-btn" class="px-3 py-1.5 bg-transparent text-text-gray rounded text-xs transition-colors hover:bg-white" onclick="try { addDebugLog('🖱️ 编辑按钮被点击'); } catch(e) { console.log('调试失败:', e); } switchToEdit();">
-                        <span class="material-icons-outlined text-xs mr-1">edit</span>
+                    <button id="edit-btn" class="px-3 py-1.5 flex items-center gap-1 rounded-clbtn text-xs font-medium transition-colors text-cl-text-2 hover:bg-cl-surface" onclick="switchToEdit()">
+                        <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-pen-line"/></svg>
                         编辑
                     </button>
                 </div>
@@ -1604,12 +1594,12 @@ window.jsTreeLoading = false;
             <!-- 内容区域 -->
             <div class="flex-1 p-4 overflow-y-auto">
                 <div id="preview-content" class="prose max-w-none markdown-content">
-                    <div class="text-center py-16 text-text-medium-brown">
-                        <span class="material-icons-outlined text-6xl mb-4">description</span>
-                        <p>请选择一个Markdown文件进行预览</p>
+                    <div class="cl-empty">
+                        <svg class="w-10 h-10 text-cl-text-3/60 mb-3" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-file-text"/></svg>
+                        <p>请选择一个 Markdown 文件进行预览</p>
                     </div>
                 </div>
-                <textarea id="edit-content" class="w-full h-full border border-gray-300 rounded-lg p-4 font-mono text-sm resize-none hidden" placeholder="在此编辑Markdown内容..."></textarea>
+                <textarea id="edit-content" class="w-full h-full border border-cl-border rounded-cl p-4 font-mono text-sm resize-none hidden focus:ring-2 focus:ring-cl-primary/30 focus:border-cl-primary" placeholder="在此编辑 Markdown 内容..."></textarea>
             </div>
         </div>
         
@@ -1622,14 +1612,12 @@ window.jsTreeLoading = false;
             
             
             <!-- 面板切换标签 -->
-            <div class="flex mb-4 bg-gray-100 rounded-lg p-1">
-                <button id="knowledge-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-md bg-primary text-white transition-colors" onclick="switchToKnowledgePanel()">
-                    <span class="material-icons-outlined text-sm mr-1">psychology</span>
-                    知识点
+            <div class="flex mb-4 bg-cl-bg rounded-clbtn p-1">
+                <button id="knowledge-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-clbtn transition-colors hover:bg-cl-surface bg-cl-surface text-cl-primary shadow-cl" onclick="switchToKnowledgePanel()">
+                    <svg class="w-4 h-4 inline mr-1 -mt-0.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>知识点
                 </button>
-                <button id="voice-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-md text-gray-600 hover:text-gray-800 transition-colors" onclick="switchToVoicePanel()">
-                    <span class="material-icons-outlined text-sm mr-1">mic</span>
-                    实时语音
+                <button id="voice-panel-tab" class="flex-1 py-2 px-3 text-sm font-medium rounded-clbtn transition-colors text-cl-text-2 hover:bg-cl-surface" onclick="switchToVoicePanel()">
+                    <svg class="w-4 h-4 inline mr-1 -mt-0.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-mic"/></svg>实时语音
                 </button>
             </div>
             
@@ -1638,14 +1626,14 @@ window.jsTreeLoading = false;
                 
                 
                 <!-- 录音控制区域 -->
-                <div class="mb-4 p-3 bg-gray-50 rounded-lg">
+                <div class="mb-4 p-3 bg-cl-bg rounded-cl">
                     <!-- 四期：音源二选一（与悬浮窗一致），原“刷新并检测活跃设备/设备列表/录制测试”复杂面板已下线 -->
-                    <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
-                        <div class="flex items-center text-sm text-gray-600">
+                    <div class="flex items-center justify-between mb-3 pb-2 border-b border-cl-border">
+                        <div class="flex items-center text-sm text-cl-text-2">
                             <span class="material-icons-outlined mr-1 text-sm">graphic_eq</span>
                             <span>录音音源</span>
                         </div>
-                        <select id="p2-audio-source" class="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white text-gray-700">
+                        <select id="p2-audio-source" class="text-sm border border-cl-border rounded-md px-2 py-1 bg-cl-surface text-cl-text">
                             <option value="loopback" selected>系统声音</option>
                             <option value="mic">麦克风</option>
                         </select>
@@ -1654,23 +1642,23 @@ window.jsTreeLoading = false;
                     <!-- 录音控制按钮 -->
                     <div class="flex justify-center gap-3 mb-3">
                         <!-- 录音/暂停按钮 -->
-                        <button id="record-pause-btn" class="w-12 h-12 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center justify-center shadow-md transition-all" onclick="toggleRecording()" title="开始录音">
+                        <button id="record-pause-btn" class="w-12 h-12 bg-cl-danger text-white rounded-clbtn hover:bg-cl-danger/90 flex items-center justify-center shadow-cl transition-all" onclick="toggleRecording()" title="开始录音">
                             <span id="record-pause-icon" class="material-icons-outlined text-lg">fiber_manual_record</span>
                         </button>
                         
                         <!-- 完成按钮（二期：末次保存笔记+退出录制） -->
-                        <button id="stop-recording-btn" class="w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all opacity-50 cursor-not-allowed" onclick="stopRecording()" title="完成 · 保存学习笔记" disabled>
+                        <button id="stop-recording-btn" class="w-12 h-12 bg-cl-text-2 text-white rounded-clbtn hover:bg-cl-text flex items-center justify-center shadow-cl transition-all opacity-50 cursor-not-allowed" onclick="stopRecording()" title="完成 · 保存学习笔记" disabled>
                             <span class="material-icons-outlined text-lg">done</span>
                         </button>
                         
                         <!-- 载入历史记录按钮 -->
-                        <button id="load-transcript-btn" class="w-12 h-12 bg-purple-500 text-white rounded-lg hover:bg-purple-600 flex items-center justify-center shadow-md transition-all" onclick="loadTranscriptHistory()" title="载入历史记录">
-                            <span class="material-icons-outlined text-lg">folder_open</span>
+                        <button id="load-transcript-btn" class="w-12 h-12 bg-cl-surface border border-cl-border text-cl-text-2 rounded-clbtn hover:text-cl-primary flex items-center justify-center shadow-cl transition-all" onclick="loadTranscriptHistory()" title="载入历史记录">
+                            <svg class="w-6 h-6" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-folder-open"/></svg>
                         </button>
                         
                         <!-- 截图按钮 -->
-                        <button id="screenshot-btn" class="w-12 h-12 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center justify-center shadow-md transition-all" onclick="takeScreenshot()" title="截图笔记">
-                            <span class="material-icons-outlined text-lg">camera_alt</span>
+                        <button id="screenshot-btn" class="w-12 h-12 bg-cl-primary text-white rounded-clbtn hover:bg-cl-primary-hover flex items-center justify-center shadow-cl transition-all" onclick="takeScreenshot()" title="截图笔记">
+                            <svg class="w-6 h-6" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-camera"/></svg>
                         </button>
                     </div>
                     <!-- 二期：录制中横幅（正在保存到 <doc> · 实时更新） -->
@@ -1678,22 +1666,20 @@ window.jsTreeLoading = false;
                 </div>
                 <!-- 手动总结按钮 -->
                 <div class="mb-4">
-                    <button id="manual-summarize-btn" class="w-full bg-green-500 text-white py-2 rounded-lg hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed" disabled onclick="manualSummarize()">
-                        <span class="material-icons-outlined mr-2 text-sm">auto_awesome</span>
+                    <button id="manual-summarize-btn" class="w-full flex items-center justify-center gap-2 bg-cl-secondary text-white py-2 rounded-clbtn hover:bg-cl-secondary/90 disabled:bg-cl-text-3 disabled:cursor-not-allowed" disabled onclick="manualSummarize()">
+                        <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-sparkle"/></svg>
                         手动总结选中内容
                     </button>
-                    <p class="text-xs text-gray-500 mt-1 text-center">选择转写文本后点击按钮进行AI总结</p>
+                    <p class="text-xs text-cl-text-3 mt-1 text-center">选择转写文本后点击按钮进行 AI 总结</p>
                 </div>
                 <!-- 转写内容区域 -->
                 <div class="flex-1 mb-4">
-                    <div class="border border-gray-200 rounded-lg p-4 overflow-y-auto" style="height: 500px;">
+                    <div class="border border-cl-border rounded-cl p-4 overflow-y-auto" style="height: 500px;">
                         <div id="transcript-content" class="space-y-3">
                             <!-- 占位符内容 -->
-                            <div class="flex items-center justify-center py-8 text-gray-400">
-                                <div class="text-center">
-                                    <span class="material-icons-outlined text-4xl mb-2 opacity-50">mic</span>
-                                    <p class="text-sm">转写内容将在这里实时显示...</p>
-                                </div>
+                            <div class="cl-empty">
+                                <svg class="w-8 h-8 text-cl-text-3/60 mb-2" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-mic"/></svg>
+                                <p class="text-sm">转写内容将在这里实时显示...</p>
                             </div>
                         </div>
                     </div>
@@ -1705,24 +1691,24 @@ window.jsTreeLoading = false;
             <!-- 知识点面板 -->
             <div id="knowledge-panel" class="flex-1 flex-col">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-lg font-semibold text-text-dark-brown">知识点</h2>
+                    <h2 class="text-[17px] font-semibold text-cl-text">知识点</h2>
                     <div class="flex gap-2">
-                        <!-- 调试面板/测试Bridge按钮已删除（产品要求：页内不得出现调试 UI） -->
-                        <button class="text-text-gray hover:text-primary" onclick="extractKnowledgePoints()" title="提取全文知识点" id="extract-btn">
-                            <span class="material-icons-outlined">lightbulb</span>
+                        <!-- 调试面板/测试 Bridge 按钮已删除（产品要求：页内不得出现调试 UI） -->
+                        <button class="p-1.5 rounded-clbtn text-cl-text-2 hover:text-cl-primary hover:bg-cl-primary-soft transition-colors" onclick="extractKnowledgePoints()" title="提取全文知识点" id="extract-btn">
+                            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-lightbulb"/></svg>
                         </button>
                     </div>
                 </div>
-            
+                        
             <div class="flex-1 overflow-y-auto">
                 <div id="knowledge-points-container">
-                    <div class="text-center py-16 text-text-medium-brown" id="knowledge-placeholder">
-                        <span class="material-icons-outlined text-6xl mb-4">psychology</span>
+                    <div class="cl-empty" id="knowledge-placeholder">
+                        <svg class="w-10 h-10 text-cl-text-3/60 mb-3" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
                         <p>选择文档后可提取知识点</p>
                     </div>
-                    <div id="knowledge-loading" class="text-center py-16 text-primary hidden">
+                    <div id="knowledge-loading" class="text-center py-16 text-cl-primary hidden">
                         <div class="animate-spin mb-4">
-                            <span class="material-icons-outlined text-6xl">refresh</span>
+                            <svg class="w-8 h-8 inline" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-refresh-cw"/></svg>
                         </div>
                         <p>正在提取知识点...</p>
                     </div>
@@ -1837,16 +1823,8 @@ window.handleRenameKeydown = function(event, input) {
     }
 };
 
-window.handlePractice = function(e) {
-    if (e) {
-        e.stopPropagation();
-        e.preventDefault();
-    }
-    
-    console.log('handlePractice 函数被调用');
-    // 这里可以添加练习功能的具体实现
-    alert('练习功能已触发');
-};
+// u6 清理：旧版 handlePractice 死代码 stub（alert 占位）已删除，
+// 统一由尾块（四期D组）的 window.handlePractice 实现提供。
 
 (function() {
     'use strict';
@@ -1926,10 +1904,10 @@ window.handlePractice = function(e) {
         const voiceTab = document.getElementById('voice-panel-tab');
         const knowledgeTab = document.getElementById('knowledge-panel-tab');
         
-        voiceTab.classList.add('bg-primary', 'text-white');
-        voiceTab.classList.remove('text-gray-600');
-        knowledgeTab.classList.remove('bg-primary', 'text-white');
-        knowledgeTab.classList.add('text-gray-600');
+        voiceTab.classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+        voiceTab.classList.remove('text-cl-text-2');
+        knowledgeTab.classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+        knowledgeTab.classList.add('text-cl-text-2');
         
         // 显示/隐藏面板
         document.getElementById('voice-panel').classList.remove('hidden');
@@ -1946,10 +1924,10 @@ window.handlePractice = function(e) {
         const voiceTab = document.getElementById('voice-panel-tab');
         const knowledgeTab = document.getElementById('knowledge-panel-tab');
         
-        knowledgeTab.classList.add('bg-primary', 'text-white');
-        knowledgeTab.classList.remove('text-gray-600');
-        voiceTab.classList.remove('bg-primary', 'text-white');
-        voiceTab.classList.add('text-gray-600');
+        knowledgeTab.classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+        knowledgeTab.classList.remove('text-cl-text-2');
+        voiceTab.classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+        voiceTab.classList.add('text-cl-text-2');
         
         // 显示/隐藏面板
         document.getElementById('knowledge-panel').classList.remove('hidden');
@@ -2660,34 +2638,34 @@ window.handlePractice = function(e) {
         if (isRecording && !isPaused) {
             // 录音中 - 显示暂停图标
             if (recordPauseBtn) {
-                recordPauseBtn.className = 'w-12 h-12 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 flex items-center justify-center shadow-md transition-all';
+                recordPauseBtn.className = 'w-12 h-12 bg-cl-warning text-white rounded-clbtn hover:bg-cl-warning/90 flex items-center justify-center shadow-cl transition-all';
                 recordPauseBtn.title = '暂停录音';
             }
             if (recordPauseIcon) recordPauseIcon.textContent = 'pause';
             if (stopBtn) {
-                stopBtn.className = 'w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all';
+                stopBtn.className = 'w-12 h-12 bg-cl-text-2 text-white rounded-clbtn hover:bg-cl-text flex items-center justify-center shadow-cl transition-all';
                 stopBtn.disabled = false;
             }
         } else if (isRecording && isPaused) {
             // 暂停中 - 显示录音图标
             if (recordPauseBtn) {
-                recordPauseBtn.className = 'w-12 h-12 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center justify-center shadow-md transition-all';
+                recordPauseBtn.className = 'w-12 h-12 bg-cl-danger text-white rounded-clbtn hover:bg-cl-danger/90 flex items-center justify-center shadow-cl transition-all';
                 recordPauseBtn.title = '继续录音';
             }
             if (recordPauseIcon) recordPauseIcon.textContent = 'fiber_manual_record';
             if (stopBtn) {
-                stopBtn.className = 'w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all';
+                stopBtn.className = 'w-12 h-12 bg-cl-text-2 text-white rounded-clbtn hover:bg-cl-text flex items-center justify-center shadow-cl transition-all';
                 stopBtn.disabled = false;
             }
         } else {
             // 未录音 - 显示录音图标
             if (recordPauseBtn) {
-                recordPauseBtn.className = 'w-12 h-12 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center justify-center shadow-md transition-all';
+                recordPauseBtn.className = 'w-12 h-12 bg-cl-danger text-white rounded-clbtn hover:bg-cl-danger/90 flex items-center justify-center shadow-cl transition-all';
                 recordPauseBtn.title = '开始录音';
             }
             if (recordPauseIcon) recordPauseIcon.textContent = 'fiber_manual_record';
             if (stopBtn) {
-                stopBtn.className = 'w-12 h-12 bg-gray-500 text-white rounded-lg hover:bg-gray-600 flex items-center justify-center shadow-md transition-all opacity-50 cursor-not-allowed';
+                stopBtn.className = 'w-12 h-12 bg-cl-text-2 text-white rounded-clbtn hover:bg-cl-text flex items-center justify-center shadow-cl transition-all opacity-50 cursor-not-allowed';
                 stopBtn.disabled = true;
             }
         }
@@ -4729,6 +4707,271 @@ window.handlePractice = function(e) {
         createNewFolderInFolder('vault');
     }
     
+    // ---- 文件导入（2026-09-30）：PDF/MD/TXT → vault。PDF 走后端 PaddleOCR-VL 任务转换，本端轮询状态 ----
+    // 落点规则（用户确认）：选中文件夹→其下；选中文件→其所在文件夹；未选→vault 根。
+    // 落点在点按钮时一次性冻结解析（评审 MF-4：jsTree 刷新会销毁选中态，必须先解析后弹框）。
+    var _impTargetPath = 'vault';
+
+    function _impToken() {
+        return (window.llGetToken && window.llGetToken()) || localStorage.getItem('ll_token') || '';
+    }
+
+    // 评审 MF-1：MD 内相对图片引用通用解析。attachments/ 前缀保留旧根级语义；
+    // 其余相对路径（导入产物 附件/xxx.png、截图/xxx.png）按所在笔记的目录解析为绝对路径，
+    // 交给 getImageAsBase64（后端 /api/vault/image 原生支持绝对路径形态）。
+    function resolveNoteImgSrc(src) {
+        if (!src) return null;
+        if (/^(data:|https?:|blob:|\/)/i.test(src)) return null;
+        // marked 会对非 ASCII 路径做 URL 编码（如"附件"→%E9%99%84%E4%BB%B6），
+        // 先解码还原真实文件名；否则下游 getImageAsBase64 再 encodeURIComponent 会二次编码，
+        // 后端拿到的目录名仍是 %E9%99%84%E4%BB%B6（磁盘真实目录是"附件"）→ 文件不存在。
+        try { src = decodeURIComponent(src); } catch (e) { /* 非法百分号编码，保留原串 */ }
+        if (src.indexOf('attachments/') === 0) return src;
+        if (!currentFilePath) return src;
+        var sep = currentFilePath.indexOf('\\') >= 0 ? '\\' : '/';
+        // 2026-10-01 第七轮：笔记在 vault 根时（currentFilePath 无目录段），
+        // 不能再拼文件名——拼不过去会把“附件/”原样当目录送后端；直接交根相对路径。
+        var dir = currentFilePath.replace(/[\\/][^\\/]*$/, '');
+        if (dir === currentFilePath) return src;
+        return dir + sep + src.replace(/[\\/]/g, sep);
+    }
+
+    function _impResolveTarget() {
+        try {
+            var inst = fileTreeInstance || (typeof $ !== 'undefined' && $('#file-tree').jstree(true));
+            if (!inst) return 'vault';
+            var sel = inst.get_selected(true);
+            if (!sel || !sel.length) return 'vault';
+            var node = sel[0];
+            if (node.type === 'folder') return node.id;      // 节点 id 即服务端绝对路径
+            var pid = inst.get_parent(node);
+            if (!pid || pid === '#') return 'vault';
+            var pnode = inst.get_node(pid);
+            return (pnode && pnode.id !== '#') ? pnode.id : 'vault';
+        } catch (e) {
+            return 'vault';
+        }
+    }
+
+    function _impEnsureBar() {
+        var bar = document.getElementById('import-status-bar');
+        if (bar) return bar;
+        bar = document.createElement('div');
+        bar.id = 'import-status-bar';
+        bar.className = 'text-xs border-t border-gray-100 pt-2 mt-2 space-y-1';
+        bar.style.maxHeight = '8rem';
+        bar.style.overflowY = 'auto';
+        var tree = document.getElementById('file-tree');
+        if (tree && tree.parentNode) tree.parentNode.insertBefore(bar, tree.nextSibling);
+        return bar;
+    }
+
+    function _impSetLine(key, text, isError, isDone) {
+        var bar = _impEnsureBar();
+        bar.style.display = 'block';
+        var row = document.getElementById('imp-row-' + key);
+        if (!row) {
+            row = document.createElement('div');
+            row.id = 'imp-row-' + key;
+            bar.appendChild(row);
+        }
+        var esc = String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+        row.innerHTML = '<span class="truncate">' + esc + '</span>' +
+            (isError || isDone ? '<button class="text-gray-400 hover:text-gray-600 ml-2" onclick="closeImportBar(\'' + key + '\')">✕</button>' : '');
+        row.className = 'flex justify-between items-center ' + (isError ? 'text-red-500' : (isDone ? 'text-green-600' : 'text-gray-500'));
+    }
+
+    function closeImportBar(key) {
+        var row = document.getElementById('imp-row-' + key);
+        if (row) row.remove();
+        var bar = document.getElementById('import-status-bar');
+        if (bar && !bar.children.length) bar.style.display = 'none';
+    }
+
+    // 2026-10-01：新一次导入开始时清掉旧的 ✅/❌ 终态行，避免残留旧失败信息被误认为"没反应"
+    function _impClearFinishedRows() {
+        var bar = document.getElementById('import-status-bar');
+        if (!bar) return;
+        Array.prototype.slice.call(bar.children).forEach(function (row) {
+            var cn = row.className || '';
+            if (cn.indexOf('text-red-500') >= 0 || cn.indexOf('text-green-600') >= 0) row.remove();
+        });
+        if (!bar.children.length) bar.style.display = 'none';
+    }
+
+    // 导入入口（第七轮追加需求）：点击先出下拉菜单——本地文件 / URL 网页两个去向。
+    // 落点在菜单弹出时冻结一次（MF-4 语义不变），菜单关闭不影响状态条。
+    function importFiles() {
+        var old = document.getElementById('imp-menu');
+        if (old) { old.remove(); return; }
+        _impTargetPath = _impResolveTarget();
+        var anchor = document.querySelector('button[onclick^="importFiles"]');
+        if (!anchor) { _impPickLocalFiles(); return; }
+        var rect = anchor.getBoundingClientRect();
+        var menu = document.createElement('div');
+        menu.id = 'imp-menu';
+        menu.style.cssText = 'position:fixed;left:' + rect.left + 'px;top:' + (rect.bottom + 4) +
+            'px;z-index:9999;background:#fff;border:1px solid #e5e7eb;border-radius:8px;' +
+            'box-shadow:0 4px 12px rgba(0,0,0,.10);padding:4px;min-width:170px;font-size:12px;';
+        var itemCss = 'padding:7px 10px;border-radius:6px;cursor:pointer;color:#374151;';
+        menu.innerHTML =
+            '<div data-act="local" style="' + itemCss + '">📁 本地文件导入</div>' +
+            '<div data-act="url" style="' + itemCss + '">🔗 从 URL 导入</div>';
+        Array.prototype.slice.call(menu.children).forEach(function (it) {
+            it.onmouseenter = function () { it.style.background = '#f3f4f6'; };
+            it.onmouseleave = function () { it.style.background = ''; };
+            it.onclick = function () {
+                menu.remove();
+                if (it.getAttribute('data-act') === 'local') _impPickLocalFiles();
+                else _impShowUrlDialog();
+            };
+        });
+        document.body.appendChild(menu);
+        menu.addEventListener('click', function (e) { e.stopPropagation(); });
+        setTimeout(function () {
+            document.addEventListener('click', function _close(ev) {
+                var m = document.getElementById('imp-menu');
+                if (m && ev.target !== anchor && !m.contains(ev.target)) m.remove();
+                if (!document.getElementById('imp-menu')) document.removeEventListener('click', _close);
+            });
+        }, 0);
+    }
+
+    function _impPickLocalFiles() {
+        _impClearFinishedRows();
+        _impTargetPath = _impTargetPath || _impResolveTarget();   // 冻结落点（MF-4）
+        addDebugLog('📥 文件导入：落点=' + _impTargetPath);
+        var input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.docx,.md,.txt,.png,.jpg,.jpeg,.gif,.bmp,.webp';
+        input.multiple = true;
+        input.style.display = 'none';
+        document.body.appendChild(input);
+        input.onchange = function () {
+            var files = Array.prototype.slice.call(input.files || []);
+            input.remove();
+            if (!files.length) return;
+            // 评审 Minor-2：本地预检体积，超 50MB 的直接标红不发起上传（与后端 MAX_CONTENT_LENGTH 对齐）
+            var MAXB = 50 * 1024 * 1024;
+            files.forEach(function (f, i) {
+                if (f.size > MAXB) { _impSetLine('big' + f.name, '❌ ' + f.name + '：超过 50MB 上传上限', true, true); return; }
+                setTimeout(function () { _impUploadOne(f); }, i * 300);
+            });
+        };
+        input.click();
+    }
+
+    function _impUploadOne(file) {
+        var key = 'f' + Date.now() + Math.random().toString(36).slice(2, 6);
+        _impSetLine(key, '⬆️ ' + file.name + ' 上传中…', false, false);
+        var fd = new FormData();
+        fd.append('file', file);
+        fd.append('folder_path', _impTargetPath || 'vault');
+        fetch('/api/vault/import', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + _impToken() },
+            body: fd
+        }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 413 ? '（文件过大，上限 50MB）' : ''));
+            return r.json();
+        }).then(function (j) {
+            var d = (j && j.data) || {};
+            if (!d.success) { _impSetLine(key, '❌ ' + file.name + '：' + (d.error || '导入失败'), true, true); return; }
+            _impTrack(d.task_id || key, file.name, d.file_name || file.name, key);
+        }).catch(function (e) {
+            _impSetLine(key, '❌ ' + file.name + '：' + e.message, true, true);
+        });
+    }
+
+    function _impTrack(taskId, origName, resultName, key) {
+        // 评审 Minor-3：落点快照，轮询期间用户切换选中节点不再影响最终 selectFile 路径
+        var target = _impTargetPath || 'vault';
+        var sep = target.indexOf('\\') >= 0 ? '\\' : '/';
+        var ticks = 0;
+        var timer = setInterval(function () {
+            // 评审 Minor-4：页面已离开学页（文件树不存在）则停止轮询，防定时器泄漏
+            if (!document.getElementById('file-tree')) { clearInterval(timer); return; }
+            ticks++;
+            if (ticks > 400) { clearInterval(timer); _impSetLine(key, '⏱ ' + origName + ' 等待超时，可稍后在文件树查看', true, true); return; }
+            fetch('/api/vault/import/' + encodeURIComponent(taskId), { headers: { 'Authorization': 'Bearer ' + _impToken() } })
+                // 评审 R-5：非 2xx 响应体非 JSON，直接 r.json() 会抛未捕获 rejection，先验 r.ok
+                .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                .then(function (j) {
+                    var d = (j && j.data) || {};
+                    if (!d.success) { clearInterval(timer); _impSetLine(key, '❌ ' + origName + '：' + (d.error || '任务不存在'), true, true); return; }
+                    if (d.status === 'done') {
+                        clearInterval(timer);
+                        // URL 导入产物文件名取文章标题，创建时无法预知，完成时以 result_name 为准
+                        var finalName = d.result_name || d.file_name || resultName;
+                        _impSetLine(key, '✅ ' + origName + ' → ' + finalName, false, true);
+                        loadFileStructure();
+                        var rp = (target !== 'vault') ? target + sep + finalName : finalName;
+                        try { selectFile(rp); } catch (e) { addDebugLog('⚠️ 导入完成但自动打开失败: ' + e); }
+                    } else if (d.status === 'failed') {
+                        clearInterval(timer);
+                        _impSetLine(key, '❌ ' + origName + '：' + (d.error || '转换失败'), true, true);
+                    } else {
+                        var p = d.progress || {};
+                        _impSetLine(key, p.total ? ('🔄 ' + origName + ' 转换中 ' + (p.done || 0) + '/' + p.total + ' 页…')
+                                                   : ('🔄 ' + origName + ' 排队转换中…'));
+                    }
+                })
+                .catch(function () { /* 轮询网络错误容忍，下一轮继续 */ });
+        }, 3000);
+    }
+
+    // URL 导入（第七轮追加需求）：弹窗粘贴链接（每行一条，支持批量），逐条建任务复用状态条轮询
+    function _impShowUrlDialog() {
+        var old = document.getElementById('imp-url-modal');
+        if (old) old.remove();
+        _impClearFinishedRows();
+        _impTargetPath = _impTargetPath || _impResolveTarget();
+        var mask = document.createElement('div');
+        mask.id = 'imp-url-modal';
+        mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        var btnCss = 'padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid #d1d5db;background:#fff;color:#374151;';
+        mask.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:440px;max-width:92vw;box-shadow:0 8px 24px rgba(0,0,0,.15);">' +
+            '<div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#111827;">从 URL 导入</div>' +
+            '<div style="font-size:11px;color:#6b7280;margin-bottom:8px;">粘贴网页链接，每行一条可批量；支持微信公众号文章（正文+图片转笔记）</div>' +
+            '<textarea id="imp-url-input" rows="4" placeholder="https://mp.weixin.qq.com/s/…" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;padding:8px;font-size:12px;resize:vertical;"></textarea>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
+            '<button id="imp-url-cancel" style="' + btnCss + '">取消</button>' +
+            '<button id="imp-url-ok" style="' + btnCss + 'background:#2563eb;color:#fff;border-color:#2563eb;">导入</button>' +
+            '</div></div>';
+        document.body.appendChild(mask);
+        mask.addEventListener('click', function (e) { if (e.target === mask) mask.remove(); });
+        mask.querySelector('#imp-url-cancel').onclick = function () { mask.remove(); };
+        mask.querySelector('#imp-url-ok').onclick = function () {
+            var lines = (mask.querySelector('#imp-url-input').value || '').split(/\r?\n/)
+                .map(function (s) { return s.trim(); }).filter(Boolean);
+            mask.remove();
+            if (!lines.length) { _impSetLine('urlhint', '⚠️ 未填写链接', true, true); return; }
+            lines.forEach(function (u, i) { setTimeout(function () { _impUploadUrl(u); }, i * 300); });
+        };
+        var ta = mask.querySelector('#imp-url-input');
+        if (ta) ta.focus();
+    }
+
+    function _impUploadUrl(url) {
+        var key = 'u' + Date.now() + Math.random().toString(36).slice(2, 6);
+        var short = url.length > 42 ? url.slice(0, 42) + '…' : url;
+        _impSetLine(key, '🔗 ' + short + ' 抓取中…', false, false);
+        fetch('/api/vault/import-url', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + _impToken(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url, folder_path: _impTargetPath || 'vault' })
+        }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (j) {
+            var d = (j && j.data) || {};
+            if (!d.success) { _impSetLine(key, '❌ ' + short + '：' + (d.error || '导入失败'), true, true); return; }
+            _impTrack(d.task_id || key, short, d.file_name || short, key);
+        }).catch(function (e) {
+            _impSetLine(key, '❌ ' + short + '：' + e.message, true, true);
+        });
+    }
+
     // 选择并打开文件
     function selectFile(filePath) {
         debugLog('选择文件: ' + filePath);
@@ -4827,10 +5070,41 @@ window.handlePractice = function(e) {
                         previewTitle.textContent = fileName;
                     }
                     
+                    // 必须先设置 currentFilePath，再渲染：renderMarkdownContent 的图片 base64
+                    // 后处理（resolveNoteImgSrc）依赖它把附件相对路径解析为 vault 内绝对路径。
+                    currentFilePath = normalizedPath;
+                    currentFileName = fileName;
+                    window.currentFilePath = filePath;
+
                     // 更新预览内容
                     if (previewContent) {
-                        // 渲染 Markdown
-                        if (typeof marked !== 'undefined') {
+                        // 渲染 Markdown（走统一渲染器，含内嵌图片 base64 转换；缺回退裸 marked）
+                        if (typeof renderMarkdownContent === 'function') {
+                            const htmlContent = renderMarkdownContent(content);
+                            previewContent.innerHTML = htmlContent;
+                            
+                            // 应用语法高亮
+                            if (typeof hljs !== 'undefined') {
+                                previewContent.querySelectorAll('pre code').forEach((block) => {
+                                    hljs.highlightElement(block);
+                                });
+                            }
+                            
+                            // 渲染数学公式
+                            if (typeof renderMathInElement !== 'undefined') {
+                                renderMathInElement(previewContent, {
+                                    delimiters: [
+                                        {left: '$$', right: '$$', display: true},
+                                        {left: '$', right: '$', display: false}
+                                    ]
+                                });
+                            }
+                            // renderMarkdownContent 会把 ```mermaid``` 转成 <div class="mermaid">DSL</div>，
+                            // 必须再调 renderMermaidDiagrams 出图（与 loadFileContent 保持一致）。
+                            if (typeof renderMermaidDiagrams === 'function') {
+                                try { renderMermaidDiagrams(previewContent); } catch (e) {}
+                            }
+                        } else if (typeof marked !== 'undefined') {
                             const htmlContent = marked.parse(content);
                             previewContent.innerHTML = htmlContent;
                             
@@ -5217,10 +5491,10 @@ window.handlePractice = function(e) {
                     document.getElementById('save-btn').classList.add('hidden');
                     
                     // 更新按钮状态
-                    document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
-                    document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
-                    document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
-                    document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+                    document.getElementById('preview-btn').classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+                    document.getElementById('preview-btn').classList.remove('text-cl-text-2');
+                    document.getElementById('edit-btn').classList.add('text-cl-text-2');
+                    document.getElementById('edit-btn').classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
                 }
                 
                 // 自动加载该笔记相关的知识点
@@ -5329,10 +5603,10 @@ window.handlePractice = function(e) {
                         document.getElementById('save-btn').classList.remove('hidden');
                         
                         // 更新按钮状态
-                        document.getElementById('edit-btn').classList.add('bg-primary', 'text-white');
-                        document.getElementById('edit-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
-                        document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
-                        document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
+                        document.getElementById('edit-btn').classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+                        document.getElementById('edit-btn').classList.remove('text-cl-text-2');
+                        document.getElementById('preview-btn').classList.add('text-cl-text-2');
+                        document.getElementById('preview-btn').classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
                         
                         debugLog('已切换到编辑模式');
                     }
@@ -5513,10 +5787,10 @@ window.handlePractice = function(e) {
         document.getElementById('save-btn').classList.add('hidden');
         
         // 更新按钮状态
-        document.getElementById('preview-btn').classList.add('bg-primary', 'text-white');
-        document.getElementById('preview-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
-        document.getElementById('edit-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
-        document.getElementById('edit-btn').classList.remove('bg-primary', 'text-white');
+        document.getElementById('preview-btn').classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+        document.getElementById('preview-btn').classList.remove('text-cl-text-2');
+        document.getElementById('edit-btn').classList.add('text-cl-text-2');
+        document.getElementById('edit-btn').classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
         
         // 隐藏未保存指示器
         hideUnsavedIndicator();
@@ -5618,10 +5892,10 @@ window.handlePractice = function(e) {
                 document.getElementById('save-btn').classList.remove('hidden');
                 
                 // 更新按钮状态
-                document.getElementById('edit-btn').classList.add('bg-primary', 'text-white');
-                document.getElementById('edit-btn').classList.remove('bg-white', 'border-gray-300', 'text-text-gray');
-                document.getElementById('preview-btn').classList.add('bg-white', 'border-gray-300', 'text-text-gray');
-                document.getElementById('preview-btn').classList.remove('bg-primary', 'text-white');
+                document.getElementById('edit-btn').classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+                document.getElementById('edit-btn').classList.remove('text-cl-text-2');
+                document.getElementById('preview-btn').classList.add('text-cl-text-2');
+                document.getElementById('preview-btn').classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
                 
                 // 聚焦到编辑器并防止自动滚动
                 // 保存当前滚动位置
@@ -6219,23 +6493,64 @@ window.handlePractice = function(e) {
     }
 
     // 重命名功能
+    // u6 修复：Electron 不支持 window.prompt（直接返回 null 致重命名无反应），改用页内 modal
+    function llPromptModal(title, defaultVal, onOk) {
+        var old = document.getElementById('ll-prompt-modal');
+        if (old) old.remove();
+        var mask = document.createElement('div');
+        mask.id = 'll-prompt-modal';
+        mask.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:10001;display:flex;align-items:center;justify-content:center;';
+        var btnCss = 'padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;border:1px solid #d1d5db;background:#fff;color:#374151;';
+        mask.innerHTML = '<div style="background:#fff;border-radius:10px;padding:16px;width:360px;max-width:92vw;box-shadow:0 8px 24px rgba(0,0,0,.15);">' +
+            '<div id="ll-prompt-title" style="font-weight:600;font-size:13px;margin-bottom:10px;color:#111827;"></div>' +
+            '<input id="ll-prompt-input" style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;padding:8px;font-size:12px;" />' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
+            '<button id="ll-prompt-cancel" style="' + btnCss + '">取消</button>' +
+            '<button id="ll-prompt-ok" style="' + btnCss + 'background:#111827;color:#fff;border-color:#111827;">确定</button>' +
+            '</div></div>';
+        document.body.appendChild(mask);
+        // 评审修复（MAJOR）：title 来自真实文件名，可能含 HTML，一律 textContent 写入防 XSS
+        document.getElementById('ll-prompt-title').textContent = title;
+        var input = document.getElementById('ll-prompt-input');
+        input.value = defaultVal || '';
+        setTimeout(function () { input.focus(); input.select(); }, 30);
+        function close() { var m = document.getElementById('ll-prompt-modal'); if (m) m.remove(); }
+        function ok() {
+            var v = input.value.trim();
+            if (!v) { input.focus(); return; }
+            close();
+            onOk(v);
+        }
+        document.getElementById('ll-prompt-ok').onclick = ok;
+        document.getElementById('ll-prompt-cancel').onclick = close;
+        input.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter') ok();
+            else if (ev.key === 'Escape') close();
+        });
+        mask.addEventListener('click', function (ev) { if (ev.target === mask) close(); });
+    }
+
     function renameItem(path, currentName) {
-        const newName = prompt('请输入新名称:', currentName);
-        if (newName && newName !== currentName) {
-            debugLog(`重命名: ${currentName} -> ${newName}`);
-            
+        llPromptModal('重命名“' + currentName + '”', currentName, function (newName) {
+            if (!newName || newName === currentName) return;
+            debugLog('重命名: ' + currentName + ' -> ' + newName);
             if (window.pybridge && window.pybridge.renameFileOrFolder) {
-                window.pybridge.renameFileOrFolder(path, newName, function(success) {
+                window.pybridge.renameFileOrFolder(path, newName, function (success) {
                     if (success) {
                         debugLog('重命名成功');
                         loadFileStructure();
+                        if (typeof showFileOperationFeedback === 'function') showFileOperationFeedback('重命名成功', 'success');
                     } else {
                         debugError('重命名失败');
-                        alert('重命名失败，请检查名称是否已存在');
+                        if (typeof showFileOperationFeedback === 'function') showFileOperationFeedback('重命名失败，请检查名称是否已存在', 'error');
+                        else alert('重命名失败，请检查名称是否已存在');
                     }
                 });
+            } else {
+                debugError('重命名失败：桥层未就绪');
+                if (typeof showFileOperationFeedback === 'function') showFileOperationFeedback('重命名失败：桥层未就绪', 'error');
             }
-        }
+        });
     }
     
     // 内联重命名功能（暴露为全局函数）
@@ -9560,11 +9875,12 @@ window.handlePractice = function(e) {
                     return converted;
                 });
                 
-                // 然后处理标准Markdown图片格式
+                // 然后处理标准Markdown图片格式（2026-09-30 评审 MF-1：通用相对路径解析）
                 processedContent = processedContent.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function(match, alt, src) {
                     console.log('🖼️ 备用渲染器处理标准图片:', src);
                     
-                    if (src.startsWith('attachments/')) {
+                    var imgPathAlt = resolveNoteImgSrc(src);
+                    if (imgPathAlt) {
                         console.log('🔍 备用渲染器检测到attachments图片');
                         
                         // 创建一个唯一的ID用于异步更新
@@ -9576,8 +9892,8 @@ window.handlePractice = function(e) {
                         // 异步获取真实图片数据
                         setTimeout(() => {
                             if (window.pybridge && window.pybridge.getImageAsBase64) {
-                                console.log('备用渲染器请求图片Base64:', src);
-                                window.pybridge.getImageAsBase64(src, function(result) {
+                                console.log('备用渲染器请求图片Base64:', imgPathAlt);
+                                window.pybridge.getImageAsBase64(imgPathAlt, function(result) {
                                     try {
                                         const response = JSON.parse(result);
                                         const imgElement = document.getElementById(imageId);
@@ -9679,9 +9995,10 @@ window.handlePractice = function(e) {
                 console.log('🖼️ 处理图片路径:', src);
                 console.log('📄 当前文件路径:', currentFilePath);
                 
-                // 如果是相对路径且指向attachments目录，通过后端获取Base64数据
-                if (src.startsWith('attachments/')) {
-                    console.log('🔍 检测到attachments图片，准备转换为Base64');
+                // 2026-09-30 评审 MF-1：通用相对路径图片解析（附件/截图/根级 attachments 均可见）
+                var imgPath = resolveNoteImgSrc(src);
+                if (imgPath) {
+                    console.log('🔍 检测到笔记相对图片，准备转换为Base64:', imgPath);
                     
                     if (!currentFilePath) {
                         console.warn('⚠️ 当前文件路径为空，图片可能无法正确加载');
@@ -9696,9 +10013,9 @@ window.handlePractice = function(e) {
                     // 异步获取真实图片数据
                     setTimeout(() => {
                         if (window.pybridge && window.pybridge.getImageAsBase64) {
-                            console.log('请求图片Base64:', src);
+                            console.log('请求图片Base64:', imgPath);
                             console.log('当前文件路径:', currentFilePath);
-                            window.pybridge.getImageAsBase64(src, function(result) {
+                            window.pybridge.getImageAsBase64(imgPath, function(result) {
                                 try {
                                     const response = JSON.parse(result);
                                     const imgElement = document.getElementById(imageId);
@@ -9786,17 +10103,18 @@ window.handlePractice = function(e) {
     window.toggleFileStructurePanel = function() {
         const fileStructure = document.getElementById('file-structure');
         const collapseToggleBtn = document.getElementById('collapse-toggle-btn');
-        const collapseToggleIcon = collapseToggleBtn.querySelector('.material-icons-outlined');
+        // 批3：图标已换为 Lucide SVG sprite，折叠时切换 <use href>（旧 Material textContent 方式失效）
+        const collapseUse = collapseToggleBtn ? collapseToggleBtn.querySelector('use') : null;
         
         isFileStructureCollapsed = !isFileStructureCollapsed;
         
         if (isFileStructureCollapsed) {
             fileStructure.classList.add('collapsed');
-            collapseToggleIcon.textContent = 'chevron_right';
+            if (collapseUse) collapseUse.setAttribute('href', '/static/icons/lucide-sprite.svg#li-chevron-right');
             debugLog('文件结构面板已折叠');
         } else {
             fileStructure.classList.remove('collapsed');
-            collapseToggleIcon.textContent = 'chevron_left';
+            if (collapseUse) collapseUse.setAttribute('href', '/static/icons/lucide-sprite.svg#li-chevron-left');
             debugLog('文件结构面板已展开');
         }
     };
@@ -10336,6 +10654,18 @@ window.handlePractice = function(e) {
             debugLog('检测到进行中的全局录音，已恢复录制界面（' + llRec.state + '）');
         })();
     })();
+
+    // ---- 暴露给全局：本页 HTML 内联 onclick/ondrag 等在全局作用域求值，
+    //      IIFE 内定义的函数必须挂到 window 才能被点击事件找到（缺失时静默无反应）。
+    //      清单由静态扫描内联事件引用生成，勿凭印象增删。 ----
+    window.addDebugLog = addDebugLog;
+    window.createNewNoteInRoot = createNewNoteInRoot;
+    window.createNewFolderInRoot = createNewFolderInRoot;
+    window.selectFile = selectFile;
+    window.retryQuestionGeneration = retryQuestionGeneration;
+    window.retryEvaluation = retryEvaluation;
+    window.importFiles = importFiles;
+    window.closeImportBar = closeImportBar;
 
 })();
 </script>
@@ -10877,7 +11207,9 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
 }
 
 // 监听文件树内容变化，重新应用样式
-const observer = new MutationObserver(function(mutations) {
+// 2026-10-01：SPA 二次进入会重新求值本 script 块，顶层 const/let 重复声明会抛错中断后续脚本，
+// 必须用 var（可重复声明）。
+var observer = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
         if (mutation.type === 'childList' && mutation.target.id === 'file-tree') {
             console.log('🔄 文件树内容发生变化，重新应用水平滚动样式');
@@ -10887,7 +11219,7 @@ const observer = new MutationObserver(function(mutations) {
 });
 
 // 开始观察文件树变化
-const fileTreeElement = document.getElementById('file-tree');
+var fileTreeElement = document.getElementById('file-tree');
 if (fileTreeElement) {
     observer.observe(fileTreeElement, {
         childList: true,
@@ -11016,31 +11348,18 @@ function updateButtonStates(activeMode) {
     addDebugLog('🔄 更新按钮状态: ' + activeMode);
     
     if (previewBtn && editBtn) {
-        // 重置所有按钮样式
-        previewBtn.classList.remove('active');
-        editBtn.classList.remove('active');
-        
+        // 批3：改用新设计系统分段样式（白底橙字），与右侧 tab 一致，删除旧内联蓝色 !important
         if (activeMode === 'preview') {
-            // 激活预览按钮
-            previewBtn.classList.add('active');
-            previewBtn.style.setProperty('background-color', '#3b82f6', 'important');
-            previewBtn.style.setProperty('color', 'white', 'important');
-            
-            // 取消激活编辑按钮
-            editBtn.style.setProperty('background-color', 'transparent', 'important');
-            editBtn.style.setProperty('color', '#6b7280', 'important');
-            
+            previewBtn.classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+            previewBtn.classList.remove('text-cl-text-2');
+            editBtn.classList.add('text-cl-text-2');
+            editBtn.classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
             addDebugLog('✅ 预览按钮已激活');
         } else if (activeMode === 'edit') {
-            // 激活编辑按钮
-            editBtn.classList.add('active');
-            editBtn.style.setProperty('background-color', '#3b82f6', 'important');
-            editBtn.style.setProperty('color', 'white', 'important');
-            
-            // 取消激活预览按钮
-            previewBtn.style.setProperty('background-color', 'transparent', 'important');
-            previewBtn.style.setProperty('color', '#6b7280', 'important');
-            
+            editBtn.classList.add('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
+            editBtn.classList.remove('text-cl-text-2');
+            previewBtn.classList.add('text-cl-text-2');
+            previewBtn.classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
             addDebugLog('✅ 编辑按钮已激活');
         }
     } else {

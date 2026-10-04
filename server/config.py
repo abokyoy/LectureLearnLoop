@@ -38,6 +38,13 @@ DEEPGRAM_LANGUAGE = os.getenv("DEEPGRAM_LANGUAGE", "zh-CN")
 DEEPGRAM_LANGUAGE_MODE = os.getenv("DEEPGRAM_LANGUAGE_MODE", "fixed")  # fixed=用上面固定值；auto=按用户设置页映射
 HTTP_PROXY_URL = os.getenv("HTTP_PROXY_URL", "")
 
+# ---------------------------------------------------------------- 文件导入（PaddleOCR-VL 文档解析 Job API）
+# key 复用 AIFinFlowX 项目已生产验证的官方接口（落 .env，不落代码）；免费额度按官方政策。
+PADDLE_OCR_JOB_URL = os.getenv("PADDLE_OCR_JOB_URL", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs")
+PADDLE_OCR_TOKEN = os.getenv("PADDLE_OCR_TOKEN", "")
+PADDLE_OCR_MODEL = os.getenv("PADDLE_OCR_MODEL", "PaddleOCR-VL-1.6")
+IMPORT_MAX_BYTES = 50 * 1024 * 1024        # 单文件上限 50MB（Flask MAX_CONTENT_LENGTH 同值）
+
 # ---------------------------------------------------------------- 数据库全局配置（适配层唯一后端开关）
 # DB_BACKEND：网站全局配置项，postgres | sqlite（默认 sqlite 保留回退能力；
 # 生产目标为 postgres，见 database/db_adapter.py）。

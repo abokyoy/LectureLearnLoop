@@ -39,41 +39,16 @@
         };
     })();
     </script>
-    <script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+    <!-- 批1：Tailwind 由 CDN 运行时切换为预编译静态 CSS（构建：frontend/ npm run build） -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cl.css') }}">
     <!-- Flask版本：使用API封装替代QWebChannel -->
     <!-- 统一调试日志：必须最先加载，api.js 会用到的 -->
     <script src="{{ url_for('static', filename='js/unified_logger.js') }}"></script>
     <script src="{{ url_for('static', filename='js/api.js') }}"></script>
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+    <!-- 批1：Material Icons 字体本地化（走查 G4：去 CDN 依赖，Electron 离线可用；新页面请用 lucide sprite） -->
+    <link href="{{ url_for('static', filename='css/material-icons-outlined.css') }}" rel="stylesheet">
     
-    <script>
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    colors: {
-                        primary: "#32C77F",
-                        warning: "#FF9B27", 
-                        danger: "#ED4B4B",
-                        "text-dark-brown": "#715D46",
-                        "text-medium-brown": "#9B8D7D",
-                        "text-gray": "#828282",
-                        "bg-light-blue": "#D5F8FF",
-                        "bg-beige": "#FFFFD6",
-                        "bg-light-green": "#E2F2EB",
-                        "bg-light-gray": "#F2F0ED",
-                        "bg-light-blue-gray": "#F5F7F9",
-                    },
-                    fontFamily: {
-                        sans: ['"Noto Sans SC"', 'sans-serif'],
-                    },
-                    borderRadius: {
-                        'xl': '1rem',
-                    },
-                },
-            },
-        };
-    </script>
+    <!-- 批1：旧 tailwind.config 运行时块已删；主题 token 已迁入 frontend/tailwind.config.js 预编译（含旧色板兼容） -->
     
     {% block extra_head %}{% endblock %}
     
@@ -92,25 +67,26 @@
         .ai-assistant-avatar {
             width: 60px;
             height: 60px;
-            background: linear-gradient(135deg, #32C77F, #28a745);
+            /* 批1：迁入新设计系统橙色主色（DESIGN.md §2） */
+            background: linear-gradient(135deg, var(--cl-primary, #F97316), var(--cl-primary-hover, #EA6C0B));
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            box-shadow: 0 4px 20px rgba(50, 199, 127, 0.3);
+            box-shadow: 0 4px 20px rgba(249, 115, 22, 0.3);
             transition: all 0.3s ease;
             user-select: none;
         }
         
         .ai-assistant-avatar:hover {
             transform: scale(1.1);
-            box-shadow: 0 6px 25px rgba(50, 199, 127, 0.4);
+            box-shadow: 0 6px 25px rgba(249, 115, 22, 0.4);
         }
         
         .ai-assistant-avatar.dragging {
             transform: scale(1.05);
-            box-shadow: 0 8px 30px rgba(50, 199, 127, 0.5);
+            box-shadow: 0 8px 30px rgba(249, 115, 22, 0.5);
         }
         
         .ai-chat-window {
@@ -157,7 +133,7 @@
         }
         
         .ai-chat-header {
-            background: linear-gradient(135deg, #32C77F, #28a745);
+            background: linear-gradient(135deg, var(--cl-primary, #F97316), var(--cl-primary-hover, #EA6C0B));
             color: white;
             padding: 16px;
             display: flex;
@@ -5998,43 +5974,7 @@ ${cleanContent}
             // 可以在这里添加兼容逻辑
         }
         
-        // Flask版本：菜单导航函数
-        const menuRoutes = {
-            'dashboard': '/',
-            'online_course_notes': '/online_course',
-            'practice_knowledge': '/practice',
-            'practice_materials': '/practice',
-            'memory_knowledge': '/practice',
-            'knowledge_base': '/knowledge_base',
-            'settings': '/settings',
-            'llm_logs': '/llm_logs'
-        };
-        
-        function handleMenuClick(menuId) {
-            console.log('菜单点击:', menuId);
-            
-            // 如果是子菜单的父级，展开/收起子菜单
-            const menuItem = document.querySelector(`[onclick="handleMenuClick('${menuId}')"]`);
-            if (menuItem) {
-                const submenu = menuItem.parentElement.querySelector('.submenu');
-                const expandIcon = menuItem.querySelector('.expand-icon');
-                
-                if (submenu && expandIcon) {
-                    // 切换子菜单显示
-                    submenu.classList.toggle('hidden');
-                    expandIcon.textContent = submenu.classList.contains('hidden') ? 'expand_more' : 'expand_less';
-                    return; // 不跳转页面
-                }
-            }
-            
-            // 否则跳转到对应页面
-            const route = menuRoutes[menuId];
-            if (route) {
-                window.location.href = route;
-            } else {
-                console.warn('未找到菜单路由:', menuId);
-            }
-        }
+        // 批1：旧版 menuRoutes/handleMenuClick 已删除——导航语义统一由 spa_layout.html 新版承担（评审 Minor-2）
     </script>
     {% endblock %}
     

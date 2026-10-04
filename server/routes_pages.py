@@ -41,11 +41,14 @@ _SPA_PAGES = {
 _FRAGMENT_IDS = {
     "dashboard",
     "online_course_notes",
+    "practice_overview",
     "practice_knowledge",
     "practice_errors",
     "practice_materials",
     "memory_knowledge",
+    "memory_overview",
     "memory_errors",
+    "knowledge_point",  # u10：知识点详情独立直达页（从练/记总览、选点页直达，不再绕脑图）
     "knowledge_base",
     "settings",
     "llm_logs",
@@ -120,9 +123,11 @@ def page_llm_logs():
 
 
 @pages_bp.route("/admin/credits")
-@require_auth
 def page_admin_credits():
-    """管理后台（2026-09-28 积分系统）：页面壳登录后即可渲染，数据端点全部 require_admin 把关。"""
+    """管理后台（2026-09-28 积分系统）：页面壳不含敏感数据，对所有访问者渲染；
+    真实权限由数据端点 require_admin 把关（批8：浏览器 HTML 导航无法携带 Bearer 头，
+    页面级 require_auth 会把已登录管理员也挡在 401 JSON 外，故移除；
+    非管理员进入后各区块显示“需要管理员权限”提示）。"""
     return render_template("spa/page.html", page="pages/admin_credits.html",
                            content_id="admin_credits", active_menu="settings")
 

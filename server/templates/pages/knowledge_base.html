@@ -1,161 +1,229 @@
-{# 知识库管理：真实数据版（原版为静态占位假数据，产品反馈"分类不能点击/查看全部无效"后重写）。
-   数据源：/api/subjects/stats（科目统计）+ /api/knowledge/points?subject=（按科目知识点）。 #}
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <div class="mb-6">
-        <h3 class="text-xl font-semibold text-text-dark-brown mb-1">知识库管理</h3>
-        <p class="text-text-gray text-sm">按科目浏览已提取的知识点（数据来自你的学习记录，按用户隔离）</p>
+{# 批5 重设计：知识库管理（去 Qt 桥依赖，直连 HTTP API；修复平均掌握度把 -1 未评估哨兵算进均值的负数 bug）。
+   数据源：/api/subjects/stats（科目统计）+ /api/knowledge/points?subject=（知识点）+ POST /api/subjects（新建学科，承接练/记页空态引导）。 #}
+<div class="cl-page space-y-6">
+
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h1 class="text-[22px] font-bold text-cl-text flex items-center gap-2">
+                <svg class="w-6 h-6 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-library"/></svg>
+                知识库
+            </h1>
+            <p class="text-sm text-cl-text-2 mt-1">你学到的知识点都收藏在这里，按学科整理</p>
+        </div>
+        <form class="flex items-center gap-2" onsubmit="return kbAddSubject(event)">
+            <input id="kb-new-subject" type="text" placeholder="新建学科…" maxlength="20"
+                class="h-9 w-40 rounded-clbtn border border-cl-border bg-cl-surface px-3 text-sm text-cl-text placeholder:text-cl-text-3 focus:outline-none focus:ring-2 focus:ring-cl-primary/30">
+            <button type="submit" class="cl-btn-ghost !h-9 !px-4 !text-xs">
+                <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-plus"/></svg>
+                创建
+            </button>
+        </form>
     </div>
 
-    <!-- 总览统计（真实计算） -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-            <span class="material-icons-outlined text-4xl text-blue-600 mb-2">folder</span>
-            <p class="text-3xl font-bold text-blue-600" id="kb-stat-subjects">–</p>
-            <p class="text-sm text-blue-500">个科目</p>
+    <!-- 总览（真实计算；平均掌握度剔除未评估项） -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        <div class="cl-card p-6 text-center">
+            <div class="flex items-center justify-center gap-2 text-cl-primary mb-2"><svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layers"/></svg></div>
+            <p class="text-[28px] font-bold text-cl-text leading-none mb-1" id="kb-stat-subjects">–</p>
+            <p class="text-xs text-cl-text-2">个学科</p>
         </div>
-        <div class="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
-            <span class="material-icons-outlined text-4xl text-green-600 mb-2">lightbulb</span>
-            <p class="text-3xl font-bold text-green-600" id="kb-stat-points">–</p>
-            <p class="text-sm text-green-500">个知识点</p>
+        <div class="cl-card p-6 text-center">
+            <div class="flex items-center justify-center gap-2 text-cl-secondary mb-2"><svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-lightbulb"/></svg></div>
+            <p class="text-[28px] font-bold text-cl-text leading-none mb-1" id="kb-stat-points">–</p>
+            <p class="text-xs text-cl-text-2">个知识点</p>
         </div>
-        <div class="bg-purple-50 border border-purple-200 rounded-lg p-6 text-center">
-            <span class="material-icons-outlined text-4xl text-purple-600 mb-2">trending_up</span>
-            <p class="text-3xl font-bold text-purple-600" id="kb-stat-mastery">–</p>
-            <p class="text-sm text-purple-500">平均掌握度</p>
+        <div class="cl-card p-6 text-center">
+            <div class="flex items-center justify-center gap-2 text-cl-warning mb-2"><svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-chart-column"/></svg></div>
+            <p class="text-[28px] font-bold text-cl-text leading-none mb-1" id="kb-stat-mastery">–</p>
+            <p class="text-xs text-cl-text-2" id="kb-stat-mastery-sub">平均掌握度</p>
         </div>
     </div>
 
-    <!-- 科目分类（可点击 → 下方列出该科目知识点） -->
-    <div class="bg-gray-50 rounded-lg p-6 mb-6">
-        <h4 class="text-lg font-semibold text-text-dark-brown mb-4">科目分类</h4>
+    <!-- 学科卡（点击筛选知识点） -->
+    <div>
+        <div class="cl-section-title mb-3">
+            <svg class="w-4 h-4 text-cl-text-2" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-folder-open"/></svg>
+            学科
+        </div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="kb-subject-grid">
-            <p class="col-span-full text-sm text-gray-500">正在加载科目…</p>
+            <p class="col-span-full text-sm text-cl-text-3">正在加载学科…</p>
         </div>
     </div>
 
-    <!-- 知识点列表（随选中科目变化） -->
-    <div class="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+    <!-- 知识点列表 -->
+    <div class="cl-card p-6">
         <div class="flex items-center justify-between mb-4">
-            <h4 class="text-lg font-semibold text-text-dark-brown" id="kb-list-title">最近更新的知识点</h4>
-            <button class="text-primary hover:underline text-sm" onclick="kbShowRecent()">查看全部科目</button>
+            <div class="cl-section-title" id="kb-list-title">最近更新的知识点</div>
+            <button class="cl-btn-ghost !h-8 !text-xs" onclick="kbShowRecent()">全部科目</button>
         </div>
-        <div class="space-y-3" id="kb-point-list">
-            <p class="text-sm text-gray-500">正在加载知识点…</p>
+        <div class="space-y-1" id="kb-point-list">
+            <p class="text-sm text-cl-text-3">正在加载知识点…</p>
         </div>
     </div>
 
-    <p class="text-xs text-gray-400 text-center">提示：知识点的生成与练习请前往「学」与「练」模块。</p>
+    <p class="text-xs text-cl-text-3 text-center">知识点的提取与练习请前往「学」与「练」模块</p>
 </div>
 
 <script>
 (function () {
-    var bridge = window.bridge || window.pybridge;
+    // DOM 引用全部在顶部捕获（CodeReview 批5 M-3：片段重注入时旧链不得写入新片段节点）
     var grid = document.getElementById('kb-subject-grid');
-    var listTitle = document.getElementById('kb-list-title');
     var listBox = document.getElementById('kb-point-list');
-    var statSubjects = document.getElementById('kb-stat-subjects');
-    var statPoints = document.getElementById('kb-stat-points');
-    var statMastery = document.getElementById('kb-stat-mastery');
-
-    function esc(s) {
-        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
+    var listTitle = document.getElementById('kb-list-title');
+    var statSubjectsEl = document.getElementById('kb-stat-subjects');
+    var statPointsEl = document.getElementById('kb-stat-points');
+    var statMasteryEl = document.getElementById('kb-stat-mastery');
+    var statMasterySubEl = document.getElementById('kb-stat-mastery-sub');
+    var allPointsCache = [];
+    // 渲染令牌（CodeReview 批5 M-1/M-2）：旧响应到达时若令牌非最新则丢弃，
+    // 防 init 尾部 kbShowRecent 覆盖用户主动选中学科、及连点两学科的乱序覆盖
+    var renderToken = 0;
+    function tk() { return (window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || '')); }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function getJSON(url) {
+        return fetch(url, { headers: { 'Authorization': 'Bearer ' + tk() } }).then(function (r) { return r.json(); })
+            .then(function (j) { if (!j || !j.success) throw new Error((j && j.error) || '请求失败'); return j.data; });
     }
-
+    // -1 = 未评估哨兵，禁止参与均值/展示为 0%（负数 bug 修复点）
+    function isUnrated(v) { return v == null || Number(v) < 0; }
     function masteryBadge(score) {
-        var v = Math.round(score || 0);
-        var cls = v >= 80 ? 'bg-green-100 text-green-800' : (v >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800');
-        var label = v >= 80 ? '已掌握' : (v >= 60 ? '学习中' : '待复习');
-        return '<span class="' + cls + ' px-2 py-1 rounded text-xs">' + label + ' ' + v + '</span>';
+        if (isUnrated(score)) return '<span class="cl-badge bg-cl-bg text-cl-text-3">未评估</span>';
+        var v = Math.round(Number(score) || 0);
+        var cls = v >= 80 ? 'bg-cl-secondary-soft text-cl-secondary' : 'bg-cl-primary-soft text-cl-primary';
+        var label = v >= 80 ? '已掌握' : (v >= 60 ? '学习中' : '待加强');
+        return '<span class="cl-badge ' + cls + '">' + label + ' ' + v + '%</span>';
     }
-
+    function relTime(ts) {
+        try {
+            var t = new Date(String(ts).replace(' ', 'T') + 'Z');
+            var d = Date.now() - t.getTime();
+            if (!isFinite(d)) return String(ts || '');
+            if (d < 0) d = 0;
+            var m = Math.floor(d / 60000);
+            if (m < 1) return '刚刚';
+            if (m < 60) return m + ' 分钟前';
+            var h = Math.floor(m / 60);
+            if (h < 24) return h + ' 小时前';
+            return Math.floor(h / 24) + ' 天前';
+        } catch (e) { return String(ts || ''); }
+    }
     function renderPoints(points, title) {
         listTitle.textContent = title;
         if (!points.length) {
-            listBox.innerHTML = '<p class="text-sm text-gray-500">该科目下暂无知识点。可先到「学 → 基于学习资料/在线课程」提取知识点。</p>';
+            listBox.innerHTML = '<div class="cl-empty">'
+                + '<svg class="w-10 h-10 text-cl-text-3" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dog"/></svg>'
+                + '<p>这里还没有知识点</p><p class="text-xs text-cl-text-3">到「学 → 网课笔记」学习并提取知识点后会自动收进知识库</p></div>';
             return;
         }
         listBox.innerHTML = points.map(function (p) {
-            return '<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">'
-                + '<div class="flex items-center min-w-0">'
-                + '<span class="material-icons-outlined text-blue-600 mr-3">lightbulb</span>'
-                + '<div class="min-w-0"><p class="font-medium text-text-dark-brown truncate">' + esc(p.name || p.point_name) + '</p>'
-                + '<p class="text-sm text-gray-600 truncate">' + esc(p.subject || '') + (p.created_time ? ' | ' + esc(p.created_time) : '') + '</p></div></div>'
-                + masteryBadge(p.mastery_score)
-                + '</div>';
+            return '<div class="flex items-center gap-4 py-3 border-b border-cl-border last:border-0">'
+                + '<div class="w-9 h-9 rounded-full bg-cl-primary-soft flex items-center justify-center shrink-0">'
+                + '<svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-lightbulb"/></svg></div>'
+                + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-cl-text truncate">' + esc(p.point_name || p.name) + '</p>'
+                + '<p class="text-xs text-cl-text-3 mt-0.5">' + esc(p.subject || '') + ' · ' + esc(relTime(p.created_time)) + '</p></div>'
+                + masteryBadge(p.mastery_score) + '</div>';
         }).join('');
     }
-
     window.kbShowSubject = function (subject) {
-        if (!bridge) return;
-        listBox.innerHTML = '<p class="text-sm text-gray-500">加载中…</p>';
-        bridge.getSubjectKnowledgePoints(subject).then(function (r) {
-            var points = typeof r === 'string' ? JSON.parse(r || '[]') : (r || []);
-            renderPoints(points.slice(0, 50), subject + ' 的知识点（' + points.length + '）');
+        var my = ++renderToken;
+        grid.querySelectorAll('[data-subj]').forEach(function (c) {
+            var on = c.getAttribute('data-subj') === subject;
+            c.classList.toggle('ring-1', on);
+            c.classList.toggle('ring-cl-primary/40', on);
+        });
+        listBox.innerHTML = '<p class="text-sm text-cl-text-3">加载中…</p>';
+        getJSON('/api/knowledge/points?subject=' + encodeURIComponent(subject)).then(function (pts) {
+            if (my !== renderToken) return; // 旧响应丢弃
+            var rows = (pts || []).map(function (p) { p.subject = subject; return p; });
+            renderPoints(rows.slice(0, 50), subject + ' 的知识点（' + rows.length + '）');
         }).catch(function (e) {
-            listBox.innerHTML = '<p class="text-sm text-red-500">加载失败：' + esc(e && e.message || e) + '</p>';
+            if (my !== renderToken) return;
+            listBox.innerHTML = '<p class="text-sm text-cl-danger">加载失败：' + esc(e.message) + '</p>';
         });
     };
-
-    var allPointsCache = [];
     window.kbShowRecent = function () {
+        renderToken++; // 用户主动回全部视图：作废在途的学科请求
         var recent = allPointsCache.slice().sort(function (a, b) {
             return String(b.created_time || '').localeCompare(String(a.created_time || ''));
         }).slice(0, 20);
-        renderPoints(recent, '最近更新的知识点（全部科目）');
+        renderPoints(recent, '最近更新的知识点（全部学科）');
     };
-
+    window.kbAddSubject = function (ev) {
+        if (ev) ev.preventDefault();
+        var input = document.getElementById('kb-new-subject');
+        var btn = input ? input.parentElement.querySelector('button[type=submit]') : null;
+        var name = (input.value || '').trim();
+        if (!name || (btn && btn.disabled)) return false;
+        if (btn) btn.disabled = true; // 防连点并发 POST（N-1）
+        function done() { if (btn) btn.disabled = false; }
+        fetch('/api/subjects', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + tk(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subject_name: name })
+        }).then(function (r) { return r.json(); }).then(function (j) {
+            done();
+            if (j && j.success) { input.value = ''; init(); }
+            else { input.setCustomValidity((j && j.error) || '创建失败'); input.reportValidity(); input.setCustomValidity(''); }
+        }).catch(function (e) {
+            done();
+            input.setCustomValidity('网络异常：' + (e && e.message || e)); input.reportValidity(); input.setCustomValidity('');
+        });
+        return false;
+    };
     function init() {
-        if (!bridge || !bridge.getAllSubjects) {
-            grid.innerHTML = '<p class="col-span-full text-sm text-red-500">桥接层未就绪，请刷新页面重试</p>';
-            return;
-        }
-        bridge.getAllSubjects().then(function (r) {
-            var subjects = typeof r === 'string' ? JSON.parse(r || '[]') : (r || []);
-            statSubjects.textContent = subjects.length;
-            if (!subjects.length) {
-                grid.innerHTML = '<p class="col-span-full text-sm text-gray-500">暂无科目。请到「练 → 基于学习资料练习 → 科目管理」创建科目，再到「学」提取知识点。</p>';
-                listBox.innerHTML = '<p class="text-sm text-gray-500">暂无知识点</p>';
-                return;
+        var my = ++renderToken; // 本轮 init 的令牌；用户若已点学科卡则自动视图作废
+        getJSON('/api/subjects/stats').then(function (subs) {
+            if (my !== renderToken) return;
+            subs = subs || [];
+            statSubjectsEl.textContent = subs.length;
+            if (!subs.length) {
+                grid.innerHTML = '<p class="col-span-full text-sm text-cl-text-3">还没有学科，用右上角输入框创建第一个吧</p>';
+                renderPoints([], '最近更新的知识点');
+                return null; // N-4：空学科不再走尾部 kbShowRecent，避免标题闪烁
             }
-            grid.innerHTML = subjects.map(function (s) {
-                var name = s.name || s.subject_name;
-                return '<div class="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="kbShowSubject(\'' + esc(name).replace(/'/g, "\\'") + '\')">'
-                    + '<div class="flex items-center mb-2"><span class="material-icons-outlined text-blue-600 mr-2">folder</span>'
-                    + '<span class="font-medium text-text-dark-brown truncate">' + esc(name) + '</span></div>'
-                    + '<p class="text-sm text-gray-600">' + (s.knowledge_count || s.kp_count || 0) + ' 个知识点</p></div>';
+            grid.innerHTML = subs.map(function (s) {
+                var name = s.subject_name;
+                return '<button class="cl-card p-4 text-left" data-subj="' + esc(name) + '">'
+                    + '<div class="flex items-center gap-2 mb-2">'
+                    + '<svg class="w-4 h-4 text-cl-primary shrink-0" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-folder-open"/></svg>'
+                    + '<span class="text-sm font-semibold text-cl-text truncate">' + esc(name) + '</span></div>'
+                    + '<p class="text-xs text-cl-text-2">' + (s.kp_count || 0) + ' 知识点 · ' + (s.error_count || 0) + ' 错题 · ' + (s.favorite_count || 0) + ' 收藏</p>'
+                    + '</button>';
             }).join('');
-            // 汇总真实知识点：逐科目拉取（科目数量有限，一次性加载）
-            return Promise.all(subjects.map(function (s) {
-                var name = s.name || s.subject_name;
-                return bridge.getSubjectKnowledgePoints(name).then(function (r2) {
-                    var pts = typeof r2 === 'string' ? JSON.parse(r2 || '[]') : (r2 || []);
-                    return pts.map(function (p) { p.subject = name; return p; });
+            grid.querySelectorAll('[data-subj]').forEach(function (c) {
+                c.addEventListener('click', function () { window.kbShowSubject(c.getAttribute('data-subj')); });
+            });
+            return Promise.all(subs.map(function (s) {
+                return getJSON('/api/knowledge/points?subject=' + encodeURIComponent(s.subject_name)).then(function (pts) {
+                    return (pts || []).map(function (p) { p.subject = s.subject_name; return p; });
                 }).catch(function () { return []; });
             }));
         }).then(function (lists) {
-            if (!lists) return;
+            if (!lists || my !== renderToken) return;
             allPointsCache = [];
             var sum = 0, n = 0;
             lists.forEach(function (pts) {
                 pts.forEach(function (p) {
                     allPointsCache.push(p);
-                    if (p.mastery_score !== undefined && p.mastery_score !== null) { sum += Number(p.mastery_score) || 0; n++; }
+                    if (!isUnrated(p.mastery_score)) { sum += Number(p.mastery_score) || 0; n++; }
                 });
             });
-            statPoints.textContent = allPointsCache.length;
-            statMastery.textContent = n ? Math.round(sum / n) + '%' : '–';
+            statPointsEl.textContent = allPointsCache.length;
+            if (n) {
+                statMasteryEl.textContent = Math.round(sum / n) + '%';
+                var unrated = allPointsCache.length - n;
+                statMasterySubEl.textContent = '平均掌握度（' + n + ' 个已评估' + (unrated ? '，' + unrated + ' 个未评估不计入' : '') + '）';
+            } else {
+                statMasteryEl.textContent = '—';
+                statMasterySubEl.textContent = allPointsCache.length ? '全部知识点尚未评估，做几道练习后更新' : '平均掌握度';
+            }
             window.kbShowRecent();
         }).catch(function (e) {
-            grid.innerHTML = '<p class="col-span-full text-sm text-red-500">加载失败：' + esc(e && e.message || e) + '</p>';
+            if (my !== renderToken) return;
+            grid.innerHTML = '<p class="col-span-full text-sm text-cl-danger">加载失败：' + esc(e.message) + '</p>';
         });
     }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 50); });
-    } else {
-        setTimeout(init, 50);
-    }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 50); }); }
+    else { setTimeout(init, 50); }
 })();
 </script>

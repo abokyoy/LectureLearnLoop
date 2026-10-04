@@ -1,108 +1,81 @@
-<!-- 左侧菜单栏 -->
-<aside id="sidebar" class="w-64 flex flex-col p-4 bg-white border-r border-gray-200 transition-all duration-300">
-    <!-- 头部 -->
-    <div class="flex items-center mb-8">
-        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center mr-3">
-            <span class="material-icons-outlined text-white">school</span>
-        </div>
-        <h1 id="app-title" class="text-lg font-bold text-text-dark-brown transition-opacity duration-300">柯基学习小助手</h1>
+<!-- 批1 壳层重构：72px 窄图标侧边栏（DESIGN.md §6），Lucide sprite 图标，父项直达落地页；二级菜单用 hover flyout（练/记子功能，恢复 Qt menuState 二级语义） -->
+<aside id="sidebar" class="w-[72px] shrink-0 flex flex-col items-center py-4 bg-cl-surface border-r border-cl-border z-30">
+    <!-- Logo -->
+    <div class="w-10 h-10 rounded-full bg-cl-primary-soft flex items-center justify-center mb-6" title="柯基学习小助手">
+        <svg class="w-6 h-6 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dog"/></svg>
     </div>
-    
-    <!-- 用户信息（四期：真实账号，点头像打开用户设置） -->
-    <div id="user-info" class="flex flex-col items-center mb-8 transition-opacity duration-300">
-        <button id="user-avatar-btn" class="w-20 h-20 rounded-full bg-gradient-to-r from-green-400 to-blue-500 flex items-center justify-center mb-2 cursor-pointer hover:opacity-90 focus:outline-none" title="用户设置">
-            <span class="material-icons-outlined text-white text-3xl">account_circle</span>
-        </button>
-        <p id="user-name" class="font-semibold text-text-dark-brown">…</p>
-        <p id="user-sub" class="text-sm text-text-medium-brown">–</p>
-    </div>
-    
-    <!-- 导航菜单 -->
-    <nav id="navigation" class="flex-1 space-y-2">
-        <!-- 工作台 -->
-        <div class="menu-item">
-            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('dashboard')">
-                <span class="material-icons-outlined mr-3">dashboard</span>
-                <span class="menu-text">工作台</span>
-            </a>
-        </div>
-        
-        <!-- 学 -->
-        <div class="menu-item">
-            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('learn')">
-                <span class="material-icons-outlined mr-3">school</span>
-                <span class="menu-text">学</span>
-                <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
-            </a>
-            <div class="submenu ml-8 mt-2 space-y-1 hidden">
-                <!-- 四期D组：“从资料学习”已合并进网课笔记，菜单项下线 -->
-                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('online_course_notes')">
-                    <span class="material-icons-outlined mr-2 text-sm">mic</span>
-                    <span class="menu-text">网课笔记</span>
-                </a>
-            </div>
-        </div>
-        
-        <!-- 练 -->
-        <div class="menu-item">
-            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice')">
-                <span class="material-icons-outlined mr-3">fitness_center</span>
-                <span class="menu-text">练</span>
-                <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
-            </a>
-            <div class="submenu ml-8 mt-2 space-y-1 hidden">
-                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_materials')">
-                    <span class="material-icons-outlined mr-2 text-sm">quiz</span>
-                    <span class="menu-text">基于学习资料练习</span>
-                </a>
-                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_knowledge')">
-                    <span class="material-icons-outlined mr-2 text-sm">psychology</span>
-                    <span class="menu-text">基于知识点练习</span>
-                </a>
-                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('practice_errors')">
-                    <span class="material-icons-outlined mr-2 text-sm">error_outline</span>
-                    <span class="menu-text">基于错题练习</span>
-                </a>
-            </div>
-        </div>
-        
-        <!-- 记 -->
-        <div class="menu-item">
-            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory')">
-                <span class="material-icons-outlined mr-3">psychology</span>
-                <span class="menu-text">记</span>
-                <span class="material-icons-outlined ml-auto expand-icon">expand_more</span>
-            </a>
-            <div class="submenu ml-8 mt-2 space-y-1 hidden">
-                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory_knowledge')">
-                    <span class="material-icons-outlined mr-2 text-sm">lightbulb</span>
-                    <span class="menu-text">基于知识点记忆</span>
-                </a>
-                <a class="flex items-center px-4 py-2 text-sm text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('memory_errors')">
-                    <span class="material-icons-outlined mr-2 text-sm">history</span>
-                    <span class="menu-text">基于错题记忆</span>
-                </a>
-            </div>
-        </div>
-        
-        <!-- 知识库管理 -->
-        <div class="menu-item">
-            <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('knowledge_base')">
-                <span class="material-icons-outlined mr-3">library_books</span>
-                <span class="menu-text">知识库管理</span>
-            </a>
-        </div>
-    </nav>
-    
-    <!-- 设置 -->
-    <div class="mt-auto">
-        <a class="flex items-center px-4 py-2.5 text-text-gray hover:bg-bg-light-gray rounded-lg cursor-pointer" onclick="handleMenuClick('settings')">
-            <span class="material-icons-outlined mr-3">settings</span>
-            <span class="menu-text">设置</span>
+
+    <!-- 主导航（点击直达各模块落地页） -->
+    <nav id="navigation" class="flex-1 flex flex-col items-center gap-1">
+        <a class="cl-nav-item" data-cid="dashboard" title="工作台" onclick="handleMenuClick('dashboard')">
+            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layout-dashboard"/></svg>
+            <span class="text-xs">工作台</span>
         </a>
-        <!-- 收缩按钮 -->
-        <button class="flex items-center justify-center w-full py-2 text-text-gray hover:bg-bg-light-gray rounded-lg mt-2" onclick="toggleSidebar()">
-            <span class="material-icons-outlined" id="toggle-icon">chevron_left</span>
+        <a class="cl-nav-item" data-cid="online_course_notes" title="学 · 网课笔记" onclick="handleMenuClick('online_course_notes')">
+            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-graduation-cap"/></svg>
+            <span class="text-xs">学</span>
+        </a>
+        <!-- 练（u8）：父项直达科目统计总览；hover 展开全部练习模式 -->
+        <div class="relative group">
+            <a class="cl-nav-item" data-cid="practice_overview" title="练 · 练习总览" tabindex="0" onclick="handleMenuClick('practice_overview')">
+                <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dumbbell"/></svg>
+                <span class="text-xs">练</span>
+            </a>
+            <!-- CodeReview 批9 m-1：hover 或键盘 focus-within 均可展开，二级项可达 -->
+            <div class="hidden group-hover:flex group-focus-within:flex absolute left-full top-0 flex-col gap-0.5 min-w-[176px] rounded-cl border border-cl-border bg-cl-surface p-1.5 shadow-lg">
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('practice_overview')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layout-dashboard"/></svg>
+                    练习总览
+                </a>
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('practice_knowledge')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-target"/></svg>
+                    从知识点练
+                </a>
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('practice_materials')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layers"/></svg>
+                    从脑图练
+                </a>
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('practice_errors')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-alert-circle"/></svg>
+                    从错题练
+                </a>
+            </div>
+        </div>
+        <!-- 记：父项直达记忆总览（u9 科目统计首页）；hover 展开全部记忆模式 -->
+        <div class="relative group">
+            <a class="cl-nav-item" data-cid="memory_overview" title="记 · 记忆总览" tabindex="0" onclick="handleMenuClick('memory_overview')">
+                <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
+                <span class="text-xs">记</span>
+            </a>
+            <div class="hidden group-hover:flex group-focus-within:flex absolute left-full top-0 flex-col gap-0.5 min-w-[176px] rounded-cl border border-cl-border bg-cl-surface p-1.5 shadow-lg">
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('memory_overview')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layout-dashboard"/></svg>
+                    记忆总览
+                </a>
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('memory_knowledge')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
+                    记知识点
+                </a>
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('memory_errors')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-history"/></svg>
+                    记错题（复练）
+                </a>
+            </div>
+        </div>
+        <a class="cl-nav-item" data-cid="knowledge_base" title="知识库" onclick="handleMenuClick('knowledge_base')">
+            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-library"/></svg>
+            <span class="text-xs">知识库</span>
+        </a>
+    </nav>
+
+    <!-- 底部：设置 + 用户头像（点击打开用户设置） -->
+    <div class="mt-auto flex flex-col items-center gap-1">
+        <a class="cl-nav-item" data-cid="settings" title="设置" onclick="handleMenuClick('settings')">
+            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-settings"/></svg>
+            <span class="text-xs">设置</span>
+        </a>
+        <button id="user-avatar-btn" class="w-11 h-11 mt-2 rounded-full bg-cl-secondary-soft text-cl-secondary flex items-center justify-center cursor-pointer hover:opacity-90 focus:outline-none transition-opacity" title="用户设置">
+            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-user"/></svg>
         </button>
     </div>
 </aside>

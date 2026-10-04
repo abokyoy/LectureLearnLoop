@@ -1,0 +1,377 @@
+{# 记 · 基于知识点记忆（feat/memory-cards 整页重写，2026-09-28）
+   真实数据版：卡片墙来自 /api/memory/cards?card_type=kp，静态假数据全部下线。
+   交互：点击翻面(CSS 3D) → 4 档自评(/rate) → 熟练度/星值即时刷新；
+        每卡展开面板 = LLSlider(mastery_manual) / LLCurve(curve) / LLStars(stars)；
+        页顶「推荐学习」= 难度配比/数量/科目 → /api/memory/recommend → 依次过卡流。
+   所有前端动作经 /api/debug/log 上报。共享控件 widgets.js 懒加载，不重复造轮子。 #}
+<script src="{{ url_for('static', filename='js/widgets.js') }}"></script>
+<style>
+    .ll-mc-card { perspective: 1200px; }
+    .ll-mc-inner { position: relative; transition: transform .5s; transform-style: preserve-3d; }
+    .ll-mc-card.flipped .ll-mc-inner { transform: rotateY(180deg); }
+    .ll-mc-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+    .ll-mc-back { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: rotateY(180deg); }
+    .ll-mc-ratebtn { transition: all .15s; }
+    .ll-mc-ratebtn:hover { filter: brightness(0.95); }
+</style>
+
+<div class="bg-white rounded-xl shadow-sm p-6" id="ll-mc-root" data-card-type="kp">
+    <div class="flex items-start justify-between mb-4 flex-wrap gap-3">
+        <div>
+            <h3 class="text-xl font-semibold text-text-dark-brown mb-1">基于知识点记忆</h3>
+            <p class="text-text-gray text-sm">把重要知识点标注入记忆库，翻面自评，用间隔重复（FSRS）巩固（数据按用户隔离）</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <select id="ll-mc-subject" class="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">全部科目</option>
+            </select>
+            <button id="ll-mc-recommend-btn" class="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:bg-green-600">
+                <span class="material-icons-outlined text-sm mr-1 align-middle">auto_awesome</span>推荐学习
+            </button>
+            <button id="ll-mc-refresh" class="border border-gray-300 text-gray-600 px-3 py-2 rounded-lg text-sm hover:bg-gray-50">刷新</button>
+        </div>
+    </div>
+
+    <!-- 推荐配置面板 -->
+    <div id="ll-mc-rec-panel" class="hidden mb-4 bg-purple-50 border border-purple-200 rounded-lg p-4">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <div>
+                <label class="text-xs text-purple-700 block mb-1">卡片数量</label>
+                <input id="ll-mc-rec-count" type="number" min="1" max="50" value="5" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+            </div>
+            <div>
+                <label class="text-xs text-purple-700 block mb-1">类型</label>
+                <select id="ll-mc-rec-type" class="w-full border border-gray-300 rounded px-2 py-1 text-sm">
+                    <option value="kp">知识点卡片</option>
+                </select>
+            </div>
+            <div class="md:col-span-2">
+                <label class="text-xs text-purple-700 block mb-1">选题难度配比（容易 : 中等 : 困难）</label>
+                <div class="flex items-center gap-2">
+                    <input id="ll-mc-mix-easy" type="number" min="0" value="1" class="w-16 border border-gray-300 rounded px-2 py-1 text-sm">
+                    <span class="text-gray-400">:</span>
+                    <input id="ll-mc-mix-medium" type="number" min="0" value="1" class="w-16 border border-gray-300 rounded px-2 py-1 text-sm">
+                    <span class="text-gray-400">:</span>
+                    <input id="ll-mc-mix-hard" type="number" min="0" value="1" class="w-16 border border-gray-300 rounded px-2 py-1 text-sm">
+                </div>
+            </div>
+        </div>
+        <div class="mt-3 text-right">
+            <button id="ll-mc-rec-start" class="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-purple-700">开始过卡</button>
+        </div>
+    </div>
+
+    <!-- 统计条（真实计算） -->
+    <div class="grid grid-cols-3 gap-4 mb-5 text-center">
+        <div class="bg-gray-50 rounded-lg p-3"><p class="text-2xl font-bold text-gray-800" id="ll-mc-stat-total">–</p><p class="text-xs text-gray-500">记忆卡片</p></div>
+        <div class="bg-green-50 rounded-lg p-3"><p class="text-2xl font-bold text-green-700" id="ll-mc-stat-mastered">–</p><p class="text-xs text-green-600">已掌握(≥80)</p></div>
+        <div class="bg-red-50 rounded-lg p-3"><p class="text-2xl font-bold text-red-700" id="ll-mc-stat-due">–</p><p class="text-xs text-red-600">待巩固(&lt;60)</p></div>
+    </div>
+
+    <!-- 过卡模式提示条 -->
+    <div id="ll-mc-sprint-bar" class="hidden mb-4 bg-blue-600 text-white rounded-lg px-4 py-2 flex items-center justify-between">
+        <span id="ll-mc-sprint-info">推荐学习中…</span>
+        <button id="ll-mc-sprint-exit" class="text-xs underline">退出</button>
+    </div>
+
+    <!-- 卡片墙 -->
+    <div id="ll-mc-wall" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <p class="col-span-full text-sm text-gray-500">正在加载记忆卡片…</p>
+    </div>
+    <p id="ll-mc-empty" class="hidden text-sm text-gray-500 text-center py-10">
+        记忆库还没有知识点卡片。请到「练 · 打磨知识点」或知识点提取确认页勾选「加入记忆库」来标注卡片。
+    </p>
+</div>
+
+<script>
+(function () {
+    var CARD_TYPE = 'kp';
+    var KIND = 'kp';
+    var root = document.getElementById('ll-mc-root');
+    var wall = document.getElementById('ll-mc-wall');
+    var emptyEl = document.getElementById('ll-mc-empty');
+    var subjectSel = document.getElementById('ll-mc-subject');
+    var req = (window.LLAuth && window.LLAuth.request) ? window.LLAuth.request : null;
+
+    var RATINGS = [
+        { key: 'not_at_all', label: '很不熟悉', cls: 'bg-red-100 text-red-700 border-red-300' },
+        { key: 'vague', label: '不熟悉', cls: 'bg-orange-100 text-orange-700 border-orange-300' },
+        { key: 'familiar', label: '熟悉', cls: 'bg-blue-100 text-blue-700 border-blue-300' },
+        { key: 'perfect', label: '非常熟悉', cls: 'bg-green-100 text-green-700 border-green-300' }
+    ];
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    // 前端动作上报 /api/debug/log（静默失败，不阻断业务）
+    function report(action, status, data) {
+        try {
+            fetch('/api/debug/log', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ logs: [{ module: 'memory_' + CARD_TYPE, action: action, status: status || 'info', data: data || {}, source: 'frontend' }] })
+            }).catch(function () {});
+        } catch (e) { /* noop */ }
+    }
+    function masteryText(m) {
+        if (m == null || m < 0) return '<span class="text-gray-400">未评估</span>';
+        var cls = m >= 80 ? 'text-green-600' : (m >= 60 ? 'text-yellow-600' : 'text-red-600');
+        return '<span class="font-semibold ' + cls + '">' + m + '</span>';
+    }
+
+    // ---------------- 卡片渲染 ----------------
+    function buildCard(card) {
+        var el = document.createElement('div');
+        el.className = 'll-mc-card';
+        el.dataset.cardId = card.id;
+        el.dataset.refId = card.ref_id;
+        var un = !card.entity_exists;
+        el.innerHTML =
+            '<div class="ll-mc-inner bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">' +
+            '  <div class="ll-mc-face p-4 min-h-[150px]" data-face="front">' +
+            '    <div class="flex items-center justify-between mb-2">' +
+            '      <span class="text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-500">' + esc(card.subject_name) + '</span>' +
+            '      <div class="flex items-center gap-2 text-xs">' +
+            '        <span>熟练 ' + masteryText(card.mastery) + '</span>' +
+            '        <span class="text-gray-400">R ' + Math.round((card.retrievability || 0) * 100) + '%</span>' +
+            '      </div>' +
+            '    </div>' +
+            '    <p class="font-medium text-text-dark-brown leading-snug">' + esc(card.front_text) + '</p>' +
+            '    <div class="mt-3 flex items-center justify-between">' +
+            '      <span class="text-xs text-gray-400">' + (un ? '<span class="text-red-500">关联实体已删除</span>' : '点击卡片翻面') + '</span>' +
+            '      <button class="mc-expand text-xs text-blue-600 hover:underline" data-act="expand">展开数据面板</button>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div class="ll-mc-face ll-mc-back p-4 min-h-[150px] bg-gray-50" data-face="back">' +
+            '    <div class="text-[11px] text-gray-400 mb-1">背面 · 答案/描述</div>' +
+            '    <p class="text-sm text-gray-700 leading-snug mb-3 max-h-24 overflow-auto">' + esc(card.back_text) + '</p>' +
+            '    <div class="text-[11px] text-gray-400 mb-1">回忆得怎么样？</div>' +
+            '    <div class="grid grid-cols-4 gap-1">' +
+            RATINGS.map(function (r) {
+                return '<button class="ll-mc-ratebtn text-[11px] py-1.5 rounded border ' + r.cls + ' " data-rate="' + r.key + '">' + r.label + '</button>';
+            }).join('') +
+            '    </div>' +
+            '    <div class="mt-2 text-right"><button class="mc-flipback text-xs text-gray-500 hover:underline" data-act="flipback">翻回正面</button></div>' +
+            '  </div>' +
+            '</div>' +
+            '<div class="mc-panel hidden mt-2 bg-white border border-gray-200 rounded-xl p-4 space-y-4" data-panel></div>';
+        bindCard(el, card);
+        return el;
+    }
+
+    function bindCard(el, card) {
+        // 翻面（点击正面卡面触发，避开展开按钮）
+        el.querySelector('[data-face="front"]').addEventListener('click', function (e) {
+            if (e.target.closest('[data-act="expand"]')) return;
+            el.classList.add('flipped');
+            report('card_flip', 'info', { card_id: card.id, to: 'back' });
+        });
+        el.querySelector('[data-act="flipback"]').addEventListener('click', function () {
+            el.classList.remove('flipped');
+            report('card_flip', 'info', { card_id: card.id, to: 'front' });
+        });
+        // 4 档自评
+        el.querySelectorAll('[data-rate]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                doRate(el, card, btn.dataset.rate);
+            });
+        });
+        // 展开数据面板
+        el.querySelector('[data-act="expand"]').addEventListener('click', function () {
+            var panel = el.parentElement.querySelector('[data-panel]');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                mountPanel(panel, card);
+                report('panel_expand', 'info', { card_id: card.id, ref_id: card.ref_id });
+            } else {
+                panel.classList.add('hidden');
+            }
+        });
+    }
+
+    function doRate(el, card, key) {
+        if (!req) { report('rate', 'error', { msg: 'no_llauth' }); return; }
+        el.querySelectorAll('[data-rate]').forEach(function (b) { b.disabled = true; });
+        req('POST', '/api/memory/cards/' + card.id + '/rate', { self_assessment: key })
+            .then(function (data) {
+                report('card_rate', 'success', { card_id: card.id, self_assessment: key, mastery: data.mastery });
+                card.mastery = data.mastery;
+                card.retrievability = data.retrievability;
+                refreshCardMastery(el, card);
+                el.classList.remove('flipped');
+                updateStats();
+                if (sprint.active) advanceSprint();
+            })
+            .catch(function (e) {
+                report('card_rate', 'error', { card_id: card.id, err: String(e.message || e) });
+                alert('自评失败：' + (e.message || e));
+                el.querySelectorAll('[data-rate]').forEach(function (b) { b.disabled = false; });
+            });
+    }
+    function refreshCardMastery(el, card) {
+        var badge = el.querySelector('[data-face="front"] .flex.items-center.gap-2');
+        if (badge) badge.innerHTML = '<span>熟练 ' + masteryText(card.mastery) + '</span><span class="text-gray-400">R ' + Math.round((card.retrievability || 0) * 100) + '%</span>';
+    }
+
+    // ---------------- 展开面板：滑杆 + 曲线 + 星值 ----------------
+    function mountPanel(panel, card) {
+        panel.innerHTML =
+            '<div><div class="text-xs font-semibold text-gray-600 mb-1">手动熟练度（优先级最高，下次复习后恢复自动）</div><div data-slider></div></div>' +
+            '<div><div class="text-xs font-semibold text-gray-600 mb-1">熟练度曲线</div><div data-curve></div></div>' +
+            '<div class="flex flex-wrap gap-6">' +
+            '  <div><div class="text-xs font-semibold text-gray-600 mb-1">难度</div><div data-stars-diff></div></div>' +
+            '  <div><div class="text-xs font-semibold text-gray-600 mb-1">重要程度</div><div data-stars-imp></div></div>' +
+            '</div>';
+        var refId = card.ref_id;
+
+        if (window.LLSlider) {
+            window.LLSlider.mount(panel.querySelector('[data-slider]'), {
+                value: card.mastery,
+                onCommit: function (v) {
+                    report('mastery_manual', 'info', { ref_id: refId, value: v });
+                    req('POST', '/api/kb/' + KIND + '/' + refId + '/mastery_manual', { value: v })
+                        .then(function () { card.mastery = v; refreshMasteryInWall(card); updateStats(); })
+                        .catch(function (e) { report('mastery_manual', 'error', { err: String(e.message || e) }); alert('设定失败：' + (e.message || e)); });
+                }
+            });
+        }
+        if (window.LLStars) {
+            window.LLStars.mount(panel.querySelector('[data-stars-diff]'), {
+                value: card.difficulty_score, label: '难度',
+                onChange: function (v) { setStars(refId, { difficulty: v }, card); }
+            });
+            window.LLStars.mount(panel.querySelector('[data-stars-imp]'), {
+                value: card.importance_score, label: '重要',
+                onChange: function (v) { setStars(refId, { importance: v }, card); }
+            });
+        }
+        if (window.LLCurve) {
+            req('GET', '/api/kb/' + KIND + '/' + refId + '/curve')
+                .then(function (data) {
+                    window.LLCurve.draw(panel.querySelector('[data-curve]'), { points: (data && data.points) || [], width: 300, height: 110 });
+                    report('curve_load', 'success', { ref_id: refId, count: (data && data.count) || 0 });
+                })
+                .catch(function (e) { report('curve_load', 'error', { err: String(e.message || e) }); });
+        }
+    }
+    function setStars(refId, payload, card) {
+        report('set_stars', 'info', Object.assign({ ref_id: refId }, payload));
+        req('POST', '/api/kb/' + KIND + '/' + refId + '/stars', payload)
+            .then(function () { if (payload.difficulty != null) card.difficulty_score = payload.difficulty; if (payload.importance != null) card.importance_score = payload.importance; })
+            .catch(function (e) { report('set_stars', 'error', { err: String(e.message || e) }); alert('调星失败：' + (e.message || e)); });
+    }
+
+    // ---------------- 列表加载 ----------------
+    var cards = [];
+    function loadCards() {
+        if (!req) { wall.innerHTML = '<p class="col-span-full text-sm text-red-500">未登录或桥接未就绪</p>'; return; }
+        wall.innerHTML = '<p class="col-span-full text-sm text-gray-500">正在加载记忆卡片…</p>';
+        var qs = '?card_type=' + CARD_TYPE + (subjectSel.value ? ('&subject=' + encodeURIComponent(subjectSel.value)) : '');
+        report('list_cards', 'info', { card_type: CARD_TYPE, subject: subjectSel.value || 'ALL' });
+        req('GET', '/api/memory/cards' + qs).then(function (data) {
+            cards = (data && data.cards) || [];
+            render();
+        }).catch(function (e) {
+            wall.innerHTML = '<p class="col-span-full text-sm text-red-500">加载失败：' + esc(e.message || e) + '</p>';
+            report('list_cards', 'error', { err: String(e.message || e) });
+        });
+    }
+    function render() {
+        wall.innerHTML = '';
+        if (!cards.length) { emptyEl.classList.remove('hidden'); updateStats(); return; }
+        emptyEl.classList.add('hidden');
+        cards.forEach(function (c) { wall.appendChild(buildCard(c)); });
+        updateStats();
+    }
+    function refreshMasteryInWall(card) {
+        var el = wall.querySelector('.ll-mc-card[data-card-id="' + card.id + '"]');
+        if (el) refreshCardMastery(el, card);
+    }
+    function updateStats() {
+        var total = cards.length;
+        var mastered = cards.filter(function (c) { return c.mastery >= 80; }).length;
+        var due = cards.filter(function (c) { return c.mastery >= 0 && c.mastery < 60; }).length;
+        document.getElementById('ll-mc-stat-total').textContent = total;
+        document.getElementById('ll-mc-stat-mastered').textContent = mastered;
+        document.getElementById('ll-mc-stat-due').textContent = due;
+    }
+
+    function loadSubjects() {
+        if (!req) return;
+        req('GET', '/api/subjects').then(function (list) {
+            // /api/subjects 返回字符串数组（兼容对象形态），修复评审 Major#2
+            var names = (list || []).map(function (s) {
+                return (s && (s.subject_name || s.name)) || (typeof s === 'string' ? s : null);
+            }).filter(Boolean);
+            names.forEach(function (n) {
+                var o = document.createElement('option'); o.value = n; o.textContent = n; subjectSel.appendChild(o);
+            });
+        }).catch(function () {});
+    }
+
+    // ---------------- 推荐过卡流 ----------------
+    var sprint = { active: false, queue: [], idx: 0 };
+    var recPanel = document.getElementById('ll-mc-rec-panel');
+    document.getElementById('ll-mc-recommend-btn').addEventListener('click', function () {
+        recPanel.classList.toggle('hidden');
+        report('toggle_recommend_panel', 'info', { open: !recPanel.classList.contains('hidden') });
+    });
+    document.getElementById('ll-mc-refresh').addEventListener('click', loadCards);
+    subjectSel.addEventListener('change', loadCards);
+    document.getElementById('ll-mc-rec-start').addEventListener('click', startSprint);
+    document.getElementById('ll-mc-sprint-exit').addEventListener('click', function () { endSprint(); });
+
+    function startSprint() {
+        var count = parseInt(document.getElementById('ll-mc-rec-count').value || '5', 10);
+        var mix = {
+            '容易': parseInt(document.getElementById('ll-mc-mix-easy').value || '0', 10),
+            '中等': parseInt(document.getElementById('ll-mc-mix-medium').value || '0', 10),
+            '困难': parseInt(document.getElementById('ll-mc-mix-hard').value || '0', 10)
+        };
+        var body = { card_type: document.getElementById('ll-mc-rec-type').value || CARD_TYPE, count: count, difficulty_mix: mix };
+        if (subjectSel.value) body.subject = subjectSel.value;
+        report('recommend_start', 'info', body);
+        req('POST', '/api/memory/recommend', body).then(function (data) {
+            recPanel.classList.add('hidden');
+            var list = (data && data.cards) || [];
+            if (data && data.note) { report('recommend_shortfall', 'info', { note: data.note }); }
+            sprint = { active: true, queue: list.slice(), idx: 0 };
+            renderSprint();
+        }).catch(function (e) {
+            report('recommend_start', 'error', { err: String(e.message || e) });
+            alert('推荐失败：' + (e.message || e));
+        });
+    }
+    function renderSprint() {
+        var bar = document.getElementById('ll-mc-sprint-bar');
+        if (!sprint.active) { bar.classList.add('hidden'); render(); return; }
+        bar.classList.remove('hidden');
+        if (sprint.idx >= sprint.queue.length) {
+            document.getElementById('ll-mc-sprint-info').textContent = '推荐学习完成，共 ' + sprint.queue.length + ' 张。';
+            report('sprint_done', 'success', { count: sprint.queue.length });
+            setTimeout(endSprint, 1500);
+            return;
+        }
+        var cur = sprint.queue[sprint.idx];
+        document.getElementById('ll-mc-sprint-info').textContent =
+            '过卡 ' + (sprint.idx + 1) + ' / ' + sprint.queue.length + '：' + (cur.front_text || '').slice(0, 30);
+        // 只渲染当前卡
+        wall.innerHTML = '';
+        wall.appendChild(buildCard(cardFromSprint(cur)));
+    }
+    function cardFromSprint(s) {
+        return { id: s.id, ref_id: s.ref_id, card_type: s.card_type, subject_name: s.subject_name,
+                 front_text: s.front_text, back_text: s.back_text, mastery: s.mastery,
+                 retrievability: s.retrievability, difficulty_score: s.difficulty_score,
+                 importance_score: s.importance_score, entity_exists: true };
+    }
+    function advanceSprint() { sprint.idx++; renderSprint(); }
+    function endSprint() { sprint = { active: false, queue: [], idx: 0 }; document.getElementById('ll-mc-sprint-bar').classList.add('hidden'); loadCards(); }
+
+    // ---------------- 初始化 ----------------
+    function init() { loadSubjects(); loadCards(); }
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 50); }); }
+    else { setTimeout(init, 50); }
+})();
+</script>

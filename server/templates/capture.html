@@ -4,12 +4,13 @@
 <meta charset="utf-8">
 <title>框选截屏</title>
 <style>
+  /* 批7 重设计：框选视觉统一设计系统橙 */
   html,body { margin:0; height:100%; overflow:hidden; background:#000; cursor:crosshair; font-family:"Segoe UI",sans-serif; }
   #bg { position:fixed; inset:0; width:100%; height:100%; object-fit:fill; user-select:none; -webkit-user-drag:none; }
   #mask { position:fixed; inset:0; background:rgba(0,0,0,.45); }
-  #sel { position:fixed; border:2px solid #4c8dff; background:rgba(76,141,255,.12); display:none; }
-  #hint { position:fixed; top:12px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,.6); padding:8px 16px; border-radius:8px; font-size:14px; z-index:10; }
-  #tip { position:fixed; color:#4c8dff; font-size:12px; background:rgba(0,0,0,.7); padding:2px 6px; border-radius:4px; display:none; z-index:10; }
+  #sel { position:fixed; border:2px solid #F97316; background:rgba(249,115,22,.12); display:none; }
+  #hint { position:fixed; top:12px; left:50%; transform:translateX(-50%); color:#fff; background:rgba(0,0,0,.6); padding:8px 16px; border-radius:10px; font-size:14px; z-index:10; }
+  #tip { position:fixed; color:#FFEDD5; font-size:12px; background:rgba(194,65,12,.9); padding:2px 6px; border-radius:6px; display:none; z-index:10; }
 </style>
 </head>
 <body>

@@ -1,81 +1,29 @@
-<div class="bg-white rounded-xl shadow-sm p-6">
-    <div class="text-center py-16">
-        <span class="material-icons-outlined text-6xl text-gray-400 mb-4">lightbulb</span>
-        <h3 class="text-xl font-semibold text-text-dark-brown mb-2">基于知识点记忆</h3>
-        <p class="text-text-gray mb-6">通过脑图和间隔重复算法加强知识点记忆</p>
-        
-        <div class="max-w-2xl mx-auto">
-            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-6 mb-6">
-                <h4 class="text-lg font-semibold text-purple-800 mb-4">记忆进度</h4>
-                
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="text-center">
-                        <div class="text-3xl font-bold text-purple-600">156</div>
-                        <div class="text-sm text-purple-500">已掌握知识点</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-3xl font-bold text-blue-600">23</div>
-                        <div class="text-sm text-blue-500">待复习知识点</div>
-                    </div>
-                </div>
-                
-                <div class="w-full bg-gray-200 rounded-full h-2">
-                    <div class="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full" style="width: 87%"></div>
-                </div>
-                <p class="text-sm text-gray-600 mt-2">总体掌握程度: 87%</p>
-            </div>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div class="flex items-center mb-3">
-                        <span class="material-icons-outlined text-green-600 mr-2">schedule</span>
-                        <h5 class="font-semibold text-green-800">今日复习</h5>
-                    </div>
-                    <p class="text-2xl font-bold text-green-600 mb-1">5个</p>
-                    <p class="text-sm text-green-500">知识点需要复习</p>
-                </div>
-                
-                <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                    <div class="flex items-center mb-3">
-                        <span class="material-icons-outlined text-orange-600 mr-2">trending_up</span>
-                        <h5 class="font-semibold text-orange-800">学习效率</h5>
-                    </div>
-                    <p class="text-2xl font-bold text-orange-600 mb-1">92%</p>
-                    <p class="text-sm text-orange-500">比上周提升8%</p>
-                </div>
-            </div>
-            
-            <div class="space-y-3 mb-6">
-                <h5 class="font-semibold text-text-dark-brown text-left">推荐复习</h5>
-                
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-left">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-yellow-800">线性回归 - 梯度下降</span>
-                        <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">高优先级</span>
-                    </div>
-                    <p class="text-sm text-yellow-600">上次复习: 3天前 | 遗忘概率: 65%</p>
-                </div>
-                
-                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-blue-800">神经网络 - 激活函数</span>
-                        <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">中优先级</span>
-                    </div>
-                    <p class="text-sm text-blue-600">上次复习: 1周前 | 遗忘概率: 45%</p>
-                </div>
-            </div>
-            
-            <div class="flex space-x-4 justify-center">
-                <button class="bg-primary text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors">
-                    <span class="material-icons-outlined mr-2">play_arrow</span>
-                    开始记忆训练
-                </button>
-                
-                <button class="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition-colors">
-                    <span class="material-icons-outlined mr-2">account_tree</span>
-                    查看知识脑图
-                </button>
-            </div>
+<!-- c2（2026-10-01）：记知识点翻卡化——默认卡片复习（最弱优先，背面四档自评→FSRS），可切列表；概览来自 /api/dashboard/stats -->
+<div class="cl-page space-y-6" data-pm-page="memory_knowledge">
+
+    <div>
+        <h1 class="text-[22px] font-bold text-cl-text flex items-center gap-2">
+            <svg class="w-6 h-6 text-cl-secondary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
+            知识点记忆
+        </h1>
+        <p class="text-sm text-cl-text-2 mt-1">掌握度 ≥ 80% 视为已掌握，先补最薄弱的知识点</p>
+    </div>
+
+    <!-- 全局掌握概览（真实统计，跨所有学科） -->
+    <div class="cl-card p-6">
+        <div class="flex items-end gap-2 mb-3">
+            <span class="text-[28px] font-bold text-cl-secondary leading-none" data-role="mastered">–</span>
+            <span class="text-sm text-cl-text-3" data-role="total"></span>
         </div>
+        <div class="cl-progress"><div class="cl-progress-bar" data-role="bar" style="width:0%"></div></div>
+        <p class="text-xs text-cl-text-2 mt-2" data-role="pct">加载中…</p>
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap" data-role="subjects"></div>
+
+    <div data-role="main">
+        <p class="text-sm text-cl-text-3 py-6">加载中…</p>
     </div>
 </div>
+<script src="/static/js/widgets.js"></script>
+<script src="/static/js/pm_pages.js"></script>

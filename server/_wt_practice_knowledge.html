@@ -1,0 +1,334 @@
+{# 打磨知识点（feat/kp-polish，方案 v3 §1.3-3/§5.2）：整页重写，原静态假数据全部移除。
+   数据与能力：
+   - 列表/六维排序：本分支蓝图 GET /api/kp-polish/kps（raw SQL，两阶段 decay_flush）；
+   - 调星：共享端点 POST /api/kb/kp/<id>/stars（0-10 分，服务端截断）；
+   - 手动熟练度：共享端点 POST /api/kb/kp/<id>/mastery_manual（最高优先级，下次真实复习自动恢复派生）；
+   - 熟练度曲线：共享端点 GET /api/kb/kp/<id>/curve（LLCurve 双线：熟练度+复习时点记忆保留）；
+   - 控件全部来自共享 widgets.js（禁止页面内重复实现）；
+   - 「去练习」沿用现有跳转约定（localStorage ll_kp_entry + 父窗口 handleMenuClick）；
+   - 「标注入记忆库」调 POST /api/memory/cards（兄弟分支 memory-cards 实现，未就绪时 UI 提示不报错）。
+   交互留痕：所有前端节点经 POST /api/debug/log 上报 debug_trace.jsonl。 #}
+<div class="bg-white rounded-xl shadow-sm p-6" id="kpp-page">
+    <div class="mb-6 flex items-end justify-between flex-wrap gap-3">
+        <div>
+            <h3 class="text-xl font-semibold text-text-dark-brown mb-1">打磨知识点</h3>
+            <p class="text-text-gray text-sm">排序浏览你的知识点，直接调星、设定熟练度、查看掌握曲线（数据按用户隔离）</p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+            <select id="kpp-subject" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary">
+                <option value="">全部科目</option>
+            </select>
+            <select id="kpp-sort" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary" title="排序维度">
+                <option value="created">建立时间</option>
+                <option value="mastery">熟练度</option>
+                <option value="difficulty">难度</option>
+                <option value="importance">重要程度</option>
+                <option value="last_review">最近复习</option>
+                <option value="learn_count">学习次数</option>
+            </select>
+            <button id="kpp-dir" class="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50" title="切换升/降序">升序 ↑</button>
+        </div>
+    </div>
+
+    <div id="kpp-toast" class="hidden mb-4 px-4 py-2 rounded-lg text-sm"></div>
+    <div id="kpp-list" class="space-y-2">
+        <p class="text-sm text-gray-500">正在加载知识点…</p>
+    </div>
+    <p class="text-xs text-gray-400 mt-4">提示：点击行展开面板可调星 / 手动设定熟练度 / 查看曲线；星值最低 0.5 星，上限 5 星。</p>
+</div>
+
+<script src="/static/js/widgets.js"></script>
+<script>
+(function () {
+    'use strict';
+    var TOKEN = function () {
+        try { return (window.llGetToken && window.llGetToken()) || localStorage.getItem('ll_token') || sessionStorage.getItem('ll_token') || ''; } catch (e) { return ''; }
+    };
+    function headers() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN() }; }
+
+    var state = { sort: 'created', dir: 'asc', subject: '', items: [], expanded: null, widgets: {} };
+
+    function esc(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+
+    // ---- 前端留痕（任务强制：交互节点上报 /api/debug/log，静默失败不阻断业务） ----
+    function dbg(action, status, data) {
+        try {
+            fetch('/api/debug/log', {
+                method: 'POST', headers: headers(),
+                body: JSON.stringify({ logs: [{ source: 'frontend', module: 'practice_knowledge', action: action, status: status || 'info', data: data || {} }] })
+            }).catch(function () { /* 调试通道静默 */ });
+        } catch (e) { /* noop */ }
+    }
+
+    function toast(msg, ok) {
+        var el = document.getElementById('kpp-toast');
+        if (!el) return;
+        el.textContent = msg;
+        el.className = 'mb-4 px-4 py-2 rounded-lg text-sm ' + (ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600');
+        el.classList.remove('hidden');
+        setTimeout(function () { el.classList.add('hidden'); }, 4000);
+    }
+
+    // widgets.js 为外部脚本，SPA 片段注入后异步就绪：轮询兜底（最长 3s）
+    function whenWidgets(cb) {
+        if (window.LLStars && window.LLSlider && window.LLCurve) return cb(true);
+        var n = 0;
+        var t = setInterval(function () {
+            n++;
+            if (window.LLStars && window.LLSlider && window.LLCurve) { clearInterval(t); cb(true); }
+            else if (n > 30) { clearInterval(t); cb(false); }
+        }, 100);
+    }
+
+    function starText(score) { return (Number(score) / 2).toFixed(1) + '★'; }
+    function masteryText(v) { return (v === -1 || v === null || v === undefined) ? '未评估' : (Math.round(v) + ' 分'); }
+
+    // ---- 数据加载 ----
+    function loadSubjects() {
+        fetch('/api/kp-polish/subjects', { headers: headers() })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var sel = document.getElementById('kpp-subject');
+                (d.subjects || []).forEach(function (s) {
+                    var o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o);
+                });
+            }).catch(function () { /* 科目加载失败不阻断列表 */ });
+    }
+
+    function loadList() {
+        var box = document.getElementById('kpp-list');
+        box.innerHTML = '<p class="text-sm text-gray-500">正在加载知识点…</p>';
+        var url = '/api/kp-polish/kps?sort=' + encodeURIComponent(state.sort) + '&dir=' + encodeURIComponent(state.dir) +
+            (state.subject ? '&subject=' + encodeURIComponent(state.subject) : '');
+        dbg('list_request', 'info', { sort: state.sort, dir: state.dir, subject: state.subject });
+        fetch(url, { headers: headers() })
+            .then(function (r) { if (r.status === 401) throw new Error('未登录'); return r.json(); })
+            .then(function (d) {
+                if (!d.success) throw new Error(d.error || '接口返回失败');
+                state.items = d.items || [];
+                renderList();
+                dbg('list_rendered', 'success', { count: state.items.length });
+                applyKpEntry();
+            })
+            .catch(function (e) {
+                box.innerHTML = '<p class="text-sm text-red-500">加载失败：' + esc(e.message) + '</p>';
+                dbg('list_failed', 'error', { err: String(e.message || e) });
+            });
+    }
+
+    function renderList() {
+        var box = document.getElementById('kpp-list');
+        if (!state.items.length) {
+            box.innerHTML = '<p class="text-sm text-gray-500">暂无知识点。可到「学 → 网课笔记」提取，或调整筛选条件。</p>';
+            return;
+        }
+        box.innerHTML = state.items.map(function (p, i) {
+            return '<div class="border border-gray-200 rounded-lg" data-idx="' + i + '">' +
+                '<div class="kpp-row flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-gray-50" data-idx="' + i + '">' +
+                '<div class="min-w-0 flex items-center gap-3">' +
+                '<span class="font-medium text-text-dark-brown truncate">' + esc(p.point_name) + '</span>' +
+                '<span class="text-xs text-gray-400">' + esc(p.subject_name) + '</span></div>' +
+                '<div class="flex items-center gap-4 text-xs text-gray-600 shrink-0">' +
+                '<span title="难度">难度 ' + starText(p.difficulty_score) + '</span>' +
+                '<span title="重要程度">重要 ' + starText(p.importance_score) + '</span>' +
+                '<span title="熟练度">熟练 ' + masteryText(p.mastery_score) + '</span>' +
+                '<span title="最近复习">' + (p.last_review_time ? esc(String(p.last_review_time).slice(0, 10)) : '未复习') + '</span>' +
+                '<span title="学习次数">' + p.learn_count + ' 次</span>' +
+                '<span class="material-icons-outlined text-gray-400">' + (state.expanded === i ? 'expand_less' : 'expand_more') + '</span>' +
+                '</div></div>' +
+                '<div class="kpp-panel border-t border-gray-100 px-4 py-3 bg-gray-50" data-idx="' + i + '" style="' + (state.expanded === i ? '' : 'display:none') + '"></div>' +
+                '</div>';
+        }).join('');
+        Array.prototype.forEach.call(box.querySelectorAll('.kpp-row'), function (row) {
+            row.addEventListener('click', function () { togglePanel(Number(row.dataset.idx)); });
+        });
+        if (state.expanded !== null) mountPanel(state.expanded);
+    }
+
+    // ---- 行展开面板：调星 / 滑杆 / 曲线 / 去练习 / 标注记忆库 ----
+    function togglePanel(idx) {
+        state.expanded = (state.expanded === idx) ? null : idx;
+        dbg('panel_toggle', 'info', { idx: idx, expanded: state.expanded !== null });
+        renderList();
+    }
+
+    function mountPanel(idx) {
+        var panel = document.querySelector('.kpp-panel[data-idx="' + idx + '"]');
+        var p = state.items[idx];
+        if (!panel || !p) return;
+        panel.innerHTML =
+            '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+            '<div><p class="text-xs text-gray-500 mb-1">难度（左半星=0.5，右半星=1，键盘←→）</p><span id="kpp-diff-' + idx + '"></span></div>' +
+            '<div><p class="text-xs text-gray-500 mb-1">重要程度</p><span id="kpp-imp-' + idx + '"></span></div>' +
+            '<div class="md:col-span-2"><p class="text-xs text-gray-500 mb-1">熟练度（手动设定=最高优先级，下次真实复习后恢复自动派生）</p><div id="kpp-slider-' + idx + '"></div></div>' +
+            '<div class="md:col-span-2"><p class="text-xs text-gray-500 mb-1">熟练度曲线</p><div id="kpp-curve-' + idx + '"></div></div>' +
+            '<div class="md:col-span-2 flex items-center gap-4 pt-2 border-t border-gray-200">' +
+            '<button id="kpp-practice-' + idx + '" class="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600">去练习</button>' +
+            '<label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">' +
+            '<input type="checkbox" id="kpp-mem-' + idx + '" class="h-4 w-4 accent-green-600"> 标注入记忆库</label>' +
+            '<span class="text-xs text-gray-400">曲线红=熟练度(100×R)，蓝虚线=复习时点记忆保留；复习可能使红线下落属正常（Again/Hard 评级）</span>' +
+            '</div></div>';
+
+        whenWidgets(function (ok) {
+            if (!ok) {
+                panel.insertAdjacentHTML('beforeend', '<p class="text-xs text-red-500 mt-2">共享控件 widgets.js 未加载，请刷新重试</p>');
+                dbg('widgets_missing', 'error', { kp_id: p.id });
+                return;
+            }
+            state.widgets[p.id] = {};
+            state.widgets[p.id].diff = LLStars.mount(document.getElementById('kpp-diff-' + idx), {
+                value: p.difficulty_score, label: '难度',
+                onChange: function (v) { setStars(p, 'difficulty', v, idx); }
+            });
+            state.widgets[p.id].imp = LLStars.mount(document.getElementById('kpp-imp-' + idx), {
+                value: p.importance_score, label: '重要',
+                onChange: function (v) { setStars(p, 'importance', v, idx); }
+            });
+            state.widgets[p.id].slider = LLSlider.mount(document.getElementById('kpp-slider-' + idx), {
+                value: p.mastery_score,
+                onCommit: function (v) { setMastery(p, v, idx); }
+            });
+            drawCurve(p.id, document.getElementById('kpp-curve-' + idx));
+        });
+
+        document.getElementById('kpp-practice-' + idx).addEventListener('click', function (e) {
+            e.stopPropagation();
+            goPractice(p);
+        });
+        document.getElementById('kpp-mem-' + idx).addEventListener('change', function (e) {
+            toggleMemoryCard(p, e.target.checked, idx);
+        });
+    }
+
+    function setStars(p, field, v, idx) {
+        var body = {}; body[field] = v;
+        dbg('stars_change', 'info', { kp_id: p.id, field: field, value: v });
+        fetch('/api/kb/kp/' + p.id + '/stars', { method: 'POST', headers: headers(), body: JSON.stringify(body) })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d.success) throw new Error(d.error || '调星失败');
+                p[field === 'difficulty' ? 'difficulty_score' : 'importance_score'] = v;
+                toast('已保存' + (field === 'difficulty' ? '难度' : '重要度') + ' ' + starText(v), true);
+                dbg('stars_saved', 'success', { kp_id: p.id, field: field, value: v });
+            })
+            .catch(function (e) {
+                toast('调星失败：' + e.message, false);
+                dbg('stars_failed', 'error', { kp_id: p.id, err: String(e.message || e) });
+                var w = state.widgets[p.id];  // 回滚到服务端现值
+                if (w) { var back = field === 'difficulty' ? p.difficulty_score : p.importance_score; (w.diff && field === 'difficulty' ? w.diff : w.imp).set(back); }
+            });
+    }
+
+    function setMastery(p, v, idx) {
+        dbg('mastery_manual_change', 'info', { kp_id: p.id, value: v });
+        fetch('/api/kb/kp/' + p.id + '/mastery_manual', { method: 'POST', headers: headers(), body: JSON.stringify({ value: v }) })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d.success) throw new Error(d.error || '设定失败');
+                var body = d.data || d;  // 共享端点为 {success,data:{...}} 包装形态，兼容平铺
+                p.mastery_score = body.mastery; p.mastery_manual = body.manual;
+                toast('熟练度已手动设定为 ' + v + ' 分', true);
+                dbg('mastery_manual_saved', 'success', { kp_id: p.id, value: v });
+                var panel = document.querySelector('.kpp-panel[data-idx="' + idx + '"]');
+                if (panel) drawCurve(p.id, panel.querySelector('[id^="kpp-curve-"]'));
+                renderList();  // 行内熟练度摘要同步
+            })
+            .catch(function (e) {
+                toast('熟练度设定失败：' + e.message, false);
+                dbg('mastery_manual_failed', 'error', { kp_id: p.id, err: String(e.message || e) });
+            });
+    }
+
+    function drawCurve(kpId, el) {
+        if (!el) return;
+        fetch('/api/kb/kp/' + kpId + '/curve', { headers: headers() })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d.success) throw new Error(d.error || '曲线加载失败');
+                var body = d.data || d;  // 共享端点包装形态解包，与 practice_materials 同口径
+                LLCurve.draw(el, { points: body.points || [], width: 460, height: 130 });
+                dbg('curve_drawn', 'success', { kp_id: kpId, count: body.count });
+            })
+            .catch(function (e) {
+                el.innerHTML = '<p class="text-xs text-red-500">曲线加载失败：' + esc(e.message) + '</p>';
+                dbg('curve_failed', 'error', { kp_id: kpId, err: String(e.message || e) });
+            });
+    }
+
+    // 「去练习」：沿用 practice_materials 详情入口的既有跳转约定（ll_kp_entry + 菜单切换）
+    // 跳转优先级：父窗口菜单（iframe 形态）> 同文档菜单（Electron SPA 片段形态）> 整页兜底
+    // 必须优先走 SPA 内部菜单切换：location.href='/practice' 会整页跳离 SPA 壳，
+    // 导致侧边栏丢失、独立页无返回按钮——用户验收实测断头路（P024）。
+    function goPractice(p) {
+        dbg('go_practice', 'info', { kp_id: p.id, name: p.point_name });
+        try {
+            localStorage.setItem('ll_kp_entry', JSON.stringify({
+                menu: 'practice_materials', kp_id: p.id, name: p.point_name,
+                subject: p.subject_name || '', ts: Date.now()
+            }));
+        } catch (e) { /* ignore */ }
+        var parentHasFn = window.parent && window.parent !== window && typeof window.parent.handleMenuClick === 'function';
+        if (parentHasFn) { try { window.parent.handleMenuClick('practice_materials'); return; } catch (e) { /* 落兜底 */ } }
+        // 同文档 SPA 片段形态：直接调本页所在窗口的菜单切换（保留侧边栏，落地页消费 ll_kp_entry）
+        if (typeof window.handleMenuClick === 'function') { try { window.handleMenuClick('practice_materials'); return; } catch (e) { /* 落兜底 */ } }
+        window.location.href = '/practice';
+    }
+
+    // 「标注入记忆库」：端点由兄弟分支 memory-cards 实现；未就绪时提示，不算本页错误
+    function toggleMemoryCard(p, checked, idx) {
+        dbg('memory_toggle_attempt', 'info', { kp_id: p.id, checked: checked });
+        if (!checked) { toast('取消标注暂由记忆库页面管理（卡片仅可在卡片页移除）', true); return; }
+        fetch('/api/memory/cards', { method: 'POST', headers: headers(), body: JSON.stringify({ card_type: 'kp', ref_id: p.id }) })
+            .then(function (r) { return r.json().catch(function () { throw new Error('HTTP ' + r.status); }); })
+            .then(function (d) {
+                if (d.success === false) throw new Error(d.error || '接口返回失败');
+                toast('已标注到记忆库', true);
+                dbg('memory_card_added', 'success', { kp_id: p.id });
+            })
+            .catch(function (e) {
+                var box = document.getElementById('kpp-mem-' + idx);
+                if (box) box.checked = false;
+                toast('记忆库接口尚未就绪（兄弟分支开发中）：' + e.message, false);
+                dbg('memory_card_pending', 'warn', { kp_id: p.id, err: String(e.message || e) });
+            });
+    }
+
+    // 从脑图详情「复习此知识点」进入时携带的上下文：自动展开并高亮对应行
+    function applyKpEntry() {
+        try {
+            var raw = localStorage.getItem('ll_kp_entry');
+            if (!raw) return;
+            var entry = JSON.parse(raw);
+            if (entry.menu !== 'practice_knowledge' || !entry.kp_id) return;
+            var i = state.items.findIndex(function (p) { return String(p.id) === String(entry.kp_id); });
+            if (i >= 0) {
+                state.expanded = i; renderList();
+                var row = document.querySelector('.kpp-row[data-idx="' + i + '"]');
+                if (row) { row.scrollIntoView({ behavior: 'smooth', block: 'center' }); row.classList.add('ring-2', 'ring-purple-300'); }
+                dbg('entry_expanded', 'info', { kp_id: entry.kp_id });
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    // ---- 事件绑定与初始化 ----
+    document.getElementById('kpp-sort').addEventListener('change', function () {
+        state.sort = this.value; state.expanded = null; loadList();
+    });
+    document.getElementById('kpp-subject').addEventListener('change', function () {
+        state.subject = this.value; state.expanded = null; loadList();
+    });
+    document.getElementById('kpp-dir').addEventListener('click', function () {
+        state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+        this.textContent = state.dir === 'asc' ? '升序 ↑' : '降序 ↓';
+        state.expanded = null; loadList();
+    });
+
+    loadSubjects();
+    loadList();
+    dbg('page_loaded', 'success', {});
+})();
+</script>

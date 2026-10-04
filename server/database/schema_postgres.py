@@ -62,11 +62,16 @@ PG_TABLES = [
         question_content TEXT NOT NULL,
         user_answer TEXT NOT NULL,
         is_correct INTEGER NOT NULL,
+        question_type TEXT DEFAULT '',
+        options_json TEXT,
         practice_time TEXT DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_pr_user ON practice_records (user_id)",
     "CREATE INDEX IF NOT EXISTS idx_pr_kp ON practice_records (knowledge_point_id)",
+    # 存量库幂等补列（错题翻卡：选择题选项需随流水留存，否则复习时无选项可看）
+    "ALTER TABLE practice_records ADD COLUMN IF NOT EXISTS question_type TEXT DEFAULT ''",
+    "ALTER TABLE practice_records ADD COLUMN IF NOT EXISTS options_json TEXT",
 
     # 错题
     """
@@ -109,6 +114,58 @@ PG_TABLES = [
     "ALTER TABLE notes ADD COLUMN IF NOT EXISTS recording INTEGER DEFAULT 0",
     "ALTER TABLE notes ADD COLUMN IF NOT EXISTS word_count INTEGER DEFAULT 0",
     "CREATE INDEX IF NOT EXISTS idx_notes_recording ON notes (user_id, recording)",
+
+    # ---- 练/记记忆内核（FSRS-5，2026-09-28 集成线回归）：状态列+星值，全部可空、旧代码前向兼容 ----
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS difficulty_score NUMERIC(3,1) DEFAULT 5.0",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS importance_score NUMERIC(3,1) DEFAULT 5.0",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS fsrs_stability DOUBLE PRECISION",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS fsrs_difficulty DOUBLE PRECISION",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS fsrs_state INTEGER DEFAULT 0",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS fsrs_reps INTEGER DEFAULT 0",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS fsrs_lapses INTEGER DEFAULT 0",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS last_review_time TEXT",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS due_time TEXT",
+    "ALTER TABLE knowledge_points ADD COLUMN IF NOT EXISTS mastery_manual INTEGER DEFAULT 0",
+
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS difficulty_score NUMERIC(3,1) DEFAULT 5.0",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS importance_score NUMERIC(3,1) DEFAULT 5.0",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS fsrs_stability DOUBLE PRECISION",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS fsrs_difficulty DOUBLE PRECISION",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS fsrs_state INTEGER DEFAULT 0",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS fsrs_reps INTEGER DEFAULT 0",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS fsrs_lapses INTEGER DEFAULT 0",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS last_review_time TEXT",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS due_time TEXT",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS mastery_manual INTEGER DEFAULT 0",
+
+    # 知识点熟练度历史（FSRS 曲线，与错题 error_proficiency_history 对称）
+    """
+    CREATE TABLE IF NOT EXISTS kp_proficiency_history (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL DEFAULT '0001',
+        knowledge_point_id BIGINT NOT NULL,
+        timestamp TEXT DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')),
+        mastery INTEGER NOT NULL,
+        retrievability DOUBLE PRECISION
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_kph_kp_time ON kp_proficiency_history (knowledge_point_id, timestamp)",
+
+    # 记忆库卡片（用户标注入池；正/反面为标注时快照）
+    """
+    CREATE TABLE IF NOT EXISTS memory_cards (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL DEFAULT '0001',
+        card_type TEXT NOT NULL,
+        ref_id BIGINT NOT NULL,
+        subject_name TEXT NOT NULL,
+        front_text TEXT NOT NULL,
+        back_text TEXT NOT NULL,
+        added_time TEXT DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')),
+        UNIQUE(user_id, card_type, ref_id)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_mc_user_type ON memory_cards (user_id, card_type, subject_name)",
 
     # 知识点来源
     """
@@ -238,8 +295,8 @@ PG_TABLES = [
 MAIN_TABLES = [
     "users", "user_subjects", "knowledge_points", "practice_records",
     "error_questions", "notes", "knowledge_point_sources",
-    "error_proficiency_history", "favorite_questions",
-    "knowledge_mindmaps", "learning_paths",
+    "error_proficiency_history", "kp_proficiency_history", "memory_cards",
+    "favorite_questions", "knowledge_mindmaps", "learning_paths",
 ]
 # practice 每用户库合并迁移的表（需注入 user_id）
 PRACTICE_TABLES_WITH_USER = [

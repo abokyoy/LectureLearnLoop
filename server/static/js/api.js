@@ -124,8 +124,8 @@
     const menuState = {
         dashboard: { expanded: false, children: [] },
         learn: { expanded: false, children: ['online_course_notes'] },
-        practice: { expanded: false, children: ['practice_materials', 'practice_knowledge', 'practice_errors', 'api_test'] },
-        memory: { expanded: false, children: ['memory_knowledge', 'memory_errors'] },
+        practice: { expanded: false, children: ['practice_overview', 'practice_materials', 'practice_knowledge', 'practice_errors', 'api_test'] },
+        memory: { expanded: false, children: ['memory_overview', 'memory_knowledge', 'memory_errors'] },
         knowledge_base: { expanded: false, children: [] },
         settings: { expanded: false, children: [] },
     };
@@ -134,11 +134,14 @@
     const PAGE_ROUTES = {
         'dashboard': '/',
         'online_course_notes': '/online_course',
+        'practice_overview': '/practice',
         'practice_materials': '/practice',
         'practice_knowledge': '/practice',
         'practice_errors': '/practice',
+        'memory_overview': '/practice',
         'memory_knowledge': '/practice',
         'memory_errors': '/practice',
+        'knowledge_point': '/practice',  // u10 详情直达页（SPA 内走 /fragments，多页兜底回练总览）
         'knowledge_base': '/knowledge_base',
         'settings': '/settings',
         'llm_logs': '/llm_logs',
@@ -151,6 +154,11 @@
     }
 
     function doLoadContentForced(contentId) {
+        // u10：SPA 导航轨迹（面包屑数据源）——知识点详情页据此如实还原用户点进来的路径
+        if (!global.__pmTrail) global.__pmTrail = [global.current_page || 'dashboard'];
+        var _tr = global.__pmTrail;
+        if (_tr[_tr.length - 1] !== contentId) _tr.push(contentId);
+        if (_tr.length > 12) _tr.shift();
         global.current_page = contentId;
         if (window.UnsavedChangesGuard &&
             typeof window.UnsavedChangesGuard.resetUnsavedChanges === 'function') {
@@ -748,6 +756,18 @@
             answers: parseArg(answersJson, []) || [],
         });
     }, { as: 'json', name: 'submitMasteryAssessment' });
+
+    // 知识点结构化练习（2026-10-02 多题型答题模板：单选/判断/填空/简答）
+    bridge.generatePointPractice = bridgeFn(function (knowledgePointId, source) {
+        return req('POST', '/api/knowledge/points/' + encodeURIComponent(knowledgePointId) + '/generate-practice',
+            { source: source || 'notes' });
+    }, { as: 'json', name: 'generatePointPractice' });
+
+    bridge.submitPointPractice = bridgeFn(function (knowledgePointId, questions, answers) {
+        return req('POST', '/api/knowledge/points/' + encodeURIComponent(knowledgePointId) + '/practice-submit', {
+            questions: questions || [], answers: answers || [],
+        });
+    }, { as: 'json', name: 'submitPointPractice' });
 
     // ---------- 十二、录音 / 转写 / 音频设备（C 类：Electron 委托 + 安全 fallback） ----------
     bridge.startRecording = cFn('startRecording', function () {

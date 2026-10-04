@@ -3,7 +3,8 @@ P5 练习闭环端到端测试（真实 DeepSeek 仅用于可选出题步骤；�
 
 覆盖：
 1. 创建学科 + 知识点（point-new，无 LLM）
-2. 难度加权熟练度重算：POST assessment → mastery = round(earned_w/total_w*100)，手算比对
+2. FSRS 熟练度重算（集成线回归 2026-10-01）：POST assessment → 整批折叠一次复习，
+   实测正确率封顶 mastery；逐题 rating 回显
 3. 熟练度落库校验：GET 知识点详情 mastery_score 已更新
 4. 答题入库错题：POST /api/practice/results(is_correct=False) → 错题库出现该题
 5. 错题熟练度：append → history → reviewed 全流程；复习后不再出现在待复习池
@@ -62,7 +63,7 @@ class TestP5PracticeLoop(unittest.TestCase):
         type(self).kp_id = int(data["knowledge_id"])
         self.assertGreater(self.kp_id, 0)
 
-    # ---------- 难度加权熟练度重算（确定性手算比对） ----------
+    # ---------- FSRS 整批折叠熟练度（集成线回归 2026-10-01：不再加权直写） ----------
     def test_02_weighted_mastery(self):
         questions = [
             {"question": "Q1易", "correct_answer": "A", "difficulty": "容易", "explanation": ""},
@@ -72,23 +73,24 @@ class TestP5PracticeLoop(unittest.TestCase):
         ]
         # 答对：Q1(易√) Q2(中×) Q3(难√) Q4(中√)
         answers = ["A", "X", "C", "D"]
-        earned = WEIGHTS["容易"] * 1 + WEIGHTS["困难"] * 1 + WEIGHTS["中等"] * 1  # Q1,Q3,Q4
-        total = sum(WEIGHTS[q["difficulty"]] for q in questions)
-        expected = int(round(earned / total * 100))
+        cap = int(round(3 / 4 * 100))  # 实测正确率封顶=75（未到期新行取 min(原值, 封顶)）
 
         r = self._post(f"/api/knowledge/points/{self.kp_id}/assessment",
                        json={"questions": questions, "answers": answers})
         body = r.json()
         self.assertTrue(body["success"], r.text)
         data = body["data"]
-        self.assertEqual(data["mastery_score"], expected, f"期望{expected} 实得{data['mastery_score']}")
+        self.assertGreaterEqual(data["mastery_score"], 0)
+        self.assertLessEqual(data["mastery_score"], cap, f"封顶 {cap} 实得 {data['mastery_score']}")
         self.assertEqual(data["correct_count"], 3)
         self.assertEqual(data["total_count"], 4)
         self.assertAlmostEqual(data["accuracy"], 0.75, places=3)
-        # 逐题 is_correct 校验
+        # 逐题 is_correct + rating 回显（答对=Good(3)，答错=Again(1)）
         flags = [d["is_correct"] for d in data["detailed_results"]]
         self.assertEqual(flags, [True, False, True, True])
-        type(self).expected_mastery = expected
+        ratings = [d["rating"] for d in data["detailed_results"]]
+        self.assertEqual(ratings, [3, 1, 3, 3])
+        type(self).expected_mastery = data["mastery_score"]
 
     # ---------- 熟练度落库 ----------
     def test_03_mastery_persisted(self):

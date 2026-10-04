@@ -1,0 +1,15 @@
+<!-- u10 知识点详情独立直达页：从练/记总览、选知识点页点「去练习/巩固」直接进入本页（不再先跳脑图）。
+     面包屑按 window.__pmTrail 导航轨迹如实反映用户点进来的路径；渲染器 bootKnowledgePoint 在 pm_pages.js。
+     数据源：/api/knowledge/points/<id>/detail + generate-assessment/assessment/questions/notes 桥端点。 -->
+<div class="cl-page space-y-5" data-pm-page="knowledge_point">
+
+    <!-- 动态面包屑（轨迹驱动，逐级可点回退） -->
+    <nav id="kp-crumb" class="flex items-center gap-1 text-[13px] text-cl-text-2 flex-wrap" aria-label="面包屑"></nav>
+
+    <!-- 主体挂载点：标题卡/统计/动作/评估/练习/最近练习 全部由渲染器产出 -->
+    <div data-role="main">
+        <p class="text-sm text-cl-text-3 py-6">加载中…</p>
+    </div>
+</div>
+<script src="/static/js/widgets.js"></script>
+<script src="/static/js/pm_pages.js"></script>

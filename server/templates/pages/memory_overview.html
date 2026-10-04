@@ -1,0 +1,50 @@
+<!-- u9 记·科目统计首页：以科目为维度展示待记知识点/错题卡片/复习进度概况，含两种记忆模式入口（数据源 /api/memory/overview，真实统计无假兜底，无 FSRS 到期类编造字段） -->
+<div class="cl-page space-y-6" data-pm-page="memory_overview">
+
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h1 class="text-[22px] font-bold text-cl-text flex items-center gap-2">
+                <svg class="w-6 h-6 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
+                记忆总览
+            </h1>
+            <p class="text-sm text-cl-text-2 mt-1">按科目查看记忆进度，选择一种方式开始记忆</p>
+        </div>
+        <span class="cl-badge bg-cl-primary-soft text-cl-primary" data-role="count"></span>
+    </div>
+
+    <!-- 子模式入口：记知识点 / 记错题 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="cl-card p-5 flex flex-col">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-9 h-9 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-brain"/></svg>
+                </div>
+                <h3 class="text-[15px] font-semibold text-cl-text">记知识点</h3>
+            </div>
+            <p class="text-xs text-cl-text-2 mb-4">对照待加强清单逐个记忆知识点，直到掌握度达标</p>
+            <button class="cl-btn-ghost w-full !h-9 text-xs mt-auto" data-go="memory_knowledge">
+                去记知识点
+                <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+            </button>
+        </div>
+        <div class="cl-card p-5 flex flex-col">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-9 h-9 rounded-cl bg-cl-primary-soft flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-history"/></svg>
+                </div>
+                <h3 class="text-[15px] font-semibold text-cl-text">记错题（复练）</h3>
+            </div>
+            <p class="text-xs text-cl-text-2 mb-4">把待复习的错题卡片再过一遍，标记复习状态直至清零</p>
+            <button class="cl-btn-ghost w-full !h-9 text-xs mt-auto" data-go="memory_errors">
+                去记错题
+                <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-arrow-right"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 科目统计卡区 -->
+    <div data-role="main">
+        <p class="text-sm text-cl-text-3 py-6">加载中…</p>
+    </div>
+</div>
+<script src="/static/js/pm_pages.js"></script>
