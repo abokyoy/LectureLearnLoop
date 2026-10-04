@@ -117,6 +117,8 @@ def vault_tree_nested():
                 ext = e.suffix.lower()
                 # 大PDF分段（S5）：仅隐藏书籍文件夹内“段命名且 0 字节”的空段（·NNNN-NNNN.md）；
                 # 该命名仅书籍段文件使用，不影响 ≤20 页普通占位（审核 P2-11）。
+                if ext == ".tmp":
+                    continue  # 原子写盘崩溃残留的 .md.tmp 不在树中暴露（评审 m5）
                 if ext == ".md" and _SEG_EMPTY_RE.search(e.name):
                     try:
                         if e.stat().st_size == 0:
@@ -485,23 +487,28 @@ def _import_pdf_book(imp, user_id: str, folder: Path, name: str, data: bytes, to
     文本层→投递整书串行 worker；扫描件→主任务即置 done（等前端逐段手动转）。
     """
     from config import PDF_SEG_PAGE_SIZE
+    import shutil
     base = imp.uniquify_name(folder, Path(name).stem)
     book_dir = folder / base
     book_dir.mkdir(parents=True, exist_ok=True)
-    orig = book_dir / (base + ".pdf")
-    orig.write_bytes(data)
-    (book_dir / imp.ATTACH_DIR_NAME).mkdir(parents=True, exist_ok=True)
-    is_text = imp.pdf_is_text_layer(data)
-    segs = imp.compute_pdf_segments(total, PDF_SEG_PAGE_SIZE)
-    for sf, st in segs:
-        (book_dir / imp.segment_md_name(base, sf, st)).write_text("", encoding="utf-8")
-    init_prog = json.dumps({"done": 0, "total": len(segs), "is_text_layer": is_text, "pages": total})
-    # 文本层：主任务 pending，投递整书 worker；扫描：占位建好即 done（审核 P2-G）
-    tid = imp.create_task(user_id, base + ".pdf", str(book_dir), "pdf_book",
-                          result_pdf=str(orig), status=("pending" if is_text else "done"),
-                          progress_json=init_prog)
-    if is_text:
-        imp.start_pdf_book_task(tid, user_id, orig, book_dir, base, total)
+    try:
+        orig = book_dir / (base + ".pdf")
+        orig.write_bytes(data)
+        (book_dir / imp.ATTACH_DIR_NAME).mkdir(parents=True, exist_ok=True)
+        is_text = imp.pdf_is_text_layer(data)
+        segs = imp.compute_pdf_segments(total, PDF_SEG_PAGE_SIZE)
+        for sf, st in segs:
+            (book_dir / imp.segment_md_name(base, sf, st)).write_text("", encoding="utf-8")
+        init_prog = json.dumps({"done": 0, "total": len(segs), "is_text_layer": is_text, "pages": total})
+        # 文本层：主任务 pending，投递整书 worker；扫描：占位建好即 done（审核 P2-G）
+        tid = imp.create_task(user_id, base + ".pdf", str(book_dir), "pdf_book",
+                              result_pdf=str(orig), status=("pending" if is_text else "done"),
+                              progress_json=init_prog)
+        if is_text:
+            imp.start_pdf_book_task(tid, user_id, orig, book_dir, base, total)
+    except Exception:  # noqa: BLE001 落盘/建任务中途失败 → 不留半截书籍文件夹（评审 m7）
+        shutil.rmtree(book_dir, ignore_errors=True)
+        raise
     log.log("import", "pdf_book_created", "success",
             {"task": tid, "pages": total, "segs": len(segs), "is_text": is_text})
     return _ok({"success": True, "task_id": tid, "file_name": base + ".pdf", "is_book": True,
@@ -537,24 +544,29 @@ def _seg_index_pairs(imp, bk, segs_idx) -> list[tuple[int, int]]:
     return out
 
 
-def _book_convert_plan(imp, bk, main_task_id: str, user_id: str, segs_idx, force_ocr: bool):
-    """算出待转段与方法（text/ocr）。返回 (method, to_convert[(sf,st)], ocr_pages)。
+def _book_convert_plan(imp, bk, main_task_id: str, user_id: str, segs_idx, force_ocr: bool, force: bool = False):
+    """算出待转段与方法（text/ocr），并识别“正在转换中”的段（防重复投递，方案 §6）。
 
-    已转且非强制且非失败的段跳过；method 按“非文本层或 force_ocr → ocr”。
+    force_ocr 仅决定方法（强制走 OCR）；force 才允许对已转段重转覆盖（文本层重转不额外耗 OCR，评审 m2）。
+    running 段列入 busy、不重复建任务。返回 (method, to_convert[(sf,st)], ocr_pages, busy[(sf,st)])。
     """
     is_text = bk["prog"].get("is_text_layer")
     method = "text" if (is_text and not force_ocr) else "ocr"
     acts = imp.active_segment_states(main_task_id, user_id)
     to_convert: list[tuple[int, int]] = []
+    busy: list[tuple[int, int]] = []
     for sf, st in _seg_index_pairs(imp, bk, segs_idx):
+        state = (acts.get((sf, st)) or ("pending", ""))[0]
+        if state == "running":
+            busy.append((sf, st))
+            continue
         p = bk["book_dir"] / imp.segment_md_name(bk["base"], sf, st)
         converted = p.exists() and p.stat().st_size > 0
-        failed = acts.get((sf, st)) == "failed"
-        if converted and not force_ocr and not failed:
+        if converted and not force and state != "failed":
             continue
         to_convert.append((sf, st))
     ocr_pages = sum(st - sf + 1 for sf, st in to_convert) if method == "ocr" else 0
-    return method, to_convert, ocr_pages
+    return method, to_convert, ocr_pages, busy
 
 
 @bridge_bp.route("/api/import/pdf/book")
@@ -577,7 +589,13 @@ def pdf_book_status():
     acts = imp.active_segment_states(main, g.user_id)
     for i, it in enumerate(fs, start=1):
         it["index"] = i
-        it["state"] = "converted" if it["converted"] else acts.get((it["from"], it["to"]), "pending")
+        if it["converted"]:
+            it["state"] = "converted"
+        else:
+            av = acts.get((it["from"], it["to"]))
+            it["state"] = av[0] if av else "pending"
+            if it["state"] == "failed" and av and av[1]:
+                it["error"] = av[1]  # 失败原因回传面板（评审 m3）
     return _ok({"success": True,
         "main_task_id": main, "status": bk["task"]["status"], "error": bk["task"]["error"],
         "is_text_layer": bk["prog"].get("is_text_layer"), "total_pages": bk["total"],
@@ -594,9 +612,10 @@ def pdf_segments_estimate():
     bk = _load_book(imp, main, g.user_id)
     if not bk:
         return _ok({"success": False, "error": "书籍任务不存在"})
-    method, to_convert, ocr_pages = _book_convert_plan(imp, bk, main, g.user_id, body.get("segs"), bool(body.get("force_ocr")))
+    _fo = bool(body.get("force_ocr"))
+    method, to_convert, ocr_pages, busy = _book_convert_plan(imp, bk, main, g.user_id, body.get("segs"), _fo, bool(body.get("force")) or _fo)
     return _ok({"success": True,
-        "method": method, "segs": len(to_convert), "ocr_pages": ocr_pages,
+        "method": method, "segs": len(to_convert), "ocr_pages": ocr_pages, "busy": len(busy),
         "need_confirm": method == "ocr",
         "note": "扫描段将调用云端 OCR（消耗官方免费额度，不扣积分）" if method == "ocr" else "本地文本层提取，无额外消耗"})
 
@@ -611,12 +630,15 @@ def pdf_segments_convert():
     bk = _load_book(imp, main, g.user_id)
     if not bk:
         return _ok({"success": False, "error": "书籍任务不存在"})
-    method, to_convert, ocr_pages = _book_convert_plan(imp, bk, main, g.user_id, body.get("segs"), bool(body.get("force_ocr")))
+    _fo = bool(body.get("force_ocr"))
+    method, to_convert, ocr_pages, busy = _book_convert_plan(imp, bk, main, g.user_id, body.get("segs"), _fo, bool(body.get("force")) or _fo)
     if not to_convert:
+        if busy:
+            return _ok({"success": False, "error": "该段正在转换中，请稍候"})
         return _ok({"success": False, "error": "无待转段（已转或无选中）"})
     if not body.get("confirm"):
         return _ok({"success": True,
-            "need_confirm": method == "ocr", "method": method, "segs": len(to_convert), "ocr_pages": ocr_pages,
+            "need_confirm": method == "ocr", "method": method, "segs": len(to_convert), "ocr_pages": ocr_pages, "busy": len(busy),
             "note": "扫描段将调用云端 OCR（消耗官方免费额度，不扣积分）" if method == "ocr" else "本地文本层提取，无额外消耗"})
     created = []
     for sf, st in to_convert:

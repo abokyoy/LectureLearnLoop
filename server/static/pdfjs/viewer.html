@@ -47,6 +47,7 @@
   var params = new URLSearchParams(location.search);
   var fileUrl = params.get('file');
   var pdf = null, pageNum = 1, scale = 1.5, pendingPage = null;
+  var renderTask = null, renderSeq = 0;
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var elTotal = document.getElementById('total'), elPage = document.getElementById('pageInput');
   var elScale = document.getElementById('scaleInfo'), elMsg = document.getElementById('msg');
@@ -57,18 +58,27 @@
   function render() {
     if (!pdf) return;
     pageNum = Math.min(Math.max(1, pageNum), pdf.numPages);
+    if (renderTask) { try { renderTask.cancel(); } catch (e) {} renderTask = null; }  // 快速翻页/缩放并发保护（评审 M1）
+    var mySeq = ++renderSeq;
     pdf.getPage(pageNum).then(function (page) {
+      if (mySeq !== renderSeq) return;
       var vp = page.getViewport({ scale: scale });
       cv.width = vp.width; cv.height = vp.height; cv.style.width = vp.width + 'px';
       elMsg.hidden = true; cv.hidden = false;
-      return page.render({ canvasContext: ctx, viewport: vp }).promise;
+      renderTask = page.render({ canvasContext: ctx, viewport: vp });
+      return renderTask.promise;
     }).then(function () {
+      if (mySeq !== renderSeq) return;
+      renderTask = null;
       elTotal.textContent = pdf.numPages; elPage.value = pageNum; elPage.max = pdf.numPages;
       elScale.textContent = Math.round(scale / 1.5 * 100) + '%';
       document.getElementById('prev').disabled = pageNum <= 1;
       document.getElementById('next').disabled = pageNum >= pdf.numPages;
       report({ type: 'pdf-page', page: pageNum, total: pdf.numPages });
-    }).catch(function (e) { elMsg.hidden = false; elMsg.textContent = '页面渲染失败：' + e; });
+    }).catch(function (e) {
+      if (/abort|cancel/i.test(String((e && e.name) || '')) || /abort|cancel/i.test(String(e))) return;  // 取消旧渲染属正常，不报错
+      elMsg.hidden = false; elMsg.textContent = '页面渲染失败：' + e;
+    });
   }
 
   function goto(p) { var n = parseInt(p, 10); if (!n) return; if (!pdf) { pendingPage = n; return; } pageNum = n; render(); }
@@ -81,8 +91,9 @@
     }).catch(function (e) {
       elMsg.hidden = false;
       var s = String((e && e.message) || e);
-      elMsg.textContent = /unexpected response|401|403/i.test(s) ? '阅读链接已过期，请重新打开' : ('加载失败：' + s);
-      report({ type: 'pdf-error', msg: s });
+      var auth = /\(4(01|03)\)|401|403|unexpected server response/i.test(s);
+      elMsg.textContent = auth ? '阅读链接已过期，请重新打开' : ('加载失败：' + s);
+      report({ type: 'pdf-error', kind: auth ? 'expired' : 'fatal', msg: s });  // 仅鉴权类可重签（评审 B1）
     });
   }
 

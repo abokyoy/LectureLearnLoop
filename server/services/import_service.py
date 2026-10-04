@@ -146,12 +146,13 @@ def find_book_task_by_pdf(user_id: str, result_pdf: str) -> dict | None:
             "result_pdf": result_pdf, "folder_path": row[3] or "", "file_name": row[4] or "", "error": row[5] or ""}
 
 
-def active_segment_states(main_task_id: str, user_id: str) -> dict[tuple[int, int], str]:
-    """查该书籍下未清理的 convert_segment 任务行，返回 {(seg_from,seg_to): status}。
+def active_segment_states(main_task_id: str, user_id: str) -> dict[tuple[int, int], tuple[str, str]]:
+    """查该书籍下未清理的 convert_segment 任务行，返回 {(seg_from,seg_to): (state, error)}。
 
-    仅供面板展示“转换中/失败”态；已转判定仍以文件系统为权威（审核 P1-5）。
+    仅供面板展示“转换中/失败”态与失败原因（评审 m3）；已转判定仍以文件系统为权威（审核 P1-5）。
+    同段多行时：failed 优先于 running（便于展示可重试的失败原因）。
     """
-    out: dict[tuple[int, int], str] = {}
+    out: dict[tuple[int, int], tuple[str, str]] = {}
     with _db() as conn:
         rows = conn.execute(
             "SELECT seg_from, seg_to, status, error FROM import_tasks"
@@ -161,11 +162,13 @@ def active_segment_states(main_task_id: str, user_id: str) -> dict[tuple[int, in
     for r in rows:
         if r[0] is None or r[1] is None:
             continue
+        key = (int(r[0]), int(r[1]))
         st = r[2]
+        err = r[3] or ""
         if st == "failed":
-            out[(int(r[0]), int(r[1]))] = "failed"
-        elif st in ("pending", "running") and (int(r[0]), int(r[1])) not in out:
-            out[(int(r[0]), int(r[1]))] = "running"
+            out[key] = ("failed", err)
+        elif st in ("pending", "running") and key not in out:
+            out[key] = ("running", err)
     return out
 
 
@@ -1325,10 +1328,10 @@ def _pdf_book_worker(main_task_id: str, user_id: str, pdf_path: Path, book_dir: 
                 failed_segs += 1
                 log.log_error("import", "pdf_book_seg_failed", e, {"main": main_task_id, "seg": f"{sf}-{st}"})
             update_task(main_task_id, progress_json=json.dumps({
-                "done": done_segs, "failed": failed_segs, "total": len(segs), "is_text_layer": True}))
+                "done": done_segs, "failed": failed_segs, "total": len(segs), "is_text_layer": True, "pages": total_pages}))
         final_err = "" if failed_segs == 0 else f"{failed_segs} 个段失败，可重转"
         update_task(main_task_id, status="done", error=final_err, progress_json=json.dumps({
-            "done": done_segs, "failed": failed_segs, "total": len(segs), "is_text_layer": True}))
+            "done": done_segs, "failed": failed_segs, "total": len(segs), "is_text_layer": True, "pages": total_pages}))
         log.log("import", "pdf_book_worker_done", "success", {"main": main_task_id, "done": done_segs, "failed": failed_segs})
     finally:
         try:

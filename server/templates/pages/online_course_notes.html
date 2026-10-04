@@ -5501,7 +5501,7 @@ window.handleRenameKeydown = function(event, input) {
     }
 
     // ================= 大PDF viewer + 分段转换（2026-10-04 S4）=================
-    var __pdf = { path: '', name: '', mainId: '', isBook: false, isText: false, total: 0, segs: [], sel: new Set(), pollTimer: null, confirmCb: null, signedUrl: '' };
+    var __pdf = { path: '', name: '', mainId: '', isBook: false, isText: false, total: 0, segs: [], sel: new Set(), pollTimer: null, confirmCb: null, signedUrl: '', lastPage: 1, retry: 0 };
 
     async function openPdfViewer(path, name) {
         const frame = document.getElementById('pdf-viewer-frame');
@@ -5515,7 +5515,7 @@ window.handleRenameKeydown = function(event, input) {
         document.getElementById('pdf-viewer-name').textContent = name;
         wrap.classList.remove('hidden');
         closePdfSegPanel(); stopSegPoll();
-        __pdf.path = path; __pdf.name = name; __pdf.mainId = ''; __pdf.isBook = false; __pdf.sel.clear();
+        __pdf.path = path; __pdf.name = name; __pdf.mainId = ''; __pdf.isBook = false; __pdf.sel.clear(); __pdf.lastPage = 1; __pdf.retry = 0;
         try {
             const book = JSON.parse(await window.pybridge.pdfBook('', path));
             if (book && book.success && book.main_task_id) {
@@ -5525,10 +5525,10 @@ window.handleRenameKeydown = function(event, input) {
         } catch (e) { /* 非书籍或查询失败：仅阅读，无转换面板 */ }
         const segBtn = document.getElementById('pdf-seg-toggle');
         if (segBtn) segBtn.classList.toggle('hidden', !__pdf.isBook);
-        await loadPdfIntoFrame(path);
+        await loadPdfIntoFrame(path, 1);
     }
 
-    async function loadPdfIntoFrame(path) {
+    async function loadPdfIntoFrame(path, page) {
         const frame = document.getElementById('pdf-viewer-frame');
         if (!frame) return;
         try {
@@ -5537,7 +5537,8 @@ window.handleRenameKeydown = function(event, input) {
             const stream = '/api/vault/pdf?u=' + encodeURIComponent(s.u) + '&path=' + encodeURIComponent(s.path) +
                 '&exp=' + encodeURIComponent(s.exp) + '&t=' + encodeURIComponent(s.t);
             __pdf.signedUrl = stream;
-            frame.src = '/static/pdfjs/viewer.html?file=' + encodeURIComponent(stream);
+            const hash = (page && page > 1) ? ('#page=' + page) : '';
+            frame.src = '/static/pdfjs/viewer.html?file=' + encodeURIComponent(stream) + hash;
         } catch (e) { frame.src = 'about:blank'; }
     }
 
@@ -5547,7 +5548,7 @@ window.handleRenameKeydown = function(event, input) {
         if (!wrap || wrap.classList.contains('hidden')) { if (opts.force) { /* fallthrough reset */ } else return; }
         wrap.classList.add('hidden');
         const frame = document.getElementById('pdf-viewer-frame'); if (frame) frame.src = 'about:blank';
-        ['preview-btn', 'edit-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = ''; });
+        ['preview-btn', 'edit-btn', 'save-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = ''; });
         closePdfSegPanel(); stopSegPoll();
     }
 
@@ -5584,6 +5585,7 @@ window.handleRenameKeydown = function(event, input) {
             box.appendChild(head);
             if (st === 'failed' && s.error) { const e = document.createElement('div'); e.className = 'text-[11px] text-red-500 truncate'; e.title = s.error; e.textContent = s.error; box.appendChild(e); }
             const jump = document.createElement('button'); jump.className = 'text-left text-[11px] text-cl-primary hover:underline'; jump.textContent = '跳到第 ' + s.from + ' 页'; jump.onclick = () => gotoViewerPage(s.from); box.appendChild(jump);
+            if (st === 'converted') { const rb = document.createElement('button'); rb.className = 'text-left text-[11px] text-cl-text-2 hover:underline'; rb.textContent = '重转此段（覆盖）'; rb.onclick = () => askPdfConfirm('将强制重转第 ' + s.from + '-' + s.to + ' 页并覆盖已有内容，确认？', (ok) => { if (ok) doSegmentConvert([s.index], false, true); }); box.appendChild(rb); }
             if (selectable) {
                 const lab = document.createElement('label'); lab.className = 'flex items-center gap-1 text-[11px] mt-0.5 cursor-pointer';
                 const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = __pdf.sel.has(s.index);
@@ -5618,9 +5620,9 @@ window.handleRenameKeydown = function(event, input) {
             await doSegmentConvert(sel, false);
         }
     }
-    async function doSegmentConvert(sel, forceOcr) {
+    async function doSegmentConvert(sel, forceOcr, force) {
         try {
-            const r = JSON.parse(await window.pybridge.pdfSegmentsConvert({ main_task_id: __pdf.mainId, segs: sel, confirm: true, force_ocr: forceOcr }));
+            const r = JSON.parse(await window.pybridge.pdfSegmentsConvert({ main_task_id: __pdf.mainId, segs: sel, confirm: true, force_ocr: !!forceOcr, force: !!force }));
             if (r && r.success) startSegPoll(); else if (r && r.error) alert(r.error);
             refreshPdfSegments();
         } catch (e) { alert('转换请求失败：' + e.message); }
@@ -5632,8 +5634,14 @@ window.handleRenameKeydown = function(event, input) {
     function askPdfConfirm(text, cb) { __pdf.confirmCb = cb; const m = document.getElementById('pdf-confirm-modal'); document.getElementById('pdf-confirm-text').textContent = text; m.classList.remove('hidden'); m.classList.add('flex'); }
     function closePdfConfirm(ok) { const m = document.getElementById('pdf-confirm-modal'); m.classList.add('hidden'); m.classList.remove('flex'); const cb = __pdf.confirmCb; __pdf.confirmCb = null; if (cb) cb(!!ok); }
 
-    // viewer iframe 报告错误（如签名过期）→ 重签并回到当前页
-    window.addEventListener('message', (ev) => { const d = ev.data || {}; if (d.type === 'pdf-error' && __pdf.path) { loadPdfIntoFrame(__pdf.path); } });
+    // viewer iframe 回报：pdf-page 记录当前页（供重签后回页）；pdf-error 仅鉴权类且未重试过才重签，否则停循环（评审 B1/m4）
+    window.addEventListener('message', (ev) => {
+        const d = ev.data || {};
+        if (d.type === 'pdf-page') { __pdf.lastPage = d.page; return; }
+        if (d.type === 'pdf-error' && __pdf.path) {
+            if (d.kind === 'expired' && __pdf.retry < 1) { __pdf.retry++; loadPdfIntoFrame(__pdf.path, __pdf.lastPage); }
+        }
+    });
 
     // 加载文件内容
     function loadFileContent(filePath, fileName) {
