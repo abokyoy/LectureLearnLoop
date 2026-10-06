@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""积分体系表结构（双后端方言：sqlite / postgres，与 auth.init_auth_table 同层级）。
+"""积分体系表结构（PostgreSQL 唯一后端，与 auth.init_auth_table 同层级）。
 
 五张表（2026-09-28 积分功能，业务规则见 docs/业务规则/业务规则总览.md）：
 - user_credits        用户积分账户（余额 + 累计 + 日赠幂等日期）
@@ -10,154 +10,83 @@
 
 约定：
 - 时间列统一 TEXT（UTC 'YYYY-MM-DD HH:MM:SS'），与全库既有风格一致；
-- 金额列 NUMERIC(12,1)（sqlite 用 REAL 亲和），写入前一律 round(1)。
+- 金额列 NUMERIC(12,1)，写入前一律 round(1)。
 """
 from __future__ import annotations
 
 import datetime as dt
-
-from database.db_adapter import is_postgres
 
 
 def _now() -> str:
     return dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
 
-# 每张表按后端给出 (sqlite_sql, pg_sql)
-_TABLES = [
+# PostgreSQL 表结构
+_TABLES_PG = [
     # 用户积分账户
-    (
-        """
-        CREATE TABLE IF NOT EXISTS user_credits (
-            user_id TEXT PRIMARY KEY,
-            balance REAL NOT NULL DEFAULT 0,
-            total_recharged REAL NOT NULL DEFAULT 0,
-            total_granted REAL NOT NULL DEFAULT 0,
-            total_used REAL NOT NULL DEFAULT 0,
-            last_bonus_date TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS user_credits (
-            user_id TEXT PRIMARY KEY,
-            balance NUMERIC(12,1) NOT NULL DEFAULT 0,
-            total_recharged NUMERIC(12,1) NOT NULL DEFAULT 0,
-            total_granted NUMERIC(12,1) NOT NULL DEFAULT 0,
-            total_used NUMERIC(12,1) NOT NULL DEFAULT 0,
-            last_bonus_date TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL
-        )
-        """,
-    ),
+    """
+    CREATE TABLE IF NOT EXISTS user_credits (
+        user_id TEXT PRIMARY KEY,
+        balance NUMERIC(12,1) NOT NULL DEFAULT 0,
+        total_recharged NUMERIC(12,1) NOT NULL DEFAULT 0,
+        total_granted NUMERIC(12,1) NOT NULL DEFAULT 0,
+        total_used NUMERIC(12,1) NOT NULL DEFAULT 0,
+        last_bonus_date TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )
+    """,
     # 积分流水
-    (
-        """
-        CREATE TABLE IF NOT EXISTS credit_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            type TEXT NOT NULL,
-            scene TEXT NOT NULL DEFAULT '',
-            prompt_tokens INTEGER NOT NULL DEFAULT 0,
-            completion_tokens INTEGER NOT NULL DEFAULT 0,
-            total_tokens INTEGER NOT NULL DEFAULT 0,
-            credits_delta REAL NOT NULL DEFAULT 0,
-            credits_after REAL NOT NULL DEFAULT 0,
-            use_own_key INTEGER NOT NULL DEFAULT 0,
-            note TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS credit_transactions (
-            id BIGSERIAL PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            type TEXT NOT NULL,
-            scene TEXT NOT NULL DEFAULT '',
-            prompt_tokens BIGINT NOT NULL DEFAULT 0,
-            completion_tokens BIGINT NOT NULL DEFAULT 0,
-            total_tokens BIGINT NOT NULL DEFAULT 0,
-            credits_delta NUMERIC(12,1) NOT NULL DEFAULT 0,
-            credits_after NUMERIC(12,1) NOT NULL DEFAULT 0,
-            use_own_key INTEGER NOT NULL DEFAULT 0,
-            note TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL
-        )
-        """,
-    ),
+    """
+    CREATE TABLE IF NOT EXISTS credit_transactions (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        scene TEXT NOT NULL DEFAULT '',
+        prompt_tokens BIGINT NOT NULL DEFAULT 0,
+        completion_tokens BIGINT NOT NULL DEFAULT 0,
+        total_tokens BIGINT NOT NULL DEFAULT 0,
+        credits_delta NUMERIC(12,1) NOT NULL DEFAULT 0,
+        credits_after NUMERIC(12,1) NOT NULL DEFAULT 0,
+        use_own_key INTEGER NOT NULL DEFAULT 0,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+    )
+    """,
     # 系统级配置
-    (
-        """
-        CREATE TABLE IF NOT EXISTS system_config (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL DEFAULT '',
-            description TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS system_config (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL DEFAULT '',
-            description TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL
-        )
-        """,
-    ),
+    """
+    CREATE TABLE IF NOT EXISTS system_config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )
+    """,
     # 用户级大模型配置
-    (
-        """
-        CREATE TABLE IF NOT EXISTS user_llm_config (
-            user_id TEXT PRIMARY KEY,
-            provider TEXT NOT NULL DEFAULT 'DeepSeek',
-            api_key TEXT NOT NULL DEFAULT '',
-            model TEXT NOT NULL DEFAULT '',
-            api_url TEXT NOT NULL DEFAULT '',
-            enabled INTEGER NOT NULL DEFAULT 1,
-            updated_at TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS user_llm_config (
-            user_id TEXT PRIMARY KEY,
-            provider TEXT NOT NULL DEFAULT 'DeepSeek',
-            api_key TEXT NOT NULL DEFAULT '',
-            model TEXT NOT NULL DEFAULT '',
-            api_url TEXT NOT NULL DEFAULT '',
-            enabled INTEGER NOT NULL DEFAULT 1,
-            updated_at TEXT NOT NULL
-        )
-        """,
-    ),
+    """
+    CREATE TABLE IF NOT EXISTS user_llm_config (
+        user_id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL DEFAULT 'DeepSeek',
+        api_key TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        api_url TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+    )
+    """,
     # 卡密
-    (
-        """
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            code TEXT NOT NULL UNIQUE,
-            credits REAL NOT NULL,
-            batch_id TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'active',
-            created_by TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL,
-            used_by TEXT NOT NULL DEFAULT '',
-            used_at TEXT NOT NULL DEFAULT ''
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS activation_codes (
-            id BIGSERIAL PRIMARY KEY,
-            code TEXT NOT NULL UNIQUE,
-            credits NUMERIC(12,1) NOT NULL,
-            batch_id TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'active',
-            created_by TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL,
-            used_by TEXT NOT NULL DEFAULT '',
-            used_at TEXT NOT NULL DEFAULT ''
-        )
-        """,
-    ),
+    """
+    CREATE TABLE IF NOT EXISTS activation_codes (
+        id BIGSERIAL PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        credits NUMERIC(12,1) NOT NULL,
+        batch_id TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        used_by TEXT NOT NULL DEFAULT '',
+        used_at TEXT NOT NULL DEFAULT ''
+    )
+    """,
 ]
 
 _INDEXES = [
@@ -196,16 +125,15 @@ def init_credits_tables(conn_factory, migrate_runtime_llm: bool = True) -> None:
 
     conn_factory: 获取适配层连接的函数（app.config['DB_CONN_FACTORY']）。
     """
-    pg = is_postgres()
     with conn_factory() as conn:
-        for sqlite_sql, pg_sql in _TABLES:
-            conn.execute(pg_sql if pg else sqlite_sql)
+        for pg_sql in _TABLES_PG:
+            conn.execute(pg_sql)
         for ddl in _INDEXES:
             conn.execute(ddl)
         now = _now()
         for key, val, desc in DEFAULT_SYSTEM_CONFIG:
             conn.execute(
-                "INSERT OR IGNORE INTO system_config (key, value, description, updated_at) VALUES (?,?,?,?)",
+                "INSERT INTO system_config (key, value, description, updated_at) VALUES (?,?,?,?) ON CONFLICT (key) DO NOTHING",
                 (key, val, desc, now),
             )
         # 存量迁移：runtime_config.json 的大模型密钥/参数 → system_config（仅当表内无值）
@@ -213,7 +141,7 @@ def init_credits_tables(conn_factory, migrate_runtime_llm: bool = True) -> None:
             _migrate_runtime_llm(conn)
         for key, desc in LLM_CONFIG_KEYS.items():
             conn.execute(
-                "INSERT OR IGNORE INTO system_config (key, value, description, updated_at) VALUES (?,?,?,?)",
+                "INSERT INTO system_config (key, value, description, updated_at) VALUES (?,?,?,?) ON CONFLICT (key) DO NOTHING",
                 (key, "", desc, now),
             )
 
@@ -235,7 +163,7 @@ def _migrate_runtime_llm(conn) -> None:
             row = conn.execute("SELECT value FROM system_config WHERE key = ?", (key,)).fetchone()
             if row is None or (row[0] or "") == "":
                 conn.execute(
-                    "INSERT OR IGNORE INTO system_config (key, value, description, updated_at) VALUES (?,?,?,?)",
+                    "INSERT INTO system_config (key, value, description, updated_at) VALUES (?,?,?,?) ON CONFLICT (key) DO NOTHING",
                     (key, str(v), "迁移自 runtime_config.json", now),
                 )
     except Exception:  # noqa: BLE001 迁移失败不阻断启动（.env 兜底仍可用）

@@ -289,7 +289,7 @@ def grant_daily_bonus(user_id: str) -> dict:
 
 
 def redeem_code(user_id: str, code: str) -> dict:
-    """卡密兑换。行级锁保证同一卡密并发只成功一次（PG FOR UPDATE；sqlite 事务原子性）。"""
+    """卡密兑换。行级锁（PG FOR UPDATE）保证同一卡密并发只成功一次。"""
     code = (code or "").strip().upper()
     if not code:
         return {"success": False, "error": "请输入卡密"}
@@ -309,7 +309,7 @@ def redeem_code(user_id: str, code: str) -> dict:
             "UPDATE activation_codes SET status = 'used', used_by = ?, used_at = ? WHERE code = ? AND status = 'active'",
             (user_id, _now(), code),
         )
-        # rowcount 在两后端(CursorWrapper)语义一致；PG 禁用 SELECT changes()（sqlite 专有函数）
+        # rowcount 反映实际更新行数（PG 下 UPDATE 冪等安全）
         if cur.rowcount < 1:
             return {"success": False, "error": "该卡密已被使用"}
         ensure_account(conn, user_id)

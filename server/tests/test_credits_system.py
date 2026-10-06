@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""积分与充值系统黑盒断言测试（2026-09-28 积分功能，双后端全路径）。
+"""积分与充值系统黑盒断言测试（2026-09-28 积分功能，PostgreSQL 唯一后端）。
 
 覆盖计划 crd-13 要求的全路径：
 1. Token→积分换算（比例/最小 0.1/下限 1 防误配）
@@ -13,10 +13,9 @@
    usage 缺失按字符估算扣分 / 自备 Key 不扣分且记流水 / 余额不足预检拦截 / 管理员豁免流水
 
 运行：
-  python -m pytest tests/test_credits_system.py -q          # 两后端自动跑：sqlite 恒跑，PG 可达才跑
-  PG 不可达时该参数化用例 skip（非失败）。
-注意：sqlite 路径使用独立临时库文件 tests/fixtures/credits_sqlite_test.db，不碰生产数据；
-PG 路径在生产库中用唯一前缀测试用户（crdt_*/cadmin_*），结束即时清理。
+  python -m pytest tests/test_credits_system.py -q          # PG 不可达时整体 skip（非失败）
+注意：系统已全面废除 SQLite，本测试仅跑 PostgreSQL；
+测试在生产库中使用唯一前缀测试用户（crdt_*/cadmin_*），结束即时清理，不碰正式数据。
 """
 from __future__ import annotations
 
@@ -33,19 +32,6 @@ sys.path.insert(0, str(SERVER_DIR))
 
 import config  # noqa: E402
 from database import db_adapter  # noqa: E402
-
-SQLITE_TEST_DB = str(Path(__file__).resolve().parent / "fixtures" / "credits_sqlite_test.db")
-
-
-class _BackendCtx:
-    """临时切换后端：只改 config.DB_BACKEND，db_adapter/各服务均动态读取。"""
-
-    def __enter__(self):
-        self._old = config.DB_BACKEND
-        return self
-
-    def __exit__(self, *a):
-        config.DB_BACKEND = self._old
 
 
 def _pg_available() -> bool:
@@ -64,33 +50,16 @@ def _pg_available() -> bool:
         return False
 
 
-BACKENDS = ["sqlite"] + (["postgres"] if _pg_available() else [])
-
-
-# sqlite 路径：每个测试会话用唯一新文件（Windows 下删除已连接文件会 PermissionError），
-# 并把 config.DB_PATH 指向它，保证 create_app / DatabaseManager / 测试助手全部同一库。
-_ORIG_DB_PATH = str(config.DB_PATH)
-config.DB_BACKEND = "sqlite"
+BACKENDS = ["postgres"]
 
 
 @pytest.fixture(scope="module")
 def app():
-    global SQLITE_TEST_DB
-    SQLITE_TEST_DB = str(Path(__file__).resolve().parent / "fixtures" / f"credits_sqlite_{uuid.uuid4().hex[:6]}.db")
-    config.DB_PATH = SQLITE_TEST_DB
     from app import create_app
     _app = create_app()
     yield _app
-    # 清理 PG 生产库中的测试痕迹（sqlite 库文件尽力删除，被占用则留给下次唯一文件名）
-    config.DB_PATH = _ORIG_DB_PATH
+    # 清理 PG 生产库中的测试痕迹
     _cleanup_pg_test_rows()
-    for suffix in ("", "-wal", "-shm"):
-        try:
-            p = SQLITE_TEST_DB + suffix
-            if os.path.exists(p):
-                os.remove(p)
-        except OSError:
-            pass
 
 
 def _cleanup_pg_test_rows():
@@ -138,23 +107,19 @@ def _hdr(token: str):
 
 
 def _fetch_one(sql, params=()):
-    with db_adapter.get_connection(str(config.DB_PATH)) as conn:
+    with db_adapter.get_connection() as conn:
         return conn.execute(sql, params).fetchone()
 
 
 def _fetch_all(sql, params=()):
-    with db_adapter.get_connection(str(config.DB_PATH)) as conn:
+    with db_adapter.get_connection() as conn:
         return conn.execute(sql, params).fetchall()
 
 
-def _run(fn, *a, **kw):
-    with _BackendCtx():
-        return fn(*a, **kw)
-
-
+@pytest.mark.skipif(not _pg_available(), reason="PostgreSQL 不可达")
 @pytest.mark.parametrize("backend", BACKENDS)
 class TestCreditsSystem:
-    """同一套断言在 sqlite / postgres 两后端各跑一遍。"""
+    """断言测试在 PostgreSQL 上执行。"""
 
     @pytest.fixture(autouse=True)
     def _set_backend(self, backend):

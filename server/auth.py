@@ -20,7 +20,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 import credits_service
-from database.db_adapter import is_postgres
 from logger_module import debug_logger
 
 auth_bp = Blueprint("auth", __file__)
@@ -35,7 +34,7 @@ USERNAME_RE = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fa5]{2,32}$")
 
 # ---------------------------------------------------------------- 表结构与种子
 def init_auth_table(db_conn_factory):
-    """创建 users 表并保证 admin 种子账号存在。db_conn_factory 为获取 sqlite3 连接的函数。"""
+    """创建 users 表并保证 admin 种子账号存在。db_conn_factory 为获取数据库连接的函数。"""
     with db_conn_factory() as conn:
         conn.execute(
             """
@@ -48,13 +47,8 @@ def init_auth_table(db_conn_factory):
             )
             """
         )
-        # 四期新增：昵称列（旧库容错迁移，双后端方言）
-        if is_postgres():
-            conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''")
-        else:
-            cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
-            if "display_name" not in cols:
-                conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''")
+        # 四期新增：昵称列（旧库容错迁移，幂等）
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''")
         row = conn.execute(
             "SELECT user_id FROM users WHERE user_id = ?", (config.ADMIN_USER_ID,)
         ).fetchone()

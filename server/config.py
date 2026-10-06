@@ -45,15 +45,9 @@ PADDLE_OCR_TOKEN = os.getenv("PADDLE_OCR_TOKEN", "")
 PADDLE_OCR_MODEL = os.getenv("PADDLE_OCR_MODEL", "PaddleOCR-VL-1.6")
 IMPORT_MAX_BYTES = 50 * 1024 * 1024        # 单文件上限 50MB（Flask MAX_CONTENT_LENGTH 同值）
 
-# ---------------------------------------------------------------- 数据库全局配置（适配层唯一后端开关）
-# DB_BACKEND：网站全局配置项，postgres | sqlite（默认 sqlite 保留回退能力；
-# 生产目标为 postgres，见 database/db_adapter.py）。
-DB_BACKEND = (os.getenv("DB_BACKEND", "sqlite") or "sqlite").strip().lower()
-if DB_BACKEND != "postgres":
-    # worktree 并行开发防坑：新工作树忘拷 .env 时会静默起空 SQLite 库，
-    # 造成“数据丢失”假象（见 docs/计划/2026-09-28-练记系统改造方案.md §0）
-    print("[config][WARN] DB_BACKEND=sqlite —— 生产后端应为 postgres；"
-          "若是新 worktree，请拷贝 server/.env 后重启", flush=True)
+# ---------------------------------------------------------------- 数据库全局配置（PostgreSQL 唯一后端）
+# 架构决策：全面废除 SQLite，全站仅使用 PostgreSQL（见 database/db_adapter.py）。
+DB_BACKEND = "postgres"
 PG_HOST = os.getenv("PG_HOST", "127.0.0.1")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DATABASE = os.getenv("PG_DATABASE", "lecturelearnloop")

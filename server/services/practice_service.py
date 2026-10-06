@@ -4,11 +4,9 @@
 练习服务模块
 负责练习历史的数据库存储和查询。
 
-PostgreSQL 改造（2026-09-28）：
-- 连接统一走 database.db_adapter 适配层（连接池 + 方言屏蔽），不再有裸 sqlite3 连接；
-- 旧「每用户一个 sqlite 文件」的隔离方式收敛为 practice_* 表的 user_id 列过滤
-  （隔离语义不变：所有查询/写入强制绑定 user_id）；
-- PG 后端下表结构由主库 schema 初始化（DatabaseManager）统一负责，本服务不重复建表。
+- 连接统一走 database.db_adapter 适配层（PG 连接池 + 方言屏蔽）；
+- 表结构由主库 schema 初始化（DatabaseManager）统一负责，本服务不重复建表；
+- 所有查询/写入强制绑定 user_id。
 """
 
 import os
@@ -25,92 +23,12 @@ class PracticeService:
     """练习服务类，负责练习数据的数据库操作（全部方法显式携带 user_id）"""
 
     def __init__(self, db_path: Optional[str] = None):
-        """初始化练习服务
-
-        Args:
-            db_path: 数据库文件路径（仅 sqlite 后端使用；缺省用主库 config.DB_PATH）
-        """
-        self.db_path = db_path or str(config.DB_PATH)
+        self.db_path = db_path or ""  # 保留字段兼容历史调用签名
         self.logger = logging.getLogger('PracticeService')
-        self._init_database()
+        self.logger.info("✅ 练习表由统一 schema 管理（PostgreSQL）")
 
     def _conn(self):
-        return db_adapter.get_connection(self.db_path)
-
-    def _init_database(self):
-        """初始化数据库表结构（仅 sqlite 后端的兼容路径；PG 由主 schema 统一建表）"""
-        if db_adapter.is_postgres():
-            self.logger.info("✅ 练习表由统一 schema 管理（PostgreSQL）")
-            return
-        import sqlite3
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS practice_sessions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT NOT NULL DEFAULT '0001',
-                        practice_id TEXT NOT NULL,
-                        timestamp TEXT NOT NULL,
-                        selected_text TEXT,
-                        questions TEXT,
-                        user_answers TEXT,
-                        evaluation_result TEXT,
-                        answer_history TEXT,
-                        status TEXT DEFAULT 'created',
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_id, practice_id)
-                    )
-                ''')
-                cursor.execute('CREATE INDEX IF NOT EXISTS idx_ps_user_updated ON practice_sessions (user_id, updated_at DESC)')
-                try:
-                    cursor.execute("ALTER TABLE practice_sessions ADD COLUMN answer_history TEXT")
-                    self.logger.info("✅ 成功添加 answer_history 字段")
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" in str(e).lower():
-                        self.logger.info("ℹ️ answer_history 字段已存在")
-                    else:
-                        self.logger.warning(f"⚠️ 添加 answer_history 字段时出现问题: {e}")
-                try:
-                    cursor.execute("ALTER TABLE practice_sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT '0001'")
-                except sqlite3.OperationalError:
-                    pass
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS practice_submissions (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT NOT NULL DEFAULT '0001',
-                        practice_id TEXT NOT NULL,
-                        submission_content TEXT,
-                        submission_time DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS practice_evaluations (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT NOT NULL DEFAULT '0001',
-                        practice_id TEXT NOT NULL,
-                        evaluation_content TEXT,
-                        score REAL,
-                        evaluation_time DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                cursor.execute('''
-                    CREATE TABLE IF NOT EXISTS practice_statistics (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT NOT NULL DEFAULT '0001',
-                        practice_id TEXT NOT NULL,
-                        total_questions INTEGER DEFAULT 0,
-                        correct_answers INTEGER DEFAULT 0,
-                        completion_time REAL DEFAULT 0,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                    )
-                ''')
-                conn.commit()
-                self.logger.info("✅ 数据库表结构初始化完成（sqlite 兼容路径）")
-        except Exception as e:
-            self.logger.error(f"❌ 数据库初始化失败: {e}")
-            raise
+        return db_adapter.get_connection()
 
     def get_practice_history_list(self, user_id: str, limit: int = 50) -> Dict[str, Any]:
         """获取练习历史列表（当前用户）
