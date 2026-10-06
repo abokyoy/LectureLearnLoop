@@ -35,6 +35,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.secret_key = config.get_flask_secret_key()  # D3：持久化 SECRET_KEY
     app.config["MAX_CONTENT_LENGTH"] = config.IMPORT_MAX_BYTES  # 文件导入单文件上限 200MB（2026-10-04 大PDF分段）
+    app.config["TEMPLATES_AUTO_RELOAD"] = True  # 开发模式：模板修改即时生效
     CORS(app)  # Electron 客户端与本机调试页均需跨域
 
     # 单一 DatabaseManager：users 表与业务表同库，避免多库碎片化（D5 收敛方向）

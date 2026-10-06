@@ -20,8 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 VAULT_DIR = DATA_DIR / "vault"          # vault/<user_id>/...
 LOG_DIR = BASE_DIR / "logs"
-DB_PATH = DATA_DIR / "knowledge_management.db"
-PRACTICE_DB_PATH = DATA_DIR / "practice_history.db"
+DB_PATH = DATA_DIR / "knowledge_management.db"  # 遗留路径，已废弃
 
 for _d in (DATA_DIR, VAULT_DIR, LOG_DIR):
     _d.mkdir(parents=True, exist_ok=True)
@@ -51,15 +50,8 @@ PDF_BOOK_PAGE_MIN = 20        # 分流主驱动：页数 > 此值才可能走书
 PDF_BOOK_EXEMPT_PAGES = 60    # 小文件豁免：页数 ≤ 此值且体积 ≤ EXEMPT_SIZE_MB 时不建文件夹（纯文字大书>60页仍走分段）
 PDF_BOOK_EXEMPT_SIZE_MB = 10  # 小文件豁免体积上限（MB），与 EXEMPT_PAGES 同时满足才豁免
 
-# ---------------------------------------------------------------- 数据库全局配置（适配层唯一后端开关）
-# DB_BACKEND：网站全局配置项，postgres | sqlite（默认 sqlite 保留回退能力；
-# 生产目标为 postgres，见 database/db_adapter.py）。
-DB_BACKEND = (os.getenv("DB_BACKEND", "sqlite") or "sqlite").strip().lower()
-if DB_BACKEND != "postgres":
-    # worktree 并行开发防坑：新工作树忘拷 .env 时会静默起空 SQLite 库，
-    # 造成“数据丢失”假象（见 docs/计划/2026-09-28-练记系统改造方案.md §0）
-    print("[config][WARN] DB_BACKEND=sqlite —— 生产后端应为 postgres；"
-          "若是新 worktree，请拷贝 server/.env 后重启", flush=True)
+# ---------------------------------------------------------------- 数据库配置（PostgreSQL 唯一后端）
+DB_BACKEND = "postgres"
 PG_HOST = os.getenv("PG_HOST", "127.0.0.1")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DATABASE = os.getenv("PG_DATABASE", "lecturelearnloop")

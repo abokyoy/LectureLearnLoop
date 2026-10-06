@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script src="/static/js/vendor/mermaid.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 
 <!-- 二期：共享录音引擎（与悬浮窗同源，LLRecorder） -->
@@ -63,7 +63,7 @@ window.jsTreeLoading = false;
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script src="/static/js/vendor/mermaid.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 
 <style>
@@ -5897,7 +5897,7 @@ window.handleRenameKeydown = function(event, input) {
         
         let html = '<div class="space-y-3">';
         
-        // 显示已存在的知识点（都使用绿色主题，像第一个一样）
+        // 显示已存在的知识点（带勾选框）
         existingPoints.forEach((point, index) => {
             html += `
                 <div class="knowledge-point-item existing-point bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
@@ -5905,13 +5905,45 @@ window.handleRenameKeydown = function(event, input) {
                      data-point-description="${point.description}"
                      data-point-type="existing"
                      data-point-id="${point.id}">
-                    <h3 class="font-semibold text-primary">${point.name}</h3>
-                    <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                    <div class="flex items-start gap-2">
+                        <input type="checkbox" class="point-check mt-1 h-4 w-4 accent-green-600 cursor-pointer" checked>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-primary">${point.name}</h3>
+                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                        </div>
+                    </div>
                 </div>
             `;
         });
         
         html += '</div>';
+        
+        // 底部操作栏：手动添加 + 脑图样式 + 生成脑图
+        html += `
+            <div class="mt-4 pt-3 border-t border-gray-200 space-y-2">
+                <button id="add-knowledge-btn-existing" class="w-full flex items-center justify-center py-2 px-3 
+                       border-2 border-dashed border-gray-300 rounded-lg 
+                       text-text-gray hover:border-primary hover:text-primary transition-colors">
+                    <span class="material-icons-outlined mr-1 text-sm">add</span>
+                    <span class="text-sm">手动添加知识点</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <select id="mindmap-style-select" class="text-xs border border-gray-300 rounded-md px-2 py-2 bg-white focus:ring-1 focus:ring-indigo-400">
+                        <option value="mindmap">放射状</option>
+                        <option value="graph_td">树形↓</option>
+                        <option value="graph_lr">横向树→</option>
+                    </select>
+                    <button id="gen-mindmap-btn" class="flex-1 flex items-center justify-center py-2 px-3 
+                           bg-indigo-500 text-white rounded-lg 
+                           hover:bg-indigo-600 transition-colors"
+                            title="为勾选的知识点生成脑图并追加到笔记结尾">
+                        <span class="material-icons-outlined mr-1">account_tree</span>
+                        <span>生成脑图</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        
         knowledgeContent.innerHTML = html;
         
         // 显示知识点面板
@@ -5919,8 +5951,21 @@ window.handleRenameKeydown = function(event, input) {
         document.getElementById('knowledge-placeholder').classList.add('hidden');
         document.getElementById('knowledge-content').classList.remove('hidden');
         
-        // 绑定知识点交互事件
+        // 绑定事件
         bindKnowledgePointEvents();
+        // 绑定脑图按钮
+        const mmBtn = document.getElementById('gen-mindmap-btn');
+        if (mmBtn && !mmBtn.dataset.p3bound) {
+            mmBtn.dataset.p3bound = '1';
+            mmBtn.addEventListener('click', generateKnowledgeMindmap);
+        }
+        // 绑定手动添加按钮
+        const addBtn = document.getElementById('add-knowledge-btn-existing');
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                if (typeof showAddKnowledgePointModal === 'function') showAddKnowledgePointModal();
+            });
+        }
     }
 
     // 重新加载预览内容（不触发模式切换）
@@ -7570,19 +7615,24 @@ window.handleRenameKeydown = function(event, input) {
                         <span>手动添加知识点</span>
                     </button>
                     
-                    <!-- 保存知识点 + 生成脑图（并排） -->
-                    <div class="mt-3 grid grid-cols-2 gap-2">
-                        <button id="save-knowledge-btn" class="w-full flex items-center justify-center py-2 px-3 
+                    <!-- 保存知识点 + 脑图样式选择 + 生成脑图 -->
+                    <div class="mt-3 flex items-center gap-2">
+                        <button id="save-knowledge-btn" class="flex-1 flex items-center justify-center py-2 px-3 
                                                                bg-primary text-white rounded-lg 
                                                                hover:bg-green-600 transition-colors duration-200">
-                            <span class="material-icons-outlined mr-2">save</span>
-                            <span>保存知识点</span>
+                            <span class="material-icons-outlined mr-1">save</span>
+                            <span>保存</span>
                         </button>
-                        <button id="gen-mindmap-btn" class="w-full flex items-center justify-center py-2 px-3 
+                        <select id="mindmap-style-select" class="text-xs border border-gray-300 rounded-md px-2 py-2 bg-white focus:ring-1 focus:ring-indigo-400">
+                            <option value="mindmap">放射状</option>
+                            <option value="graph_td">树形↓</option>
+                            <option value="graph_lr">横向树→</option>
+                        </select>
+                        <button id="gen-mindmap-btn" class="flex-1 flex items-center justify-center py-2 px-3 
                                                                bg-indigo-500 text-white rounded-lg 
                                                                hover:bg-indigo-600 transition-colors duration-200"
-                                title="为勾选的知识点生成 Mermaid 脑图并插入笔记结尾">
-                            <span class="material-icons-outlined mr-2">account_tree</span>
+                                title="为勾选的知识点生成脑图并追加到笔记结尾">
+                            <span class="material-icons-outlined mr-1">account_tree</span>
                             <span>生成脑图</span>
                         </button>
                     </div>
@@ -7730,7 +7780,7 @@ window.handleRenameKeydown = function(event, input) {
         return points;
     }
     
-    // 三期：调 LLM 生成 Mermaid 脑图并插入当前笔记结尾
+    // 调 LLM 生成 Mermaid 脑图并追加到当前笔记结尾
     async function generateKnowledgeMindmap() {
         if (!currentFilePath) {
             showMessage('请先打开一个笔记文件', 'error');
@@ -7741,6 +7791,8 @@ window.handleRenameKeydown = function(event, input) {
             showMessage('请至少勾选一个知识点', 'error');
             return;
         }
+        const styleSel = document.getElementById('mindmap-style-select');
+        const style = styleSel ? styleSel.value : 'mindmap';
         const btn = document.getElementById('gen-mindmap-btn');
         const oldHtml = btn ? btn.innerHTML : '';
         if (btn) {
@@ -7755,13 +7807,14 @@ window.handleRenameKeydown = function(event, input) {
                 body: JSON.stringify({
                     path: currentFilePath,
                     title: (currentFileName || '').replace(/\.(md|markdown|txt)$/i, ''),
-                    points: points
+                    points: points,
+                    style: style
                 })
             });
             const r = await res.json().catch(() => ({}));
             if (res.ok && r.success && r.data && r.data.success) {
-                showMessage('脑图已生成并插入笔记结尾 ✓', 'success');
-                if (window.llHandleBilling) { try { window.llHandleBilling(r); } catch (e) {} }  // 积分：脑图生成扣分提示
+                showMessage('脑图已生成并追加到笔记结尾 ✓', 'success');
+                if (window.llHandleBilling) { try { window.llHandleBilling(r); } catch (e) {} }
                 if (window.p3ForcePreviewRefresh) { try { await window.p3ForcePreviewRefresh(); } catch (e) {} }
             } else {
                 const msg = (r && (r.error || (r.data && r.data.error))) || ('请求失败 HTTP ' + res.status);
@@ -10308,21 +10361,33 @@ window.handleRenameKeydown = function(event, input) {
         }
     }
     
-    // 渲染Mermaid图表
+    // 渲染Mermaid图表（兼容 mermaid 10.x Promise API + 旧版 callback）
     function renderMermaidDiagrams(element) {
-        if (typeof mermaid !== 'undefined') {
-            const mermaidElements = element.querySelectorAll('.mermaid');
-            mermaidElements.forEach((el, index) => {
-                try {
-                    mermaid.render(`mermaid-${Date.now()}-${index}`, el.textContent, (svgCode) => {
-                        el.innerHTML = svgCode;
+        if (typeof mermaid === 'undefined') return;
+        try { mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' }); } catch(e) {}
+        const mermaidElements = element.querySelectorAll('.mermaid');
+        mermaidElements.forEach((el, index) => {
+            if (el.querySelector('svg')) return; // 已渲染，跳过
+            const code = el.textContent.trim();
+            if (!code) return;
+            const id = `mermaid-r${Date.now()}-${index}`;
+            try {
+                const result = mermaid.render(id, code);
+                if (result && typeof result.then === 'function') {
+                    // mermaid 10.x: returns Promise<{svg}>
+                    result.then(({svg}) => { el.innerHTML = svg; }).catch(err => {
+                        console.error('Mermaid render error:', err);
+                        el.innerHTML = `<pre style="white-space:pre-wrap">${code}</pre>`;
                     });
-                } catch (error) {
-                    console.error('Mermaid图表渲染错误:', error);
-                    el.innerHTML = `<pre>${el.textContent}</pre>`;
+                } else if (result && result.svg) {
+                    // some builds return synchronously
+                    el.innerHTML = result.svg;
                 }
-            });
-        }
+            } catch (error) {
+                console.error('Mermaid图表渲染错误:', error);
+                el.innerHTML = `<pre style="white-space:pre-wrap">${code}</pre>`;
+            }
+        });
     }
     
     // 文件结构面板收缩/展开功能 - 定义为全局函数
@@ -11077,6 +11142,10 @@ function handleDeepLearning(e, forcedText) {
     
     addDebugLog('🧠 开始深入学习: ' + text.substring(0, 30) + '...');
     
+    // 记录来源上下文（供后续“摘录”插入定位）
+    window.__llDeepSourceText = text;
+    window.__llDeepSourcePath = currentFilePath || '';
+    
     // 隐藏统一菜单
     llHideAllMenus();
     
@@ -11554,6 +11623,26 @@ function switchToEdit() {
     const previewContent = document.getElementById('preview-content');
     const editContent = document.getElementById('edit-content');
     
+    // 加载原始内容到编辑器（如果当前为空或未加载）
+    if (editContent && !editContent.value && currentFilePath) {
+        if (window.pybridge && window.pybridge.loadMarkdownRaw) {
+            window.pybridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
+                if (editContent) {
+                    editContent.value = rawContent || '';
+                    originalContent = rawContent || '';
+                    hasUnsavedChanges = false;
+                }
+            });
+        } else {
+            // Web fallback: use rawfile API
+            const tk = localStorage.getItem('ll_token') || '';
+            fetch('/api/vault/rawfile?path=' + encodeURIComponent(currentFilePath), { headers: { 'Authorization': 'Bearer ' + tk } })
+                .then(r => r.json()).then(j => {
+                    if (editContent) { editContent.value = (j.data || ''); originalContent = j.data || ''; hasUnsavedChanges = false; }
+                }).catch(() => {});
+        }
+    }
+    
     // 显示编辑内容，隐藏预览内容
     if (editContent) {
         editContent.style.display = 'block';
@@ -11637,7 +11726,7 @@ function handleSaveButton() {
     // 调用正确的后端保存函数
     if (window.pybridge && window.pybridge.save_file) {
         addDebugLog('🔗 使用 pybridge.save_file 保存文件');
-        window.pybridge.save_file(currentFilePath, content, function(result) {
+        window.pybridge.save_file(currentFilePath, content, async function(result) {
             try {
                 addDebugLog('📊 收到保存响应: ' + JSON.stringify(result));
                 const response = typeof result === 'string' ? JSON.parse(result) : result;
@@ -11657,9 +11746,12 @@ function handleSaveButton() {
                         addDebugLog('✅ 未保存指示器已隐藏');
                     }
                     
-                    // 更新预览内容
-                    if (window.pybridge.render_markdown) {
-                        addDebugLog('🔄 更新预览内容');
+                    // 更新预览内容：用前端 renderMarkdownContent 确保图片路径正确
+                    if (window.p3ForcePreviewRefresh) {
+                        addDebugLog('🔄 使用 p3ForcePreviewRefresh 更新预览');
+                        try { await window.p3ForcePreviewRefresh(); } catch(e) { addDebugLog('预览刷新异常: ' + e); }
+                    } else if (window.pybridge && window.pybridge.render_markdown) {
+                        addDebugLog('🔄 后备使用 render_markdown');
                         window.pybridge.render_markdown(content, function(html) {
                             const previewContent = document.getElementById('preview-content');
                             if (previewContent) {

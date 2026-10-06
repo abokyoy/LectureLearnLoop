@@ -134,11 +134,11 @@ _MMAP_BEGIN = "<!-- LL:MMAP:BEGIN -->"
 _MMAP_END = "<!-- LL:MMAP:END -->"
 
 
-def _extract_mindmap(raw: str):
-    """从 LLM 输出提取合法 mindmap 代码；不合法返回 None。
+def _extract_mindmap(raw: str, style: str = "mindmap"):
+    """从 LLM 输出提取合法 mermaid 代码；不合法返回 None。
 
-    兼容：```mermaid 围栏 / 裸 ``` 围栏 / 直接以 mindmap 或 root 行开头。
-    硬校验：必须含 mindmap 声明行与 root 节点行（外部 LLM 必须断言内容非空）。
+    兼容：```mermaid 围栏 / 裸 ``` 围栏 / 直接以声明行开头。
+    根据 style 校验不同语法头：mindmap 需 root 行；graph_td/lr 需 graph TD/LR 行。
     """
     if not raw or not raw.strip():
         return None
@@ -147,36 +147,39 @@ def _extract_mindmap(raw: str):
     if m:
         text = m.group(1).strip()
     lines = [ln for ln in text.splitlines()]
-    # 去掉行首空行
     while lines and not lines[0].strip():
         lines.pop(0)
     if not lines:
         return None
     body = "\n".join(lines)
-    lowered = [ln.strip().lower() for ln in lines]
-    if "mindmap" not in lowered[:3]:
-        # 缺声明行则自动补齐（模型常只给 root 开始的缩进树）
-        if any(ln.startswith("root") for ln in lowered[:2]):
-            body = "mindmap\n" + body
-        else:
+    if style in ("graph_td", "graph_lr"):
+        # graph 语法校验：第一行应为 graph TD/LR
+        if not re.search(r"^\s*graph\s+(TD|LR|TB|RL|BT)", body, re.I):
             return None
-    if not re.search(r"^\s*root\b", body, re.M):
-        return None
+    else:
+        # mindmap 语法校验
+        lowered = [ln.strip().lower() for ln in lines]
+        if "mindmap" not in lowered[:3]:
+            if any(ln.startswith("root") for ln in lowered[:2]):
+                body = "mindmap\n" + body
+            else:
+                return None
+        if not re.search(r"^\s*root\b", body, re.M):
+            return None
     return body
 
 
-def _mindmap_section(mermaid_code: str) -> str:
-    return (f"{_MMAP_BEGIN}\n## 知识脑图\n\n"
+def _mindmap_section(mermaid_code: str, style: str = "mindmap") -> str:
+    """生成一个脑图块（追加到文末，多次生成保留多个）。"""
+    label = {"mindmap": "放射状脑图", "graph_td": "树形脑图", "graph_lr": "横向树脑图"}.get(style, "知识脑图")
+    return (f"{_MMAP_BEGIN}\n## {label}\n\n"
             f"```mermaid\n{mermaid_code}\n```\n"
             f"{_MMAP_END}")
 
 
-def _splice_mindmap(content: str, mermaid_code: str):
-    """幂等插入/替换脑图段；返回 (新正文, replaced: bool)。"""
-    section = _mindmap_section(mermaid_code)
-    pattern = re.compile(re.escape(_MMAP_BEGIN) + r"[\s\S]*?" + re.escape(_MMAP_END))
-    if pattern.search(content):
-        return pattern.sub(lambda _m: section, content), True
+def _splice_mindmap(content: str, mermaid_code: str, style: str = "mindmap"):
+    """追加脑图段到正文末尾；返回 (新正文, False)。"""
+    section = _mindmap_section(mermaid_code, style)
     base = content.rstrip()
     new = (base + "\n\n" + section + "\n") if base else (section + "\n")
     return new, False
@@ -185,11 +188,10 @@ def _splice_mindmap(content: str, mermaid_code: str):
 @notes_bp.route("/api/notes/mindmap", methods=["POST"])
 @require_auth
 def notes_mindmap():
-    """为文档生成 Mermaid mindmap 脑图并插入 MD 结尾。
+    """为文档生成 Mermaid 脑图并追加到 MD 结尾。
 
-    body: {path, title?, points: [{name, description}]}
-    - 录音中（notes.recording=1）拒绝 409：避免被录音端全量 autosave 覆盖；
-    - LLM 失败/输出不合法 500；成功写文件 + 同步 upsert DB（幂等替换标记段）。
+    body: {path, title?, points: [{name, description}], style?: "mindmap|graph_td|graph_lr"}
+    多次生成追加多个脑图块到文末。
     """
     body = request.get_json(silent=True) or {}
     target = _bridge_path(g.user_id, body.get("path") or "")
@@ -199,14 +201,16 @@ def notes_mindmap():
     points = [p for p in points if isinstance(p, dict) and (p.get("name") or "").strip()]
     if not points:
         return _err("至少需要一个知识点", 400)
+    style = body.get("style", "mindmap")
+    if style not in ("mindmap", "graph_td", "graph_lr"):
+        style = "mindmap"
     rec = get_kms().get_note_record(g.user_id, str(target))
     if rec is not None and rec[5]:
         return _err("该笔记正在录音保存中，请先完成录音再生成脑图", 409)
     title = (body.get("title") or "").strip() or target.stem
-    # 标题清洗后再写进 prompt，避免模型把引号/括号带进 root 行破坏 mindmap 语法
     title = re.sub(r'[\[\](){}"`:]', "", title).strip() or target.stem
 
-    # 当前正文：库优先，回退文件（与 /api/notes/content 同口径）
+    # 当前正文：库优先，回退文件
     content = ""
     if rec is not None and rec[3] is not None:
         content = rec[3]
@@ -216,7 +220,25 @@ def notes_mindmap():
     plist = "\n".join(
         f"{i + 1}. {p['name'].strip()}：{(p.get('description') or '').strip()[:200]}"
         for i, p in enumerate(points[:60]))
-    prompt = f"""请为学习文档《{title}》生成一张知识脑图，输出 Mermaid mindmap 语法代码。
+
+    # 根据样式生成不同 prompt
+    if style in ("graph_td", "graph_lr"):
+        direction = "TD" if style == "graph_td" else "LR"
+        prompt = f"""请为学习文档《{title}》生成一张树形脑图，输出 Mermaid graph {direction} 语法代码。
+
+知识点清单（名称：讲解）：
+{plist}
+
+严格要求：
+1. 第一行必须是 graph {direction}
+2. 定义根节点 root["{title}"]，用 -->连接各知识点节点
+3. 每个知识点格式: p1["知识点名"]，连线: root --> p1
+4. 每个知识点下挂一个子节点概括说明（不超过15字），格式: p1 --> p1d["概括"]
+5. 节点文本禁止出现 [ ] ( ) {{ }} 等破坏语法的字符（方括号只用于节点定义外层）
+6. 只输出代码块，不要任何解释文字
+"""
+    else:
+        prompt = f"""请为学习文档《{title}》生成一张知识脑图，输出 Mermaid mindmap 语法代码。
 
 知识点清单（名称：讲解）：
 {plist}
@@ -224,11 +246,12 @@ def notes_mindmap():
 严格要求：
 1. 第一行必须是 mindmap，第二行必须是 root(("{title}"))
 2. root 下第二层为知识点节点（用知识点名称，可适当归类分组）
-3. 每个知识点下挂一个第三层子节点，是用自己语言概括的一句话讲解（不超过 20 字）
-4. 层级用两个空格缩进表示；可以有第三层补充子节点，最多四层
-5. 节点文本必须单行，禁止出现 [ ] ( ) {{ }} " ` 冒号 等破坏 Mermaid 语法的字符
+3. 每个知识点下挂一个第三层子节点，用自己语言概括（不超过 20 字）
+4. 层级用两个空格缩进表示；最多四层
+5. 节点文本必须单行，禁止出现 [ ] ( ) {{ }} " ` 冒号 等破坏语法的字符
 6. 只输出代码块，不要任何解释文字
 """
+
     try:
         raw = _llm_call(prompt, "知识脑图生成")
     except cr.InsufficientCreditsError as e:
@@ -238,13 +261,13 @@ def notes_mindmap():
     except Exception as e:  # noqa: BLE001
         log.log_error("notes", "mindmap_llm_exception", str(e))
         return _err(f"脑图生成失败: {e}", 500)
-    code = _extract_mindmap(raw)
+    code = _extract_mindmap(raw, style)
     if not code:
         log.log_error("notes", "mindmap_llm_invalid",
-                      f"输出无法解析为 mindmap：{(raw or '')[:300]}")
-        return _err("脑图生成失败：模型未返回合法 Mermaid mindmap 代码", 500)
+                      f"输出无法解析为 {style}：{(raw or '')[:300]}")
+        return _err(f"脑图生成失败：模型未返回合法 {style} 代码", 500)
 
-    new_content, replaced = _splice_mindmap(content, code)
+    new_content, _ = _splice_mindmap(content, code, style)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(new_content, encoding="utf-8")
@@ -254,14 +277,105 @@ def notes_mindmap():
     r = get_kms().upsert_note_content(g.user_id, str(target), new_content, title=title)
     if r.get("error"):
         log.log_error("notes", "mindmap_db_failed", r["error"])
-        return _err(f"笔记入库失败: {r['error']}", 500)
+        return _err(f"入库失败: {r['error']}", 500)
     log.log("notes", "mindmap_generated",
-            data={"user": g.user_id, "path": str(target), "points": len(points),
-                  "replaced": replaced})
-    return _ok({"success": True, "mermaid": code, "path": str(target),
-                "rel_path": _rel_to_root(target, g.user_id), "replaced": replaced,
+            data={"user": g.user_id, "path": str(target), "points": len(points), "style": style})
+    return _ok({"success": True, "mermaid": code, "style": style,
+                "path": str(target),
+                "rel_path": _rel_to_root(target, g.user_id),
                 "updated_time": r["updated_time"], "note_id": r["note_id"]},
                **cr.billing_for_response())
+
+
+# ---------------------------------------------------------------- 摘录插入（深入学习后插入子段）
+
+@notes_bp.route("/api/notes/insert-after", methods=["POST"])
+@require_auth
+def notes_insert_after():
+    """在笔记 MD 文件中找到 after_text 段落，在其后插入 insert_content。
+
+    body: {path, after_text, insert_content}
+    - after_text: 原文中选中的段落文本（前80字用于定位）
+    - insert_content: 要插入的 MD 格式内容（blockquote 子段）
+    返回: 成功时包含新内容长度。
+    """
+    body = request.get_json(silent=True) or {}
+    target = _bridge_path(g.user_id, body.get("path") or "")
+    if target is None:
+        return _err("非法路径", 403)
+    after_text = (body.get("after_text") or "").strip()
+    insert_content = (body.get("insert_content") or "").strip()
+    if not insert_content:
+        return _err("缺少插入内容", 400)
+
+    # 读取当前正文
+    rec = get_kms().get_note_record(g.user_id, str(target))
+    content = ""
+    if rec is not None and rec[3] is not None:
+        content = rec[3]
+    elif target.is_file():
+        content = target.read_text(encoding="utf-8", errors="replace")
+    else:
+        return _err("文件不存在", 404)
+
+    # 定位 after_text：空则追加文末，非空则精确插入
+    if not after_text:
+        new_content = content.rstrip() + "\n\n" + insert_content + "\n"
+    else:
+        search_key = after_text[:80]
+        idx = content.find(search_key)
+        if idx == -1:
+            # 回退尝试纯文本匹配（去除 MD 标记后）
+            import re as _re
+            plain_key = _re.sub(r'[#*_`>\-\[\]()!]', '', search_key).strip()[:40]
+            plain_content = _re.sub(r'[#*_`>\-\[\]()!]', '', content)
+            pidx = plain_content.find(plain_key)
+            if pidx == -1:
+                # 找不到原段落，回退追加到文末
+                new_content = content.rstrip() + "\n\n" + insert_content + "\n"
+            else:
+                # 粗略定位原文位置（偏差可接受）
+                ratio = pidx / max(len(plain_content), 1)
+                approx = int(ratio * len(content))
+                end = content.find("\n", approx)
+                if end == -1:
+                    end = len(content)
+                new_content = content[:end] + "\n\n" + insert_content + "\n" + content[end:]
+        else:
+            # 找到 after_text 所在段落的末尾
+            para_end = idx + len(search_key)
+            while para_end < len(content):
+                nl = content.find("\n", para_end)
+                if nl == -1:
+                    para_end = len(content)
+                    break
+                next_line_start = nl + 1
+                next_nl = content.find("\n", next_line_start)
+                if next_nl == -1:
+                    next_nl = len(content)
+                next_line = content[next_line_start:next_nl].strip()
+                if not next_line or next_line.startswith("#") or next_line.startswith("```"):
+                    para_end = nl
+                    break
+                para_end = next_nl
+            new_content = content[:para_end] + "\n\n" + insert_content + "\n" + content[para_end:]
+
+    # 写文件 + 同步 DB
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(new_content, encoding="utf-8")
+    except Exception as e:  # noqa: BLE001
+        log.log_error("notes", "insert_after_write_failed", str(e))
+        return _err(f"写入失败: {e}", 500)
+    title = target.stem
+    r = get_kms().upsert_note_content(g.user_id, str(target), new_content, title=title)
+    if r.get("error"):
+        log.log_error("notes", "insert_after_db_failed", r["error"])
+        return _err(f"入库失败: {r['error']}", 500)
+    log.log("notes", "insert_after_ok",
+            data={"user": g.user_id, "path": str(target), "insert_len": len(insert_content)})
+    return _ok({"success": True, "new_length": len(new_content),
+                "updated_time": r["updated_time"], "note_id": r["note_id"]})
 
 
 # ---------------------------------------------------------------- 小工具

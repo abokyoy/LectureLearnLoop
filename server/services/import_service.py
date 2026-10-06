@@ -398,8 +398,13 @@ def _save_pdf_image(xob: object, att_dir: Path, base_name: str) -> str | None:
             (att_dir / name).write_bytes(data)
             return name
         if "JPXDecode" in filt:
-            name = base_name + ".jp2"
-            (att_dir / name).write_bytes(data)
+            # JPEG2000 浏览器不支持，用 PIL 转 PNG（2026-10-04 修复图片不可见）
+            from io import BytesIO
+            img = Image.open(BytesIO(data))
+            if img.mode not in ("RGB", "RGBA", "L", "LA"):
+                img = img.convert("RGB")
+            name = base_name + ".png"
+            img.save(att_dir / name)
             return name
         cs_obj = xob.get("/ColorSpace")
         cs_obj = cs_obj.get_object() if hasattr(cs_obj, "get_object") else cs_obj

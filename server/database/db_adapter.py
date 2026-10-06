@@ -1,25 +1,19 @@
 # -*- coding: utf-8 -*-
-"""统一数据库连接适配层（全项目唯一数据库出口）。
+"""统一数据库连接适配层（全项目唯一数据库出口，PostgreSQL 唯一后端）。
 
 架构职责（DAO 层屏蔽底层差异）：
-- 全局配置 config.DB_BACKEND 决定运行时后端：postgres | sqlite；
 - PostgreSQL：psycopg2 ThreadedConnectionPool 连接池，支撑高并发访问；
-- 方言屏蔽：业务层统一使用 SQLite 风格 `?` 占位符与 sqlite3.Connection 语义
-  （conn.execute / with conn: / close() / cursor.lastrowid / INSERT OR IGNORE），
-  由本模块翻译为目标后端语法，业务代码零方言感知；
-- 异常归一：两后端的完整性/操作类错误统一转换为 db_adapter.IntegrityError /
-  OperationalError，业务层只捕获本模块异常；
-- 连接归还：close() 与 with 块退出均把 PG 连接归还连接池（未提交事务自动回滚），
-  杜绝池泄漏。
+- 方言屏蔽：业务层统一使用 `?` 占位符与 conn.execute / with conn: / close() 语义，
+  由本模块翻译为 PG 语法，业务代码零方言感知；
+- 异常归一：完整性/操作类错误统一转换为 IntegrityError / OperationalError；
+- 连接归还：close() 与 with 块退出均把 PG 连接归还连接池。
 
 约束：
-- PG 凭据只从 server/.env 读取（开发工作原则：密钥不落代码/库）；
-- sqlite 分支行为与历史完全一致（保留回退能力）。
+- PG 凭据只从 server/.env 读取。
 """
 from __future__ import annotations
 
 import re
-import sqlite3
 import threading
 
 import config
@@ -37,22 +31,21 @@ class OperationalError(DatabaseError):
     """连接、SQL 语法等操作性异常（两后端归一）。"""
 
 
-# ---------------------------------------------------------------- 后端选择
+# ---------------------------------------------------------------- 后端配置
 def get_backend() -> str:
-    b = (getattr(config, "DB_BACKEND", "sqlite") or "sqlite").strip().lower()
-    return "postgres" if b in ("postgres", "postgresql", "pg") else "sqlite"
+    return "postgres"
 
 
 def is_postgres() -> bool:
-    return get_backend() == "postgres"
+    return True
 
 
 # ---------------------------------------------------------------- PG 连接池（懒建单例）
 _pool = None
 _pool_lock = threading.Lock()
 
-if is_postgres():
-    import psycopg2  # 仅在 PG 后端时导入，sqlite 分支零依赖
+if True:  # PG 始终导入
+    import psycopg2  # noqa: F401
     import psycopg2.extras  # noqa: F401
 
 
@@ -316,10 +309,9 @@ class CursorWrapper:
 
 # ---------------------------------------------------------------- Connection 包装
 class ConnWrapper:
-    """模拟 sqlite3.Connection 语义的连接包装。
+    """PostgreSQL 连接包装（模拟统一语义接口）。
 
-    - PG：内部持有池连接，close()/with 退出 → 归还池（未提交自动回滚）；
-    - sqlite：内部持有普通 sqlite3 连接，close() 即物理关闭。
+    - 内部持有池连接，close()/with 退出 → 归还池（未提交自动回滚）。
     """
 
     def __init__(self, raw, backend, pool=None):
@@ -329,20 +321,18 @@ class ConnWrapper:
         self._released = False
         self.row_factory = None  # 兼容旧代码赋值（PG 行默认支持列名访问）
 
-    # sqlite3.Connection 便捷面
+    # 统一便捷接口
     def execute(self, sql, params=()):
         cur = self.cursor()
         cur.execute(sql, params)
         return cur
 
     def executescript(self, script: str):
-        if self.backend == "postgres":
-            cur = self._raw.cursor()
-            for stmt in filter(None, (s.strip() for s in script.split(";"))):
-                cur.execute(stmt)
-            cur.close()
-            return self._raw.cursor()
-        return self._raw.executescript(script)
+        cur = self._raw.cursor()
+        for stmt in filter(None, (s.strip() for s in script.split(";"))):
+            cur.execute(stmt)
+        cur.close()
+        return self._raw.cursor()
 
     def cursor(self):
         return CursorWrapper(self._raw.cursor(), self)
@@ -375,11 +365,8 @@ class ConnWrapper:
         if self._released:
             return
         try:
-            if self.backend != "postgres":
-                self._raw.close()
-            else:
-                # 未提交事务残余先回滚，保证归还的是干净连接
-                self._raw.rollback()
+            # 未提交事务残余先回滚，保证归还的是干净连接
+            self._raw.rollback()
         except Exception:  # noqa: BLE001
             pass
         finally:
@@ -423,17 +410,13 @@ def _pg_acquire():
 
 
 def get_connection(db_path: str | None = None) -> ConnWrapper:
-    """全项目唯一连接入口。db_path 仅 sqlite 分支使用；PG 分支忽略。"""
-    if is_postgres():
-        pool, raw = _pg_acquire()
-        return ConnWrapper(raw, "postgres", pool=pool)
-    return ConnWrapper(sqlite3.connect(str(db_path)), "sqlite")
+    """全项目唯一连接入口（PG 连接池）。db_path 参数保留兼容签名，实际忽略。"""
+    pool, raw = _pg_acquire()
+    return ConnWrapper(raw, "postgres", pool=pool)
 
 
 def run_on_pg(sql_statements, params_list=None):
-    """在 PG 上执行一组 DDL/SQL（sqlite 后端跳过）。用于建表初始化。"""
-    if not is_postgres():
-        return
+    """执行一组 DDL/SQL。用于建表初始化。"""
     conn = get_connection()
     try:
         cur = conn._raw.cursor()
