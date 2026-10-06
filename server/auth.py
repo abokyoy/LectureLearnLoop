@@ -72,10 +72,9 @@ def _get_db():
 
 def _norm_username(raw: str) -> str:
     """用户名归一化：去空白 + 小写。
-
-    修复根因：SQLite `=` 默认 BINARY 排序区分大小写，历史版本未归一化导致
-    'ABOYKOY'/'aboykoy' 被当成两个账号（注册成功却登录提示用户不存在、
-    科目随 user_id 分裂“消失”）。新数据统一小写写入，查询用 lower() 兼容历史脏数据。
+    
+    历史原因：旧版本未归一化导致 'ABOYKOY'/'aboykoy' 被当成两个账号。
+    新数据统一小写写入，查询用 lower() 兼容历史脏数据。
     """
     return (raw or "").strip().lower()
 

@@ -43,7 +43,13 @@ HTTP_PROXY_URL = os.getenv("HTTP_PROXY_URL", "")
 PADDLE_OCR_JOB_URL = os.getenv("PADDLE_OCR_JOB_URL", "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs")
 PADDLE_OCR_TOKEN = os.getenv("PADDLE_OCR_TOKEN", "")
 PADDLE_OCR_MODEL = os.getenv("PADDLE_OCR_MODEL", "PaddleOCR-VL-1.6")
-IMPORT_MAX_BYTES = 50 * 1024 * 1024        # 单文件上限 50MB（Flask MAX_CONTENT_LENGTH 同值）
+IMPORT_MAX_BYTES = 200 * 1024 * 1024       # 单文件上限 200MB（2026-10-04 大PDF分段；Flask MAX_CONTENT_LENGTH 同值）
+
+# 大 PDF 书籍分段导入（2026-10-04 方案：docs/计划/2026-10-04-大PDF分段导入与阅读基础版方案.md）
+PDF_SEG_PAGE_SIZE = 20        # 固定 20 页一个桶段（数字=真实页码，所有落段计算唯一来源）
+PDF_BOOK_PAGE_MIN = 20        # 分流主驱动：页数 > 此值才可能走书籍文件夹（体积不得单独作为免除条件，裁定#1）
+PDF_BOOK_EXEMPT_PAGES = 60    # 小文件豁免：页数 ≤ 此值且体积 ≤ EXEMPT_SIZE_MB 时不建文件夹（纯文字大书>60页仍走分段）
+PDF_BOOK_EXEMPT_SIZE_MB = 10  # 小文件豁免体积上限（MB），与 EXEMPT_PAGES 同时满足才豁免
 
 # ---------------------------------------------------------------- 数据库全局配置（PostgreSQL 唯一后端）
 # 架构决策：全面废除 SQLite，全站仅使用 PostgreSQL（见 database/db_adapter.py）。

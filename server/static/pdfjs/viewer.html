@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF 阅读器</title>
+<style>
+  :root { --bg:#f6f7f9; --bar:#ffffff; --ink:#3a3f47; --line:#e5e7eb; --accent:#10b981; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif; }
+  #toolbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:8px;
+    padding:8px 14px; background:var(--bar); border-bottom:1px solid var(--line);
+    box-shadow:0 1px 2px rgba(0,0,0,.04); flex-wrap:wrap; }
+  .btn { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:8px;
+    min-width:34px; height:34px; padding:0 10px; font-size:15px; cursor:pointer; line-height:1;
+    transition:background .15s,border-color .15s; }
+  .btn:hover { background:#f0fdf4; border-color:var(--accent); }
+  .btn:disabled { opacity:.4; cursor:default; }
+  .chip { font-size:13px; color:#6b7280; padding:0 4px; white-space:nowrap; }
+  #pageInput { width:48px; height:30px; border:1px solid var(--line); border-radius:8px;
+    text-align:center; font-size:14px; }
+  #stage { height:calc(100% - 51px); overflow:auto; padding:18px; }
+  #cv { display:block; margin:0 auto; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.10); border-radius:4px; }
+  #msg { padding:24px; text-align:center; color:#9ca3af; font-size:14px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button class="btn" id="prev" title="上一页">&#8249;</button>
+  <span class="chip"><input id="pageInput" type="number" min="1"> / <span id="total">-</span></span>
+  <button class="btn" id="next" title="下一页">&#8250;</button>
+  <span class="chip">&nbsp;</span>
+  <button class="btn" id="zoomOut" title="缩小">&#8722;</button>
+  <span class="chip" id="scaleInfo">100%</span>
+  <button class="btn" id="zoomIn" title="放大">+</button>
+</div>
+<div id="stage"><canvas id="cv"></canvas><div id="msg" hidden>正在加载…</div></div>
+
+<script src="build/pdf.min.js"></script>
+<script>
+(function () {
+  if (!window.pdfjsLib) { document.getElementById('msg').hidden = false; document.getElementById('msg').textContent = 'PDF 引擎加载失败'; return; }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'build/pdf.worker.min.js';
+
+  var params = new URLSearchParams(location.search);
+  var fileUrl = params.get('file');
+  var pdf = null, pageNum = 1, scale = 1.5, baseScale = 1.5, pendingPage = null;
+  var renderTask = null, renderSeq = 0;
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  var elTotal = document.getElementById('total'), elPage = document.getElementById('pageInput');
+  var elScale = document.getElementById('scaleInfo'), elMsg = document.getElementById('msg');
+
+  function hashPage() { var m = (location.hash || '').match(/page=(\d+)/); return m ? parseInt(m[1], 10) : null; }
+  function report(msg) { try { parent.postMessage(msg, '*'); } catch (e) {} }
+
+  function render() {
+    if (!pdf) return;
+    pageNum = Math.min(Math.max(1, pageNum), pdf.numPages);
+    if (renderTask) { try { renderTask.cancel(); } catch (e) {} renderTask = null; }  // 快速翻页/缩放并发保护（评审 M1）
+    var mySeq = ++renderSeq;
+    pdf.getPage(pageNum).then(function (page) {
+      if (mySeq !== renderSeq) return;
+      var vp = page.getViewport({ scale: scale });
+      cv.width = vp.width; cv.height = vp.height; cv.style.width = vp.width + 'px';
+      elMsg.hidden = true; cv.hidden = false;
+      renderTask = page.render({ canvasContext: ctx, viewport: vp });
+      return renderTask.promise;
+    }).then(function () {
+      if (mySeq !== renderSeq) return;
+      renderTask = null;
+      elTotal.textContent = pdf.numPages; elPage.value = pageNum; elPage.max = pdf.numPages;
+      elScale.textContent = Math.round(scale / baseScale * 100) + '%';
+      document.getElementById('prev').disabled = pageNum <= 1;
+      document.getElementById('next').disabled = pageNum >= pdf.numPages;
+      report({ type: 'pdf-page', page: pageNum, total: pdf.numPages });
+    }).catch(function (e) {
+      if (/abort|cancel/i.test(String((e && e.name) || '')) || /abort|cancel/i.test(String(e))) return;  // 取消旧渲染属正常，不报错
+      elMsg.hidden = false; elMsg.textContent = '页面渲染失败：' + e;
+    });
+  }
+
+  function goto(p) { var n = parseInt(p, 10); if (!n) return; if (!pdf) { pendingPage = n; return; } pageNum = n; render(); }
+
+  function open(url) {
+    elMsg.hidden = false; elMsg.textContent = '正在加载…'; cv.hidden = true;
+    pdfjsLib.getDocument({ url: url, cMapUrl: 'cmaps/', cMapPacked: true,
+      standardFontDataUrl: 'standard_fonts/' }).promise.then(function (doc) {
+      pdf = doc;
+      // 适应宽度：根据容器宽度计算初始 scale（缺陷C修复）
+      pdf.getPage(1).then(function (p1) {
+        var nat = p1.getViewport({ scale: 1 });
+        var avail = (document.getElementById('stage').clientWidth || 600) - 36;
+        baseScale = scale = Math.min(3, Math.max(0.5, avail / nat.width));
+        pageNum = pendingPage || hashPage() || 1; pendingPage = null;
+        render();
+      });
+    }).catch(function (e) {
+      elMsg.hidden = false;
+      var s = String((e && e.message) || e);
+      var auth = /\(4(01|03)\)|401|403|unexpected server response/i.test(s);
+      elMsg.textContent = auth ? '阅读链接已过期，请重新打开' : ('加载失败：' + s);
+      report({ type: 'pdf-error', kind: auth ? 'expired' : 'fatal', msg: s });  // 仅鉴权类可重签（评审 B1）
+    });
+  }
+
+  document.getElementById('prev').onclick = function () { if (pageNum > 1) { pageNum--; render(); } };
+  document.getElementById('next').onclick = function () { if (pageNum < pdf.numPages) { pageNum++; render(); } };
+  document.getElementById('zoomIn').onclick = function () { scale = Math.min(4, scale * 1.2); render(); };
+  document.getElementById('zoomOut').onclick = function () { scale = Math.max(0.5, scale / 1.2); render(); };
+  elPage.onchange = function () { goto(elPage.value); };
+  elPage.onkeydown = function (ev) { if (ev.key === 'Enter') goto(elPage.value); };
+
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.type === 'pdf-goto') goto(d.page);
+    else if (d.type === 'pdf-reload' && d.file) open(d.file);
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowLeft') document.getElementById('prev').click();
+    else if (ev.key === 'ArrowRight') document.getElementById('next').click();
+  });
+
+  if (fileUrl) open(fileUrl);
+  else { elMsg.hidden = false; elMsg.textContent = '缺少 file 参数'; }
+})();
+</script>
+</body>
+</html>

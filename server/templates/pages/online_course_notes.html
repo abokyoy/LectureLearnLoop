@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script src="/static/js/vendor/mermaid.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 
 <!-- 二期：共享录音引擎（与悬浮窗同源，LLRecorder） -->
@@ -63,7 +63,7 @@ window.jsTreeLoading = false;
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+<script src="/static/js/vendor/mermaid.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 
 <style>
@@ -1600,6 +1600,54 @@ window.jsTreeLoading = false;
                     </div>
                 </div>
                 <textarea id="edit-content" class="w-full h-full border border-cl-border rounded-cl p-4 font-mono text-sm resize-none hidden focus:ring-2 focus:ring-cl-primary/30 focus:border-cl-primary" placeholder="在此编辑 Markdown 内容..."></textarea>
+
+                <!-- 大PDF原件阅读器（2026-10-04 S4）：点任意 .pdf 时显示，替代 Markdown 预览 -->
+                <div id="pdf-viewer-wrap" class="hidden h-full flex flex-col -m-4">
+                    <div class="flex items-center justify-between px-3 py-2 bg-cl-bg border-b border-cl-border">
+                        <span class="text-xs text-cl-text-2 truncate" id="pdf-viewer-name"></span>
+                        <div class="flex items-center gap-2">
+                            <button id="pdf-seg-toggle" class="hidden px-3 py-1.5 flex items-center gap-1 rounded-clbtn text-xs font-medium bg-cl-secondary text-white transition-colors hover:opacity-90" onclick="togglePdfSegPanel()">
+                                <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layers"/></svg>分段转换
+                            </button>
+                            <button class="px-2 py-1.5 rounded-clbtn text-xs text-cl-text-2 hover:bg-cl-surface" onclick="closePdfViewer()">
+                                <svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-x"/></svg>关闭
+                            </button>
+                        </div>
+                    </div>
+                    <iframe id="pdf-viewer-frame" class="flex-1 w-full border-0" title="PDF 阅读器"></iframe>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分段转换滑出面板（仅书籍，2026-10-04 S4） -->
+        <div id="pdf-seg-panel" class="hidden fixed top-0 right-0 h-full w-[340px] bg-cl-surface shadow-2xl z-50 flex flex-col border-l border-cl-border">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-cl-border">
+                <h3 class="text-sm font-medium text-cl-text">分段转换</h3>
+                <button class="text-cl-text-2 hover:text-cl-text" onclick="togglePdfSegPanel(false)">
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-x"/></svg>
+                </button>
+            </div>
+            <div class="px-4 py-2 text-xs text-cl-text-2 border-b border-cl-border flex items-center justify-between">
+                <span id="pdf-seg-summary">加载中…</span>
+                <button class="text-cl-primary hover:underline" onclick="selectAllUnconverted()">全选未转</button>
+            </div>
+            <div id="pdf-seg-grid" class="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2 content-start"></div>
+            <div class="p-3 border-t border-cl-border">
+                <button class="w-full px-3 py-2 flex items-center justify-center gap-1 rounded-clbtn text-sm font-medium bg-cl-primary text-white transition-colors hover:opacity-90 disabled:opacity-40" id="pdf-seg-convert-btn" onclick="convertSelectedSegments()">
+                    <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-refresh-cw"/></svg>转换所选
+                </button>
+            </div>
+        </div>
+
+        <!-- 转换消耗确认弹层（确认3=B，扫描段转换前） -->
+        <div id="pdf-confirm-modal" class="hidden fixed inset-0 z-[60] items-center justify-center bg-black/40">
+            <div class="bg-cl-surface rounded-cl shadow-xl w-[420px] max-w-[92vw] p-5">
+                <h4 class="text-base font-medium text-cl-text mb-2">确认转换</h4>
+                <p class="text-sm text-cl-text-2 leading-relaxed whitespace-pre-line" id="pdf-confirm-text"></p>
+                <div class="flex justify-end gap-2 mt-5">
+                    <button class="px-4 py-2 rounded-clbtn text-sm text-cl-text-2 hover:bg-cl-bg" onclick="closePdfConfirm(false)">取消</button>
+                    <button class="px-4 py-2 rounded-clbtn text-sm font-medium bg-cl-primary text-white hover:opacity-90" onclick="closePdfConfirm(true)">确认转换</button>
+                </div>
             </div>
         </div>
         
@@ -4502,14 +4550,18 @@ window.handleRenameKeydown = function(event, input) {
                 updateSelectionPath(node);
                 
                 if (node.data.type === 'file') {
-                    // 检查是否为md文件
+                    const isPdf = /\.pdf$/i.test(node.data.path || '') || node.data.extension === '.pdf';
                     if (node.data.is_markdown) {
                         addDebugLog('✅ 这是md文件，可以打开');
                         // 只有md文件才能被打开和追踪
                         selectFile(node.data.path);
+                    } else if (isPdf) {
+                        // 大PDF/小PDF 原件：交给 selectFile 内的 .pdf 分支打开 pdf.js viewer（确认4=B）
+                        addDebugLog('✅ 这是PDF原件，打开阅读器');
+                        selectFile(node.data.path);
                     } else {
-                        addDebugLog('❌ 这不是md文件，不支持打开');
-                        showToast('只支持打开Markdown文件(.md)，其他文件类型暂不支持编辑', 'warning');
+                        addDebugLog('❌ 这不是md或pdf文件，不支持打开');
+                        showToast('只支持打开Markdown文件(.md)或PDF文件(.pdf)，其他文件类型暂不支持编辑', 'warning');
                         // 取消选中
                         $('#file-tree').jstree('deselect_node', node);
                     }
@@ -4851,10 +4903,10 @@ window.handleRenameKeydown = function(event, input) {
             var files = Array.prototype.slice.call(input.files || []);
             input.remove();
             if (!files.length) return;
-            // 评审 Minor-2：本地预检体积，超 50MB 的直接标红不发起上传（与后端 MAX_CONTENT_LENGTH 对齐）
-            var MAXB = 50 * 1024 * 1024;
+            // 评审 Minor-2：本地预检体积，超 200MB 的直接标红不发起上传（与后端 MAX_CONTENT_LENGTH 对齐）
+            var MAXB = 200 * 1024 * 1024;
             files.forEach(function (f, i) {
-                if (f.size > MAXB) { _impSetLine('big' + f.name, '❌ ' + f.name + '：超过 50MB 上传上限', true, true); return; }
+                if (f.size > MAXB) { _impSetLine('big' + f.name, '❌ ' + f.name + '：超过 200MB 上传上限', true, true); return; }
                 setTimeout(function () { _impUploadOne(f); }, i * 300);
             });
         };
@@ -4872,18 +4924,19 @@ window.handleRenameKeydown = function(event, input) {
             headers: { 'Authorization': 'Bearer ' + _impToken() },
             body: fd
         }).then(function (r) {
-            if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 413 ? '（文件过大，上限 50MB）' : ''));
+            if (!r.ok) throw new Error('HTTP ' + r.status + (r.status === 413 ? '（文件过大，上限 200MB）' : ''));
             return r.json();
         }).then(function (j) {
             var d = (j && j.data) || {};
             if (!d.success) { _impSetLine(key, '❌ ' + file.name + '：' + (d.error || '导入失败'), true, true); return; }
-            _impTrack(d.task_id || key, file.name, d.file_name || file.name, key);
+            _impTrack(d.task_id || key, file.name, d.file_name || file.name, key, { is_book: d.is_book, segments: d.segments, is_text_layer: d.is_text_layer });
         }).catch(function (e) {
             _impSetLine(key, '❌ ' + file.name + '：' + e.message, true, true);
         });
     }
 
-    function _impTrack(taskId, origName, resultName, key) {
+    function _impTrack(taskId, origName, resultName, key, meta) {
+        meta = meta || {};
         // 评审 Minor-3：落点快照，轮询期间用户切换选中节点不再影响最终 selectFile 路径
         var target = _impTargetPath || 'vault';
         var sep = target.indexOf('\\') >= 0 ? '\\' : '/';
@@ -4901,6 +4954,15 @@ window.handleRenameKeydown = function(event, input) {
                     if (!d.success) { clearInterval(timer); _impSetLine(key, '❌ ' + origName + '：' + (d.error || '任务不存在'), true, true); return; }
                     if (d.status === 'done') {
                         clearInterval(timer);
+                        // 书籍分支：文案区分文本层/扫描版，不自动按 Markdown 打开原件
+                        if (meta.is_book) {
+                            var bmsg = meta.is_text_layer
+                                ? ('📚 ' + origName + '：已创建书籍文件夹，文本版已转换 ' + (meta.segments || 0) + ' 段')
+                                : ('📚 ' + origName + '：已创建书籍文件夹，扫描版请在阅读器中逐段转换');
+                            _impSetLine(key, bmsg, false, true);
+                            loadFileStructure();
+                            return;
+                        }
                         // URL 导入产物文件名取文章标题，创建时无法预知，完成时以 result_name 为准
                         var finalName = d.result_name || d.file_name || resultName;
                         _impSetLine(key, '✅ ' + origName + ' → ' + finalName, false, true);
@@ -4912,8 +4974,13 @@ window.handleRenameKeydown = function(event, input) {
                         _impSetLine(key, '❌ ' + origName + '：' + (d.error || '转换失败'), true, true);
                     } else {
                         var p = d.progress || {};
-                        _impSetLine(key, p.total ? ('🔄 ' + origName + ' 转换中 ' + (p.done || 0) + '/' + p.total + ' 页…')
-                                                   : ('🔄 ' + origName + ' 排队转换中…'));
+                        if (meta.is_book) {
+                            _impSetLine(key, p.total ? ('🔄 ' + origName + ' 逐段转换中 ' + (p.done || 0) + '/' + p.total + ' 段…')
+                                                       : ('🔄 ' + origName + ' 排队转换中…'));
+                        } else {
+                            _impSetLine(key, p.total ? ('🔄 ' + origName + ' 转换中 ' + (p.done || 0) + '/' + p.total + ' 页…')
+                                                       : ('🔄 ' + origName + ' 排队转换中…'));
+                        }
                     }
                 })
                 .catch(function () { /* 轮询网络错误容忍，下一轮继续 */ });
@@ -4993,6 +5060,14 @@ window.handleRenameKeydown = function(event, input) {
         // 标准化文件路径 - 确保使用正确的分隔符
         let normalizedPath = filePath.replace(/\\/g, '/');
         debugLog('标准化后的路径: ' + normalizedPath);
+
+        // 大PDF/小PDF 原件：走 pdf.js viewer（确认4=B，附件/与书籍根两位置一致）
+        if (/\.pdf$/i.test(normalizedPath)) {
+            if (typeof closePdfSegPanel === 'function') { /* 保留面板状态供同书回切 */ }
+            openPdfViewer(normalizedPath, (normalizedPath.split('/').pop() || 'PDF'));
+            return;
+        }
+        if (typeof closePdfViewer === 'function') closePdfViewer({ keepSelection: true });
         
         // 检查是否切换到不同文件，如果是则进行未保存内容检测
         if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== normalizedPath) {
@@ -5387,6 +5462,14 @@ window.handleRenameKeydown = function(event, input) {
         // 添加选中状态
         element.classList.add('selected');
         
+        // 大PDF/小PDF 原件：走 pdf.js viewer（确认4=B，两位置一致）
+        if (type === 'file' && /\.pdf$/i.test(path)) {
+            openPdfViewer(path, name);
+            return;
+        }
+        // 切换到非 pdf：先收起阅读器面板
+        if (typeof closePdfViewer === 'function') closePdfViewer({ keepSelection: true });
+
         if (type === 'file' && path.endsWith('.md')) {
             // 使用新的未保存内容守卫系统检查
             if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== path) {
@@ -5420,6 +5503,149 @@ window.handleRenameKeydown = function(event, input) {
             }
         }
     }
+
+    // ================= 大PDF viewer + 分段转换（2026-10-04 S4）=================
+    var __pdf = { path: '', name: '', mainId: '', isBook: false, isText: false, total: 0, segs: [], sel: new Set(), pollTimer: null, confirmCb: null, signedUrl: '', lastPage: 1, retry: 0 };
+
+    async function openPdfViewer(path, name) {
+        const frame = document.getElementById('pdf-viewer-frame');
+        const wrap = document.getElementById('pdf-viewer-wrap');
+        if (!frame || !wrap) return;
+        const pc = document.getElementById('preview-content'), ec = document.getElementById('edit-content');
+        if (pc) pc.classList.add('hidden');
+        if (ec) ec.classList.add('hidden');
+        ['preview-btn', 'edit-btn', 'save-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = 'hidden'; });
+        const title = document.getElementById('preview-title'); if (title) title.textContent = name;
+        document.getElementById('pdf-viewer-name').textContent = name;
+        wrap.classList.remove('hidden');
+        closePdfSegPanel(); stopSegPoll();
+        __pdf.path = path; __pdf.name = name; __pdf.mainId = ''; __pdf.isBook = false; __pdf.sel.clear(); __pdf.lastPage = 1; __pdf.retry = 0;
+        try {
+            const book = JSON.parse(await window.pybridge.pdfBook('', path));
+            if (book && book.success && book.main_task_id) {
+                __pdf.mainId = book.main_task_id; __pdf.isBook = true; __pdf.isText = !!book.is_text_layer;
+                __pdf.total = book.total_pages; __pdf.segs = book.segments || [];
+            }
+        } catch (e) { /* 非书籍或查询失败：仅阅读，无转换面板 */ }
+        const segBtn = document.getElementById('pdf-seg-toggle');
+        if (segBtn) segBtn.classList.toggle('hidden', !__pdf.isBook);
+        await loadPdfIntoFrame(path, 1);
+    }
+
+    async function loadPdfIntoFrame(path, page) {
+        const frame = document.getElementById('pdf-viewer-frame');
+        if (!frame) return;
+        try {
+            const s = JSON.parse(await window.pybridge.pdfSign(path));
+            if (!s || !s.success || !s.t) { frame.src = 'about:blank'; return; }
+            const stream = '/api/vault/pdf?u=' + encodeURIComponent(s.u) + '&path=' + encodeURIComponent(s.path) +
+                '&exp=' + encodeURIComponent(s.exp) + '&t=' + encodeURIComponent(s.t);
+            __pdf.signedUrl = stream;
+            const hash = (page && page > 1) ? ('#page=' + page) : '';
+            frame.src = '/static/pdfjs/viewer.html?file=' + encodeURIComponent(stream) + hash;
+        } catch (e) { frame.src = 'about:blank'; }
+    }
+
+    function closePdfViewer(opts) {
+        opts = opts || {};
+        const wrap = document.getElementById('pdf-viewer-wrap');
+        if (!wrap || wrap.classList.contains('hidden')) { if (opts.force) { /* fallthrough reset */ } else return; }
+        wrap.classList.add('hidden');
+        const frame = document.getElementById('pdf-viewer-frame'); if (frame) frame.src = 'about:blank';
+        ['preview-btn', 'edit-btn', 'save-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = ''; });
+        closePdfSegPanel(); stopSegPoll();
+    }
+
+    function togglePdfSegPanel(force) {
+        const p = document.getElementById('pdf-seg-panel'); if (!p || !__pdf.isBook) return;
+        const show = (force === undefined) ? p.classList.contains('hidden') : force;
+        if (show) { p.classList.remove('hidden'); p.classList.add('flex'); refreshPdfSegments(); }
+        else closePdfSegPanel();
+    }
+    function closePdfSegPanel() { const p = document.getElementById('pdf-seg-panel'); if (p) { p.classList.add('hidden'); p.classList.remove('flex'); } }
+
+    async function refreshPdfSegments() {
+        try {
+            const b = JSON.parse(await window.pybridge.pdfBook(__pdf.mainId, ''));
+            if (!b || !b.success) { document.getElementById('pdf-seg-summary').textContent = '原件丢失或不可用'; return; }
+            __pdf.segs = b.segments || []; __pdf.isText = !!b.is_text_layer;
+            renderSegGrid(b);
+        } catch (e) { document.getElementById('pdf-seg-summary').textContent = '加载失败'; }
+    }
+
+    function renderSegGrid(b) {
+        const grid = document.getElementById('pdf-seg-grid'); if (!grid) return;
+        grid.innerHTML = '';
+        const color = { converted: 'border-emerald-200 bg-emerald-50 text-emerald-700', running: 'border-amber-200 bg-amber-50 text-amber-700', failed: 'border-red-200 bg-red-50 text-red-700', pending: 'border-cl-border bg-cl-bg text-cl-text-2' };
+        const label = { converted: '已转', running: '转换中', failed: '失败', pending: '未转' };
+        let done = 0; const total = (b.segments || []).length;
+        (b.segments || []).forEach(s => {
+            const st = s.state || 'pending'; if (st === 'converted') done++;
+            const selectable = (st === 'pending' || st === 'failed');
+            const box = document.createElement('div');
+            box.className = 'rounded-cl border ' + color[st] + ' p-2 text-xs flex flex-col gap-1';
+            const head = document.createElement('div'); head.className = 'flex items-center justify-between';
+            head.innerHTML = '<span class="font-medium">' + s.from + '-' + s.to + '</span><span>' + label[st] + '</span>';
+            box.appendChild(head);
+            if (st === 'failed' && s.error) { const e = document.createElement('div'); e.className = 'text-[11px] text-red-500 truncate'; e.title = s.error; e.textContent = s.error; box.appendChild(e); }
+            const jump = document.createElement('button'); jump.className = 'text-left text-[11px] text-cl-primary hover:underline'; jump.textContent = '跳到第 ' + s.from + ' 页'; jump.onclick = () => gotoViewerPage(s.from); box.appendChild(jump);
+            if (st === 'converted') { const rb = document.createElement('button'); rb.className = 'text-left text-[11px] text-cl-text-2 hover:underline'; rb.textContent = '重转此段（覆盖）'; rb.onclick = () => askPdfConfirm('将强制重转第 ' + s.from + '-' + s.to + ' 页并覆盖已有内容，确认？', (ok) => { if (ok) doSegmentConvert([s.index], false, true); }); box.appendChild(rb); }
+            if (selectable) {
+                const lab = document.createElement('label'); lab.className = 'flex items-center gap-1 text-[11px] mt-0.5 cursor-pointer';
+                const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = __pdf.sel.has(s.index);
+                inp.onchange = () => { if (inp.checked) __pdf.sel.add(s.index); else __pdf.sel.delete(s.index); updateConvertBtn(); };
+                lab.appendChild(inp); lab.appendChild(document.createTextNode(' 选择转换')); box.appendChild(lab);
+            }
+            grid.appendChild(box);
+        });
+        const sum = document.getElementById('pdf-seg-summary');
+        if (sum) sum.textContent = '共 ' + total + ' 段 · 已转 ' + done + (b.is_text_layer ? '（文本层，导入即自动完成）' : '');
+        updateConvertBtn();
+    }
+
+    function gotoViewerPage(page) {
+        const frame = document.getElementById('pdf-viewer-frame');
+        if (frame && frame.contentWindow) { try { frame.contentWindow.postMessage({ type: 'pdf-goto', page: page }, '*'); } catch (e) {} }
+    }
+    function updateConvertBtn() { const btn = document.getElementById('pdf-seg-convert-btn'); if (btn) btn.disabled = __pdf.sel.size === 0; }
+    function selectAllUnconverted() { (__pdf.segs || []).forEach(s => { const st = s.state || 'pending'; if (st === 'pending' || st === 'failed') __pdf.sel.add(s.index); }); refreshPdfSegments(); }
+
+    async function convertSelectedSegments() {
+        const sel = [...__pdf.sel]; if (!sel.length) return;
+        let est;
+        try { est = JSON.parse(await window.pybridge.pdfSegmentsEstimate({ main_task_id: __pdf.mainId, segs: sel })); }
+        catch (e) { est = null; }
+        if (!est || est.success === false) { alert('估算失败：' + ((est && est.error) || '')); return; }
+        if (!est.segs) { __pdf.sel.clear(); refreshPdfSegments(); return; }
+        __pdf.sel.clear();
+        if (est.need_confirm) {
+            askPdfConfirm('本次将转换 ' + est.segs + ' 段，约 ' + est.ocr_pages + ' 页（扫描件云端 OCR，消耗官方免费额度，不扣积分）。\n确认开始？', async (ok) => { if (ok) await doSegmentConvert(sel, false); });
+        } else {
+            await doSegmentConvert(sel, false);
+        }
+    }
+    async function doSegmentConvert(sel, forceOcr, force) {
+        try {
+            const r = JSON.parse(await window.pybridge.pdfSegmentsConvert({ main_task_id: __pdf.mainId, segs: sel, confirm: true, force_ocr: !!forceOcr, force: !!force }));
+            if (r && r.success) startSegPoll(); else if (r && r.error) alert(r.error);
+            refreshPdfSegments();
+        } catch (e) { alert('转换请求失败：' + e.message); }
+    }
+
+    function startSegPoll() { stopSegPoll(); __pdf.pollTimer = setInterval(async () => { await refreshPdfSegments(); if (!(__pdf.segs || []).some(s => s.state === 'running')) stopSegPoll(); }, 2000); }
+    function stopSegPoll() { if (__pdf.pollTimer) { clearInterval(__pdf.pollTimer); __pdf.pollTimer = null; } }
+
+    function askPdfConfirm(text, cb) { __pdf.confirmCb = cb; const m = document.getElementById('pdf-confirm-modal'); document.getElementById('pdf-confirm-text').textContent = text; m.classList.remove('hidden'); m.classList.add('flex'); }
+    function closePdfConfirm(ok) { const m = document.getElementById('pdf-confirm-modal'); m.classList.add('hidden'); m.classList.remove('flex'); const cb = __pdf.confirmCb; __pdf.confirmCb = null; if (cb) cb(!!ok); }
+
+    // viewer iframe 回报：pdf-page 记录当前页（供重签后回页）；pdf-error 仅鉴权类且未重试过才重签，否则停循环（评审 B1/m4）
+    window.addEventListener('message', (ev) => {
+        const d = ev.data || {};
+        if (d.type === 'pdf-page') { __pdf.lastPage = d.page; return; }
+        if (d.type === 'pdf-error' && __pdf.path) {
+            if (d.kind === 'expired' && __pdf.retry < 1) { __pdf.retry++; loadPdfIntoFrame(__pdf.path, __pdf.lastPage); }
+        }
+    });
 
     // 加载文件内容
     function loadFileContent(filePath, fileName) {
@@ -5671,7 +5897,7 @@ window.handleRenameKeydown = function(event, input) {
         
         let html = '<div class="space-y-3">';
         
-        // 显示已存在的知识点（都使用绿色主题，像第一个一样）
+        // 显示已存在的知识点（带勾选框）
         existingPoints.forEach((point, index) => {
             html += `
                 <div class="knowledge-point-item existing-point bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
@@ -5679,13 +5905,45 @@ window.handleRenameKeydown = function(event, input) {
                      data-point-description="${point.description}"
                      data-point-type="existing"
                      data-point-id="${point.id}">
-                    <h3 class="font-semibold text-primary">${point.name}</h3>
-                    <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                    <div class="flex items-start gap-2">
+                        <input type="checkbox" class="point-check mt-1 h-4 w-4 accent-green-600 cursor-pointer" checked>
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-primary">${point.name}</h3>
+                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                        </div>
+                    </div>
                 </div>
             `;
         });
         
         html += '</div>';
+        
+        // 底部操作栏：手动添加 + 脑图样式 + 生成脑图
+        html += `
+            <div class="mt-4 pt-3 border-t border-gray-200 space-y-2">
+                <button id="add-knowledge-btn-existing" class="w-full flex items-center justify-center py-2 px-3 
+                       border-2 border-dashed border-gray-300 rounded-lg 
+                       text-text-gray hover:border-primary hover:text-primary transition-colors">
+                    <span class="material-icons-outlined mr-1 text-sm">add</span>
+                    <span class="text-sm">手动添加知识点</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <select id="mindmap-style-select" class="text-xs border border-gray-300 rounded-md px-2 py-2 bg-white focus:ring-1 focus:ring-indigo-400">
+                        <option value="mindmap">放射状</option>
+                        <option value="graph_td">树形↓</option>
+                        <option value="graph_lr">横向树→</option>
+                    </select>
+                    <button id="gen-mindmap-btn" class="flex-1 flex items-center justify-center py-2 px-3 
+                           bg-indigo-500 text-white rounded-lg 
+                           hover:bg-indigo-600 transition-colors"
+                            title="为勾选的知识点生成脑图并追加到笔记结尾">
+                        <span class="material-icons-outlined mr-1">account_tree</span>
+                        <span>生成脑图</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        
         knowledgeContent.innerHTML = html;
         
         // 显示知识点面板
@@ -5693,8 +5951,21 @@ window.handleRenameKeydown = function(event, input) {
         document.getElementById('knowledge-placeholder').classList.add('hidden');
         document.getElementById('knowledge-content').classList.remove('hidden');
         
-        // 绑定知识点交互事件
+        // 绑定事件
         bindKnowledgePointEvents();
+        // 绑定脑图按钮
+        const mmBtn = document.getElementById('gen-mindmap-btn');
+        if (mmBtn && !mmBtn.dataset.p3bound) {
+            mmBtn.dataset.p3bound = '1';
+            mmBtn.addEventListener('click', generateKnowledgeMindmap);
+        }
+        // 绑定手动添加按钮
+        const addBtn = document.getElementById('add-knowledge-btn-existing');
+        if (addBtn) {
+            addBtn.addEventListener('click', function() {
+                if (typeof showAddKnowledgePointModal === 'function') showAddKnowledgePointModal();
+            });
+        }
     }
 
     // 重新加载预览内容（不触发模式切换）
@@ -7344,19 +7615,24 @@ window.handleRenameKeydown = function(event, input) {
                         <span>手动添加知识点</span>
                     </button>
                     
-                    <!-- 保存知识点 + 生成脑图（并排） -->
-                    <div class="mt-3 grid grid-cols-2 gap-2">
-                        <button id="save-knowledge-btn" class="w-full flex items-center justify-center py-2 px-3 
+                    <!-- 保存知识点 + 脑图样式选择 + 生成脑图 -->
+                    <div class="mt-3 flex items-center gap-2">
+                        <button id="save-knowledge-btn" class="flex-1 flex items-center justify-center py-2 px-3 
                                                                bg-primary text-white rounded-lg 
                                                                hover:bg-green-600 transition-colors duration-200">
-                            <span class="material-icons-outlined mr-2">save</span>
-                            <span>保存知识点</span>
+                            <span class="material-icons-outlined mr-1">save</span>
+                            <span>保存</span>
                         </button>
-                        <button id="gen-mindmap-btn" class="w-full flex items-center justify-center py-2 px-3 
+                        <select id="mindmap-style-select" class="text-xs border border-gray-300 rounded-md px-2 py-2 bg-white focus:ring-1 focus:ring-indigo-400">
+                            <option value="mindmap">放射状</option>
+                            <option value="graph_td">树形↓</option>
+                            <option value="graph_lr">横向树→</option>
+                        </select>
+                        <button id="gen-mindmap-btn" class="flex-1 flex items-center justify-center py-2 px-3 
                                                                bg-indigo-500 text-white rounded-lg 
                                                                hover:bg-indigo-600 transition-colors duration-200"
-                                title="为勾选的知识点生成 Mermaid 脑图并插入笔记结尾">
-                            <span class="material-icons-outlined mr-2">account_tree</span>
+                                title="为勾选的知识点生成脑图并追加到笔记结尾">
+                            <span class="material-icons-outlined mr-1">account_tree</span>
                             <span>生成脑图</span>
                         </button>
                     </div>
@@ -7504,7 +7780,7 @@ window.handleRenameKeydown = function(event, input) {
         return points;
     }
     
-    // 三期：调 LLM 生成 Mermaid 脑图并插入当前笔记结尾
+    // 调 LLM 生成 Mermaid 脑图并追加到当前笔记结尾
     async function generateKnowledgeMindmap() {
         if (!currentFilePath) {
             showMessage('请先打开一个笔记文件', 'error');
@@ -7515,6 +7791,8 @@ window.handleRenameKeydown = function(event, input) {
             showMessage('请至少勾选一个知识点', 'error');
             return;
         }
+        const styleSel = document.getElementById('mindmap-style-select');
+        const style = styleSel ? styleSel.value : 'mindmap';
         const btn = document.getElementById('gen-mindmap-btn');
         const oldHtml = btn ? btn.innerHTML : '';
         if (btn) {
@@ -7529,13 +7807,14 @@ window.handleRenameKeydown = function(event, input) {
                 body: JSON.stringify({
                     path: currentFilePath,
                     title: (currentFileName || '').replace(/\.(md|markdown|txt)$/i, ''),
-                    points: points
+                    points: points,
+                    style: style
                 })
             });
             const r = await res.json().catch(() => ({}));
             if (res.ok && r.success && r.data && r.data.success) {
-                showMessage('脑图已生成并插入笔记结尾 ✓', 'success');
-                if (window.llHandleBilling) { try { window.llHandleBilling(r); } catch (e) {} }  // 积分：脑图生成扣分提示
+                showMessage('脑图已生成并追加到笔记结尾 ✓', 'success');
+                if (window.llHandleBilling) { try { window.llHandleBilling(r); } catch (e) {} }
                 if (window.p3ForcePreviewRefresh) { try { await window.p3ForcePreviewRefresh(); } catch (e) {} }
             } else {
                 const msg = (r && (r.error || (r.data && r.data.error))) || ('请求失败 HTTP ' + res.status);
@@ -10082,21 +10361,33 @@ window.handleRenameKeydown = function(event, input) {
         }
     }
     
-    // 渲染Mermaid图表
+    // 渲染Mermaid图表（兼容 mermaid 10.x Promise API + 旧版 callback）
     function renderMermaidDiagrams(element) {
-        if (typeof mermaid !== 'undefined') {
-            const mermaidElements = element.querySelectorAll('.mermaid');
-            mermaidElements.forEach((el, index) => {
-                try {
-                    mermaid.render(`mermaid-${Date.now()}-${index}`, el.textContent, (svgCode) => {
-                        el.innerHTML = svgCode;
+        if (typeof mermaid === 'undefined') return;
+        try { mermaid.initialize({ startOnLoad: false, securityLevel: 'loose' }); } catch(e) {}
+        const mermaidElements = element.querySelectorAll('.mermaid');
+        mermaidElements.forEach((el, index) => {
+            if (el.querySelector('svg')) return; // 已渲染，跳过
+            const code = el.textContent.trim();
+            if (!code) return;
+            const id = `mermaid-r${Date.now()}-${index}`;
+            try {
+                const result = mermaid.render(id, code);
+                if (result && typeof result.then === 'function') {
+                    // mermaid 10.x: returns Promise<{svg}>
+                    result.then(({svg}) => { el.innerHTML = svg; }).catch(err => {
+                        console.error('Mermaid render error:', err);
+                        el.innerHTML = `<pre style="white-space:pre-wrap">${code}</pre>`;
                     });
-                } catch (error) {
-                    console.error('Mermaid图表渲染错误:', error);
-                    el.innerHTML = `<pre>${el.textContent}</pre>`;
+                } else if (result && result.svg) {
+                    // some builds return synchronously
+                    el.innerHTML = result.svg;
                 }
-            });
-        }
+            } catch (error) {
+                console.error('Mermaid图表渲染错误:', error);
+                el.innerHTML = `<pre style="white-space:pre-wrap">${code}</pre>`;
+            }
+        });
     }
     
     // 文件结构面板收缩/展开功能 - 定义为全局函数
@@ -10666,6 +10957,13 @@ window.handleRenameKeydown = function(event, input) {
     window.retryEvaluation = retryEvaluation;
     window.importFiles = importFiles;
     window.closeImportBar = closeImportBar;
+    // PDF 阅读器/分段转换：被 HTML 内联 onclick 引用（1609/1612/1626/1632/1636/1648/1649），必须导出
+    window.openPdfViewer = openPdfViewer;
+    window.closePdfViewer = closePdfViewer;
+    window.togglePdfSegPanel = togglePdfSegPanel;
+    window.selectAllUnconverted = selectAllUnconverted;
+    window.convertSelectedSegments = convertSelectedSegments;
+    window.closePdfConfirm = closePdfConfirm;
 
 })();
 </script>
@@ -10843,6 +11141,10 @@ function handleDeepLearning(e, forcedText) {
     }
     
     addDebugLog('🧠 开始深入学习: ' + text.substring(0, 30) + '...');
+    
+    // 记录来源上下文（供后续“摘录”插入定位）
+    window.__llDeepSourceText = text;
+    window.__llDeepSourcePath = currentFilePath || '';
     
     // 隐藏统一菜单
     llHideAllMenus();
@@ -11321,6 +11623,26 @@ function switchToEdit() {
     const previewContent = document.getElementById('preview-content');
     const editContent = document.getElementById('edit-content');
     
+    // 加载原始内容到编辑器（如果当前为空或未加载）
+    if (editContent && !editContent.value && currentFilePath) {
+        if (window.pybridge && window.pybridge.loadMarkdownRaw) {
+            window.pybridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
+                if (editContent) {
+                    editContent.value = rawContent || '';
+                    originalContent = rawContent || '';
+                    hasUnsavedChanges = false;
+                }
+            });
+        } else {
+            // Web fallback: use rawfile API
+            const tk = localStorage.getItem('ll_token') || '';
+            fetch('/api/vault/rawfile?path=' + encodeURIComponent(currentFilePath), { headers: { 'Authorization': 'Bearer ' + tk } })
+                .then(r => r.json()).then(j => {
+                    if (editContent) { editContent.value = (j.data || ''); originalContent = j.data || ''; hasUnsavedChanges = false; }
+                }).catch(() => {});
+        }
+    }
+    
     // 显示编辑内容，隐藏预览内容
     if (editContent) {
         editContent.style.display = 'block';
@@ -11404,7 +11726,7 @@ function handleSaveButton() {
     // 调用正确的后端保存函数
     if (window.pybridge && window.pybridge.save_file) {
         addDebugLog('🔗 使用 pybridge.save_file 保存文件');
-        window.pybridge.save_file(currentFilePath, content, function(result) {
+        window.pybridge.save_file(currentFilePath, content, async function(result) {
             try {
                 addDebugLog('📊 收到保存响应: ' + JSON.stringify(result));
                 const response = typeof result === 'string' ? JSON.parse(result) : result;
@@ -11424,9 +11746,12 @@ function handleSaveButton() {
                         addDebugLog('✅ 未保存指示器已隐藏');
                     }
                     
-                    // 更新预览内容
-                    if (window.pybridge.render_markdown) {
-                        addDebugLog('🔄 更新预览内容');
+                    // 更新预览内容：用前端 renderMarkdownContent 确保图片路径正确
+                    if (window.p3ForcePreviewRefresh) {
+                        addDebugLog('🔄 使用 p3ForcePreviewRefresh 更新预览');
+                        try { await window.p3ForcePreviewRefresh(); } catch(e) { addDebugLog('预览刷新异常: ' + e); }
+                    } else if (window.pybridge && window.pybridge.render_markdown) {
+                        addDebugLog('🔄 后备使用 render_markdown');
                         window.pybridge.render_markdown(content, function(html) {
                             const previewContent = document.getElementById('preview-content');
                             if (previewContent) {

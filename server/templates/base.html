@@ -301,9 +301,16 @@
             min-height: 0; /* 允许flex收缩 */
         }
         
-        /* 在最大化模式下进一步优化练习面板高度 */
+        /* 最大化模式下进一步优化练习面板高度 */
         .ai-chat-window.maximized .practice-main-container {
             max-height: calc(100vh - 200px); /* 最大化模式下的高度限制 */
+        }
+        
+        /* 最大化模式下消息气泡宽度放大 */
+        .ai-chat-window.maximized .message-content {
+            max-width: 85%;
+            font-size: 15px;
+            line-height: 1.7;
         }
         
         /* 练习面板内容区域滚动优化 */
@@ -5952,6 +5959,153 @@ ${cleanContent}
             }
             
             globalDebugLog('AI助手浮窗初始化完成');
+
+            // ============== 摘录功能：聊天消息右键菜单 ==============
+            (function initExcerptMenu() {
+                // 创建浮动小菜单
+                const menu = document.createElement('div');
+                menu.id = 'excerpt-context-menu';
+                menu.style.cssText = 'position:fixed;z-index:99999;display:none;background:white;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12);padding:4px 0;min-width:150px;';
+                menu.innerHTML = '<div id="excerpt-menu-action" style="padding:10px 16px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;user-select:none;"><span class="material-icons-outlined" style="font-size:16px;color:#6366f1">format_quote</span><span>摘录到笔记</span></div>';
+                document.body.appendChild(menu);
+                menu.querySelector('#excerpt-menu-action').addEventListener('mouseenter', function(){ this.style.background='#f3f4f6'; });
+                menu.querySelector('#excerpt-menu-action').addEventListener('mouseleave', function(){ this.style.background=''; });
+            
+                // 点击"摘录到笔记"
+                menu.querySelector('#excerpt-menu-action').addEventListener('click', async function() {
+                    menu.style.display = 'none';
+                    const selText = window.__excerptSelectedText || '';
+                    if (!selText.trim()) { showToast('请先在聊天内容中框选文本', 'warning'); return; }
+                    // 获取目标笔记路径：优先用深入学习记录的路径，否则用当前打开的笔记
+                    const notePath = window.__llDeepSourcePath || window.currentFilePath || '';
+                    if (!notePath) { showToast('请先打开一个笔记文件', 'warning'); return; }
+                    // 定位文本：有则插入到指定段落后，无则追加到文末
+                    const anchorText = window.__llDeepSourceText || '';
+                
+                    // 构造 MD blockquote 子段
+                    const now = new Date().toLocaleString('zh-CN');
+                    const lines = selText.split('\n').map(l => '> ' + l).join('\n');
+                    const mdBlock = '> 📎 **深入摘录** (' + now + ')\n>\n' + lines;
+                
+                    try {
+                        const tk = (window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || ''));
+                        const res = await fetch('/api/notes/insert-after', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': tk ? ('Bearer ' + tk) : '' },
+                            body: JSON.stringify({
+                                path: notePath,
+                                after_text: anchorText,
+                                insert_content: mdBlock
+                            })
+                        });
+                        const r = await res.json().catch(() => ({}));
+                        if (res.ok && r.success) {
+                            showToast('摘录已插入笔记 ✓', 'success');
+                            if (window.p3ForcePreviewRefresh) { try { await window.p3ForcePreviewRefresh(); } catch(e){} }
+                        } else {
+                            showToast('摘录插入失败: ' + (r.error || '未知错误'), 'error');
+                        }
+                    } catch (e) {
+                        showToast('摘录插入异常: ' + e, 'error');
+                    }
+                });
+            
+                // 使用事件委托：在 AI 聊天窗口整体上监听 contextmenu
+                const chatWin = document.getElementById('aiChatWindow');
+                if (chatWin) {
+                    chatWin.addEventListener('contextmenu', function(e) {
+                        // 只在消息区域内的 AI 消息上触发
+                        const msgEl = e.target.closest('.message.ai');
+                        if (!msgEl) return;
+                        const sel = window.getSelection();
+                        const text = sel ? sel.toString().trim() : '';
+                        if (!text) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.__excerptSelectedText = text;
+                        menu.style.display = 'block';
+                        menu.style.left = Math.min(e.clientX, window.innerWidth - 160) + 'px';
+                        menu.style.top = Math.min(e.clientY, window.innerHeight - 50) + 'px';
+                    });
+                }
+            
+                // 其他位置点击关闭菜单
+                document.addEventListener('click', function() { menu.style.display = 'none'; });
+                // ESC 关闭
+                document.addEventListener('keydown', function(e) { if (e.key === 'Escape') menu.style.display = 'none'; });
+            })();
+
+            // ============== 总结按钮增强：总结后自动插入笔记 ==============
+            const summaryBtnMax = document.getElementById('summaryChatBtnMaximized');
+            if (summaryBtnMax) {
+                summaryBtnMax.addEventListener('click', function() {
+                    summarizeConversationAndInsert();
+                });
+            }
+            // 小窗总结按钮也绑定同样的增强版
+            if (summaryBtn) {
+                summaryBtn.removeEventListener('click', summarizeConversation);
+                summaryBtn.addEventListener('click', summarizeConversationAndInsert);
+            }
+
+            function summarizeConversationAndInsert() {
+                if (conversationHistory.length === 0) {
+                    showToast('没有对话内容可以总结', 'warning');
+                    return;
+                }
+                if (!(window.bridge && window.bridge.summarizeConversation)) {
+                    showToast('总结功能暂不可用', 'warning');
+                    return;
+                }
+                // 发送状态提示
+                addMessage('⛳ 正在对整个聊天内容进行总结，请稍候...', 'ai');
+                const historyJson = JSON.stringify(conversationHistory);
+                window.bridge.summarizeConversation(historyJson, async function(response) {
+                    try {
+                        const result = JSON.parse(response);
+                        if (result.success) {
+                            const summaryMessage = '📋 **对话总结**\n\n' + result.summary;
+                            conversationHistory.push({role: 'assistant', content: summaryMessage});
+                            addMessage(summaryMessage, 'ai', true);
+
+                            // 自动插入到笔记
+                            const notePath = window.__llDeepSourcePath || window.currentFilePath || '';
+                            if (notePath) {
+                                const now = new Date().toLocaleString('zh-CN');
+                                const cleanSummary = (result.summary || '').replace(/<[^>]*>/g, '').trim();
+                                const lines = cleanSummary.split('\n').map(l => '> ' + l).join('\n');
+                                const mdBlock = '> 📝 **AI总结** (' + now + ')\n>\n' + lines;
+                                const anchorText = window.__llDeepSourceText || '';
+                                try {
+                                    const tk = (window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || ''));
+                                    const res = await fetch('/api/notes/insert-after', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json', 'Authorization': tk ? ('Bearer ' + tk) : '' },
+                                        body: JSON.stringify({
+                                            path: notePath,
+                                            after_text: anchorText,
+                                            insert_content: mdBlock
+                                        })
+                                    });
+                                    const r = await res.json().catch(() => ({}));
+                                    if (res.ok && r.success) {
+                                        showToast('总结已插入笔记 ✓', 'success');
+                                        if (window.p3ForcePreviewRefresh) { try { await window.p3ForcePreviewRefresh(); } catch(e){} }
+                                    } else {
+                                        showToast('总结插入失败: ' + (r.error || ''), 'error');
+                                    }
+                                } catch(e) {
+                                    showToast('总结插入异常', 'error');
+                                }
+                            }
+                        } else {
+                            showToast('总结生成失败: ' + (result.error || '未知错误'), 'error');
+                        }
+                    } catch (e) {
+                        showToast('总结功能异常', 'error');
+                    }
+                });
+            }
         }
 
         // Flask版本：API已通过api.js加载，pybridge兼容层已自动创建
