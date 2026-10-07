@@ -230,8 +230,18 @@ def vault_delete():
         return _ok(False)
     try:
         from services import import_service as imp
+
+        def _purge_books(t):
+            # 书籍任务同存同删（2026-10-07）：任务行回收失败不得把已成功的删除报成失败
+            try:
+                imp.purge_book_tasks_under(g.user_id, t)
+            except Exception as pe:  # noqa: BLE001
+                log.log_error("bridge", "book_purge_failed", str(pe))
+
         if target.is_dir():
             shutil.rmtree(target)
+            # 删文件夹时回收其下书籍主任务及段子任务，防僵尸行遮蔽同名新书
+            _purge_books(target)
         elif target.suffix.lower() in imp.NOTE_SCAN_EXTS:
             # 同存同删（2026-10-06）：删笔记回收其独占附件图片，仍被存留笔记引用的保留
             ok, removed_att = imp.delete_md_with_attachment_cleanup(target)
@@ -241,6 +251,8 @@ def vault_delete():
             return _ok(ok)
         else:
             target.unlink()
+            if target.suffix.lower() == ".pdf":
+                _purge_books(target)  # 直删原件即拆书：同步回收任务行
         return _ok(True)
     except Exception as e:  # noqa: BLE001
         log.log_error("bridge", "delete_failed", str(e))

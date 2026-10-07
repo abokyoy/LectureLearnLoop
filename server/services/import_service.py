@@ -133,17 +133,52 @@ def find_book_task_by_pdf(user_id: str, result_pdf: str) -> dict | None:
     """按原件绝对路径反查书籍主任务行（前端从笔记树 pdf 路径打开 viewer/转换面板时定位 main_task_id）。
 
     强制 (user_id, kind='pdf_book', result_pdf) 三条件，避免跨用户/跨类型命中。
+    同路径多行（删书后原路径重新导入，旧行未清干净时）：取最新创建且**原件实际存在**的行，
+    全部缺失则返回 None（防僵尸行遮蔽新书，2026-10-07）。
     """
     with _db() as conn:
-        row = conn.execute(
+        rows = conn.execute(
             "SELECT task_id, status, progress_json, folder_path, file_name, error"
-            " FROM import_tasks WHERE user_id = ? AND kind = 'pdf_book' AND result_pdf = ?",
+            " FROM import_tasks WHERE user_id = ? AND kind = 'pdf_book' AND result_pdf = ?"
+            " ORDER BY created_at DESC, id DESC",  # created_at 秒级精度，同秒并列时用 BIGSERIAL 主键兜底
             (user_id, result_pdf),
-        ).fetchone()
-    if row is None:
+        ).fetchall()
+    if not rows or not os.path.isfile(result_pdf):  # 无行或原件已不在磁盘：整书已删，视为未命中
         return None
+    row = rows[0]  # 已按新→旧排序，取最新行
     return {"kind": "pdf_book", "task_id": row[0], "status": row[1], "progress_json": row[2] or "",
             "result_pdf": result_pdf, "folder_path": row[3] or "", "file_name": row[4] or "", "error": row[5] or ""}
+
+
+def purge_book_tasks_under(user_id: str, target: Path) -> list[str]:
+    """书籍任务同存同删（2026-10-07）：书文件夹/原件被删后回收其 pdf_book 主任务行及子任务行。
+
+    否则僵尸主任务行会被路径反查命中，转换面板报“原件丢失”并遮蔽后续同名重导入的新书。
+    匹配：result_pdf 位于 target 路径下（含相等）的 pdf_book 行，连带删除 parent_task_id
+    指向它们的子任务行（不限子行 kind，历史 pdf_segment 形态一并回收）。
+    大小写：normcase + lower，Windows/POSIX 语义一致。返回被删主任务 task_id 列表。
+    已知限制：删文件与扫库之间存在极小并发窗口（删目录瞬间并行重导入同名书可能误删新行），
+    单机桌面顺序操作下可忽略；即便发生，重新导入即可恢复，不产生数据损坏。
+    """
+    t = os.path.normcase(str(Path(target).resolve(strict=False))).lower()
+    purged: list[str] = []
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT task_id, result_pdf FROM import_tasks"
+            " WHERE user_id = ? AND kind = 'pdf_book'",
+            (user_id,),
+        ).fetchall()
+        ids = [r[0] for r in rows
+               if r[1] and (lambda p: p == t or p.startswith(t + os.sep))(
+                   os.path.normcase(str(Path(r[1]).resolve(strict=False))).lower())]
+        for tid in ids:
+            conn.execute("DELETE FROM import_tasks WHERE parent_task_id = ?", (tid,))
+            conn.execute("DELETE FROM import_tasks WHERE task_id = ?", (tid,))
+        purged = ids
+    if purged:
+        log.log("import", "book_tasks_purged", "success",
+                {"target": str(target), "mains": purged})
+    return purged
 
 
 def active_segment_states(main_task_id: str, user_id: str) -> dict[tuple[int, int], tuple[str, str]]:
