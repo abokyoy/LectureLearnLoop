@@ -19,10 +19,11 @@ from services import import_service as imps  # noqa: E402
 
 # ---------------------------------------------------------------- 多页文本 PDF 生成（pypdf 合并单页）
 
-def _one_page_pdf(marker: str) -> bytes:
-    """构造单页英文文字 PDF，内容 ≥300 字符（含 marker 便于逐页断言）。"""
-    filler = " ".join(f"{marker}word{k}" for k in range(80))  # 足够长
-    lines = [marker, filler]
+def _one_page_pdf(marker: str, rich: bool = True) -> bytes:
+    """构造单页英文文字 PDF；rich=True 时内容 ≥300 字符（含 marker 便于逐页断言）。"""
+    lines = [marker]
+    if rich:
+        lines.append(" ".join(f"{marker}word{k}" for k in range(80)))  # 足够长
     content = ["BT /F1 14 Tf 40 760 Td 12 TL"]
     for ln in lines:
         safe = ln.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
@@ -98,6 +99,32 @@ def test_page_count_and_text_layer(big_pdf):
     path, n = big_pdf
     assert imps.pdf_page_count(path) == n
     assert imps.pdf_is_text_layer(path) is True
+
+
+def test_is_text_layer_skewed_distribution(tmp_path):
+    """回归 2026-10-07 取样盲区：正文只集中在书中段（首尾仅水印短页），
+    旧“前3/中3/后3”9 点采样判 False → 用户实测分段导入不自转。等距 21 点后必须判 True。"""
+    from pypdf import PdfReader, PdfWriter
+    n = 90
+    w = PdfWriter()
+    for i in range(n):
+        rich = 30 <= i < 60  # 正文集中在中段，与《机器学习实战》分布同形
+        blob = _one_page_pdf(f"P{i}", rich=rich)
+        w.add_page(PdfReader(io.BytesIO(blob)).pages[0])
+    path = tmp_path / "skew.pdf"
+    with open(path, "wb") as f:
+        w.write(f)
+    assert imps.pdf_is_text_layer(path) is True
+
+    # 扫描书+首页版权页（仅 1 富页）：仍必须判 False，防新口径反向误判
+    w2 = PdfWriter()
+    for i in range(n):
+        blob = _one_page_pdf("COPYRIGHT", rich=(i == 0))
+        w2.add_page(PdfReader(io.BytesIO(blob)).pages[0])
+    path2 = tmp_path / "scan.pdf"
+    with open(path2, "wb") as f:
+        w2.write(f)
+    assert imps.pdf_is_text_layer(path2) is False
 
 
 # ---------------------------------------------------------------- 文本层段提取（带锚点）

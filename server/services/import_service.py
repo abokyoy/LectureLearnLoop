@@ -1122,9 +1122,12 @@ def pdf_page_count(pdf_path) -> int:
 
 
 def pdf_is_text_layer(pdf_path) -> bool:
-    """文本层采样判定（审核 P1-7）：前3/中3/后3（去重）逐页 extract_text，≥ 4 页各自 ≥300 字符才判文本层。
+    """文本层采样判定（审核 P1-7；2026-10-07 修复取样盲区）：全书等距至多 21 页 extract_text，≥ 4 页各自 ≥PDF_TEXT_MIN_CHARS 字符才判文本层。
 
-    防“扫描书+文字版权页/目录页”误判；避免 547 页全量探测的 20s 等待。pdf_path 可为 Path 或 bytes。
+    旧口径“前3/中3/后3”固定 9 点：正文只集中在书中某区间的书（如图文混排技术书）
+    会整批采到水印页而误判扫描件（实测《机器学习实战》336 页仅中段 3 页命中→假阴性）。
+    等距加密采样对任意分布都能命中，页数上限不变探测耗时。防“扫描书+版权页”误判
+    仍由 ≥4 富页门槛保证；小样本（≤10 页）门槛收敛为样本数一半。pdf_path 可为 Path 或 bytes。
     """
     from pypdf import PdfReader
     src = io.BytesIO(pdf_path) if isinstance(pdf_path, (bytes, bytearray)) else str(pdf_path)
@@ -1135,8 +1138,9 @@ def pdf_is_text_layer(pdf_path) -> bool:
         return False
     try:
         n = len(r.pages)
-        mid = n // 2
-        cands = sorted({0, 1, 2, mid - 1, mid, mid + 1, n - 1, n - 2, n - 3} & set(range(n)))
+        k = min(n, 21)
+        # 等距整除取点（升序去重）：覆盖全书任意正文分布
+        cands = sorted({i * n // k for i in range(k)})
         rich = 0
         for i in cands:
             try:
@@ -1145,7 +1149,7 @@ def pdf_is_text_layer(pdf_path) -> bool:
                 t = ""
             if len(t) >= PDF_TEXT_MIN_CHARS:
                 rich += 1
-        return rich >= 4
+        return rich >= min(4, max(1, len(cands) // 2))
     finally:
         try:
             r.close()
