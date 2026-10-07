@@ -229,8 +229,16 @@ def vault_delete():
     if target == _user_vault_root(g.user_id).resolve():
         return _ok(False)
     try:
+        from services import import_service as imp
         if target.is_dir():
             shutil.rmtree(target)
+        elif target.suffix.lower() in imp.NOTE_SCAN_EXTS:
+            # 同存同删（2026-10-06）：删笔记回收其独占附件图片，仍被存留笔记引用的保留
+            ok, removed_att = imp.delete_md_with_attachment_cleanup(target)
+            if removed_att:
+                log.log("bridge", "vault_delete_md_att", "success",
+                        {"path": str(body.get("path")), "removed_attachments": removed_att})
+            return _ok(ok)
         else:
             target.unlink()
         return _ok(True)

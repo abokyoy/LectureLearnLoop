@@ -1377,3 +1377,103 @@ def _segment_convert_worker(task_id: str, user_id: str, main_task_id: str, pdf_p
         update_task(task_id, status="failed", error=str(e)[:300])
         log.log_error("import", "segment_convert_failed", e,
                       {"task": task_id, "main": main_task_id, "seg": f"{seg_from}-{seg_to}"})
+
+
+# ============================================================ MD 删除与附件同存同删（2026-10-06）
+#
+# 规则（用户裁定）：图片与 MD 同存同删。同一附件目录可能被多个 MD 共享
+# （书籍分段 MD / 同目录多笔记），故按引用计数删除：仅清理被删 MD 引用且
+# 无其他存留笔记再引用的图片；原件 PDF/非图片附件永不回收（评审 P1-2）；
+# 附件目录全空才移除；删整个文件夹走 rmtree 不受影响。
+#
+# 引用识别以磁盘真实文件名为准做包含判定（评审 P0：正则截断形态会少算存留
+# 引用导致误删），兼容原始/局部编码/全编码三种形态与 Windows 大小写不敏感（P1-1）。
+# 前提：全系统附件引用 writer 均落在上述三形态内（import/图片导入均已核）；
+# 若接入混排编码的新 writer 需同步扩展 _att_ref_search_forms（方向只会多保留不会误删）。
+
+NOTE_SCAN_EXTS = {".md", ".markdown", ".txt"}   # 与 routes_bridge._MD_EXT 对齐的笔记扩展集
+_ATT_REF_PREFIXES = (f"{ATTACH_DIR_NAME}/", f"{quote(ATTACH_DIR_NAME)}/")
+
+
+def _att_ref_search_forms(name: str) -> set[str]:
+    """磁盘文件名的全部可能引用形态（前缀原始/编码 × 名字原始/局部编码/全编码），比较时由调用方 casefold。"""
+    partial = re.sub(r"""[ \t\r\n()<>\[\]"'|]""", lambda m: quote(m.group(0)), name)
+    return {pre + nv
+            for pre in _ATT_REF_PREFIXES
+            for nv in (name, partial, quote(name))}
+
+
+def _att_disk_forms(att_dir: Path) -> dict[str, list[str]]:
+    """一次性预计算磁盘文件名→casefold 引用形态表（评审二轮 P2-新1：免逐存留笔记重复列目录）。"""
+    try:
+        entries = [p for p in att_dir.iterdir() if p.is_file()]
+    except OSError:
+        return {}
+    return {f.name: [s.casefold() for s in _att_ref_search_forms(f.name)] for f in entries}
+
+
+def _names_referenced(content: str, disk_forms: dict[str, list[str]]) -> set[str]:
+    """返回 disk_forms（磁盘文件形态表）中被 content 引用到的那些（包含判定，只会多保留不会误删）。"""
+    low = (content or "").casefold()
+    return {name for name, forms in disk_forms.items() if any(s in low for s in forms)}
+
+
+def delete_md_with_attachment_cleanup(md_path: Path) -> tuple[bool, list[str]]:
+    """删除笔记文件并回收其独占附件图片（同存同删）。返回 (笔记是否已删除, 被删附件名)。"""
+    md_path = Path(md_path)
+    try:
+        content = md_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        content = ""
+    att_dir = md_path.parent / ATTACH_DIR_NAME
+    # 围栏（评审 P2-4）：附件目录自身被做成指向外部 symlink 时不碰
+    att_ok = att_dir.is_dir() and att_dir.resolve(strict=False).is_relative_to(md_path.parent.resolve(strict=False))
+    disk_forms = _att_disk_forms(att_dir) if att_ok else {}
+    candidates = {n for n in _names_referenced(content, disk_forms)
+                  if Path(n).suffix.lower() in _ALLOWED_IMG_EXT}
+    try:
+        md_path.unlink()
+        ok = True
+    except FileNotFoundError:
+        ok = True                      # 已被并发删除：目标达成
+    except OSError:
+        ok = False
+    removed: list[str] = []
+    if ok and candidates:
+        # 存留扫描用 os.walk 显式捕 onerror（评审二轮 P1-新：rglob 会静默吞权限错误少算 keep → 反向误删）
+        keep: set[str] = set()
+        scan_failed = False
+
+        def _on_walk_error(_e: OSError) -> None:
+            nonlocal scan_failed
+            scan_failed = True
+
+        for dirpath, _dirs, fnames in os.walk(att_dir.parent, onerror=_on_walk_error):
+            if scan_failed or candidates <= keep:
+                break
+            for fn in sorted(fnames):
+                p = Path(dirpath) / fn
+                if p.suffix.lower() not in NOTE_SCAN_EXTS or not p.is_file():
+                    continue
+                try:
+                    keep |= _names_referenced(p.read_text(encoding="utf-8", errors="replace"), disk_forms)
+                except OSError:
+                    scan_failed = True     # 评审 P1-3：读不动保守放弃
+                    break
+        if scan_failed:
+            keep |= candidates             # 宁可泄漏不可误删
+        for name in sorted(candidates - keep):
+            fp = att_dir / name
+            if not fp.is_file():
+                continue
+            try:
+                fp.unlink()
+                removed.append(name)
+            except OSError:
+                pass
+        try:
+            if att_dir.is_dir() and not any(att_dir.iterdir()):
+                att_dir.rmdir()
+        except OSError:
+            pass
+    return ok, removed
