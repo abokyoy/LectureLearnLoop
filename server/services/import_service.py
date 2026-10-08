@@ -28,6 +28,7 @@ import threading
 import time
 import unicodedata
 import uuid
+from collections import Counter
 from pathlib import Path
 from urllib.parse import quote, urljoin, urlparse
 
@@ -300,6 +301,8 @@ def postprocess_pdf_text_layer(text: str, images: dict[int, str] | None = None) 
     """文本层清洗：部首归一 + 断行重排成段落 + 装饰行剔除。纯函数，便于单测。
 
     images：标记序号→附件内相对文件名；正文中 \x00IMG{n} 标记行在重排时断段并替换为图片引用。
+    书籍段额外支持行级标记（PDF④ tidy_book_text 产出，旧路径不会出现故零影响）：
+    \x01{n} 标题行→独立成段加 # 前缀；\x02 硬独立行（目录项）→去标记后独立成段。
     """
     text = _normalize_layer_chars(text)
     paragraphs: list[str] = []
@@ -321,6 +324,21 @@ def postprocess_pdf_text_layer(text: str, images: dict[int, str] | None = None) 
                 name = images.get(n)
                 if name:
                     paragraphs.append(f"![图片]({ATTACH_DIR_NAME}/{name})")
+            continue
+        if s.startswith("\x01"):        # 标题标记（tidy_book_text）
+            flush()
+            try:
+                lvl = max(1, min(4, int(s[1:2])))
+            except ValueError:
+                lvl = 2
+            title = s[2:].strip()
+            if title:
+                paragraphs.append("#" * lvl + " " + title)
+            continue
+        if s.startswith("\x02"):         # 硬独立行（目录项等）
+            flush()
+            if s[1:].strip():
+                paragraphs.append(s[1:].strip())
             continue
         if not s:
             flush()
@@ -357,6 +375,119 @@ def postprocess_pdf_text_layer(text: str, images: dict[int, str] | None = None) 
         return bool(re.fullmatch(r"[^\s]*[=&][^\s]*", p)) and not _CJK_RE.search(p) and " " not in p
     kept = [p for p in paragraphs if not _junk(p)]
     return "\n\n".join(kept)
+
+
+# ---------------------------------------------------------------- 书籍段规则后处理（PDF④ 2026-10-07）
+
+_BOOK_WATERMARK_RE = re.compile(r"图灵社区会员\s*\S*\s*专享.{0,12}尊重版权")
+# 目录点线行：标题 + ≥4 个引导点/省略号 + 尾页码（实测本书目录行尾常带一个空格）
+_BOOK_TOC_RE = re.compile(r"^(?P<title>.{2,70}?)\s*[.\u2026\u00b7]{4,}\s*(?P<pg>\d{1,4})\s*$")
+_HEI_FONT_TOKENS = ("simhei", "htjw", "hei", "bold")   # 黑体/粗体字体名特征（标题体）
+
+
+def _align_font_lines(lines: list[str], font_lines: list[list]) -> list[list | None] | None:
+    """贪心双指针把行级字体元数据对齐到 txt 行（容忍局部行数失配：y 微跳多切/漏切行）。
+
+    匹配率（非空 txt 行中获得元数据的比例）< 0.7 返回 None → 调用方跳过元数据级规则。
+    """
+    def _roweq(ft: str, t: str) -> bool:
+        if ft == t:
+            return True
+        # 前缀匹配：目录页点线常成为独立 fl 行（fl 行是 txt 行的前缀），允许对齐取元数据
+        if not ft or not t:
+            return False
+        short, lng = (ft, t) if len(ft) <= len(t) else (t, ft)
+        return len(short) >= 4 and lng.startswith(short)
+
+    fmap: list[list | None] = [None] * len(lines)
+    j = 0
+    matched = nonempty = 0
+    for i, ln in enumerate(lines):
+        t = ln.strip()
+        if t:
+            nonempty += 1
+        # 跳过元数据侧的空行/不匹配冗余行（最多前瞻 3 行，防错位雪崩）
+        j2 = j
+        while j2 < len(font_lines) and j2 < j + 3 and not _roweq(font_lines[j2][0].strip(), t):
+            j2 += 1
+        if j2 < len(font_lines) and _roweq(font_lines[j2][0].strip(), t):
+            fmap[i] = font_lines[j2]
+            if t:
+                matched += 1
+            j = j2 + 1
+    if nonempty and matched / nonempty < 0.7:
+        return None
+    return fmap
+
+
+def tidy_book_text(txt: str, font_lines: list[list] | None, page_h: float) -> str:
+    """书籍段页级规则后处理（方案 A，用户 2026-10-07 裁定）：用行级字体元数据修复三类形态。
+
+    R1 标题：主导字体黑体/粗体且字号≥1.15×正文众数 → \x01{lvl} 标记（≥1.8× 为 H1，否则 H2），
+       断开与正文的粘连并补 Markdown 层级；
+       页眉/页脚：行 y 位于页面顶/底边距带（≥0.885h / ≤0.045h）整行剔除；
+    R2 装饰：连续 ≥3 行纯数字（导航图编号/代码行号串流）整组剔除；水印行剔除；
+    R3 目录：点线行改写为 \x02- 标题 · 页码（硬独立成段，不再粘成巨型单段）。
+
+    双层降级：R1（标题/页眉，需字体元数据）仅在 font_lines 与 txt 行数对齐时应用；
+    R2/R3 与水印、域错误剔除为纯文本规则，任何页都可应用。保守优先：宁可不美化，不可错删正文。
+    不改动任何正文文字内容（逐字保留，只加标记/剔噪声）。
+    """
+    lines = txt.split("\n")
+    out: list[str] = list(lines)
+
+    def blank(i: int) -> None:
+        out[i] = ""
+
+    # R1（元数据级）：页眉页脚剔除 + 标题标记——行对齐成功且页高已知才启用
+    fmap = _align_font_lines(lines, font_lines) if (font_lines and page_h > 0) else None
+    if fmap is not None:
+        fs_counter = Counter(round(f[1], 1) for f in font_lines if f[0].strip() and 4.0 <= f[1] <= 40.0)
+        body_fs = fs_counter.most_common(1)[0][0] if fs_counter else 0.0
+        if body_fs:
+            for i, meta in enumerate(fmap):
+                if meta is None:
+                    continue
+                _text, fs, dom, _x, y = meta
+                s = out[i].strip()
+                if not s or s.startswith(("\x00", "\x01", "\x02")):
+                    continue
+                d = dom.lower()
+                if y is not None and (y >= 0.885 * page_h or y <= 0.045 * page_h):
+                    blank(i)  # 页眉/页脚边距带（实测本书页眉 y=615.7/h=683=0.90）
+                    continue
+                if (len(s) <= 30 and not s.isdigit() and _CJK_RE.search(s)
+                        and fs >= body_fs * 1.15 and any(tok in d for tok in _HEI_FONT_TOKENS)):
+                    out[i] = ("\x011 " if fs >= body_fs * 1.8 else "\x012 ") + s
+
+    # 文本级剔除：水印行 + Word 域错误残留行（不依赖元数据，失配页同样生效）
+    for i, s in enumerate(out):
+        st = s.strip()
+        if st and (_BOOK_WATERMARK_RE.search(st) or "错误！文档中没有指定样式的文字" in st):
+            blank(i)
+    # R2：连续纯数字装饰行整组剔除（≥3 行才处理，孤行数字保留交给既有清洗）
+    i = 0
+    while i < len(out):
+        if re.fullmatch(r"\d{1,4}", out[i].strip()):
+            j = i
+            while j < len(out) and re.fullmatch(r"\d{1,4}", out[j].strip()):
+                j += 1
+            if j - i >= 3:
+                for k in range(i, j):
+                    out[k] = ""
+            i = j
+        else:
+            i += 1
+    # R3：目录点线行 → 列表项（硬独立）
+    for i, s in enumerate(out):
+        st = s.strip()
+        if st.startswith(("\x01", "\x02")):
+            continue  # 评审 Critical：已由 R1 标记/已改写的行跳过，防 \x01 泄漏进列表项
+        m = _BOOK_TOC_RE.match(st)
+        if m:
+            title = re.sub(r"\s{2,}", " ", m.group("title")).strip()
+            out[i] = f"\x02- {title} \u00b7 {m.group('pg')}"
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------- PDF 内嵌图片提取（2026-10-01 文本层路径插图）
@@ -493,27 +624,47 @@ def start_pdf_task(task_id: str, user_id: str, pdf_path: Path, target_md: Path) 
     t.start()
 
 
-def _extract_layer_blocks(reader, att_dir: Path | None, task_id: str, start_idx: int, end_idx: int):
+def _extract_layer_blocks(reader, att_dir: Path | None, task_id: str, start_idx: int, end_idx: int,
+                          with_font_meta: bool = False):
     """按页索引范围 [start_idx, end_idx)（0-based）逐页提取原始文本层（含 \x00IMG 标记）。
 
-    返回 (blocks, images_map)：blocks=[(abs_pno0, raw_text)]，images_map={序号: 附件文件名}。
+    返回 (blocks, images_map)：blocks=[(abs_pno0, raw_text[, font_meta])]，images_map={序号: 附件文件名}。
     2026-10-04 从 extract_pdf_text_layer 抽公共核心，供整文件与小 PDF 段路径共用（不重复图片交织逻辑）。
+    2026-10-07 PDF④书籍段：with_font_meta=True 时每 block 追加行级字体元数据（真实字号=fs×|tm0×cm0|，
+    本书类扫描转换 PDF 的 fs 参数恒为 1，须从 tm 缩放还原），供 tidy_book_text 标题/页眉判定。
     """
     from pypdf.generic import ContentStream
-    blocks: list[tuple[int, str]] = []
+    blocks: list = []
     images_map: dict[int, str] = {}
     img_seq = 0
     n_pages = len(reader.pages)
     for pno in range(max(0, start_idx), min(n_pages, end_idx)):
         pg = reader.pages[pno]
         run_ys: list[float] = []
+        frags: list[tuple[float, str, float, str]] = []
 
-        def vt(text, cm, tm, fd, fs, _ys=run_ys):
+        def vt(text, cm, tm, fd, fs, _ys=run_ys, _fr=frags):
             # 页面真实 y = 文本空间 y 经 CTM 变换（行向量约定：tm[5]*cm[3]+cm[5]）
             try:
-                _ys.append(float(tm[5]) * float(cm[3]) + float(cm[5]))
+                y = float(tm[5]) * float(cm[3]) + float(cm[5])
             except (TypeError, ValueError, IndexError):
-                pass
+                y = 0.0
+            _ys.append(y)
+            if with_font_meta and text:
+                try:
+                    real_fs = float(fs or 0) * abs(float(tm[0]) * float(cm[0]))
+                except (TypeError, ValueError, IndexError):
+                    real_fs = 0.0
+                try:
+                    # 页面真实 x 同 y：文本空间 x 经 CTM（行向量约定 tm[4]*cm[0]+cm[4]）
+                    real_x = float(tm[4]) * float(cm[0]) + float(cm[4])
+                except (TypeError, ValueError, IndexError):
+                    real_x = 0.0
+                try:
+                    base = str((fd or {}).get("/BaseFont", "") or "")
+                except Exception:  # noqa: BLE001
+                    base = ""
+                _fr.append((y, real_x, text, real_fs, base))
 
         txt = (pg.extract_text(visitor_text=vt) or "").strip()
         if not txt:
@@ -565,8 +716,72 @@ def _extract_layer_blocks(reader, att_dir: Path | None, task_id: str, start_idx:
                 for extra in slots.values():
                     markers.extend(extra)
                 txt = "\n".join(markers)
-        blocks.append((pno, txt))
+        if with_font_meta:
+            try:
+                ph = float(pg.mediabox.height)
+            except (TypeError, ValueError, AttributeError):
+                ph = 0.0
+            # 携带原始 frags：图片标记插行后行元数据无法对齐，由调用方基于 frags 构建并先行 tidy
+            blocks.append((pno, txt, frags, ph))
+        else:
+            blocks.append((pno, txt))
     return blocks, images_map
+
+
+def _build_font_lines(frags: list[tuple]) -> list[list]:
+    """visitor 片段序列 → 行级字体元数据 [[文本, 代表字号, 主字体名, 行首 x, 行 y], ...]（y 降序=阅读顺序）。
+
+    行切分与 pypdf extract_text 换行同源：行尾注入的纯 '\n' 片段自成一行，其余片段内嵌 \n
+    或 y 跳变 >2pt 均切行，故展开后行数与 txt.split("\n") 对齐（调用方以行数相等为应用前提，
+    不一致保守回退无元数据清洗）。代表字号=行内非空片段最大 fs；主字体名=行内 fs 加权最多字体。
+    """
+    import collections
+    rows: list[list] = []          # [行文本, 首片段 x, 首片段 y, [(fs, base)]]
+    cur_t, cur_frags = "", []
+    cur_x = cur_y = None
+    last_y = None
+
+    def flush():
+        nonlocal cur_t, cur_frags, cur_x, cur_y, last_y
+        if cur_t.strip() or "\n" in cur_t:
+            # 行尾内嵌 \n（pypdf 附加在末 run 上）只表示结束，不生成额外空行；
+            # 真空行由独立 '\n' 片段分支占位，与 txt.split("\n") 的换行总数一一对应
+            pieces = cur_t.split("\n")
+            if len(pieces) > 1 and pieces[-1] == "":
+                pieces = pieces[:-1]
+            for i, pc in enumerate(pieces):
+                rows.append([pc, cur_x if i == 0 else None, cur_y if i == 0 else None,
+                             cur_frags if i == 0 else []])
+        cur_t, cur_frags, cur_x, cur_y, last_y = "", [], None, None, None
+
+    for y, x, text, fs, base in frags:
+        if text == "\n" and cur_t:
+            # pypdf 行尾注入的换行符：自带坐标不可靠（常为 0,0 重置点），只封行不带坐标
+            cur_t += "\n"
+            flush()
+            continue
+        if text == "\n":
+            # 行首即换行（空行）：自成一行占位
+            rows.append(["", None, None, []])
+            continue
+        if last_y is not None and abs(y - last_y) > 2.0 and cur_t:
+            flush()
+        if cur_x is None:
+            cur_x, cur_y = x, y
+        cur_t += text
+        if text.strip():
+            cur_frags.append((fs, base))
+        last_y = y
+    flush()
+    out: list[list] = []
+    for rt, rx, ry, fr in rows:
+        rep_fs = max((f for f, _b in fr), default=0.0)
+        w: collections.Counter = collections.Counter()
+        for f, b in fr:
+            w[b] += f
+        dom = w.most_common(1)[0][0] if w else ""
+        out.append([rt, rep_fs, dom, rx, ry])
+    return out
 
 
 def extract_pdf_text_layer(pdf_path: Path, att_dir: Path | None = None, task_id: str = "",
@@ -589,12 +804,14 @@ def extract_pdf_text_layer(pdf_path: Path, att_dir: Path | None = None, task_id:
             reader = PdfReader(str(pdf_path))
         start_idx = 0 if page_from is None else page_from - 1
         end_idx = 10 ** 9 if page_to is None else page_to   # range 右开，page_to 闭
-        blocks, images_map = _extract_layer_blocks(reader, att_dir, task_id, start_idx, end_idx)
+        blocks, images_map = _extract_layer_blocks(reader, att_dir, task_id, start_idx, end_idx,
+                                                    with_font_meta=with_anchors)
         if with_anchors:
             parts: list[str] = []
             non_empty = 0
-            for pno0, txt in blocks:
-                seg = postprocess_pdf_text_layer(txt, images=images_map)
+            for pno0, txt, frags, ph in blocks:
+                tidied = tidy_book_text(txt, _build_font_lines(frags), ph)
+                seg = postprocess_pdf_text_layer(tidied, images=images_map)
                 if seg.strip():
                     parts.append(f"<!-- llpage:{pno0 + 1} -->\n{seg}")
                     non_empty += 1
