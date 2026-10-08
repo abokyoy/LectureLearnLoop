@@ -383,6 +383,8 @@ _BOOK_WATERMARK_RE = re.compile(r"图灵社区会员\s*\S*\s*专享.{0,12}尊重
 # 目录点线行：标题 + ≥4 个引导点/省略号 + 尾页码（实测本书目录行尾常带一个空格）
 _BOOK_TOC_RE = re.compile(r"^(?P<title>.{2,70}?)\s*[.\u2026\u00b7]{4,}\s*(?P<pg>\d{1,4})\s*$")
 _HEI_FONT_TOKENS = ("simhei", "htjw", "hei", "bold")   # 黑体/粗体字体名特征（标题体）
+# 图表题注行：行首「图/表x-x + 空格 + 文字」（正文引用如“图1-1集中展示了”数字后无空格，不会误命中）
+_BOOK_CAP_RE = re.compile(r"^(?P<no>[图表]\s*\d{1,2}\s*[-\u2013\u2014]\s*\d{1,3})\s+(?P<rest>\S.{1,80})$")
 
 
 def _align_font_lines(lines: list[str], font_lines: list[list]) -> list[list | None] | None:
@@ -421,16 +423,21 @@ def _align_font_lines(lines: list[str], font_lines: list[list]) -> list[list | N
 
 
 def tidy_book_text(txt: str, font_lines: list[list] | None, page_h: float) -> str:
-    """书籍段页级规则后处理（方案 A，用户 2026-10-07 裁定）：用行级字体元数据修复三类形态。
+    """书籍段页级规则后处理（方案 A，用户 2026-10-07 裁定）：用行级字体元数据修复四类形态。
 
-    R1 标题：主导字体黑体/粗体且字号≥1.15×正文众数 → \x01{lvl} 标记（≥1.8× 为 H1，否则 H2），
-       断开与正文的粘连并补 Markdown 层级；
-       页眉/页脚：行 y 位于页面顶/底边距带（≥0.885h / ≤0.045h）整行剔除；
+    R1 标题：行代表字号≥1.15×正文基准，且行内含黑体/粗体族片段（主导字体，或 hei_fs 兜底：
+       黑体片段字号≥1.15×基准且黑体覆盖行内≥半数汉字，防正文内联黑体强调误判；
+       按汉字覆盖率而非全字符计，「1.6 Python语言的优势」类拉丁占比高的真实标题不被误杀）
+       → \x01{lvl} 标记（≥1.8× 为 H1，≥1.3× 为 H2，其间为 H3），断开与正文粘连并补层级；
+       正文基准=含 CJK 且≥ 30 字长行的字号众数（防代码/图表页 9~12pt 碎片带偏），无长行回退全体众数；
+       页眉/页脚：行 y 位于顶/底边距带（0.885h~h 或 0.01h~0.045h，外层已限 0≤y≤h）且为短行（≤34 字）才整行剔除
+       ——文字矩阵变换残留的异常坐标（y=0/负值/超大）不得误伤正文长行；
     R2 装饰：连续 ≥3 行纯数字（导航图编号/代码行号串流）整组剔除；水印行剔除；
-    R3 目录：点线行改写为 \x02- 标题 · 页码（硬独立成段，不再粘成巨型单段）。
+    R3 目录：点线行改写为 \x02- 标题 · 页码（硬独立成段，不再粘成巨型单段）；
+    R4 题注：「图/表x-x + 空格 + 文字」行 → 编号加粗并硬独立成段（纯文本规则，不依赖元数据）。
 
     双层降级：R1（标题/页眉，需字体元数据）仅在 font_lines 与 txt 行数对齐时应用；
-    R2/R3 与水印、域错误剔除为纯文本规则，任何页都可应用。保守优先：宁可不美化，不可错删正文。
+    R2/R3/R4 与水印、域错误剔除为纯文本规则，任何页都可应用。保守优先：宁可不美化，不可错删正文。
     不改动任何正文文字内容（逐字保留，只加标记/剔噪声）。
     """
     lines = txt.split("\n")
@@ -442,23 +449,35 @@ def tidy_book_text(txt: str, font_lines: list[list] | None, page_h: float) -> st
     # R1（元数据级）：页眉页脚剔除 + 标题标记——行对齐成功且页高已知才启用
     fmap = _align_font_lines(lines, font_lines) if (font_lines and page_h > 0) else None
     if fmap is not None:
-        fs_counter = Counter(round(f[1], 1) for f in font_lines if f[0].strip() and 4.0 <= f[1] <= 40.0)
-        body_fs = fs_counter.most_common(1)[0][0] if fs_counter else 0.0
+        def _mode_fs(pred) -> float:
+            c = Counter(round(f[1], 1) for f in font_lines if pred(f) and 4.0 <= f[1] <= 40.0)
+            return c.most_common(1)[0][0] if c else 0.0
+        # 正文基准优先取「含 CJK 且 ≥30 字长行」的字号众数（代码/图表页短碎片不污染），无则回退全体
+        body_fs = _mode_fs(lambda f: len(f[0].strip()) >= 30 and _CJK_RE.search(f[0])) \
+            or _mode_fs(lambda f: bool(f[0].strip()))
         if body_fs:
             for i, meta in enumerate(fmap):
                 if meta is None:
                     continue
-                _text, fs, dom, _x, y = meta
+                _text, fs, dom, _x, y = meta[:5]
+                d = dom.lower()
+                # 旧元数据行（无第 6 字段）降级用主导字体判定
+                hei = meta[5] if len(meta) > 5 else (fs if any(tok in d for tok in _HEI_FONT_TOKENS) else 0.0)
+                # 第 7 字段=黑体片段对行内汉字的覆盖率（旧元数据无此字段视为 1.0，行为不变）
+                hratio = meta[6] if len(meta) > 6 else 1.0
                 s = out[i].strip()
                 if not s or s.startswith(("\x00", "\x01", "\x02")):
                     continue
-                d = dom.lower()
-                if y is not None and (y >= 0.885 * page_h or y <= 0.045 * page_h):
-                    blank(i)  # 页眉/页脚边距带（实测本书页眉 y=615.7/h=683=0.90）
+                if y is not None and len(s) <= 34 and 0 <= y <= page_h \
+                        and (0.885 * page_h <= y or 0.01 * page_h <= y <= 0.045 * page_h):
+                    blank(i)  # 页眉/页脚边距带（实测本书页眉 y=615.7/h=683=0.90）仅短行
                     continue
                 if (len(s) <= 30 and not s.isdigit() and _CJK_RE.search(s)
-                        and fs >= body_fs * 1.15 and any(tok in d for tok in _HEI_FONT_TOKENS)):
-                    out[i] = ("\x011 " if fs >= body_fs * 1.8 else "\x012 ") + s
+                        and fs >= body_fs * 1.15
+                        and (any(tok in d for tok in _HEI_FONT_TOKENS)
+                             or (hei >= body_fs * 1.15 and hratio >= 0.5))):
+                    lvl = "1" if fs >= body_fs * 1.8 else ("2" if fs >= body_fs * 1.3 else "3")
+                    out[i] = f"\x01{lvl} " + s
 
     # 文本级剔除：水印行 + Word 域错误残留行（不依赖元数据，失配页同样生效）
     for i, s in enumerate(out):
@@ -487,6 +506,18 @@ def tidy_book_text(txt: str, font_lines: list[list] | None, page_h: float) -> st
         if m:
             title = re.sub(r"\s{2,}", " ", m.group("title")).strip()
             out[i] = f"\x02- {title} \u00b7 {m.group('pg')}"
+    # R4：图表题注行 → 编号加粗 + 硬独立段（不依赖元数据；已标记行跳过）
+    for i, s in enumerate(out):
+        st = s.strip()
+        if st.startswith(("\x01", "\x02")):
+            continue
+        m = _BOOK_CAP_RE.match(st)
+        if m:
+            rest = m.group("rest").strip()
+            # 题注无句末标点；以句号等结尾的是正文叙述句（如“图 3-2 展示的是…”），不改
+            if rest and rest[-1] in "。！？；":
+                continue
+            out[i] = f"\x02**{m.group('no')}** {rest}"
     return "\n".join(out)
 
 
@@ -733,7 +764,12 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
 
     行切分与 pypdf extract_text 换行同源：行尾注入的纯 '\n' 片段自成一行，其余片段内嵌 \n
     或 y 跳变 >2pt 均切行，故展开后行数与 txt.split("\n") 对齐（调用方以行数相等为应用前提，
-    不一致保守回退无元数据清洗）。代表字号=行内非空片段最大 fs；主字体名=行内 fs 加权最多字体。
+    不一致保守回退无元数据清洗）。代表字号=行内非空片段最大 fs；主字体名=行内 fs 加权最多字体；
+    第 6 字段 hei_fs=行内黑体/粗体族片段的最大字号（正文标题汉字是黑体但空格 run 属 Arial，
+    主导字体被空格抢走时由此字段兜底，2026-10-04 正文页探针实变）；
+    第 7 字段=黑体片段携带的汉字数占行内全部汉字数的比例（评审 Warning：仅个别内联黑体强调
+    的正文短句覆盖率低，兜底判定需覆盖率≥0.5；真实标题汉字几乎全黑体，拉丁/数字不计入分母，
+    无汉字行比例记 0——R1 本身要求行含 CJK，不影响判定）。
     """
     import collections
     rows: list[list] = []          # [行文本, 首片段 x, 首片段 y, [(fs, base)]]
@@ -770,17 +806,25 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
             cur_x, cur_y = x, y
         cur_t += text
         if text.strip():
-            cur_frags.append((fs, base))
+            cur_frags.append((fs, base, text.strip()))
         last_y = y
     flush()
     out: list[list] = []
     for rt, rx, ry, fr in rows:
-        rep_fs = max((f for f, _b in fr), default=0.0)
+        rep_fs = max((f for f, _b, _t in fr), default=0.0)
         w: collections.Counter = collections.Counter()
-        for f, b in fr:
+        hei_fs = 0.0
+        hei_cjk = tot_cjk = 0
+        for f, b, t in fr:
             w[b] += f
+            n_cjk = len(_CJK_RE.findall(t))
+            tot_cjk += n_cjk
+            if any(tok in b.lower() for tok in _HEI_FONT_TOKENS):
+                hei_fs = max(hei_fs, f)
+                hei_cjk += n_cjk
         dom = w.most_common(1)[0][0] if w else ""
-        out.append([rt, rep_fs, dom, rx, ry])
+        ratio = hei_cjk / tot_cjk if tot_cjk else 0.0
+        out.append([rt, rep_fs, dom, rx, ry, hei_fs, round(ratio, 3)])
     return out
 
 
