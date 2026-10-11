@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: frontend
+title: 前端构建与 Tailwind 设计系统
+scope:
+    - frontend/
+source_files: []
+depends_on: []
+related_to:
+    - path: server_backend

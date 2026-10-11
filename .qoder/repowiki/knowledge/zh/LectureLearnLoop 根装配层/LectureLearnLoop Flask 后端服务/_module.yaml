@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: server_backend
+title: LectureLearnLoop Flask 后端服务
+scope:
+    - server/
+source_files: []
+depends_on: []
+related_to:
+    - path: desktop_electron
+    - path: frontend

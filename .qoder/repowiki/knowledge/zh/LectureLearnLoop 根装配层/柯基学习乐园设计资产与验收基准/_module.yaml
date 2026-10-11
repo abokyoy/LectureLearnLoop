@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: design
+title: 柯基学习乐园设计资产与验收基准
+scope:
+    - design/
+source_files: []
+depends_on: []
+related_to: []

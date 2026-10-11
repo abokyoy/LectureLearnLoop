@@ -3,11 +3,11 @@ schema_version: 1
 locale: zh-CN
 branch: main
 nodes_managed: true
-exported_at: "2026-10-01T12:58:36Z"
+exported_at: "2026-10-08T08:31:08Z"
 modules:
     "":
-        dir_name: LectureLearnLoop 练记系统根工程
-        title: LectureLearnLoop 练记系统根工程
+        dir_name: LectureLearnLoop 根装配层
+        title: LectureLearnLoop 根装配层
         scope:
             - AGENTS.md
             - .gitignore
@@ -22,9 +22,20 @@ modules:
             - review_diff_fsrs2.txt
         source_files: []
         children:
+            - design
             - desktop_electron
             - docs
+            - frontend
             - server_backend
+        depends_on: []
+        related_to: []
+    design:
+        dir_name: 柯基学习乐园设计资产与验收基准
+        title: 柯基学习乐园设计资产与验收基准
+        scope:
+            - design/
+        source_files: []
+        children: []
         depends_on: []
         related_to: []
     desktop_electron:
@@ -36,86 +47,34 @@ modules:
         children: []
         depends_on: []
         related_to:
-            - path: server_backend/auth_and_credits
-            - path: server_backend/knowledge_management
-            - path: server_backend/notes_and_practice
+            - path: server_backend
     docs:
-        dir_name: 项目文档与架构规范
-        title: 项目文档与架构规范
+        dir_name: 项目文档与知识沉淀
+        title: 项目文档与知识沉淀
         scope:
             - docs/
         source_files: []
         children: []
         depends_on: []
         related_to: []
+    frontend:
+        dir_name: 前端构建与 Tailwind 设计系统
+        title: 前端构建与 Tailwind 设计系统
+        scope:
+            - frontend/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: server_backend
     server_backend:
-        dir_name: LectureLearnLoop Flask 服务端
-        title: LectureLearnLoop Flask 服务端
+        dir_name: LectureLearnLoop Flask 后端服务
+        title: LectureLearnLoop Flask 后端服务
         scope:
             - server/
         source_files: []
-        children:
-            - server_backend/auth_and_credits
-            - server_backend/flask_app_entrypoint
-            - server_backend/knowledge_management
-            - server_backend/notes_and_practice
-        depends_on: []
-        related_to: []
-    server_backend/auth_and_credits:
-        dir_name: 多用户认证与积分计费服务
-        title: 多用户认证与积分计费服务
-        scope:
-            - server/auth.py
-            - server/credits_service.py
-            - server/routes_credits.py
-            - server/routes_admin.py
-        source_files: []
         children: []
         depends_on: []
         related_to:
             - path: desktop_electron
-            - path: server_backend/flask_app_entrypoint
-            - path: server_backend/notes_and_practice
-    server_backend/flask_app_entrypoint:
-        dir_name: Flask 应用入口与配置_日志基础设施
-        title: Flask 应用入口与配置/日志基础设施
-        scope:
-            - server/app.py
-            - server/config.py
-            - server/logger_module.py
-            - server/llm_call_logger.py
-            - server/llm_logger.py
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: server_backend/auth_and_credits
-            - path: server_backend/knowledge_management
-            - path: server_backend/notes_and_practice
-    server_backend/knowledge_management:
-        dir_name: 知识点与错题知识管理系统
-        title: 知识点与错题知识管理系统
-        scope:
-            - server/knowledge_management.py
-            - server/routes_knowledge.py
-            - server/similarity_matcher.py
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: desktop_electron
-            - path: server_backend/flask_app_entrypoint
-    server_backend/notes_and_practice:
-        dir_name: 笔记与练习桥接路由层
-        title: 笔记与练习桥接路由层
-        scope:
-            - server/routes_notes.py
-            - server/routes_bridge.py
-            - server/services/error_slicer.py
-        source_files: []
-        children: []
-        depends_on: []
-        related_to:
-            - path: desktop_electron
-            - path: server_backend/auth_and_credits
-            - path: server_backend/flask_app_entrypoint
+            - path: frontend
