@@ -220,6 +220,8 @@ with sync_playwright() as p:
         const t = p ? (p.textContent || '') : '';
         r.aiComment = t.includes('要点覆盖不足');       // 简答题 AI 点评展示
         r.wrongMark = t.includes('错题已入错题本');      // 结果页错题提示
+        // 2026-10-08 用户要求：判分结果页必须展示原题选项（题干一号/八号为选择题，选项甲乙丙丁应可见）
+        r.optionsKept = t.includes('A. 甲') && t.includes('C. 丙');
         const ms = document.querySelector('[data-role="mastery-slot"]');
         r.headMastery = ms ? (ms.textContent || '').trim() : 'NO-EL';
         r.hint = (document.querySelector('[data-role="act-hint"]').textContent || '').trim();

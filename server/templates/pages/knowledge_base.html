@@ -1,5 +1,21 @@
 {# 批5 重设计：知识库管理（去 Qt 桥依赖，直连 HTTP API；修复平均掌握度把 -1 未评估哨兵算进均值的负数 bug）。
-   数据源：/api/subjects/stats（科目统计）+ /api/knowledge/points?subject=（知识点）+ POST /api/subjects（新建学科，承接练/记页空态引导）。 #}
+   知识库管理增强：选中学科后双页签「知识点 | 错题」——知识点增删改 + 独立错题增删改/解绑 + 贴图自动 OCR。
+   数据源：/api/subjects/stats + /api/knowledge/points?subject= + /api/kb/errors?subject=（错题行含 source 标记）
+   + POST /api/kb/errors（手动新增，影子练习记录）+ PUT/DELETE /api/kb/errors/<eid> + POST .../unbind
+   + POST /api/knowledge/point-new + PUT /api/knowledge/points/<pid>/description + DELETE /api/knowledge/points/<pid>
+   + POST /api/vault/screenshot（图片落盘）+ POST/GET /api/kb/error-ocr（异步识别任务）。 #}
+<link rel="stylesheet" href="/static/vendor/vditor/dist/index.css">
+<script src="/static/vendor/vditor/dist/index.min.js"></script>
+<script src="/static/js/note_vditor.js"></script>
+<script src="/static/vendor/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<!-- KaTeX 本地 vendor（2026-10-13 补齐，0.16.9 与 Vditor 内置版本号同一套文件：弱网/离线不依赖 CDN）；
+     md_render.js 为错题公式渲染公共件：marked 前占位保护 → sanitize 后 KaTeX 回填 -->
+<link rel="stylesheet" href="/static/vendor/vditor/dist/js/katex/katex.min.css">
+<script src="/static/vendor/vditor/dist/js/katex/katex.min.js"></script>
+<script src="/static/js/md_render.js"></script>
+
 <div class="cl-page space-y-6">
 
     <div class="flex items-start justify-between gap-4 flex-wrap">
@@ -39,7 +55,7 @@
         </div>
     </div>
 
-    <!-- 学科卡（点击筛选知识点） -->
+    <!-- 学科卡（点击筛选，选中后进入 知识点/错题 管理页签） -->
     <div>
         <div class="cl-section-title mb-3">
             <svg class="w-4 h-4 text-cl-text-2" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-folder-open"/></svg>
@@ -50,11 +66,20 @@
         </div>
     </div>
 
-    <!-- 知识点列表 -->
+    <!-- 知识点 / 错题 管理区 -->
     <div class="cl-card p-6">
-        <div class="flex items-center justify-between mb-4">
-            <div class="cl-section-title" id="kb-list-title">最近更新的知识点</div>
-            <button class="cl-btn-ghost !h-8 !text-xs" onclick="kbShowRecent()">全部科目</button>
+        <div class="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="cl-section-title" id="kb-list-title">最近更新的知识点</div>
+                <div id="kb-tabs" class="hidden items-center rounded-clbtn bg-cl-bg p-0.5 border border-cl-border">
+                    <button id="kb-tab-points" class="h-7 px-3 rounded-[7px] text-xs font-medium" data-tab="points">知识点</button>
+                    <button id="kb-tab-errors" class="h-7 px-3 rounded-[7px] text-xs font-medium" data-tab="errors">错题</button>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button class="cl-btn-ghost !h-8 !text-xs" onclick="kbShowRecent()">全部科目</button>
+                <button id="kb-add-btn" class="cl-btn-primary !h-8 !text-xs hidden">+ 新增</button>
+            </div>
         </div>
         <div class="space-y-1" id="kb-point-list">
             <p class="text-sm text-cl-text-3">正在加载知识点…</p>
@@ -62,6 +87,25 @@
     </div>
 
     <p class="text-xs text-cl-text-3 text-center">知识点的提取与练习请前往「学」与「练」模块</p>
+
+    <!-- 通用弹窗（知识点/错题 新增·编辑共用；单例复用，关闭即销毁编辑器实例） -->
+    <div id="kb-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center">
+        <div class="absolute inset-0 bg-black/45" data-mclose></div>
+        <div class="relative w-[min(760px,94vw)] max-h-[88vh] overflow-y-auto rounded-clbtn bg-cl-surface border border-cl-border shadow-2xl p-5">
+            <h3 id="kb-modal-title" class="text-[15px] font-semibold text-cl-text mb-3"></h3>
+            <div id="kb-modal-body" class="space-y-3"></div>
+            <div class="flex items-center justify-between gap-3 mt-4">
+                <span id="kb-modal-status" class="text-xs text-cl-text-3 min-w-0 flex-1 truncate"></span>
+                <div class="flex gap-2 shrink-0">
+                    <button class="cl-btn-ghost !h-8 text-xs" data-mclose>取消</button>
+                    <button id="kb-modal-ok" class="cl-btn-primary !h-8 text-xs">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 轻提示 -->
+    <div id="kb-toast" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-[95] max-w-[80vw] rounded-clbtn px-4 py-2 text-xs shadow-lg"></div>
 </div>
 
 <script>
@@ -74,7 +118,20 @@
     var statPointsEl = document.getElementById('kb-stat-points');
     var statMasteryEl = document.getElementById('kb-stat-mastery');
     var statMasterySubEl = document.getElementById('kb-stat-mastery-sub');
+    var tabsBox = document.getElementById('kb-tabs');
+    var tabPtsBtn = document.getElementById('kb-tab-points');
+    var tabErrBtn = document.getElementById('kb-tab-errors');
+    var addBtn = document.getElementById('kb-add-btn');
+    var modal = document.getElementById('kb-modal');
+    var modalTitle = document.getElementById('kb-modal-title');
+    var modalBody = document.getElementById('kb-modal-body');
+    var modalStatus = document.getElementById('kb-modal-status');
+    var modalOk = document.getElementById('kb-modal-ok');
+    var toastEl = document.getElementById('kb-toast');
     var allPointsCache = [];
+    // 页面状态：选中学科 + 当前页签 + 该科知识点缓存（错题行知识点名/新增下拉用）
+    var state = { subject: null, tab: 'points', points: [] };
+    var modalCtx = null; // 当前弹窗上下文 {type, ed, point, err, onClose}
     // 渲染令牌（CodeReview 批5 M-1/M-2）：旧响应到达时若令牌非最新则丢弃，
     // 防 init 尾部 kbShowRecent 覆盖用户主动选中学科、及连点两学科的乱序覆盖
     var renderToken = 0;
@@ -83,6 +140,27 @@
     function getJSON(url) {
         return fetch(url, { headers: { 'Authorization': 'Bearer ' + tk() } }).then(function (r) { return r.json(); })
             .then(function (j) { if (!j || !j.success) throw new Error((j && j.error) || '请求失败'); return j.data; });
+    }
+    function postJSON(url, body, method) {
+        return fetch(url, {
+            method: method || 'POST',
+            headers: { 'Authorization': 'Bearer ' + tk(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {})
+        }).then(function (r) { return r.json(); })
+            .then(function (j) { if (!j || !j.success) throw new Error((j && j.error) || '请求失败'); return j.data; });
+    }
+    var toastTimer = null;
+    function toast(msg, isErr) {
+        toastEl.textContent = msg;
+        toastEl.className = 'fixed bottom-8 left-1/2 -translate-x-1/2 z-[95] max-w-[80vw] rounded-clbtn px-4 py-2 text-xs shadow-lg '
+            + (isErr ? 'bg-cl-danger text-white' : 'bg-cl-text text-cl-surface');
+        toastEl.classList.remove('hidden');
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.add('hidden'); }, 2600);
+    }
+    function setModalStatus(msg, isErr) {
+        modalStatus.textContent = msg || '';
+        modalStatus.className = 'text-xs min-w-0 flex-1 truncate ' + (isErr ? 'text-cl-danger' : 'text-cl-text-3');
     }
     // -1 = 未评估哨兵，禁止参与均值/展示为 0%（负数 bug 修复点）
     function isUnrated(v) { return v == null || Number(v) < 0; }
@@ -107,46 +185,627 @@
             return Math.floor(h / 24) + ' 天前';
         } catch (e) { return String(ts || ''); }
     }
-    function renderPoints(points, title) {
+
+    // —— MD 渲染（错题题干）：marked 缺失时 textContent 纯文本回退；图片走 pybridge 水合 ——
+    function imgBridge() {
+        if (window.pybridge && window.pybridge.getImageAsBase64) return window.pybridge;
+        if (window.bridge && window.bridge.getImageAsBase64) return window.bridge;
+        return null;
+    }
+    // 相对路径口径与 pm_pages resolveNbImgSrc 一致：截图/、附件/ 为 vault 根相对，直送 /api/vault/image
+    function resolveListImgSrc(src) {
+        var p = src || '';
+        try { p = decodeURIComponent(p); } catch (e) { /* 非法编码保留原串 */ }
+        if (/^(data:|blob:|https?:|\/)/i.test(p)) return null;
+        return /^(截图|attachments)\//i.test(p) ? p : null;
+    }
+    function hydrateListImgs(el) {
+        var br = imgBridge();
+        if (!br) return;
+        el.querySelectorAll('img').forEach(function (img) {
+            var rel = resolveListImgSrc(img.getAttribute('src'));
+            if (!rel) return;
+            img.setAttribute('data-hy', '1');
+            img.setAttribute('src', 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'); // 先换占位防相对路径直拉 404
+            br.getImageAsBase64(rel, function (result) {
+                try {
+                    var resp = JSON.parse(result);
+                    if (!el.contains(img)) return;
+                    if (resp.success && resp.dataUrl) img.setAttribute('src', resp.dataUrl);
+                    else img.setAttribute('alt', '图片加载失败: ' + rel);
+                } catch (e) { /* 解析失败保持原路径 */ }
+            });
+        });
+    }
+    function renderMdInto(el, src, inline) {
+        // 公式预抽取（md_render.js）：marked 前摘公式防咬坏，sanitize 后回填 KaTeX（与 pm_pages 同口径）
+        var mm = (window.MdRender && window.MdRender.extract) ? window.MdRender.extract(String(src || '')) : { text: String(src || ''), slots: [] };
+        // 无 MD 管线（marked/DOMPurify 未加载或 CDN 不可达）：正文纯文本，公式仍 KaTeX 回填（CodeReview Critical-1 同口径）
+        if (typeof marked === 'undefined' || !marked.parse
+            || typeof window.DOMPurify === 'undefined' || !window.DOMPurify.sanitize) {
+            el.textContent = mm.text; // 只含占位符的纯文本，无 marked 输出参与，不经 innerHTML 无注入面
+            el.classList.add('whitespace-pre-wrap');
+            if (window.MdRender && window.MdRender.applyMath) { try { window.MdRender.applyMath(el, mm.slots); } catch (e) { /* 公式件异常不阻断图文 */ } }
+            return;
+        }
+        var raw = marked.parse(mm.text);
+        el.innerHTML = (function () {
+            // 先 trim：marked 默认输出带尾随换行，不 trim 则单段剥壳正则不命中，span 内残留块级 <p>（CodeReview Major-2）
+            var safe = String(window.DOMPurify.sanitize(raw)).trim();
+            if (inline && el.tagName === 'SPAN') {
+                var mp = /^<p>([\s\S]+)<\/p>$/.exec(safe);
+                if (mp && mp[1].indexOf('</p>') < 0) safe = mp[1];
+            }
+            return safe;
+        })();
+        if (window.MdRender && window.MdRender.applyMath) { try { window.MdRender.applyMath(el, mm.slots); } catch (e) { /* 公式件异常不阻断图文 */ } }
+        hydrateListImgs(el);
+    }
+
+    // —— 列表渲染 ——
+    function pointRow(p) {
+        return '<div class="flex items-center gap-4 py-3 border-b border-cl-border last:border-0">'
+            + '<div class="w-9 h-9 rounded-full bg-cl-primary-soft flex items-center justify-center shrink-0">'
+            + '<svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-lightbulb"/></svg></div>'
+            + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-cl-text truncate">' + esc(p.point_name || p.name) + '</p>'
+            + '<p class="text-xs text-cl-text-3 mt-0.5">' + esc(p.subject || state.subject || '') + ' · ' + esc(relTime(p.created_time)) + '</p></div>'
+            + masteryBadge(p.mastery_score)
+            + '<button class="cl-btn-ghost !h-7 !text-[11px] shrink-0" data-pt-edit="' + esc(String(p.id)) + '">编辑</button>'
+            + '<button class="cl-btn-ghost !h-7 !text-[11px] shrink-0 !text-cl-danger" data-pt-del="' + esc(String(p.id)) + '">删除</button>'
+            + '</div>';
+    }
+    function renderPoints(points, title, actionable) {
         listTitle.textContent = title;
         if (!points.length) {
             listBox.innerHTML = '<div class="cl-empty">'
                 + '<svg class="w-10 h-10 text-cl-text-3" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dog"/></svg>'
-                + '<p>这里还没有知识点</p><p class="text-xs text-cl-text-3">到「学 → 网课笔记」学习并提取知识点后会自动收进知识库</p></div>';
+                + '<p>这里还没有知识点</p><p class="text-xs text-cl-text-3">到「学 → 网课笔记」学习并提取知识点，或在上方「+ 新增知识点」手动录入</p></div>';
             return;
         }
         listBox.innerHTML = points.map(function (p) {
-            return '<div class="flex items-center gap-4 py-3 border-b border-cl-border last:border-0">'
-                + '<div class="w-9 h-9 rounded-full bg-cl-primary-soft flex items-center justify-center shrink-0">'
-                + '<svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-lightbulb"/></svg></div>'
-                + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-cl-text truncate">' + esc(p.point_name || p.name) + '</p>'
-                + '<p class="text-xs text-cl-text-3 mt-0.5">' + esc(p.subject || '') + ' · ' + esc(relTime(p.created_time)) + '</p></div>'
-                + masteryBadge(p.mastery_score) + '</div>';
+            if (!actionable) {
+                return '<div class="flex items-center gap-4 py-3 border-b border-cl-border last:border-0">'
+                    + '<div class="w-9 h-9 rounded-full bg-cl-primary-soft flex items-center justify-center shrink-0">'
+                    + '<svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-lightbulb"/></svg></div>'
+                    + '<div class="flex-1 min-w-0"><p class="text-sm font-medium text-cl-text truncate">' + esc(p.point_name || p.name) + '</p>'
+                    + '<p class="text-xs text-cl-text-3 mt-0.5">' + esc(p.subject || '') + ' · ' + esc(relTime(p.created_time)) + '</p></div>'
+                    + masteryBadge(p.mastery_score) + '</div>';
+            }
+            return pointRow(p);
         }).join('');
+        if (actionable) {
+            listBox.querySelectorAll('[data-pt-edit]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var pid = b.getAttribute('data-pt-edit');
+                    var p = state.points.filter(function (x) { return String(x.id) === pid; })[0];
+                    if (p) openPointModal(p);
+                });
+            });
+            listBox.querySelectorAll('[data-pt-del]').forEach(function (b) {
+                b.addEventListener('click', function () { delPoint(b.getAttribute('data-pt-del')); });
+            });
+        }
     }
-    window.kbShowSubject = function (subject) {
+    function errorRow(e) {
+        var kpId = e.knowledge_point_id;
+        var kpName = null;
+        if (kpId != null) {
+            var hit = state.points.filter(function (p) { return String(p.id) === String(kpId); })[0];
+            kpName = hit ? (hit.point_name || hit.name) : ('知识点#' + kpId);
+        }
+        var badges = '';
+        if (e.source === 'manual') badges += '<span class="cl-badge bg-cl-primary-soft text-cl-primary">手动录入</span>';
+        badges += kpName ? '<span class="cl-badge bg-cl-bg text-cl-text-2" title="归属知识点">' + esc(kpName) + '</span>'
+            : '<span class="cl-badge bg-cl-bg text-cl-text-3">独立</span>';
+        if (Number(e.review_status) === 1) badges += '<span class="cl-badge bg-cl-secondary-soft text-cl-secondary">已复习</span>';
+        if (!isUnrated(e.current_proficiency)) badges += '<span class="cl-badge bg-cl-bg text-cl-text-2">熟练 ' + Math.round(Number(e.current_proficiency)) + '%</span>';
+        return '<div class="py-3 border-b border-cl-border last:border-0" data-err-row="' + esc(String(e.id)) + '">'
+            + '<div class="flex items-start gap-3">'
+            + '<div class="flex-1 min-w-0">'
+            + '<div class="kb-error-md text-sm text-cl-text leading-relaxed break-words max-h-64 overflow-y-auto" data-md="' + esc(String(e.id)) + '"></div>'
+            + (e.correct_answer ? '<p class="text-xs text-cl-text-2 mt-1.5 break-words"><span class="font-medium">答案：</span><span class="kb-error-md" data-ans="' + esc(String(e.id)) + '"></span></p>' : '')
+            + (e.explanation ? '<div class="text-xs text-cl-text-3 mt-1 break-words max-h-24 overflow-y-auto"><span class="font-medium">解析：</span><div class="kb-error-md" data-exp="' + esc(String(e.id)) + '"></div></div>' : '')
+            + '<p class="text-[11px] text-cl-text-3 mt-1.5 flex items-center gap-2 flex-wrap">' + badges
+            + '<span>· ' + esc(relTime(e.practice_time)) + '</span></p></div>'
+            + '<div class="flex flex-col gap-1.5 shrink-0">'
+            + '<button class="cl-btn-ghost !h-7 !text-[11px]" data-er-edit="' + esc(String(e.id)) + '">编辑</button>'
+            + (kpId != null ? '<button class="cl-btn-ghost !h-7 !text-[11px]" data-er-unbind="' + esc(String(e.id)) + '">解绑</button>' : '')
+            + '<button class="cl-btn-ghost !h-7 !text-[11px] !text-cl-danger" data-er-del="' + esc(String(e.id)) + '">删除</button>'
+            + '</div></div></div>';
+    }
+    function renderErrors(rows) {
+        if (!rows.length) {
+            listBox.innerHTML = '<div class="cl-empty">'
+                + '<svg class="w-10 h-10 text-cl-text-3" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-dog"/></svg>'
+                + '<p>该学科还没有错题</p><p class="text-xs text-cl-text-3">练习答错的题会自动收录，也可「+ 新增错题」手动录入（支持拍照上传自动识别）</p></div>';
+            return;
+        }
+        listBox.innerHTML = rows.map(errorRow).join('');
+        rows.forEach(function (e) {
+            var md = listBox.querySelector('[data-md="' + e.id + '"]');
+            if (md) renderMdInto(md, e.question_content);
+            // 答案/解析同步走 MD+公式管线（智能分析回填的 LaTeX 不再原文暴露）
+            var ans = listBox.querySelector('[data-ans="' + e.id + '"]');
+            if (ans) renderMdInto(ans, e.correct_answer, true);
+            var exp = listBox.querySelector('[data-exp="' + e.id + '"]');
+            if (exp) renderMdInto(exp, e.explanation);
+        });
+        listBox.querySelectorAll('[data-er-edit]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var eid = b.getAttribute('data-er-edit');
+                var e = (state.errors || []).filter(function (x) { return String(x.id) === eid; })[0];
+                if (e) openErrorModal(e);
+            });
+        });
+        listBox.querySelectorAll('[data-er-unbind]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var eid = b.getAttribute('data-er-unbind');
+                if (!confirm('解绑后该错题变为独立错题（不再出现在知识点错题中），确定？')) return;
+                postJSON('/api/kb/errors/' + encodeURIComponent(eid) + '/unbind', {}).then(function () {
+                    toast('已解绑为独立错题');
+                    loadErrors();
+                }).catch(function (err) { toast('解绑失败：' + err.message, true); });
+            });
+        });
+        listBox.querySelectorAll('[data-er-del]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var eid = b.getAttribute('data-er-del');
+                if (!confirm('删除该错题及其练习流水与熟练度历史，确定？')) return;
+                postJSON('/api/kb/errors/' + encodeURIComponent(eid), {}, 'DELETE').then(function () {
+                    toast('错题已删除');
+                    init();
+                }).catch(function (err) { toast('删除失败：' + err.message, true); });
+            });
+        });
+    }
+
+    // —— 弹窗基建 ——
+    function openModal(title, bodyHtml, onOk, okLabel) {
+        modalTitle.textContent = title;
+        modalBody.innerHTML = bodyHtml;
+        modalOk.textContent = okLabel || '保存';
+        modalOk.disabled = false;
+        modalStatus.textContent = '';
+        modal.classList.remove('hidden');
+        modalOk.onclick = function () {
+            if (modalOk.disabled) return;
+            modalOk.disabled = true; // 防连点
+            Promise.resolve(onOk()).then(function (keep) {
+                if (keep !== true && modalCtx) { closeModal(); }
+                else modalOk.disabled = false;
+            }).catch(function (e) {
+                setModalStatus(e && e.message || '保存失败', true);
+                modalOk.disabled = false;
+            });
+        };
+    }
+    function closeModal() {
+        modal.classList.add('hidden');
+        if (modalCtx && modalCtx.ed) {
+            modalCtx.ed.__alive = false; // 断开在飞的 OCR 轮询链（CodeReview Major-3）
+            try { modalCtx.ed.destroy(); } catch (e) { /* noop */ }
+        }
+        if (modalCtx && modalCtx.photo) { // 手机传图：停轮询 + 让二维码立即失效
+            var ph = modalCtx.photo; ph.alive = false;
+            postJSON('/api/kb/photo-session/' + encodeURIComponent(ph.token), {}, 'DELETE').catch(function () { /* noop */ });
+        }
+        modalCtx = null;
+        modalBody.innerHTML = '';
+    }
+    modal.querySelectorAll('[data-mclose]').forEach(function (el) {
+        el.addEventListener('click', closeModal);
+    });
+
+    // —— 图片上传 + 自动 OCR（错题编辑器共用管线）——
+    function uploadImage(file, cb) {
+        if (!file || !/^image\//i.test(file.type || '')) { cb(new Error('仅支持图片文件')); return; }
+        var fr = new FileReader();
+        fr.onload = function () {
+            // 双层契约：routes_bridge._ok 外层剥掉后内层还有 {success, rel}
+            postJSON('/api/vault/screenshot', { image_b64: String(fr.result) }).then(function (d) {
+                d = (d && d.data) || d;
+                if (d && d.success && d.rel) cb(null, d.rel);
+                else cb(new Error((d && d.error) || '图片保存失败'));
+            }).catch(function (e) { cb(e); });
+        };
+        fr.onerror = function () { cb(new Error('读取图片数据失败')); };
+        fr.readAsDataURL(file);
+    }
+    // 上传即自动识别：插入图片后提交任务并轮询；done 填文字，error/超时降级提示手填
+    function startOcr(rel, ed) {
+        setModalStatus('题目图片识别中…（拍照/截图约需十几秒）');
+        postJSON('/api/kb/error-ocr', { image: rel }).then(function (d) {
+            d = (d && d.data) || d;
+            var tid = d && d.task_id;
+            if (!tid) throw new Error((d && d.error) || '识别任务创建失败');
+            var tries = 0;
+            (function poll() {
+                if (ed && ed.__alive === false) return; // 弹窗已关：停止轮询，不再打已销毁实例/隐藏 DOM
+                // 上限 100×2s=200s ≥ 服务端 MAX_WAIT_S=180s，保证客户端不早于任务自然收尾（CodeReview Major-2）
+                if (tries++ >= 100) { setModalStatus('识别超时，请对照图片手动补录题目文字', true); return; }
+                setTimeout(function () {
+                    getJSON('/api/kb/error-ocr/' + encodeURIComponent(tid)).then(function (r) {
+                        if (r && r.status === 'running') { poll(); return; }
+                        if (r && r.status === 'done') {
+                            var text = String(r.text || '').trim();
+                            if (!text) { setModalStatus('未识别出文字，请手动补录题目', true); return; }
+                            if (ed && ed.insertMD) ed.insertMD('\n' + text + '\n');
+                            setModalStatus('识别完成，题目文字已填入编辑器');
+                            toast('图片识别完成');
+                        } else {
+                            setModalStatus('识别失败：' + ((r && r.error) || '服务不可用') + '，图片已保留，可手动补录', true);
+                        }
+                    }).catch(function (e) { setModalStatus('识别结果获取失败：' + e.message + '，可手动补录', true); });
+                }, 2000);
+            })();
+        }).catch(function (e) {
+            setModalStatus('识别服务不可用：' + e.message + '，图片已保留，可手动补录', true);
+        });
+    }
+
+    // —— 智能分析（2026-10-13）：图片+文字 → Paddle 版面切片 + 视觉大模型整理规范题，回填三字段 ——
+    function startAnalyze(ed) {
+        if (!ed || (ed.__alive === false)) return;
+        if (modalCtx && modalCtx.analyzing) { setModalStatus('智能分析进行中，请稍候…'); return; }
+        var md = String(ed.getValue ? ed.getValue() : '').trim();
+        if (!md) { setModalStatus('请先输入题目内容或上传图片，再点智能分析', true); return; }
+        if (modalCtx) modalCtx.analyzing = true;
+        var btn = document.getElementById('kbm-analyze');
+        if (btn) btn.disabled = true;
+        function finishAnalyze() { if (modalCtx) modalCtx.analyzing = false; if (btn) btn.disabled = false; }
+        setModalStatus('智能分析中（版面识别 + 大模型整理，约需几十秒）…');
+        postJSON('/api/kb/error-analyze', { content: md }).then(function (d) {
+            d = (d && d.data) || d;
+            var tid = d && d.task_id;
+            if (!tid) throw new Error((d && d.error) || '分析任务创建失败');
+            var tries = 0;
+            (function poll() {
+                if (ed && ed.__alive === false) return; // 弹窗已关：停轮询（同 startOcr）
+                // 上限 210×2s=420s：覆盖 Paddle 基准超时 + VL 瞬态重试（评审 Major1）；
+                // 即便超时，服务端同内容在飞去重，重试不会双扣分，旧任务结果仍可取回
+                if (tries++ >= 210) { finishAnalyze(); setModalStatus('智能分析超时，可重试或手动补录', true); return; }
+                setTimeout(function () {
+                    getJSON('/api/kb/error-analyze/' + encodeURIComponent(tid)).then(function (r) {
+                        if (ed && ed.__alive === false) return; // 请求期间弹窗已关：丢弃结果不弹 confirm（评审 Minor6）
+                        if (r && r.status === 'running') { poll(); return; }
+                        finishAnalyze();
+                        if (r && r.status === 'done') { applyAnalyze(r, ed); }
+                        else { setModalStatus('智能分析失败：' + ((r && r.error) || '服务不可用') + '，原内容已保留，可手动补录', true); }
+                    }).catch(function (e) { finishAnalyze(); setModalStatus('分析结果获取失败：' + e.message, true); });
+                }, 2000);
+            })();
+        }).catch(function (e) { finishAnalyze(); setModalStatus('智能分析服务不可用：' + e.message + '，可手动补录', true); });
+    }
+    function applyAnalyze(r, ed) {
+        // 用户裁定：回填前 confirm（防静默覆盖已录内容）；回填后仍可编辑，点保存才入库
+        if (!confirm('智能分析已整理好这道题。\n\n将替换当前【题目内容】，并写回【正确答案】【解析】（写回后仍可编辑，点保存后入库）。确定替换？')) {
+            setModalStatus('已取消回填，原内容保留');
+            return;
+        }
+        try { ed.setValue(r.stem_md || ''); } catch (e) { /* noop */ }
+        var ansEl = document.getElementById('kbm-answer');
+        var expEl = document.getElementById('kbm-explain');
+        if (ansEl && String(r.correct_answer || '').trim()) ansEl.value = r.correct_answer;
+        if (expEl && String(r.explanation || '').trim()) expEl.value = r.explanation;
+        setModalStatus('智能分析已回填，请核对内容后点保存');
+        toast('智能分析完成');
+    }
+
+    // —— 知识点 新增/编辑/删除 ——
+    function pointEditorMount() { return '<div id="kbm-editor" class="w-full"></div>'; }
+    function mountDescEditor(initial, placeholder) {
+        var mount = document.getElementById('kbm-editor');
+        var ed = null;
+        if (window.NoteVditor && NoteVditor.create) {
+            ed = NoteVditor.create(mount, {
+                value: initial || '', placeholder: placeholder,
+                height: 260, // 数字高度 + 内部滚动（吃本次滚动教训：弹窗内勿用 'auto' 撑高）
+                resolveImg: function (src) { return resolveListImgSrc(src); },
+                onNotice: function (m, isErr) { setModalStatus(m, isErr); }
+            });
+        } else {
+            mount.innerHTML = '<textarea id="kbm-fallback" rows="10" class="w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 py-2 text-sm text-cl-text" placeholder="' + esc(placeholder) + '"></textarea>';
+            var ta = document.getElementById('kbm-fallback');
+            ta.value = initial || '';
+            ed = {
+                getValue: function () { return ta.value; },
+                setValue: function (t) { ta.value = t || ''; },
+                insertMD: function (t) { ta.value += t || ''; },
+                isFallback: function () { return true; },
+                destroy: function () { }
+            };
+        }
+        return ed;
+    }
+    function openPointModal(point) {
+        var isEdit = !!point;
+        var body = '<label class="block text-xs text-cl-text-2">知识点名称</label>'
+            + '<input id="kbm-name" type="text" maxlength="50" class="h-9 w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 text-sm text-cl-text focus:outline-none focus:ring-2 focus:ring-cl-primary/30" placeholder="如：矩阵乘法" value="' + esc(isEdit ? (point.point_name || '') : '') + '"' + (isEdit ? ' disabled' : '') + '>'
+            + '<label class="block text-xs text-cl-text-2 mt-2">描述（支持 Markdown）</label>'
+            + pointEditorMount();
+        openModal(isEdit ? '编辑知识点：' + (point.point_name || '') : '新增知识点', body, function () {
+            var nameEl = document.getElementById('kbm-name');
+            var desc = modalCtx.ed ? String(modalCtx.ed.getValue() || '').trim() : '';
+            if (!isEdit) {
+                var name = String(nameEl.value || '').trim();
+                if (!name) { throw new Error('知识点名称不能为空'); }
+                return postJSON('/api/knowledge/point-new', {
+                    point: { name: name, description: desc }, subject: state.subject
+                }).then(function (d) {
+                    d = (d && d.data) || d;
+                    if (d && d.success === false) throw new Error(d.error || '新增失败');
+                    toast('知识点已新增');
+                    init();
+                });
+            }
+            return postJSON('/api/knowledge/points/' + encodeURIComponent(point.id) + '/description',
+                { description: desc }, 'PUT').then(function (d) {
+                    d = (d && d.data) || d;
+                    if (d && d.success === false) throw new Error(d.error || '保存失败');
+                    toast('知识点描述已保存');
+                    loadPoints();
+                });
+        });
+        modalCtx = { type: 'point', ed: mountDescEditor(isEdit ? (point.core_description || '') : '', '知识点描述，支持 Markdown') };
+    }
+    function delPoint(pid) {
+        var p = state.points.filter(function (x) { return String(x.id) === String(pid); })[0];
+        if (!confirm('删除知识点' + (p ? '「' + (p.point_name || '') + '」' : '') + '？其关联错题将自动解绑保留，练习流水不受影响。')) return;
+        postJSON('/api/knowledge/points/' + encodeURIComponent(pid), {}, 'DELETE').then(function () {
+            toast('知识点已删除，关联错题已解绑保留');
+            init();
+        }).catch(function (e) { toast('删除失败：' + e.message, true); });
+    }
+
+    // —— 错题 新增/编辑（MD 编辑器 + 贴图 OCR）——
+    function openErrorModal(err) {
+        var isEdit = !!err;
+        var kpOpts = '<option value="">独立（不归属知识点）</option>' + state.points.map(function (p) {
+            return '<option value="' + esc(String(p.id)) + '">' + esc(p.point_name || p.name) + '</option>';
+        }).join('');
+        var body = '<label class="block text-xs text-cl-text-2">题目内容（支持 Markdown；截图可点下方按钮上传或编辑器内 Ctrl+V 粘贴，自动识别文字）</label>'
+            + pointEditorMount()
+            + '<div class="flex items-center gap-2">'
+            + '<button type="button" id="kbm-upload" class="cl-btn-ghost !h-8 text-xs">拍照 / 上传图片</button>'
+            + '<button type="button" id="kbm-photo" class="cl-btn-ghost !h-8 text-xs">📱 手机拍照</button>'
+            + '<button type="button" id="kbm-analyze" class="cl-btn-ghost !h-8 text-xs" title="把图片+文字交给大模型，自动整理成规范题目、答案与解析">🧠 智能分析</button>'
+            + '<input type="file" id="kbm-file" accept="image/*" class="hidden">'
+            + '<span class="text-[11px] text-cl-text-3">上传后自动调用 OCR 识别题目文字</span></div>'
+            + '<div id="kbm-photo-zone" class="hidden mt-2 rounded-clbtn border border-cl-border bg-cl-bg p-3">'
+            + '<div class="flex gap-3 items-start">'
+            + '<div id="kbm-qr" class="shrink-0"></div>'
+            + '<div class="min-w-0 flex-1 text-xs text-cl-text-2 leading-relaxed">'
+            + '<div>用手机相机扫码 → 拍照或选相册图 → 传回后自动插入并识别</div>'
+            + '<select id="kbm-qr-addr" class="mt-1 h-7 w-full rounded border border-cl-border bg-cl-bg px-1 text-xs text-cl-text"></select>'
+            + '<div id="kbm-qr-url" class="mt-1 break-all select-all text-[11px] text-cl-text-3"></div>'
+            + '<div id="kbm-qr-tip" class="text-[11px] text-cl-text-3">扫不到？手机需与电脑同 Wi-Fi，或已配置公网地址</div>'
+            + '</div></div></div>'
+            + '<label class="block text-xs text-cl-text-2 mt-2">正确答案（可选）</label>'
+            + '<textarea id="kbm-answer" rows="2" class="w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 py-2 text-sm text-cl-text" placeholder="如：B 或 2x+1"></textarea>'
+            + '<label class="block text-xs text-cl-text-2 mt-2">解析（可选）</label>'
+            + '<textarea id="kbm-explain" rows="2" class="w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 py-2 text-sm text-cl-text"></textarea>'
+            + (isEdit ? '' : ('<label class="block text-xs text-cl-text-2 mt-2">知识点归属（可选）</label>'
+                + '<select id="kbm-kp" class="h-9 w-full rounded-clbtn border border-cl-border bg-cl-bg px-2 text-sm text-cl-text">' + kpOpts + '</select>'));
+        openModal(isEdit ? '编辑错题' : '新增错题', body, function () {
+            var q = String(modalCtx.ed.getValue() || '').trim();
+            if (!q) throw new Error('题目内容不能为空');
+            var ans = String(document.getElementById('kbm-answer').value || '').trim();
+            var exp = String(document.getElementById('kbm-explain').value || '').trim();
+            if (isEdit) {
+                return postJSON('/api/kb/errors/' + encodeURIComponent(err.id), {
+                    content: q, correct_answer: ans, explanation: exp
+                }, 'PUT').then(function (d) {
+                    d = (d && d.data) || d;
+                    if (d && d.success === false) throw new Error(d.error || '保存失败');
+                    toast('错题已更新');
+                    loadErrors();
+                });
+            }
+            var kpSel = document.getElementById('kbm-kp');
+            var payload = {
+                subject_name: state.subject, question: q,
+                correct_answer: ans || undefined, explanation: exp || undefined
+            };
+            if (kpSel && kpSel.value) payload.knowledge_point_id = Number(kpSel.value);
+            return postJSON('/api/kb/errors', payload).then(function (d) {
+                d = (d && d.data) || d;
+                if (d && d.success === false) throw new Error(d.error || '新增失败');
+                toast('错题已录入');
+                init();
+            });
+        });
+        var initMd = isEdit ? (err.question_content || '') : '';
+        var initAns = isEdit ? (err.correct_answer || '') : '';
+        var initExp = isEdit ? (err.explanation || '') : '';
+        modalCtx = { type: 'error', ed: null };
+        modalCtx.ed = createErrorEditor(initMd);
+        document.getElementById('kbm-answer').value = initAns;
+        document.getElementById('kbm-explain').value = initExp;
+        if (isEdit && err.knowledge_point_id != null) { /* 编辑不改归属：行上「解绑」按钮负责 */ }
+        // 上传按钮 → 同一条 上传+OCR 管线（与编辑器 Ctrl+V 贴图一致）
+        document.getElementById('kbm-upload').addEventListener('click', function () {
+            document.getElementById('kbm-file').click();
+        });
+        document.getElementById('kbm-file').addEventListener('change', function (ev) {
+            var f = ev.target.files && ev.target.files[0];
+            ev.target.value = '';
+            if (!f) return;
+            var localEd = modalCtx && modalCtx.ed; // 闭包捕获：上传期间关窗后 modalCtx 已置 null，裸取会抛 TypeError（CodeReview Minor-7）
+            if (!localEd) return;
+            uploadImage(f, function (e2, rel) {
+                if (e2 || !rel) { toast('图片上传失败：' + ((e2 && e2.message) || '保存失败'), true); return; }
+                try { localEd.insertMD('![图片](' + rel + ')'); } catch (e) { /* noop */ }
+                startOcr(rel, localEd);
+            });
+        });
+        // 手机拍照：二维码 + 轮询新图，同一 insertMD+OCR 管线
+        document.getElementById('kbm-photo').addEventListener('click', function () {
+            startPhotoDrop(modalCtx && modalCtx.ed);
+        });
+        // 智能分析：当前编辑器内容（含图）整体交后端管线，done 后 confirm 回填
+        document.getElementById('kbm-analyze').addEventListener('click', function () {
+            startAnalyze(modalCtx && modalCtx.ed);
+        });
+    }
+
+    // —— 手机拍照传图（photo-session：建会话→二维码→轮询→插图文→OCR）——
+    function startPhotoDrop(ed) {
+        if (!ed) return;
+        if (modalCtx && modalCtx.photo) { setModalStatus('手机传图已在进行中'); return; }
+        postJSON('/api/kb/photo-session', { subject: state.subject }).then(function (d) {
+            d = (d && d.data) || d;
+            if (!d || !d.token) throw new Error((d && d.error) || '会话创建失败');
+            var urls = [];
+            (d.lan_ips || []).forEach(function (ip) { urls.push({ label: '同 Wi-Fi：' + ip, url: 'http://' + ip + ':' + d.port + d.paths.page }); });
+            if (d.public_base) urls.push({ label: '外网（穿透/域名）', url: d.public_base + d.paths.page });
+            if (!urls.length) throw new Error('没有可用地址，请检查本机网络');
+            var zone = document.getElementById('kbm-photo-zone');
+            var qrEl = document.getElementById('kbm-qr');
+            var sel = document.getElementById('kbm-qr-addr');
+            var urlEl = document.getElementById('kbm-qr-url');
+            if (!zone) return;
+            zone.classList.remove('hidden');
+            sel.innerHTML = urls.map(function (o, i) { return '<option value="' + i + '">' + esc(o.label) + '</option>'; }).join('');
+            function draw(i) {
+                var u = urls[i] && urls[i].url || '';
+                urlEl.textContent = u;
+                qrEl.innerHTML = '';
+                if (window.QRCode) { try { new QRCode(qrEl, { text: u, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { /* noop */ } }
+                else { urlEl.textContent = '二维码组件未加载，请手机浏览器手输：' + u; }
+            }
+            sel.onchange = function () { draw(Number(sel.value) || 0); };
+            draw(0);
+            modalCtx.photo = { token: d.token, alive: true, since: 0, tries: 0, ed: ed };
+            setModalStatus('等待手机扫码传图…');
+            pollPhotos();
+        }).catch(function (e) {
+            toast('手机传图开启失败：' + e.message, true);
+        });
+    }
+    function pollPhotos() {
+        var ph = modalCtx && modalCtx.photo;
+        if (!ph || !ph.alive) return;
+        // 上限 900×2s=30min，与服务端 SESSION_TTL_S 对齐；新图逐张走既有 插入+OCR 管线
+        if (++ph.tries > 900) { ph.alive = false; setModalStatus('手机传图已超时失效，可重新点「手机拍照」'); return; }
+        setTimeout(function () {
+            if (!modalCtx || modalCtx.photo !== ph || !ph.alive) return;
+            getJSON('/api/kb/photo-session/' + encodeURIComponent(ph.token) + '?since=' + ph.since).then(function (r) {
+                if (!modalCtx || modalCtx.photo !== ph || !ph.alive) return; // 在途关窗：与 catch 对称，不再往已销毁编辑器插图/发 OCR（CodeReview M-3）
+                r = (r && r.data) || r;
+                var imgs = (r && r.images) || [];
+                imgs.forEach(function (rel) {
+                    try { ph.ed.insertMD('![手机拍照](' + rel + ')'); } catch (e) { /* noop */ }
+                    startOcr(rel, ph.ed);
+                });
+                ph.since = Number(r && r.total) || ph.since;
+                if (imgs.length) toast('已收到手机传图 ×' + imgs.length);
+                pollPhotos();
+            }).catch(function () {
+                if (!modalCtx || modalCtx.photo !== ph) return;
+                ph.alive = false;
+                setModalStatus('手机传图会话已失效（二维码过期或已关闭），可重新点「手机拍照」');
+            });
+        }, 2000);
+    }
+    function createErrorEditor(initial) {
+        var mount = document.getElementById('kbm-editor');
+        if (!window.NoteVditor || !NoteVditor.create) {
+            mount.innerHTML = '<textarea id="kbm-fallback" rows="10" class="w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 py-2 text-sm text-cl-text" placeholder="题目内容（编辑器组件未加载，纯文本模式，暂不支持贴图）"></textarea>';
+            var ta = document.getElementById('kbm-fallback');
+            ta.value = initial || '';
+            return {
+                getValue: function () { return ta.value; },
+                setValue: function (t) { ta.value = t || ''; },
+                insertMD: function (t) { ta.value += (ta.value && !/\n$/.test(ta.value) ? '\n\n' : '') + t; },
+                isFallback: function () { return true; },
+                destroy: function () { }
+            };
+        }
+        var ed = NoteVditor.create(mount, {
+            value: initial || '',
+            placeholder: '题目内容，支持 Markdown；截图可直接 Ctrl+V 粘贴或拖入',
+            height: 300, // 数字高度 + 内部滚动（弹窗内勿用 'auto'）
+            resolveImg: function (src) { return resolveListImgSrc(src); },
+            onUploadFile: function (file, cb) {
+                // 编辑器内贴图/拖图：保存进 vault/截图/ 后自动走同一条 OCR 管线
+                uploadImage(file, function (e2, rel) {
+                    cb(e2 || null, rel);
+                    if (!e2 && rel) startOcr(rel, ed);
+                });
+            },
+            onNotice: function (m, isErr) { setModalStatus(m, isErr); }
+        });
+        return ed;
+    }
+
+    // —— 页签与数据装载 ——
+    function syncTabUi() {
+        var on = !!state.subject;
+        tabsBox.classList.toggle('hidden', !on);
+        tabsBox.classList.toggle('flex', on);
+        addBtn.classList.toggle('hidden', !on);
+        var pts = state.tab === 'points';
+        tabPtsBtn.className = 'h-7 px-3 rounded-[7px] text-xs font-medium ' + (pts ? 'bg-cl-surface text-cl-primary shadow-sm' : 'text-cl-text-2');
+        tabErrBtn.className = 'h-7 px-3 rounded-[7px] text-xs font-medium ' + (!pts ? 'bg-cl-surface text-cl-primary shadow-sm' : 'text-cl-text-2');
+        addBtn.textContent = pts ? '+ 新增知识点' : '+ 新增错题';
+    }
+    function loadPoints() {
         var my = ++renderToken;
+        listBox.innerHTML = '<p class="text-sm text-cl-text-3">加载中…</p>';
+        getJSON('/api/knowledge/points?subject=' + encodeURIComponent(state.subject)).then(function (pts) {
+            if (my !== renderToken) return;
+            state.points = (pts || []).map(function (p) { p.subject = state.subject; return p; });
+            renderPoints(state.points.slice(0, 200), state.subject + ' 的知识点（' + state.points.length + '）', true);
+        }).catch(function (e) {
+            if (my !== renderToken) return;
+            listBox.innerHTML = '<p class="text-sm text-cl-danger">加载失败：' + esc(e.message) + '</p>';
+        });
+    }
+    state.errors = [];
+    function loadErrors() {
+        var my = ++renderToken;
+        listBox.innerHTML = '<p class="text-sm text-cl-text-3">加载中…</p>';
+        getJSON('/api/kb/errors?subject=' + encodeURIComponent(state.subject)).then(function (rows) {
+            if (my !== renderToken) return;
+            state.errors = rows || [];
+            listTitle.textContent = state.subject + ' 的错题（' + state.errors.length + '）';
+            renderErrors(state.errors);
+        }).catch(function (e) {
+            if (my !== renderToken) return;
+            listBox.innerHTML = '<p class="text-sm text-cl-danger">加载失败：' + esc(e.message) + '</p>';
+        });
+    }
+    function renderTab() {
+        syncTabUi();
+        if (!state.subject) return; // 全部科目只读视图由 renderPoints 承担
+        if (state.tab === 'points') loadPoints(); else loadErrors();
+    }
+    tabPtsBtn.addEventListener('click', function () { state.tab = 'points'; renderTab(); });
+    tabErrBtn.addEventListener('click', function () { state.tab = 'errors'; renderTab(); });
+    addBtn.addEventListener('click', function () {
+        if (state.tab === 'points') openPointModal(null); else openErrorModal(null);
+    });
+
+    window.kbShowSubject = function (subject) {
+        state.subject = subject;
         grid.querySelectorAll('[data-subj]').forEach(function (c) {
             var on = c.getAttribute('data-subj') === subject;
             c.classList.toggle('ring-1', on);
             c.classList.toggle('ring-cl-primary/40', on);
         });
-        listBox.innerHTML = '<p class="text-sm text-cl-text-3">加载中…</p>';
-        getJSON('/api/knowledge/points?subject=' + encodeURIComponent(subject)).then(function (pts) {
-            if (my !== renderToken) return; // 旧响应丢弃
-            var rows = (pts || []).map(function (p) { p.subject = subject; return p; });
-            renderPoints(rows.slice(0, 50), subject + ' 的知识点（' + rows.length + '）');
-        }).catch(function (e) {
-            if (my !== renderToken) return;
-            listBox.innerHTML = '<p class="text-sm text-cl-danger">加载失败：' + esc(e.message) + '</p>';
-        });
+        renderTab();
     };
     window.kbShowRecent = function () {
         renderToken++; // 用户主动回全部视图：作废在途的学科请求
+        state.subject = null;
+        syncTabUi();
+        grid.querySelectorAll('[data-subj]').forEach(function (c) {
+            c.classList.remove('ring-1'); c.classList.remove('ring-cl-primary/40');
+        });
         var recent = allPointsCache.slice().sort(function (a, b) {
             return String(b.created_time || '').localeCompare(String(a.created_time || ''));
         }).slice(0, 20);
-        renderPoints(recent, '最近更新的知识点（全部学科）');
+        renderPoints(recent, '最近更新的知识点（全部学科）', false);
     };
     window.kbAddSubject = function (ev) {
         if (ev) ev.preventDefault();
@@ -156,17 +815,13 @@
         if (!name || (btn && btn.disabled)) return false;
         if (btn) btn.disabled = true; // 防连点并发 POST（N-1）
         function done() { if (btn) btn.disabled = false; }
-        fetch('/api/subjects', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + tk(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subject_name: name })
-        }).then(function (r) { return r.json(); }).then(function (j) {
+        postJSON('/api/subjects', { subject_name: name }).then(function () {
             done();
-            if (j && j.success) { input.value = ''; init(); }
-            else { input.setCustomValidity((j && j.error) || '创建失败'); input.reportValidity(); input.setCustomValidity(''); }
+            input.value = '';
+            init();
         }).catch(function (e) {
             done();
-            input.setCustomValidity('网络异常：' + (e && e.message || e)); input.reportValidity(); input.setCustomValidity('');
+            toast('创建失败：' + e.message, true);
         });
         return false;
     };
@@ -178,7 +833,7 @@
             statSubjectsEl.textContent = subs.length;
             if (!subs.length) {
                 grid.innerHTML = '<p class="col-span-full text-sm text-cl-text-3">还没有学科，用右上角输入框创建第一个吧</p>';
-                renderPoints([], '最近更新的知识点');
+                renderPoints([], '最近更新的知识点', false);
                 return null; // N-4：空学科不再走尾部 kbShowRecent，避免标题闪烁
             }
             grid.innerHTML = subs.map(function (s) {
@@ -217,7 +872,7 @@
                 statMasteryEl.textContent = '—';
                 statMasterySubEl.textContent = allPointsCache.length ? '全部知识点尚未评估，做几道练习后更新' : '平均掌握度';
             }
-            window.kbShowRecent();
+            if (state.subject) { renderTab(); } else { window.kbShowRecent(); }
         }).catch(function (e) {
             if (my !== renderToken) return;
             grid.innerHTML = '<p class="col-span-full text-sm text-cl-danger">加载失败：' + esc(e.message) + '</p>';
@@ -227,3 +882,20 @@
     else { setTimeout(init, 50); }
 })();
 </script>
+
+<style>
+/* 错题题干 MD 渲染紧凑化（列表内标题/段落/图片收进小字号区间，图片限宽防撑爆行） */
+#kb-point-list .kb-error-md > :first-child { margin-top: 0; }
+#kb-point-list .kb-error-md > :last-child { margin-bottom: 0; }
+#kb-point-list .kb-error-md p { margin: 0.35em 0; }
+#kb-point-list .kb-error-md h1, #kb-point-list .kb-error-md h2, #kb-point-list .kb-error-md h3,
+#kb-point-list .kb-error-md h4, #kb-point-list .kb-error-md h5, #kb-point-list .kb-error-md h6 {
+    font-size: 14px; font-weight: 600; margin: 0.5em 0 0.3em; color: inherit;
+}
+#kb-point-list .kb-error-md img { max-width: 320px; max-height: 240px; border-radius: 8px; border: 1px solid var(--cl-border, #e5e5e5); }
+#kb-point-list .kb-error-md ul, #kb-point-list .kb-error-md ol { padding-left: 1.4em; margin: 0.35em 0; }
+#kb-point-list .kb-error-md table { border-collapse: collapse; font-size: 12px; }
+#kb-point-list .kb-error-md td, #kb-point-list .kb-error-md th { border: 1px solid var(--cl-border, #e5e5e5); padding: 2px 8px; }
+#kb-point-list .kb-error-md pre { background: rgba(0,0,0,0.05); border-radius: 8px; padding: 8px; overflow-x: auto; }
+#kb-point-list .kb-error-md code { font-size: 12px; }
+</style>

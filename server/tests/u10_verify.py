@@ -192,9 +192,12 @@ with sync_playwright() as p:
     lines.append("ASSESS_RESULT -> " + str(done))
     head = pg.evaluate("""() => {
         const ms = document.querySelector('[data-role="mastery-slot"]');
+        const pt = document.querySelector('[data-role="assess-panel"]').textContent || '';
         return { slot: ms ? (ms.textContent || '').trim() : 'NO-EL',
                  args: window.__submitArgs || null,
-                 explain: (document.querySelector('[data-role="assess-panel"]').textContent || '').includes('解析二') };
+                 explain: pt.includes('解析二'),
+                 // 2026-10-08 用户要求：评估判分结果页必须展示原题选项（绿色高亮正确答案、红色标注误选）
+                 optionsShown: pt.includes('A. 选一') && pt.includes('B. 乙') && pt.includes('（你选的）') };
     }""")
     lines.append("ASSESS_HEAD_REFRESH -> " + J(head))
 

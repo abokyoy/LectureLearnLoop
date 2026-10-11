@@ -68,3 +68,39 @@
     @apply flex flex-col items-center justify-center gap-3 py-16 text-cl-text-2 text-sm;
   }
 }
+
+/* ===== 笔记浏览视图（知识点落地页 P4 三栏视图）===== */
+/* 知识点定位高亮：全部命中浅黄、当前处深黄（与「学」页 knowledge-highlight 同视觉） */
+.nb-kp-hl { background-color: #fff3cd; border-bottom: 1px solid #ffeaa7; }
+.nb-kp-hl-active { background-color: #ffd54f; border-bottom-color: #f4b942; }
+/* 笔记正文内图片限宽自适应（原「学」页内联 max-width:100% 的类化替代） */
+[data-role="nb-md"] img { max-width: 100%; height: auto; }
+
+/* ===== 知识点描述 MD 展示（P3 Vditor 配套，验收 2026-10-08）===== */
+.desc-md { line-height: 1.7; word-break: break-word; }
+.desc-md h1 { font-size: 1.15rem; font-weight: 700; margin: 0.5em 0 0.3em; }
+.desc-md h2 { font-size: 1.05rem; font-weight: 700; margin: 0.5em 0 0.3em; }
+.desc-md h3 { font-size: 0.98rem; font-weight: 600; margin: 0.5em 0 0.25em; }
+.desc-md p { margin: 0.35em 0; }
+.desc-md ul { list-style: disc; padding-left: 1.4em; margin: 0.35em 0; }
+.desc-md ol { list-style: decimal; padding-left: 1.4em; margin: 0.35em 0; }
+.desc-md blockquote { border-left: 3px solid var(--cl-border); padding-left: 0.8em; color: var(--cl-text-2); margin: 0.4em 0; }
+.desc-md code { background: var(--cl-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; }
+.desc-md pre { background: var(--cl-bg); border-radius: 8px; padding: 0.6em 0.8em; overflow-x: auto; margin: 0.4em 0; }
+.desc-md pre code { background: none; padding: 0; }
+.desc-md hr { border: none; border-top: 1px solid var(--cl-border); margin: 0.7em 0; }
+.desc-md table { border-collapse: collapse; font-size: 0.92em; margin: 0.4em 0; }
+.desc-md th, .desc-md td { border: 1px solid var(--cl-border); padding: 3px 8px; }
+.desc-md img { max-width: 100%; height: auto; }
+.desc-md > :first-child { margin-top: 0; }
+/* 编辑区内图片限宽，大屏截图不撑爆窗口 */
+[data-role="desc-editor"] img { max-width: 100%; height: auto; }
+
+/* ===== Electron 无边框壳层（窗口头一体化）===== */
+/* 非分层自定义样式：不参与 Tailwind purge，浏览器端因无 ll-electron* 根类而完全不生效 */
+.ll-electron .ll-titlebar-drag { -webkit-app-region: drag; }
+.ll-electron .ll-titlebar-nodrag { -webkit-app-region: no-drag; }
+/* Windows 原生 overlay 窗口按钮叠在顶栏右侧（约 3×46px），顶栏内容留出避让宽度 */
+.ll-electron-win .ll-titlebar-pad { padding-right: 170px; }
+/* macOS 红绿灯位于侧边栏顶部，下移侧边栏内容避让 */
+.ll-electron-mac #sidebar { padding-top: 56px; }

@@ -58,6 +58,8 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
     <!-- D3.js for mindmap visualization -->
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <!-- DAG 分层布局引擎（技能树视图用）：本地 vendor 副本，不依赖外网 CDN -->
+    <script src="/static/vendor/dagre.min.js"></script>
     <!-- Markdown parser for note content -->
     <script src="https://cdn.jsdelivr.net/npm/marked@9.1.2/marked.min.js"></script>
     <!-- Flask/Electron 版：独立完整文档需自带桥兼容层（挂载 window.bridge / window.pybridge） -->
@@ -196,6 +198,17 @@
             <!-- 脑图工具栏 -->
             <div class="flex items-center justify-between mb-4 pb-2 border-b">
                 <div class="flex items-center space-x-4">
+                    <!-- 学习路径视图模式 Tab（仅梳理知识点视图显示，线性/技能树两图共用同一批节点） -->
+                    <div id="lpViewTabs" class="hidden items-center bg-gray-100 rounded-lg p-1">
+                        <button id="lpTabLinear" onclick="switchLpViewMode('linear')"
+                                class="px-3 py-1 rounded-md text-sm font-medium">线性路径</button>
+                        <button id="lpTabTree" onclick="switchLpViewMode('tree')"
+                                class="px-3 py-1 rounded-md text-sm font-medium">技能树</button>
+                        <div class="w-px h-5 bg-gray-300 mx-1"></div>
+                        <!-- 显示模式切换：全图适配看结构 / 实际大小 1:1 看字（配合拖拽平移） -->
+                        <button id="lpSizeToggle" onclick="toggleLpActualSize()"
+                                class="px-3 py-1 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700">实际大小</button>
+                    </div>
                     <input type="text" id="searchInput" placeholder="搜索知识点..." 
                            class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                            onkeypress="if(event.key==='Enter') searchNodes()">
@@ -240,6 +253,16 @@
                 <svg id="mindmapSvg" width="100%" height="100%" viewBox="0 0 3200 700"></svg>
             </div>
             
+            <!-- 学习路径图例（HTML 悬浮卡片）：2026-10-09 修复——原 SVG 内联图例被 viewBox(3200宽) 缩到约 0.37 倍，
+                 字号 12px 实际只剩 ~4px 且不受放大缩小控制，改用 HTML 卡片后字号固定清晰可读 -->
+            <div id="learningLegendCard" class="hidden absolute bottom-6 right-6 bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-3 max-w-xs z-10">
+                <div class="text-sm font-bold text-gray-800 mb-2">节点类型说明</div>
+                <div id="learningLegendItems" class="space-y-1.5"></div>
+            </div>
+            
+            <!-- 学习路径节点悬停提示（fixed 定位跟随鼠标，不依赖图内文字就能看清全名/状态/前序） -->
+            <div id="lpTooltip" class="hidden fixed z-50 max-w-xs bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none leading-relaxed"></div>
+            
             <!-- 加载状态 -->
             <div id="loadingState" class="absolute inset-0 bg-white bg-opacity-90 flex items-center justify-center hidden">
                 <div class="text-center">
@@ -251,126 +274,7 @@
     </div>
 </div>
 
-<!-- 知识点详情层 -->
-<div id="knowledgePointDetailLayer" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
-    <div class="absolute inset-y-0 right-0 w-full bg-gray-100 overflow-y-auto">
-        <div class="p-8">
-            <!-- 关闭按钮 -->
-            <div class="flex justify-between items-center mb-6">
-                <div class="flex items-center text-sm text-gray-600">
-                    <a class="hover:text-blue-600" href="#" onclick="closeKnowledgePointDetail()">知识库</a>
-                    <span class="mx-2 material-icons-outlined text-base">chevron_right</span>
-                    <a class="hover:text-blue-600" href="#" onclick="closeKnowledgePointDetail()">脑图</a>
-                    <span class="mx-2 material-icons-outlined text-base">chevron_right</span>
-                    <span id="detailBreadcrumb" class="text-gray-800 font-semibold">知识点详情</span>
-                </div>
-                <button onclick="closeKnowledgePointDetail()" 
-                        class="p-2 rounded-full hover:bg-gray-200 text-gray-600">
-                    <span class="material-icons-outlined">close</span>
-                </button>
-            </div>
-
-            <!-- 知识点详情内容 -->
-            <div class="bg-white p-8 rounded-xl shadow-sm mb-6">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h2 id="detailTitle" class="text-3xl font-bold text-gray-800 mb-2">知识点名称</h2>
-                        <div class="flex items-center space-x-6 text-sm text-gray-600">
-                            <span>掌握情况: <span id="detailMastery" class="text-green-600 font-semibold">未知</span></span>
-                            <span>建立时间: <span id="detailCreatedTime">未知</span></span>
-                        </div>
-                    </div>
-                    <div class="flex space-x-2">
-                        <button id="masteryAssessmentBtn" onclick="startMasteryAssessment()" class="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors">
-                            熟练度评估
-                        </button>
-                        <button id="noteBasedPracticeBtn" onclick="startNoteBasedPractice()" class="px-6 py-2.5 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
-                            基于笔记练习
-                        </button>
-                        <button id="analogyPracticeBtn" onclick="startAnalogyPractice()" class="px-6 py-2.5 bg-orange-400 text-white rounded-lg font-semibold hover:bg-orange-500 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed">
-                            举一反三练习
-                        </button>
-                    </div>
-                </div>
-                
-                <!-- 统计信息 -->
-                <div class="grid grid-cols-3 gap-6 my-6 border-y py-6">
-                    <div class="flex items-center">
-                        <div class="p-3 rounded-lg bg-red-100 mr-4">
-                            <span class="material-icons-outlined text-red-600">close</span>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-600">错题数量</p>
-                            <p id="detailErrorCount" class="text-xl font-bold text-gray-800">0 <span class="text-base font-normal">道</span></p>
-                        </div>
-                    </div>
-                    <div class="flex items-center">
-                        <div class="p-3 rounded-lg bg-blue-100 mr-4">
-                            <span class="material-icons-outlined text-blue-500">star_border</span>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-600">收藏题目数</p>
-                            <p id="detailFavoriteCount" class="text-xl font-bold text-gray-800">0 <span class="text-base font-normal">道</span></p>
-                        </div>
-                    </div>
-                    <div class="flex items-center">
-                        <div class="p-3 rounded-lg bg-green-100 mr-4">
-                            <span class="material-icons-outlined text-green-600">bookmark_border</span>
-                        </div>
-                        <div>
-                            <p class="text-sm text-gray-600">关联笔记本</p>
-                            <p id="detailNotesCount" class="text-xl font-bold text-gray-800">0 <span class="text-base font-normal">篇</span></p>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- 知识点描述 -->
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-800 mb-2">知识点描述</h3>
-                    <p id="detailDescription" class="text-gray-600 leading-relaxed">
-                        正在加载知识点详情...
-                    </p>
-                </div>
-            </div>
-
-            <!-- 关联笔记本 -->
-            <div class="bg-white p-8 rounded-xl shadow-sm mb-6">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">关联笔记本</h3>
-                <div id="detailNotes" class="grid grid-cols-2 gap-4">
-                    <div class="text-gray-600 text-center py-8">暂无关联笔记</div>
-                </div>
-            </div>
-
-            <!-- 关联题目 -->
-            <div class="bg-white p-8 rounded-xl shadow-sm">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-lg font-semibold text-gray-800">关联题目</h3>
-                    <div class="flex items-center space-x-4">
-                        <div class="relative">
-                            <input class="w-48 pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500" 
-                                   placeholder="搜索题目..." type="text"/>
-                            <span class="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-600">search</span>
-                        </div>
-                        <select class="py-2 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                            <option>所有类型</option>
-                            <option>选择题</option>
-                            <option>填空题</option>
-                            <option>简答题</option>
-                        </select>
-                        <select class="py-2 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500">
-                            <option>默认排序</option>
-                            <option>按熟练度</option>
-                            <option>按时间</option>
-                        </select>
-                    </div>
-                </div>
-                <div id="detailQuestions" class="space-y-4">
-                    <div class="text-gray-600 text-center py-8">正在加载关联题目...</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- 知识点详情已统一至 SPA knowledge_point 落地页（P1 落地页统一 2026-10-09，原本页抽屉已下线） -->
 
 <!-- 全屏模式样式 -->
 <style>
@@ -415,9 +319,6 @@ let pybridge = null;
 
 // 等待全局WebChannel就绪
 let isPageInitialized = false;
-
-// 全局练习数据缓存（用于保存练习的完整数据，包括selected_text）
-let currentPracticeDataCache = {};
 
 function initializePage() {
     if (window.bridge) {
@@ -1051,6 +952,20 @@ function selectSubject(subjectName) {
     currentSubjectName = subjectName;
     window.currentSubjectName = subjectName; // 确保全局可访问
     
+    // 切换学科时重置学习路径数据与视图模式，避免沿用上学科的路径/升级标记
+    currentLearningPathData = null;
+    currentLpViewMode = 'linear';
+    _lpTreeUpgradeTried = false;
+    // 评审修复：同步收起上一学科遗留的 Tab / 图例卡（不点"返回脑图"直接切学科的路径）
+    const lpTabsEl = document.getElementById('lpViewTabs');
+    if (lpTabsEl) { lpTabsEl.classList.add('hidden'); lpTabsEl.classList.remove('flex'); }
+    const legendCardEl = document.getElementById('learningLegendCard');
+    if (legendCardEl) legendCardEl.classList.add('hidden');
+    lpActualSize = false;
+    const sizeBtnEl = document.getElementById('lpSizeToggle');
+    if (sizeBtnEl) sizeBtnEl.textContent = '实际大小';
+    hideLpTooltip();
+    
     // 保存当前查看的学科到localStorage（如果可用）
     try {
         if (typeof(Storage) !== "undefined" && window.localStorage) {
@@ -1630,9 +1545,9 @@ function renderMindmap() {
         if (d.type === 'center' || d.type === 'category') {
             handleNodeFilter(d);
         }
-        // 处理知识点详情（橙色圆圈）
+        // 知识点：统一跳转 SPA 知识点落地页（P1 落地页统一，本页抽屉浮层下线）
         else if (d.type === 'knowledge_point') {
-            showKnowledgePointDetail(d);
+            goKnowledgePointLanding(d.id, d.name);
         }
     });
     
@@ -1704,20 +1619,27 @@ function initSvg() {
     // 重新选择SVG元素
     svg = d3.select('#mindmapSvg');
     
+    // 评审修复：技能树视图会动态撑大 viewBox，每次重建必须复位默认画布，
+    // 否则切回线性图/脑图时整图被压缩，重新出现"文字看不清"的老问题
+    svg.attr('viewBox', '0 0 3200 700');
+    
     // 清空SVG内容
     svg.selectAll('*').remove();
     
     // 创建新的g元素
     g = svg.append('g');
     
-    // 初始化缩放
+    // 初始化缩放（上限 3→8：配合"实际大小"模式后能真正放大到看清字，每步 1.5x 手感不变）
     zoom = d3.zoom()
-        .scaleExtent([0.1, 3])
+        .scaleExtent([0.2, 8])
         .on('zoom', (event) => {
             g.attr('transform', event.transform);
         });
     
     svg.call(zoom);
+    // 评审修复：d3-zoom 会把上次 transform 存在 DOM 的 __zoom 上，不复位则跨视图切换后
+    // 首次滚轮/拖拽会从旧值派生，导致画面瞬间跳到未知偏移
+    svg.call(zoom.transform, d3.zoomIdentity);
     
     log('✅ SVG初始化完成');
     return true;
@@ -1741,689 +1663,24 @@ function dragended(event, d) {
     d.fy = null;
 }
 
-// 显示知识点详情
-async function showKnowledgePointDetail(node) {
-    log(`🔍 获取知识点详情: ${node.name} (ID: ${node.id})`);
-    
-    // 保存当前查看的知识点到localStorage（如果可用）
+// 知识点节点 → SPA 知识点落地页（P1 落地页统一 2026-10-09）：
+// 不再在本页开抽屉浮层；写 pm_pending_point 旗标后调父窗口 handleMenuClick 跳 knowledge_point 页，
+// 旗标消费端为 pm_pages.js bootKnowledgePoint（10s 过期+幂等，与练/记总览「去练习」同契约）。
+function goKnowledgePointLanding(nodeId, name) {
+    const rawId = String(nodeId || '');
+    const realId = rawId.startsWith('kp_') ? rawId.substring(3) : rawId;
+    if (!realId) { log('❌ 缺少知识点ID，无法跳转落地页'); return; }
     try {
-        if (typeof(Storage) !== "undefined" && window.localStorage) {
-            localStorage.setItem('lastViewedKnowledgePoint', node.id);
-            log(`💾 已保存当前知识点状态: ${node.id}`);
-        }
-    } catch (error) {
-        log(`⚠️ 无法保存知识点状态: ${error.message}`);
-    }
-    
-    // 显示详情层
-    const detailLayer = document.getElementById('knowledgePointDetailLayer');
-    detailLayer.classList.remove('hidden');
-    
-    // 保存节点ID到dataset，供熟练度评估使用
-    detailLayer.dataset.nodeId = node.id;
-    
-    // 更新面包屑
-    document.getElementById('detailBreadcrumb').textContent = node.name;
-    
-    // 更新标题
-    document.getElementById('detailTitle').textContent = node.name;
-    
+        localStorage.setItem('pm_pending_point', JSON.stringify({ id: realId, name: String(name || ''), ts: Date.now() }));
+    } catch (e) { /* 存储不可用时仍尝试导航 */ }
     try {
-        // 支持知识脑图的knowledge_point类型（学习路径节点已转换为此格式）
-        if (window.pybridge && window.pybridge.getKnowledgePointDetail && node.type === 'knowledge_point') {
-            
-            let realId;
-            
-            // 优先使用original_kp_id（来自学习路径的转换节点）
-            if (node.original_kp_id) {
-                realId = node.original_kp_id;
-                log(`🔍 使用original_kp_id: ${realId}`);
-            } else {
-                // 知识脑图中的原生节点，提取真实的知识点ID（去掉kp_前缀）
-                realId = node.id.startsWith('kp_') ? node.id.substring(3) : node.id;
-                log(`🔍 知识脑图原生节点，提取ID: ${realId}`);
-            }
-            
-            const response = await window.pybridge.getKnowledgePointDetail(realId);
-            const result = JSON.parse(response);
-            
-            if (result.success && result.detail) {
-                const detail = result.detail;
-                
-                // 更新详情内容
-                updateKnowledgePointDetail(detail, node);
-                log(`✅ 成功获取知识点详情`);
-            } else {
-                // 显示基本信息（CodeReview 批9c m-3：无掌握度时传 -1 哨兵，降级展示为“未评估”而非误显 0 分）
-                updateKnowledgePointDetail({
-                    name: node.name,
-                    description: `无法获取详细信息: ${result.error || '数据不存在'}`,
-                    mastery_score: (node.mastery_score == null ? -1 : node.mastery_score),
-                    created_time: '未知'
-                }, node);
-                log(`⚠️ 获取详情失败: ${result.error}`);
-            }
-        } else {
-            // 显示基本信息
-            let description = `节点类型：${node.type}\n节点ID：${node.id}`;
-            
-            // 如果是学习路径中的节点，显示更多信息
-            if (node.type === 'existing_kp') {
-                description += `\n原始知识点ID：${node.original_kp_id || '未知'}`;
-                description += `\n熟练度：${node.mastery_score || '未评估'}`;
-                if (node.point_name) {
-                    description += `\n知识点名称：${node.point_name}`;
-                }
-            }
-            
-            description += `\n\n这是一个基本的节点信息显示。`;
-            
-            updateKnowledgePointDetail({
-                name: node.name,
-                description: description,
-                mastery_score: (node.mastery_score == null ? -1 : node.mastery_score),
-                created_time: '未知'
-            }, node);
-            log(`ℹ️ 显示基本节点信息`);
+        if (window.parent && window.parent !== window && typeof window.parent.handleMenuClick === 'function') {
+            window.parent.handleMenuClick('knowledge_point');
+            return;
         }
-    } catch (error) {
-        log(`❌ 获取知识点详情失败: ${error.message}`);
-        updateKnowledgePointDetail({
-            name: node.name,
-            description: `获取详情时出错: ${error.message}`,
-            // u10 CodeReview m-5：catch 分支同步 -1 哨兵口径，禁止未评估降级为 0 分展示
-            mastery_score: (node.mastery_score == null ? -1 : node.mastery_score),
-            created_time: '未知'
-        }, node);
-    }
-}
-
-// 更新知识点详情内容
-function updateKnowledgePointDetail(detail, node) {
-    // 更新掌握情况
-    const masteryScore = detail.mastery_score;
-    const masteryElement = document.getElementById('detailMastery');
-    const masteryBtn = document.getElementById('masteryAssessmentBtn');
-    
-    if (masteryScore === -1 || masteryScore === null || masteryScore === undefined) {
-        masteryElement.textContent = '未评估';
-        masteryElement.className = 'text-gray-600 font-semibold';
-        if (masteryBtn) {
-            masteryBtn.style.display = 'inline-block';
-            masteryBtn.textContent = '熟练度评估';
-        }
-    } else if (masteryScore >= 90) {
-        masteryElement.textContent = `精通 (${masteryScore}分)`;
-        masteryElement.className = 'text-green-600 font-semibold';
-        if (masteryBtn) {
-            masteryBtn.style.display = 'inline-block';
-            masteryBtn.textContent = '重新评估';
-        }
-    } else if (masteryScore >= 70) {
-        masteryElement.textContent = `熟练 (${masteryScore}分)`;
-        masteryElement.className = 'text-blue-600 font-semibold';
-        if (masteryBtn) {
-            masteryBtn.style.display = 'inline-block';
-            masteryBtn.textContent = '重新评估';
-        }
-    } else if (masteryScore >= 50) {
-        masteryElement.textContent = `一般 (${masteryScore}分)`;
-        masteryElement.className = 'text-yellow-600 font-semibold';
-        if (masteryBtn) {
-            masteryBtn.style.display = 'inline-block';
-            masteryBtn.textContent = '重新评估';
-        }
-    } else {
-        masteryElement.textContent = `待提高 (${masteryScore}分)`;
-        masteryElement.className = 'text-red-600 font-semibold';
-        if (masteryBtn) {
-            masteryBtn.style.display = 'inline-block';
-            masteryBtn.textContent = '重新评估';
-        }
-    }
-    
-    // 更新创建时间
-    document.getElementById('detailCreatedTime').textContent = detail.created_time || '未知';
-    
-    // 更新描述
-    document.getElementById('detailDescription').textContent = detail.description || detail.core_description || '暂无详细描述';
-    
-    // 更新统计信息（使用真实数据）
-    document.getElementById('detailErrorCount').innerHTML = `${detail.error_count || 0} <span class="text-base font-normal">道</span>`;
-    document.getElementById('detailFavoriteCount').innerHTML = `${detail.favorite_count || 0} <span class="text-base font-normal">道</span>`;
-    document.getElementById('detailNotesCount').innerHTML = `${detail.notes_count || 0} <span class="text-base font-normal">篇</span>`;
-    
-    // 异步加载关联笔记
-    loadKnowledgePointNotes(node.id);
-    
-    // 异步加载关联题目
-    loadKnowledgePointQuestions(node.id);
-    
-    // 更新练习按钮状态
-    updatePracticeButtonsState(detail, node.id);
-}
-
-// 更新练习按钮状态
-async function updatePracticeButtonsState(detail, nodeId) {
-    const noteBasedBtn = document.getElementById('noteBasedPracticeBtn');
-    const analogyBtn = document.getElementById('analogyPracticeBtn');
-    
-    if (!noteBasedBtn || !analogyBtn) return;
-    
-    try {
-        // 提取真实的知识点ID
-        const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
-        
-        // 检查关联笔记数量
-        const notesCount = detail.notes_count || 0;
-        if (notesCount > 0) {
-            // 有关联笔记，启用按钮
-            noteBasedBtn.disabled = false;
-            noteBasedBtn.classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
-            noteBasedBtn.title = `基于 ${notesCount} 篇关联笔记生成练习`;
-        } else {
-            // 无关联笔记，禁用按钮
-            noteBasedBtn.disabled = true;
-            noteBasedBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
-            noteBasedBtn.title = '该知识点暂无关联笔记';
-        }
-        
-        // 检查错题数量（异步获取）
-        if (window.pybridge && window.pybridge.getKnowledgePointQuestions) {
-            const response = await window.pybridge.getKnowledgePointQuestions(realId);
-            const result = JSON.parse(response);
-            
-            if (result.success && result.questions && result.questions.length > 0) {
-                // 筛选出真正的错题（有错误记录的题目）
-                const errorQuestions = result.questions.filter(q => {
-                    const errorCount = q.practice_count - q.correct_count;
-                    return errorCount > 0;
-                });
-                
-                if (errorQuestions.length > 0) {
-                    // 有错题记录，启用按钮
-                    analogyBtn.disabled = false;
-                    analogyBtn.classList.remove('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
-                    analogyBtn.title = `基于 ${errorQuestions.length} 道错题生成举一反三练习`;
-                } else {
-                    // 无错题记录，禁用按钮
-                    analogyBtn.disabled = true;
-                    analogyBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
-                    analogyBtn.title = '该知识点暂无错题记录';
-                }
-            } else {
-                // 无题目记录，禁用按钮
-                analogyBtn.disabled = true;
-                analogyBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
-                analogyBtn.title = '该知识点暂无题目记录';
-            }
-        }
-        
-    } catch (error) {
-        log(`❌ 更新练习按钮状态失败: ${error.message}`);
-        // 出错时禁用按钮
-        analogyBtn.disabled = true;
-        analogyBtn.classList.add('disabled:bg-gray-400', 'disabled:cursor-not-allowed');
-        analogyBtn.title = '无法获取错题信息';
-    }
-}
-
-// 加载知识点关联笔记
-async function loadKnowledgePointNotes(nodeId) {
-    const notesContainer = document.getElementById('detailNotes');
-    notesContainer.innerHTML = '<div class="text-gray-600 text-center py-8">正在加载关联笔记...</div>';
-    
-    try {
-        // 提取真实的知识点ID
-        const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
-        
-        if (window.pybridge && window.pybridge.getKnowledgePointNotes) {
-            const response = await window.pybridge.getKnowledgePointNotes(realId);
-            const result = JSON.parse(response);
-            
-            if (result.success && result.notes && result.notes.length > 0) {
-                const notesHtml = result.notes.map(note => `
-                    <a class="block p-4 bg-gray-50 rounded-lg hover:shadow-md transition-shadow cursor-pointer" onclick="openNote('${note.id}')">
-                        <div class="flex items-start">
-                            <span class="material-icons-outlined text-green-600 mr-3 mt-1">edit_note</span>
-                            <div class="flex-1">
-                                <p class="font-semibold text-gray-800">${note.title}</p>
-                                <p class="text-sm text-gray-600 mt-1">${note.content}</p>
-                                <div class="flex justify-between items-center mt-2">
-                                    <p class="text-xs text-gray-500">更新时间: ${note.updated_time}</p>
-                                    ${note.extraction_time ? `<p class="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">关联时间: ${note.extraction_time}</p>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    </a>
-                `).join('');
-                
-                notesContainer.innerHTML = notesHtml;
-                log(`✅ 加载了 ${result.notes.length} 篇关联笔记`);
-            } else {
-                notesContainer.innerHTML = '<div class="text-gray-600 text-center py-8">暂无关联笔记</div>';
-                log(`ℹ️ 该知识点暂无关联笔记`);
-            }
-        } else {
-            notesContainer.innerHTML = '<div class="text-gray-600 text-center py-8">无法加载笔记数据</div>';
-        }
-    } catch (error) {
-        log(`❌ 加载关联笔记失败: ${error.message}`);
-        notesContainer.innerHTML = '<div class="text-red-600 text-center py-8">加载笔记失败</div>';
-    }
-}
-
-// 加载知识点关联题目
-async function loadKnowledgePointQuestions(nodeId) {
-    const questionsContainer = document.getElementById('detailQuestions');
-    questionsContainer.innerHTML = '<div class="text-gray-600 text-center py-8">正在加载关联题目...</div>';
-    
-    try {
-        // 提取真实的知识点ID
-        const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
-        
-        if (window.pybridge && window.pybridge.getKnowledgePointQuestions) {
-            const response = await window.pybridge.getKnowledgePointQuestions(realId);
-            const result = JSON.parse(response);
-            
-            if (result.success && result.questions && result.questions.length > 0) {
-                const questionsHtml = result.questions.map((question, index) => {
-                    // 生成星级显示
-                    const stars = '★'.repeat(question.mastery_stars) + '☆'.repeat(5 - question.mastery_stars);
-                    
-                    // 题目类型颜色
-                    const typeColors = {
-                        '选择题': 'bg-blue-100 text-blue-800',
-                        '填空题': 'bg-purple-100 text-purple-800',
-                        '简答题': 'bg-green-100 text-green-800'
-                    };
-                    
-                    // 最后答题结果
-                    const resultText = question.last_result ? '正确' : '错误';
-                    const resultColor = question.last_result ? 'text-green-600' : 'text-red-600';
-                    
-                    // 收藏图标
-                    const favoriteIcon = question.is_favorite ? 'star' : 'star_border';
-                    const favoriteColor = question.is_favorite ? 'text-yellow-500' : 'text-gray-600';
-                    
-                    // 格式化题目内容（安全调用）
-                    const formattedContent = (typeof formatQuestionContent === 'function') 
-                        ? formatQuestionContent(question.content) 
-                        : question.content.replace(/\n/g, '<br>');
-                    
-                    return `
-                        <div class="p-4 border border-gray-200 rounded-lg hover:border-green-500 transition-colors">
-                            <!-- 题目头部 -->
-                            <div class="flex items-start justify-between mb-3">
-                                <div class="flex-1 mr-4">
-                                    <div class="flex items-center mb-2">
-                                        <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-1 rounded-full mr-2">题目 ${index + 1}</span>
-                                        <span class="${typeColors[question.type] || 'bg-gray-100 text-gray-800'} text-xs px-2 py-1 rounded">${question.type}</span>
-                                    </div>
-                                </div>
-                                <div class="flex items-center space-x-1">
-                                    <button class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600" onclick="viewQuestion('${realId}', '${question.content.replace(/'/g, "\\'")}');" title="查看题目">
-                                        <span class="material-icons-outlined text-sm">visibility</span>
-                                    </button>
-                                    <button class="p-1.5 rounded-full hover:bg-gray-100 text-gray-600" onclick="editQuestion('${realId}', '${question.content.replace(/'/g, "\\'")}');" title="编辑题目">
-                                        <span class="material-icons-outlined text-sm">edit</span>
-                                    </button>
-                                    <button class="p-1.5 rounded-full hover:bg-gray-100 ${favoriteColor}" onclick="toggleFavorite('${realId}', '${question.content.replace(/'/g, "\\'")}');" title="${question.is_favorite ? '取消收藏' : '收藏题目'}">
-                                        <span class="material-icons-outlined text-sm">${favoriteIcon}</span>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <!-- 题目内容 -->
-                            <div class="mb-3">
-                                <div class="text-gray-800 leading-relaxed">${formattedContent}</div>
-                            </div>
-                            
-                            <!-- 题目统计信息 -->
-                            <div class="flex flex-wrap items-center gap-4 text-sm text-gray-600 pt-3 border-t border-gray-100">
-                                <div class="flex items-center">
-                                    <span class="material-icons-outlined text-sm mr-1">grade</span>
-                                    <span>熟练度: <span class="text-yellow-500">${stars}</span></span>
-                                </div>
-                                <div class="flex items-center">
-                                    <span class="material-icons-outlined text-sm mr-1">history</span>
-                                    <span>上次: <span class="${resultColor}">${resultText}</span></span>
-                                </div>
-                                <div class="flex items-center">
-                                    <span class="material-icons-outlined text-sm mr-1">repeat</span>
-                                    <span>练习: ${question.practice_count}次</span>
-                                </div>
-                                <div class="flex items-center">
-                                    <span class="material-icons-outlined text-sm mr-1">schedule</span>
-                                    <span>${question.last_practice_time}</span>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-                
-                questionsContainer.innerHTML = questionsHtml;
-                log(`✅ 加载了 ${result.questions.length} 道关联题目`);
-            } else {
-                questionsContainer.innerHTML = '<div class="text-gray-600 text-center py-8">暂无关联题目</div>';
-                log(`ℹ️ 该知识点暂无关联题目`);
-            }
-        } else {
-            questionsContainer.innerHTML = '<div class="text-gray-600 text-center py-8">无法加载题目数据</div>';
-        }
-    } catch (error) {
-        log(`❌ 加载关联题目失败: ${error.message}`);
-        questionsContainer.innerHTML = '<div class="text-red-600 text-center py-8">加载题目失败</div>';
-    }
-}
-
-// 笔记相关操作函数
-async function openNote(noteId) {
-    log(`📝 打开笔记: ${noteId}`);
-    
-    try {
-        if (window.pybridge && window.pybridge.getNoteContent) {
-            const response = await window.pybridge.getNoteContent(noteId);
-            const result = JSON.parse(response);
-            
-            if (result.success && result.note) {
-                showNoteDetailModal(result.note);
-            } else {
-                alert('无法加载笔记内容: ' + (result.error || '未知错误'));
-            }
-        } else {
-            alert('笔记功能暂不可用');
-        }
-    } catch (error) {
-        log(`❌ 打开笔记失败: ${error.message}`);
-        alert('打开笔记失败: ' + error.message);
-    }
-}
-
-// 显示笔记详情模态框
-function showNoteDetailModal(note) {
-    // 创建模态框HTML
-    const modalHtml = `
-        <div id="noteDetailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="closeNoteDetailModal(event)">
-            <div class="bg-white rounded-lg max-w-4xl max-h-[90vh] w-full mx-4 flex flex-col" onclick="event.stopPropagation()">
-                <!-- 模态框头部 -->
-                <div class="flex items-center justify-between p-6 border-b">
-                    <div class="flex items-center">
-                        <span class="material-icons-outlined text-green-600 mr-3">edit_note</span>
-                        <div>
-                            <h3 class="text-xl font-bold text-gray-800">${note.title}</h3>
-                            <p class="text-sm text-gray-600">文件: ${note.file_name || '未知'}</p>
-                        </div>
-                    </div>
-                    <button onclick="closeNoteDetailModal()" class="text-gray-500 hover:text-gray-700">
-                        <span class="material-icons-outlined">close</span>
-                    </button>
-                </div>
-                
-                <!-- 模态框内容 -->
-                <div class="flex-1 overflow-hidden flex">
-                    <!-- 笔记内容区域 -->
-                    <div class="flex-1 p-6 overflow-y-auto">
-                        <div id="noteContentArea" class="prose max-w-none prose-headings:text-gray-800 prose-p:text-gray-700 prose-strong:text-gray-800 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-pre:bg-gray-50 prose-blockquote:border-l-blue-500">
-                            <!-- Markdown内容将在这里渲染 -->
-                        </div>
-                        
-                        <!-- 笔记信息 -->
-                        <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div class="bg-blue-50 p-3 rounded-lg">
-                                <p class="font-semibold text-blue-800">创建时间</p>
-                                <p class="text-blue-600">${note.created_time}</p>
-                            </div>
-                            <div class="bg-green-50 p-3 rounded-lg">
-                                <p class="font-semibold text-green-800">更新时间</p>
-                                <p class="text-green-600">${note.updated_time}</p>
-                            </div>
-                            <div class="bg-purple-50 p-3 rounded-lg">
-                                <p class="font-semibold text-purple-800">内容长度</p>
-                                <p class="text-purple-600">${note.content_length} 字符</p>
-                            </div>
-                            <div class="bg-orange-50 p-3 rounded-lg">
-                                <p class="font-semibold text-orange-800">关联知识点</p>
-                                <p class="text-orange-600">${note.related_knowledge_points.length} 个</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- 关联知识点侧边栏 -->
-                    <div class="w-80 border-l bg-gray-50 p-6 overflow-y-auto">
-                        <h4 class="font-bold text-gray-800 mb-4 flex items-center">
-                            <span class="material-icons-outlined mr-2">psychology</span>
-                            关联知识点
-                        </h4>
-                        
-                        ${note.related_knowledge_points.length > 0 ? 
-                            note.related_knowledge_points.map(kp => `
-                                <div class="mb-3 p-3 bg-white rounded-lg border border-gray-200 hover:shadow-sm transition-shadow cursor-pointer" onclick="viewKnowledgePoint('${kp.id}')">
-                                    <p class="font-semibold text-gray-800 text-sm">${kp.name}</p>
-                                    <p class="text-xs text-gray-500 mt-1">关联时间: ${kp.extraction_time}</p>
-                                </div>
-                            `).join('') 
-                            : '<p class="text-gray-500 text-sm">暂无关联知识点</p>'
-                        }
-                    </div>
-                </div>
-                
-                <!-- 模态框底部 -->
-                <div class="flex justify-end p-6 border-t bg-gray-50">
-                    <button onclick="openNoteFile('${note.file_path}')" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mr-3">
-                        <span class="material-icons-outlined mr-2 text-sm">open_in_new</span>
-                        打开文件
-                    </button>
-                    <button onclick="closeNoteDetailModal()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">
-                        关闭
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // 添加到页面
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    
-    // 渲染Markdown内容
-    renderNoteContent(note.content);
-    
-    // 防止背景滚动
-    document.body.style.overflow = 'hidden';
-}
-
-// 渲染笔记Markdown内容
-function renderNoteContent(markdownContent) {
-    const contentArea = document.getElementById('noteContentArea');
-    if (!contentArea) {
-        console.error('找不到笔记内容区域');
-        return;
-    }
-    
-    try {
-        // 配置marked选项
-        marked.setOptions({
-            breaks: true,        // 支持换行
-            gfm: true,          // 支持GitHub风格Markdown
-            sanitize: false,    // 不过度清理HTML（注意安全性）
-            smartLists: true,   // 智能列表
-            smartypants: true   // 智能标点
-        });
-        
-        // 渲染Markdown为HTML
-        const htmlContent = marked.parse(markdownContent);
-        contentArea.innerHTML = htmlContent;
-        
-        // 添加代码高亮（如果需要）
-        highlightCodeBlocks();
-        
-        log(`✅ Markdown内容渲染完成，长度: ${markdownContent.length} 字符`);
-    } catch (error) {
-        console.error('Markdown渲染失败:', error);
-        // 降级到纯文本显示
-        contentArea.innerHTML = `
-            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <p class="text-yellow-800 font-semibold">⚠️ Markdown渲染失败，显示原始内容</p>
-            </div>
-            <pre class="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 p-4 rounded-lg">${escapeHtml(markdownContent)}</pre>
-        `;
-    }
-}
-
-// 简单的代码块高亮
-function highlightCodeBlocks() {
-    const codeBlocks = document.querySelectorAll('#noteContentArea pre code');
-    codeBlocks.forEach(block => {
-        // 添加代码块样式
-        block.classList.add('text-sm', 'bg-gray-800', 'text-gray-100', 'p-4', 'rounded-lg', 'overflow-x-auto');
-        block.parentElement.classList.add('bg-gray-800', 'rounded-lg');
-    });
-    
-    // 为内联代码添加样式
-    const inlineCodes = document.querySelectorAll('#noteContentArea p code, #noteContentArea li code');
-    inlineCodes.forEach(code => {
-        code.classList.add('bg-gray-100', 'text-gray-800', 'px-1', 'py-0.5', 'rounded', 'text-sm', 'font-mono');
-    });
-}
-
-// HTML转义函数
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// JavaScript字符串转义函数
-function escapeForJs(text) {
-    if (!text) return '';
-    return text.replace(/\\/g, '\\\\')
-               .replace(/`/g, '\\`')
-               .replace(/\$/g, '\\$')
-               .replace(/'/g, "\\'")
-               .replace(/"/g, '\\"')
-               .replace(/\n/g, '\\n')
-               .replace(/\r/g, '\\r');
-}
-
-// 格式化题目内容
-function formatQuestionContent(content) {
-    if (!content) return '题目内容为空';
-    
-    // 处理换行和格式
-    let formatted = content
-        .replace(/\n/g, '<br>')  // 换行转为<br>
-        .replace(/\r/g, '')      // 移除回车符
-        .trim();
-    
-    // 检测并格式化选择题
-    if (formatted.includes('选项：') || formatted.includes('A)') || formatted.includes('A.')) {
-        formatted = formatMultipleChoice(formatted);
-    }
-    
-    // 检测并格式化填空题
-    if (formatted.includes('____') || formatted.includes('___')) {
-        formatted = formatFillInBlank(formatted);
-    }
-    
-    // 检测并格式化判断题
-    if (formatted.includes('判断：') || formatted.includes('对错：')) {
-        formatted = formatTrueFalse(formatted);
-    }
-    
-    return formatted;
-}
-
-// 格式化选择题
-function formatMultipleChoice(content) {
-    // 分离题目和选项
-    let parts = content.split(/选项：|选项:/);
-    if (parts.length < 2) {
-        // 尝试其他分割方式
-        parts = content.split(/(?=A[\.\)])/);
-    }
-    
-    if (parts.length >= 2) {
-        const question = parts[0].trim();
-        const options = parts.slice(1).join('').trim();
-        
-        // 格式化选项
-        const formattedOptions = options
-            .replace(/([A-D][\.\)])/g, '<br><strong>$1</strong>')
-            .replace(/^<br>/, ''); // 移除开头的<br>
-        
-        return `
-            <div class="mb-3">
-                <div class="font-medium text-gray-900 mb-2">${question}</div>
-                <div class="ml-4 text-gray-700 leading-relaxed">${formattedOptions}</div>
-            </div>
-        `;
-    }
-    
-    return content;
-}
-
-// 格式化填空题
-function formatFillInBlank(content) {
-    return content.replace(/_{3,}/g, '<span class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded mx-1 min-w-[60px] text-center">____</span>');
-}
-
-// 格式化判断题
-function formatTrueFalse(content) {
-    return content
-        .replace(/(判断：|对错：)/g, '<strong class="text-purple-600">$1</strong>')
-        .replace(/（\s*）/g, '<span class="inline-block bg-purple-100 text-purple-800 px-3 py-1 rounded mx-1">（　）</span>');
-}
-
-// 关闭笔记详情模态框
-function closeNoteDetailModal(event) {
-    if (event && event.target !== event.currentTarget) return;
-    
-    const modal = document.getElementById('noteDetailModal');
-    if (modal) {
-        modal.remove();
-        document.body.style.overflow = '';
-    }
-}
-
-// 查看知识点详情
-function viewKnowledgePoint(knowledgePointId) {
-    log(`🔍 查看知识点: ${knowledgePointId}`);
-    closeNoteDetailModal();
-    // 这里可以跳转到知识点详情或者在当前页面显示
-    // 暂时先关闭笔记模态框，让用户可以在脑图中找到该知识点
-}
-
-// 打开笔记文件
-function openNoteFile(filePath) {
-    log(`📂 打开笔记文件: ${filePath}`);
-    if (filePath && filePath !== 'null') {
-        // 这里可以调用后端API来打开文件
-        alert('打开文件功能待实现: ' + filePath);
-    } else {
-        alert('文件路径无效');
-    }
-}
-
-function viewQuestion(knowledgePointId, questionContent) {
-    log(`👁️ 查看题目: ${questionContent}`);
-    // TODO: 实现查看题目详情功能
-}
-
-function editQuestion(knowledgePointId, questionContent) {
-    log(`✏️ 编辑题目: ${questionContent}`);
-    // TODO: 实现编辑题目功能
-}
-
-function toggleFavorite(knowledgePointId, questionContent) {
-    log(`⭐ 切换收藏状态: ${questionContent}`);
-    // TODO: 实现收藏/取消收藏功能
-}
-
-// 关闭知识点详情层
-function closeKnowledgePointDetail() {
-    const detailLayer = document.getElementById('knowledgePointDetailLayer');
-    detailLayer.classList.add('hidden');
-    log(`🔒 关闭知识点详情层`);
+    } catch (e) { log('⚠️ 父窗口导航失败，落兜底整页跳转: ' + e.message); }
+    // 兜底：直接访问 /practice（非 iframe）或旧壳无 handleMenuClick 时，回首页由 SPA 消费旗标
+    location.href = '/';
 }
 
 // 脑图工具函数
@@ -2451,8 +1708,15 @@ function zoomOut() {
 
 function resetView() {
     if (svg && zoom) {
-        svg.transition().call(zoom.transform, d3.zoomIdentity);
-        log('🔍 重置脑图视图');
+        // 学习路径视图下重置必须走 applyLpFitView：否则实际大小模式的 viewBox 配 identity transform 会静默丢失取景
+        const tabs = document.getElementById('lpViewTabs');
+        if (tabs && !tabs.classList.contains('hidden')) {
+            applyLpFitView();
+            log('🔍 重置学习路径视图取景');
+        } else {
+            svg.transition().call(zoom.transform, d3.zoomIdentity);
+            log('🔍 重置脑图视图');
+        }
     }
 }
 
@@ -2879,345 +2143,22 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// 熟练度评估相关变量
-let currentKnowledgePointId = null;
-let currentQuestionIndex = 0;
-let assessmentQuestions = [];
-let userAnswers = [];
-
-// 开始熟练度评估
-async function startMasteryAssessment() {
-    const detailLayer = document.getElementById('knowledgePointDetailLayer');
-    const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
-    
-    log(`🔍 调试信息 - 详情层: ${detailLayer ? '存在' : '不存在'}`);
-    log(`🔍 调试信息 - 节点ID: ${nodeId || '未找到'}`);
-    
-    if (!nodeId) {
-        alert('无法获取知识点信息，请先点击知识点节点');
-        return;
-    }
-    
-    currentKnowledgePointId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
-    log(`🎯 开始熟练度评估 - 知识点ID: ${currentKnowledgePointId}`);
-    
-    // 显示加载状态
-    document.getElementById('masteryAssessmentBtn').innerHTML = '生成中...';
-    document.getElementById('masteryAssessmentBtn').disabled = true;
-    
-    try {
-        if (window.pybridge && window.pybridge.generateAssessmentQuestions) {
-            const response = await window.pybridge.generateAssessmentQuestions(currentKnowledgePointId);
-            const result = JSON.parse(response);
-            
-            if (result.success && result.questions) {
-                assessmentQuestions = result.questions;
-                userAnswers = [];
-                currentQuestionIndex = 0;
-                
-                showAssessmentModal();
-                displayCurrentQuestion();
-            } else {
-                alert('生成评估题目失败: ' + (result.error || '未知错误'));
-            }
-        } else {
-            alert('评估功能暂不可用');
-        }
-    } catch (error) {
-        log(`❌ 生成评估题目失败: ${error.message}`);
-        alert('生成评估题目失败: ' + error.message);
-    } finally {
-        // 恢复按钮状态
-        document.getElementById('masteryAssessmentBtn').innerHTML = '熟练度评估';
-        document.getElementById('masteryAssessmentBtn').disabled = false;
-    }
-}
-
-// 显示评估模态框
-function showAssessmentModal() {
-    document.getElementById('masteryAssessmentModal').classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-}
-
-// 关闭评估模态框
-function closeAssessmentModal() {
-    document.getElementById('masteryAssessmentModal').classList.add('hidden');
-    document.body.style.overflow = '';
-    
-    // 重置状态
-    currentKnowledgePointId = null;
-    currentQuestionIndex = 0;
-    assessmentQuestions = [];
-    userAnswers = [];
-}
-
-// 显示当前题目
-function displayCurrentQuestion() {
-    if (currentQuestionIndex >= assessmentQuestions.length) {
-        submitAssessment();
-        return;
-    }
-    
-    const question = assessmentQuestions[currentQuestionIndex];
-    const progress = ((currentQuestionIndex + 1) / assessmentQuestions.length) * 100;
-    
-    // 更新进度条
-    document.getElementById('assessmentProgress').style.width = progress + '%';
-    document.getElementById('assessmentProgressText').textContent = `${currentQuestionIndex + 1}/${assessmentQuestions.length}`;
-    
-    // 显示题目
-    document.getElementById('assessmentQuestionContent').innerHTML = `
-        <div class="mb-4">
-            <div class="flex items-center mb-2">
-                <span class="bg-blue-100 text-blue-800 text-sm px-3 py-1 rounded-full mr-2">题目 ${currentQuestionIndex + 1}</span>
-                <span class="text-sm text-gray-600">难度: ${question.difficulty}</span>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-800 mb-4">${question.question}</h3>
-        </div>
-        
-        <div class="space-y-3">
-            ${question.options.map((option, index) => `
-                <label class="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input type="radio" name="assessmentAnswer" value="${String.fromCharCode(65 + index)}" class="mr-3">
-                    <span><strong>${String.fromCharCode(65 + index)}.</strong> ${option}</span>
-                </label>
-            `).join('')}
-        </div>
-    `;
-    
-    // 更新按钮状态
-    document.getElementById('assessmentPrevBtn').style.display = currentQuestionIndex > 0 ? 'block' : 'none';
-    document.getElementById('assessmentNextBtn').textContent = currentQuestionIndex === assessmentQuestions.length - 1 ? '提交评估' : '下一题';
-}
-
-// 上一题
-function previousQuestion() {
-    if (currentQuestionIndex > 0) {
-        currentQuestionIndex--;
-        displayCurrentQuestion();
-        
-        // 恢复之前的答案
-        if (userAnswers[currentQuestionIndex]) {
-            const radio = document.querySelector(`input[name="assessmentAnswer"][value="${userAnswers[currentQuestionIndex]}"]`);
-            if (radio) radio.checked = true;
-        }
-    }
-}
-
-// 下一题
-function nextQuestion() {
-    // 获取当前答案
-    const selectedAnswer = document.querySelector('input[name="assessmentAnswer"]:checked');
-    if (!selectedAnswer) {
-        alert('请选择一个答案');
-        return;
-    }
-    
-    // 保存答案
-    userAnswers[currentQuestionIndex] = selectedAnswer.value;
-    
-    // 下一题
-    currentQuestionIndex++;
-    displayCurrentQuestion();
-}
-
-// 提交评估
-async function submitAssessment() {
-    log(`📝 提交熟练度评估 - 知识点ID: ${currentKnowledgePointId}, 答案: ${JSON.stringify(userAnswers)}`);
-    
-    // 显示提交状态
-    document.getElementById('assessmentQuestionContent').innerHTML = `
-        <div class="text-center py-8">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p class="text-gray-600">正在评估您的答题情况...</p>
-        </div>
-    `;
-    
-    try {
-        if (window.pybridge && window.pybridge.submitMasteryAssessment) {
-            const response = await window.pybridge.submitMasteryAssessment(
-                currentKnowledgePointId,
-                JSON.stringify(assessmentQuestions),
-                JSON.stringify(userAnswers)
-            );
-            const result = JSON.parse(response);
-            
-            if (result.success) {
-                showAssessmentResult(result);
-            } else {
-                alert('评估提交失败: ' + (result.error || '未知错误'));
-                closeAssessmentModal();
-            }
-        } else {
-            alert('评估功能暂不可用');
-            closeAssessmentModal();
-        }
-    } catch (error) {
-        log(`❌ 提交评估失败: ${error.message}`);
-        alert('提交评估失败: ' + error.message);
-        closeAssessmentModal();
-    }
-}
-
-// 显示评估结果
-function showAssessmentResult(result) {
-    const masteryScore = result.mastery_score;
-    const correctCount = result.correct_count;
-    const totalCount = assessmentQuestions.length;
-    const percentage = Math.round((correctCount / totalCount) * 100);
-    
-    // 根据分数确定等级和颜色
-    let level, color, description;
-    if (masteryScore >= 90) {
-        level = '精通';
-        color = 'text-green-600';
-        description = '您对这个知识点掌握得非常好！';
-    } else if (masteryScore >= 70) {
-        level = '熟练';
-        color = 'text-blue-600';
-        description = '您对这个知识点有较好的理解。';
-    } else if (masteryScore >= 50) {
-        level = '一般';
-        color = 'text-yellow-600';
-        description = '您对这个知识点有基本了解，建议加强练习。';
-    } else {
-        level = '待提高';
-        color = 'text-red-600';
-        description = '建议重新学习相关内容并多加练习。';
-    }
-    
-    document.getElementById('assessmentQuestionContent').innerHTML = `
-        <div class="text-center py-8">
-            <div class="mb-6">
-                <div class="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
-                    <span class="text-3xl font-bold text-white">${masteryScore}</span>
-                </div>
-                <h3 class="text-2xl font-bold ${color} mb-2">熟练度: ${level}</h3>
-                <p class="text-gray-600 mb-4">${description}</p>
-            </div>
-            
-            <div class="bg-gray-50 rounded-lg p-6 mb-6">
-                <div class="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                        <div class="text-2xl font-bold text-gray-800">${correctCount}</div>
-                        <div class="text-sm text-gray-600">答对题数</div>
-                    </div>
-                    <div>
-                        <div class="text-2xl font-bold text-gray-800">${totalCount}</div>
-                        <div class="text-sm text-gray-600">总题数</div>
-                    </div>
-                    <div>
-                        <div class="text-2xl font-bold text-gray-800">${percentage}%</div>
-                        <div class="text-sm text-gray-600">正确率</div>
-                    </div>
-                </div>
-            </div>
-            
-            <button onclick="closeAssessmentModal(); refreshKnowledgePointDetail();" class="px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition-colors">
-                完成评估
-            </button>
-        </div>
-    `;
-    
-    // 隐藏导航按钮
-    document.getElementById('assessmentNavButtons').style.display = 'none';
-}
-
-// 刷新知识点详情（更新熟练度显示）
-function refreshKnowledgePointDetail() {
-    const nodeId = document.getElementById('knowledgePointDetailLayer').dataset.nodeId;
-    if (nodeId) {
-        // 重新加载知识点详情
-        loadKnowledgePointDetail(nodeId);
-        
-        // 刷新脑图显示（更新节点颜色）
-        refreshMindmapColors();
-    }
-}
-
-// 刷新脑图中的节点颜色
-function refreshMindmapColors() {
-    log('🎨 刷新脑图节点颜色');
-    
-    // 如果当前有脑图数据，直接重新渲染以更新颜色，不需要重新获取数据
-    if (currentMindmapData && currentMindmapData.nodes) {
-        log('🎨 直接重新渲染现有脑图数据以更新颜色');
-        renderMindmap();
-    } else {
-        log('⚠️ 没有脑图数据可刷新');
-    }
-}
-
-// 获取当前显示的学科名称
-function getCurrentSubject() {
-    // 从面包屑或其他UI元素获取当前学科
-    const breadcrumb = document.querySelector('.breadcrumb-item.active');
-    if (breadcrumb) {
-        return breadcrumb.textContent.trim();
-    }
-    
-    // 从脑图数据中获取中心节点名称
-    if (currentMindmapData && currentMindmapData.nodes) {
-        const centerNode = currentMindmapData.nodes.find(node => node.type === 'center');
-        if (centerNode) {
-            return centerNode.name;
-        }
-    }
-    
-    return null;
-}
 </script>
-
-<!-- 熟练度评估模态框 -->
-<div id="masteryAssessmentModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
-        <!-- 模态框头部 -->
-        <div class="flex items-center justify-between p-6 border-b">
-            <div>
-                <h3 class="text-xl font-bold text-gray-800">熟练度评估</h3>
-                <p class="text-sm text-gray-600 mt-1">通过10道题目评估您对该知识点的掌握程度</p>
-            </div>
-            <button onclick="closeAssessmentModal()" class="text-gray-500 hover:text-gray-700">
-                <span class="material-icons-outlined">close</span>
-            </button>
-        </div>
-        
-        <!-- 进度条 -->
-        <div class="px-6 py-4 border-b">
-            <div class="flex justify-between items-center mb-2">
-                <span class="text-sm font-medium text-gray-700">评估进度</span>
-                <span id="assessmentProgressText" class="text-sm text-gray-600">0/10</span>
-            </div>
-            <div class="w-full bg-gray-200 rounded-full h-2">
-                <div id="assessmentProgress" class="bg-blue-500 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
-            </div>
-        </div>
-        
-        <!-- 题目内容 -->
-        <div class="flex-1 overflow-y-auto p-6">
-            <div id="assessmentQuestionContent">
-                <!-- 题目内容将在这里动态生成 -->
-            </div>
-        </div>
-        
-        <!-- 导航按钮 -->
-        <div id="assessmentNavButtons" class="flex justify-between p-6 border-t bg-gray-50">
-            <button id="assessmentPrevBtn" onclick="previousQuestion()" class="px-4 py-2 text-gray-600 hover:text-gray-800 hidden">
-                <span class="material-icons-outlined mr-1">arrow_back</span>
-                上一题
-            </button>
-            <div class="flex-1"></div>
-            <button id="assessmentNextBtn" onclick="nextQuestion()" class="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
-                下一题
-            </button>
-        </div>
-    </div>
-</div>
 
 <script>
 // 学习路径图相关功能
 let currentLearningPathData = null;
 let isGeneratingLearningPath = false;
+// 学习路径视图模式：'linear' 线性图 | 'tree' 技能树（两图共用同一批节点，Tab 切换）
+let currentLpViewMode = 'linear';
+// 老缓存缺前序依赖时的自动升级只允许尝试一次，防止反复重生成烧积分
+let _lpTreeUpgradeTried = false;
+// 学习路径显示模式：false=全图适配（viewBox=内容尺寸）| true=实际大小（viewBox=容器像素，1:1 字清晰+拖拽浏览）
+let lpActualSize = false;
+// 当前学习路径视图的内容尺寸（由各渲染函数写入，applyLpFitView 据此设 viewBox）
+let _lpContentSize = { w: 3200, h: 700 };
+// 实际大小模式的取景中心（学习路径起点），null=内容几何居中
+let _lpContentFocus = null;
 
 // 生成学习路径图
 async function generateLearningPath() {
@@ -3265,7 +2206,7 @@ async function generateLearningPath() {
             
             // 切换到学习路径视图
             switchToLearningPathView();
-            renderLearningPath();
+            renderCurrentLpView();
         } else {
             throw new Error(result.error || '学习路径生成失败');
         }
@@ -3284,9 +2225,15 @@ async function generateLearningPath() {
 // 切换到学习路径视图
 function switchToLearningPathView() {
     log('🔄 切换到学习路径视图');
-    
+    hideLpTooltip();  // 兜底：同上，防旧悬停态残留
+        
     // 更新标题
     document.getElementById('mindmapTitle').textContent = `${currentSubjectName} - 学习路径图`;
+    
+    // 显示线性/技能树 Tab
+    const tabs = document.getElementById('lpViewTabs');
+    if (tabs) { tabs.classList.remove('hidden'); tabs.classList.add('flex'); }
+    updateLpTabStyles();
     
     // 添加返回按钮
     const titleDiv = document.querySelector('#mindmapPage .flex.items-center.justify-between');
@@ -3304,8 +2251,22 @@ function switchToLearningPathView() {
 function switchToMindmapView() {
     log('🔄 切换回知识脑图视图');
     
+    // 评审修复：返回脑图即视为新一轮用户意图，复位一次性标记，
+    // 允许升级失败后再次点"梳理知识点→技能树"重试（防循环靠同一视图内一次性标记 + 生成中互斥）
+    _lpTreeUpgradeTried = false;
+    // 复位显示模式与悬停提示（下次进入学习路径从"全图适配"开始）
+    lpActualSize = false;
+    const sizeBtn = document.getElementById('lpSizeToggle');
+    if (sizeBtn) sizeBtn.textContent = '实际大小';
+    hideLpTooltip();
+    
     // 更新标题
     document.getElementById('mindmapTitle').textContent = `${currentSubjectName} - 知识脑图`;
+    
+    // 隐藏学习路径专属控件（Tab / 图例卡片）
+    const tabs = document.getElementById('lpViewTabs');
+    if (tabs) { tabs.classList.add('hidden'); tabs.classList.remove('flex'); }
+    hideLearningLegend();
     
     // 移除返回按钮
     const backBtn = document.getElementById('backToMindmapBtn');
@@ -3317,6 +2278,50 @@ function switchToMindmapView() {
     if (currentMindmapData) {
         renderMindmap();
     }
+}
+
+// 技能树 / 线性视图共用：画一个节点卡片（与技能树完全同规格，单一实现避免样式分叉）
+// 白底圆角卡片 + 左侧状态色条（黄=已学按熟练度 / 灰=未评估 / 绿=AI补充）；solidBlue=蓝底白字主线/目标卡
+function drawLpCard(group, n, solidBlue) {
+    const CARD_W = 168, CARD_H = 52;
+    group.append('rect')
+        .attr('class', 'tree-card')
+        .attr('x', -CARD_W / 2).attr('y', -CARD_H / 2)
+        .attr('width', CARD_W).attr('height', CARD_H)
+        .attr('rx', 10)
+        .attr('fill', solidBlue ? '#2196F3' : '#FFFFFF')
+        .attr('stroke', solidBlue ? '#1565C0' : (n.type === 'supplement_kp' ? '#A5D6A7' : '#D7DEE8'))
+        .attr('stroke-width', 1.5)
+        .attr('filter', 'url(#treeCardShadow)');
+    if (!solidBlue) {
+        const barColor = n.type === 'existing_kp' ? getKnowledgePointColor(n.mastery_score) : '#81C784';
+        group.append('rect')
+            .attr('x', -CARD_W / 2 + 2).attr('y', -CARD_H / 2 + 2)
+            .attr('width', 5).attr('height', CARD_H - 4)
+            .attr('rx', 2.5)
+            .attr('fill', barColor);
+    }
+    // 卡内文字：14px 最多两行，超出省略（全名在悬停提示里）
+    const name = n.name || '';
+    const maxChars = Math.floor((CARD_W - 36) / 14);
+    const lines = [];
+    for (let i = 0; i < name.length && lines.length < 2; i += maxChars) {
+        lines.push(name.substring(i, i + maxChars));
+    }
+    if (name.length > maxChars * 2 && lines.length === 2) {
+        lines[1] = lines[1].substring(0, maxChars - 1) + '…';
+    }
+    const textColor = solidBlue ? '#FFFFFF' : '#1F2937';
+    lines.forEach((ln, i) => {
+        group.append('text')
+            .attr('text-anchor', 'middle')
+            .attr('x', 3)
+            .attr('dy', lines.length === 1 ? '0.35em' : `${(i - 0.5) * 1.3}em`)
+            .attr('font-size', '14px')
+            .attr('font-weight', solidBlue ? 'bold' : '500')
+            .attr('fill', textColor)
+            .text(ln);
+    });
 }
 
 // 渲染学习路径图
@@ -3333,640 +2338,222 @@ function renderLearningPath() {
         log('❌ SVG初始化失败，无法渲染学习路径图');
         return;
     }
-    
+    // 评审修复：全量重绘后高亮态必须复位，否则切 Tab 再点同一 stage 会走
+    // 「重复点击=复位」分支只作用于已被 initSvg 移除的旧 selection，表现为点了不亮
+    currentHighlightedStage = null;
+    hideStageInfo();
+
     const nodes = currentLearningPathData.nodes.map(d => ({...d}));
-    const edges = currentLearningPathData.edges || [];
+    // bug修复：d3 forceLink 会就地把 edge 的 source/target 从 id 字符串改成节点对象引用，
+    // 直接引用原数据会污染 currentLearningPathData，导致第二次渲染（树→线性切回）
+    // 全部边被判无效并在 validEdges 块级作用域处抛 ReferenceError → 画布空白
+    const edges = (currentLearningPathData.edges || []).map(e => ({ ...e }));
     
-    // 预设主线节点的固定位置 - 增加间距
-    const mainLineNodes = nodes.filter(n => n.type === 'start' || n.type === 'stage' || n.type === 'end');
-    const totalMainNodes = mainLineNodes.length;
-    const containerWidth = 3200; // 进一步增加容器宽度
-    const padding = 150; // 增加边距
-    const availableWidth = containerWidth - 2 * padding;
-    const minSpacing = 300; // 进一步增加最小间距到300px
-    const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : minSpacing);
-    
-    log(`🔍 主线布局计算: 总节点${totalMainNodes}个, 间距${spacing}px, 容器宽度${containerWidth}px`);
-    
-    // 为主线节点设置固定的初始位置
-    nodes.forEach(node => {
-        if (node.type === 'start' || node.type === 'stage' || node.type === 'end') {
-            node.x = padding + node.level * spacing; // 固定X坐标，使用更大间距
-            node.y = 350; // 固定Y坐标
-            node.fx = node.x; // 固定X位置
-            node.fy = node.y; // 固定Y位置
-            log(`  - 主线节点 ${node.name}: 位置(${node.x}, ${node.y})`);
-        }
+    // ===== 线性鱼骨布局：与技能树同款卡片规格，确定性坐标布局 =====
+    // 原实现给全部节点钉 fx/fy 再过力引擎——力导向空转，且 forceLink 就地把边端点改写成对象，
+    // 正是本次「树→线性空白画布」bug 的污染源；卡片化需要精确的列宽间距，
+    // 改为直接算坐标，与技能树视图同为静态渲染（不再依赖 simulation/tick）
+    const CARD_W = 168, CARD_H = 52;    // 与技能树完全相同的卡片尺寸
+    const COL_GAP = CARD_W + 36;        // 列内知识点卡片水平间距（168 卡片 + 36 间隙，防叠卡）
+    const MAIN_Y = 350;                 // 主线水平线
+    const KP_DY = 150;                  // 知识点行与主线的垂直距离（卡片高 + 连线余量）
+    const PAD_X = 140;
+    const mainTypes = new Set(['start', 'stage', 'end']);
+
+    // 主线节点：起点最前、终点最后，stage 按 level 排序（学习进度从左到右）
+    const mainNodes = nodes.filter(n => mainTypes.has(n.type));
+    mainNodes.sort((a, b) => {
+        const rank = n => n.type === 'start' ? -1e9 : (n.type === 'end' ? 1e9 : 0);
+        return rank(a) - rank(b) || (a.level || 0) - (b.level || 0) || String(a.id).localeCompare(String(b.id));
     });
-    
-    // 为知识点节点预设围绕父节点的初始位置
-    log(`🔍 开始处理知识点节点布局...`);
+
+    // 知识点按父阶段分组；父阶段缺失/指向不存在阶段的进孤儿组（保证画得出来，不吞节点）
     const knowledgeNodes = nodes.filter(n => n.type === 'existing_kp' || n.type === 'supplement_kp');
-    log(`📊 找到${knowledgeNodes.length}个知识点节点`);
     const stageGroups = {};
-    
-    // 按父阶段分组知识点
     knowledgeNodes.forEach(node => {
-        const parentStage = node.parent_stage || 'unknown';
-        log(`🔍 检查知识点 ${node.name}:`);
-        log(`  - ID: ${node.id}`);
-        log(`  - Type: ${node.type}`);
-        log(`  - Parent Stage: ${node.parent_stage}`);
-        log(`  - 归属于: ${parentStage}`);
-        
-        if (!stageGroups[parentStage]) {
-            stageGroups[parentStage] = [];
-        }
-        stageGroups[parentStage].push(node);
+        const key = mainNodes.some(m => m.id === node.parent_stage) ? node.parent_stage : 'orphan';
+        (stageGroups[key] = stageGroups[key] || []).push(node);
     });
-    
-    log(`📋 分组结果: ${Object.keys(stageGroups).length}个阶段组`);
-    Object.keys(stageGroups).forEach(stageId => {
-        log(`  - ${stageId}: ${stageGroups[stageId].length}个知识点`);
+
+    // 逐列布局：列宽由上/下两行中较多的一行决定，主线卡片居中，知识点分行居中上下挂
+    let cursor = PAD_X;
+    mainNodes.forEach(m => {
+        const group = stageGroups[m.id] || [];
+        const upperCount = Math.ceil(group.length / 2);
+        const cols = Math.max(upperCount, group.length - upperCount, 1);
+        const colW = cols * COL_GAP;
+        m.x = cursor + colW / 2;
+        m.y = MAIN_Y;
+        group.forEach((kp, i) => {
+            const above = i < upperCount;
+            const row = above ? group.slice(0, upperCount) : group.slice(upperCount);
+            const idx = above ? i : i - upperCount;
+            kp.x = m.x + (idx - (row.length - 1) / 2) * COL_GAP;
+            kp.y = MAIN_Y + (above ? -KP_DY : KP_DY);
+        });
+        cursor += colW;
     });
-    
-    // 为每个阶段的知识点设置围绕分布
-    log(`🎯 开始为每个阶段设置知识点分布...`);
-    Object.keys(stageGroups).forEach(stageId => {
-        const stageNode = nodes.find(n => n.id === stageId);
-        const knowledgePoints = stageGroups[stageId];
-        
-        if (stageNode && knowledgePoints.length > 0) {
-            log(`📍 为${stageId}的${knowledgePoints.length}个知识点设置上下分布位置`);
-            const stageX = stageNode.x;
-            const stageY = stageNode.y;
-            log(`🎯 Stage节点位置: ${stageId} at (${stageX}, ${stageY})`);
-            
-            // 新的布局策略：上下均匀分布，以stage节点为中心左右对称分布
-            const verticalSpacing = 120; // 增加垂直间距，让子节点离stage更远一点
-            const horizontalSpread = 120; // 稍微增加水平分布范围
-            log(`📐 布局参数: verticalSpacing=${verticalSpacing}, horizontalSpread=${horizontalSpread}`);
-            
-            // 将知识点分为上下两组
-            const upperCount = Math.ceil(knowledgePoints.length / 2);
-            const lowerCount = knowledgePoints.length - upperCount;
-            log(`📊 分组情况: 上方${upperCount}个节点, 下方${lowerCount}个节点`);
-            
-            knowledgePoints.forEach((kp, index) => {
-                if (index < upperCount) {
-                    // 上方节点 - 以stage为中心左右分布
-                    const upperIndex = index;
-                    if (upperCount === 1) {
-                        // 只有1个节点，放在stage正上方
-                        kp.x = stageX;
-                        log(`    ✅ 单节点上方: ${kp.name} -> x=${kp.x} (stage中心)`);
-                    } else {
-                        // 多个节点，以stage为中心左右分布
-                        const spacing = horizontalSpread / (upperCount - 1);
-                        const calculatedX = stageX - (horizontalSpread / 2) + upperIndex * spacing;
-                        kp.x = calculatedX;
-                        log(`    📊 上方节点${upperIndex}: ${kp.name}`);
-                        log(`      - spacing=${spacing.toFixed(1)}`);
-                        log(`      - 计算: ${stageX} - ${horizontalSpread/2} + ${upperIndex} * ${spacing.toFixed(1)} = ${calculatedX.toFixed(1)}`);
-                    }
-                    kp.y = stageY - verticalSpacing;
-                    log(`  ✅ 知识点 ${kp.name}: 上方分布到(${kp.x.toFixed(0)}, ${kp.y.toFixed(0)})`);
-                    
-                    // 设置固定位置，防止力导向图改变
-                    kp.fx = kp.x;
-                    kp.fy = kp.y;
-                    log(`  🔒 固定知识点 ${kp.name} 位置: fx=${kp.fx}, fy=${kp.fy}`);
-                } else {
-                    // 下方节点 - 以stage为中心左右分布
-                    const lowerIndex = index - upperCount;
-                    if (lowerCount === 1) {
-                        // 只有1个节点，放在stage正下方
-                        kp.x = stageX;
-                        log(`    ✅ 单节点下方: ${kp.name} -> x=${kp.x} (stage中心)`);
-                    } else {
-                        // 多个节点，以stage为中心左右分布
-                        const spacing = horizontalSpread / (lowerCount - 1);
-                        const calculatedX = stageX - (horizontalSpread / 2) + lowerIndex * spacing;
-                        kp.x = calculatedX;
-                        log(`    📊 下方节点${lowerIndex}: ${kp.name}`);
-                        log(`      - spacing=${spacing.toFixed(1)}`);
-                        log(`      - 计算: ${stageX} - ${horizontalSpread/2} + ${lowerIndex} * ${spacing.toFixed(1)} = ${calculatedX.toFixed(1)}`);
-                    }
-                    kp.y = stageY + verticalSpacing;
-                    log(`  ✅ 知识点 ${kp.name}: 下方分布到(${kp.x.toFixed(0)}, ${kp.y.toFixed(0)})`);
-                    
-                    // 设置固定位置，防止力导向图改变
-                    kp.fx = kp.x;
-                    kp.fy = kp.y;
-                    log(`  🔒 固定知识点 ${kp.name} 位置: fx=${kp.fx}, fy=${kp.fy}`);
-                }
-            });
-        }
+
+    // 孤儿知识点：挂在主线末端之后一列、主线下方（无父阶段就不画挂载线）
+    const orphans = stageGroups['orphan'] || [];
+    if (orphans.length > 0) {
+        log(`⚠️ 线性图：${orphans.length} 个知识点缺少有效父阶段，挂载到主线末端之后`);
+        orphans.forEach((kp, i) => {
+            kp.x = cursor + COL_GAP / 2 + i * COL_GAP;
+            kp.y = MAIN_Y + KP_DY;
+        });
+        cursor += orphans.length * COL_GAP;
+    }
+
+    // 其它旧节点类型（milestone 等兼容数据）：沿主线水平均分、下方第二排，保证画得出来
+    // 评审修复：无主线无知识点的历史数据下 cursor 会退化，给保底步长防卡片重叠成一张
+    const placedTypes = new Set([...mainTypes, 'existing_kp', 'supplement_kp']);
+    const restNodes = nodes.filter(n => !placedTypes.has(n.type));
+    const restSpan = Math.max(cursor - PAD_X, restNodes.length * COL_GAP);
+    restNodes.forEach((n, i, arr) => {
+        n.x = PAD_X + (i + 1) * (restSpan / (arr.length + 1));
+        n.y = MAIN_Y + KP_DY * 2;
     });
+
+    // 内容实际宽度（全图适配 / 实际大小两种模式的 viewBox 与取景都按它来）
+    const contentW = Math.max(1200, Math.round(cursor + PAD_X));
+    log(`🔍 线性鱼骨布局: 主线${mainNodes.length}个, 知识点${knowledgeNodes.length}个, 内容宽度${contentW}px`);
     
-    // 调试：检查节点和边的数据
-    log(`🔍 节点数据检查: ${nodes.length}个节点`);
-    nodes.forEach(node => {
-        log(`  - 节点: ${node.id} (${node.name}) - 类型: ${node.type}`);
-    });
-    
-    log(`🔍 边数据检查: ${edges.length}条边`);
-    edges.forEach(edge => {
-        log(`  - 边: ${edge.source} → ${edge.target}`);
-    });
-    
-    // 验证所有边引用的节点都存在
+    // 验证所有边引用的节点都存在（bug修复：validEdges 必须在 if 块外定义，原代码块内 const 而块外引用抛 ReferenceError）
     const nodeIds = new Set(nodes.map(n => n.id));
-    const invalidEdges = edges.filter(edge => 
+    const invalidEdges = edges.filter(edge =>
         !nodeIds.has(edge.source) || !nodeIds.has(edge.target)
     );
-    
     if (invalidEdges.length > 0) {
-        log(`❌ 发现无效边: ${invalidEdges.length}条`);
-        invalidEdges.forEach(edge => {
-            log(`  - 无效边: ${edge.source} → ${edge.target}`);
-        });
-        // 过滤掉无效边
-        const validEdges = edges.filter(edge => 
-            nodeIds.has(edge.source) && nodeIds.has(edge.target)
-        );
-        log(`✅ 使用有效边: ${validEdges.length}条`);
-        
-        // 创建鱼骨图布局的力导向图
-        simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(validEdges).id(d => d.id).distance(d => {
-                // 主线连接距离更大，确保主线更长
-                if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 大幅增加主线间距
-                if (d.source.type === 'start' && d.target.type === 'stage') return 800;
-                if (d.source.type === 'stage' && d.target.type === 'end') return 800;
-                return 50; // 减少阶段到知识点的距离，让连线更短
-            }))
-            .force('charge', d3.forceManyBody().strength(d => {
-                // 减少排斥力，避免布局混乱
-                if (d.type === 'stage') return -300; // 大幅减少主线节点排斥力
-                return -80; // 进一步减少知识点排斥力，让它们更紧凑
-            }))
-            .force('center', d3.forceCenter(1600, 350))
-            .force('x', d3.forceX(d => {
-                // 主线节点水平排列，支持更长的主线
-                if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                    // 计算主线节点总数
-                    const mainLineNodes = nodes.filter(n => n.type === 'start' || n.type === 'stage' || n.type === 'end');
-                    const totalMainNodes = mainLineNodes.length;
-                    
-                    // 动态调整间距，确保主线更长更展开
-                    const containerWidth = 1600; // 增加SVG容器宽度
-                    const padding = 50; // 减少边距，增加可用空间
-                    const availableWidth = containerWidth - 2 * padding;
-                    const minSpacing = 120; // 最小间距
-                    const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : 0);
-                    
-                    return padding + d.level * spacing; // 动态间距的水平主线
-                }
-                return d.x; // 知识点节点自由排列
-            }).strength(0.8))
-            .force('y', d3.forceY(d => {
-                // 主线节点严格保持在同一水平线上
-                if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                    return 350; // 主线固定在水平线上
-                }
-                // 知识点在主线上下分布
-                return 350 + (Math.random() - 0.5) * 300; // 增加分布范围
-            }).strength(d => {
-                // 主线节点使用更强的力保持水平
-                if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                    return 1.0; // 主线节点强制水平对齐
-                }
-                return 0.3; // 知识点节点较弱的力
-            }))
-            .force('collision', d3.forceCollide().radius(d => {
-                if (d.type === 'stage') return 80; // 学习阶段需要更大空间
-                return 50;
-            }));
-    } else {
-        log(`✅ 所有边都有效，直接使用`);
-        
-        // 创建鱼骨图布局的力导向图
-        simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(edges).id(d => d.id).distance(d => {
-                // 主线连接距离更大，确保主线更长
-                if (d.source.type === 'stage' && d.target.type === 'stage') return 800; // 大幅增加主线间距
-                if (d.source.type === 'start' && d.target.type === 'stage') return 800;
-                if (d.source.type === 'stage' && d.target.type === 'end') return 800;
-                return 50; // 减少阶段到知识点的距离，让连线更短
-            }))
-            .force('charge', d3.forceManyBody().strength(d => {
-                // 减少排斥力，避免布局混乱
-                if (d.type === 'stage') return -300; // 大幅减少主线节点排斥力
-                return -80; // 进一步减少知识点排斥力，让它们更紧凑
-            }))
+        log(`⚠️ 发现无效边: ${invalidEdges.length}条，已过滤`);
     }
+    const validEdges = edges.filter(edge =>
+        nodeIds.has(edge.source) && nodeIds.has(edge.target)
+    );
+    log(`✅ 使用有效边: ${validEdges.length}条`);
+
+    // 创建鱼骨图布局的力导向图（原 if/else 两分支重复创建收敛为一份；center/x/y/collision 统一在下方公共配置）
+    // 布局已改为上方确定性坐标，不再创建 simulation（也彻底消除 forceLink 就地污染边数据的隐患）
     
-    // 继续力导向图的其他配置
-    simulation
-        .force('center', d3.forceCenter(1600, 350))
-        .force('x', d3.forceX(d => {
-            // 主线节点水平排列，支持更长的主线
-            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                // 计算主线节点总数
-                const mainLineNodes = nodes.filter(n => n.type === 'start' || n.type === 'stage' || n.type === 'end');
-                const totalMainNodes = mainLineNodes.length;
-                
-                // 动态调整间距，确保主线更长更展开
-                const containerWidth = 3200; // 进一步增加SVG容器宽度
-                const padding = 150; // 增加边距
-                const availableWidth = containerWidth - 2 * padding;
-                const minSpacing = 300; // 进一步增加最小间距
-                const spacing = Math.max(minSpacing, totalMainNodes > 1 ? availableWidth / (totalMainNodes - 1) : minSpacing);
-                
-                return padding + d.level * spacing; // 动态间距的水平主线
-            }
-            return d.x; // 知识点节点使用预设的X坐标
-        }).strength(d => {
-            // 知识点节点也使用较强的力保持预设位置
-            if (d.type === 'existing_kp' || d.type === 'supplement_kp') {
-                return 0.8; // 知识点使用较强的力保持预设X坐标
-            }
-            return 0.8; // 其他节点也保持较强的力
-        }))
-        .force('y', d3.forceY(d => {
-            // 主线节点严格保持在同一水平线上
-            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                return 350; // 主线固定在水平线上
-            }
-            // 知识点使用我们手动设置的Y坐标
-            return d.y; // 使用预设的Y坐标，不再随机分布
-        }).strength(d => {
-            // 主线节点使用更强的力保持水平
-            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                return 1.0; // 主线节点强制水平对齐
-            }
-            return 0.8; // 知识点节点也使用较强的力保持预设位置
-        }))
-        .force('collision', d3.forceCollide().radius(d => {
-            if (d.type === 'stage') return 80; // 学习阶段需要更大空间
-            return 50;
-        }));
-    
-    // 定义箭头标记（表示学习顺序）
+    // ===== 绘制：技能树同款卡片 + 连线，结构仍是线性鱼骨 =====
     const defs = svg.append('defs');
+    // 卡片投影滤镜（与技能树同参数，渲染前 initSvg 已清空旧 defs，同名不冲突）
+    const shadow = defs.append('filter')
+        .attr('id', 'treeCardShadow')
+        .attr('x', '-20%').attr('y', '-30%').attr('width', '140%').attr('height', '160%');
+    shadow.append('feDropShadow')
+        .attr('dx', 0).attr('dy', 1).attr('stdDeviation', 2)
+        .attr('flood-color', '#000000').attr('flood-opacity', 0.16);
+    // 主线箭头（橙色，指向学习进度方向）
     defs.append('marker')
         .attr('id', 'learningArrow')
         .attr('viewBox', '0 -5 10 10')
-        .attr('refX', 15)
-        .attr('refY', 0)
-        .attr('markerWidth', 10)
-        .attr('markerHeight', 10)
+        .attr('refX', 9).attr('refY', 0)
+        .attr('markerWidth', 8).attr('markerHeight', 8)
         .attr('orient', 'auto')
         .append('path')
         .attr('d', 'M0,-5L10,0L0,5')
-        .attr('fill', '#4CAF50');
-    
-    // 绘制连线（学习路径）- 使用验证后的边数据
-    const finalEdges = invalidEdges.length > 0 ? validEdges : edges;
+        .attr('fill', '#FF9800');
+
+    // 边端点手动解析（无 force 引擎，source/target 保持字符串 id，从根上消除就地污染）
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    const drawEdges = [];
+    validEdges.forEach(e => {
+        let s = nodeById.get(e.source);
+        let t = nodeById.get(e.target);
+        if (!s || !t) return;
+        const sMain = mainTypes.has(s.type), tMain = mainTypes.has(t.type);
+        let kind = 'other';
+        if (sMain && tMain) {
+            kind = 'main';
+            // 主线箭头统一指向学习进度方向（坐标已按 start→stage→end 排好，直接按 x 判定，
+            // 避免同 level 并列时 rank 与坐标口径不一致画出反向线段）
+            if (s.x > t.x) { const tmp = s; s = t; t = tmp; }
+        } else if (sMain !== tMain) {
+            kind = 'branch';
+        }
+        drawEdges.push({ s, t, kind });
+    });
+
+    // 连线路径：主线水平直线裁到卡片边界；挂载线从主线卡上下沿出、S 形曲线进知识点卡；
+    // 其它连线（知识点↔知识点）直线裁到卡片边界（与技能树回退直线同款公式）
+    function lpEdgePath(e) {
+        if (e.kind === 'main') {
+            return `M${e.s.x + CARD_W / 2 + 4},${MAIN_Y}L${e.t.x - CARD_W / 2 - 10},${MAIN_Y}`;
+        }
+        if (e.kind === 'branch') {
+            const m = mainTypes.has(e.s.type) ? e.s : e.t;
+            const k = m === e.s ? e.t : e.s;
+            const dir = k.y >= m.y ? 1 : -1;
+            const sx = m.x + Math.max(-44, Math.min(44, (k.x - m.x) * 0.3));
+            const sy = m.y + dir * (CARD_H / 2 + 2);
+            const ty = k.y - dir * (CARD_H / 2 + 2);
+            const mid = (sy + ty) / 2;
+            return `M${sx},${sy}C${sx},${mid} ${k.x},${mid} ${k.x},${ty}`;
+        }
+        const dx = e.t.x - e.s.x, dy = e.t.y - e.s.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len, uy = dy / len;
+        const kx = Math.abs(ux) > 1e-6 ? (CARD_W / 2 + 2) / Math.abs(ux) : Infinity;
+        const ky = Math.abs(uy) > 1e-6 ? (CARD_H / 2 + 2) / Math.abs(uy) : Infinity;
+        const kk = Math.min(kx, ky, len / 2);
+        return `M${e.s.x + ux * kk},${e.s.y + uy * kk}L${e.t.x - ux * kk},${e.t.y - uy * kk}`;
+    }
+
     const links = g.selectAll('.learning-link')
-        .data(finalEdges)
-        .enter().append('line')
+        .data(drawEdges)
+        .enter().append('path')
         .attr('class', 'learning-link')
-        .attr('stroke', d => {
-            // 主线使用粗线，分支使用细线
-            if ((d.source.type === 'start' || d.source.type === 'stage') && 
-                (d.target.type === 'stage' || d.target.type === 'end')) {
-                return '#FF9800'; // 橙色主线
-            }
-            return '#4CAF50'; // 绿色分支线
-        })
-        .attr('stroke-width', d => {
-            // 主线更粗，分支较细
-            if ((d.source.type === 'start' || d.source.type === 'stage') && 
-                (d.target.type === 'stage' || d.target.type === 'end')) {
-                return 5; // 主线粗
-            }
-            return 2; // 分支细
-        })
-        .attr('marker-end', d => {
-            // 只有主线显示箭头
-            if ((d.source.type === 'start' || d.source.type === 'stage') && 
-                (d.target.type === 'stage' || d.target.type === 'end')) {
-                return 'url(#learningArrow)';
-            }
-            return '';
-        })
-        .attr('opacity', 0.8);
-    
-    // 绘制节点
+        .attr('fill', 'none')
+        .attr('stroke', e => e.kind === 'main' ? '#FF9800' : '#90A4AE')
+        .attr('stroke-width', e => e.kind === 'main' ? 2.5 : 1.5)
+        .attr('opacity', e => e.kind === 'main' ? 1 : 0.85)
+        .attr('marker-end', e => e.kind === 'main' ? 'url(#learningArrow)' : null)
+        .attr('d', lpEdgePath);
+
+    // 节点卡片：交互口径与技能树一致——stage 点击高亮本组，知识点点击开详情，悬停看全名/掌握度
+    // （评审收敛：删除旧硬编码云运维词表分支，existing_kp + original_kp_id 已完整覆盖可点场景）
     const nodeGroups = g.selectAll('.learning-node')
         .data(nodes)
         .enter().append('g')
         .attr('class', 'learning-node')
-        .style('cursor', d => {
-            if (d.type === 'stage') return 'pointer';
-            if (d.type === 'existing_kp' && d.original_kp_id) return 'pointer';
+        .attr('transform', n => `translate(${n.x},${n.y})`)
+        .style('cursor', n => {
+            if (n.type === 'stage') return 'pointer';
+            if (n.type === 'existing_kp' && n.original_kp_id) return 'pointer';
             return 'default';
         })
-        .on('click', function(event, d) {
-            if (d.type === 'stage') {
+        .on('click', function(event, n) {
+            if (n.type === 'stage') {
                 event.stopPropagation(); // 防止事件冒泡
-                highlightStageAndChildren(d);
-            } else if (d.type === 'existing_kp' && d.original_kp_id) {
+                highlightStageAndChildren(n);
+            } else if (n.type === 'existing_kp' && n.original_kp_id) {
                 event.stopPropagation(); // 防止事件冒泡
-                
-                // 转换为知识脑图节点格式，确保完全兼容
-                const knowledgePointNode = {
-                    id: `kp_${d.original_kp_id}`, // 转换为知识脑图的ID格式
-                    name: d.name,
-                    type: 'knowledge_point', // 转换为知识脑图的节点类型
-                    mastery_score: d.mastery_score || -1,
-                    original_kp_id: d.original_kp_id, // 保留原始ID用于API调用
-                    point_name: d.point_name,
-                    description: d.description
-                };
-                
-                showKnowledgePointDetail(knowledgePointNode);
-            } else {
-                // 检查LLM推荐节点是否有original_kp_id（可点击）
-                const llmRecommendedNodes = [
-                    '账户登录与切换', '模型配置', '云环境管理', 
-                    '系统状态查看', '成本监控', 'login', 'logout',
-                    'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
-                ];
-                const nodeName = (d.name || '').toLowerCase();
-                const isLLMRecommended = llmRecommendedNodes.some(keyword => 
-                    nodeName.includes(keyword.toLowerCase()) || 
-                    keyword.toLowerCase().includes(nodeName)
-                );
-                
-                if (isLLMRecommended && d.original_kp_id) {
-                    event.stopPropagation(); // 防止事件冒泡
-                    
-                    // 转换为知识脑图节点格式，确保完全兼容
-                    const knowledgePointNode = {
-                        id: `kp_${d.original_kp_id}`, // 转换为知识脑图的ID格式
-                        name: d.name,
-                        type: 'knowledge_point', // 转换为知识脑图的节点类型
-                        mastery_score: d.mastery_score || -1,
-                        original_kp_id: d.original_kp_id, // 保留原始ID用于API调用
-                        point_name: d.point_name,
-                        description: d.description
-                    };
-                    
-                    showKnowledgePointDetail(knowledgePointNode);
-                }
+                // 统一走公共函数（与技能树视图同一打开路径）
+                openLearningPathNodeDetail(n);
             }
         })
-        .call(d3.drag()
-            .on('start', dragstarted)
-            .on('drag', dragged)
-            .on('end', dragended));
-    
-    // 节点圆圈 - 根据文字长度动态调整大小
-    nodeGroups.append('circle')
-        .attr('r', d => {
-            if (d.type === 'start' || d.type === 'end') return 35;
-            if (d.type === 'milestone') return 30;
-            
-            // 根据文字长度动态计算半径
-            const textLength = d.name ? d.name.length : 5;
-            let baseRadius = 25;
-            
-            if (textLength > 8) {
-                baseRadius = Math.max(25, Math.min(45, textLength * 2.5));
-            }
-            
-            return baseRadius;
-        })
-        .attr('fill', d => {
-            if (d.type === 'start') return '#2196F3';           // 蓝色 - 起点
-            if (d.type === 'end') return '#2196F3';             // 蓝色 - 终点
-            if (d.type === 'stage') return '#2196F3';           // 蓝色 - 学习阶段
-            
-            // 检查是否是LLM推荐的特定节点（强制淡绿色）
-            const llmRecommendedNodes = [
-                '账户登录与切换', '模型配置', '云环境管理', 
-                '系统状态查看', '成本监控', 'login', 'logout',
-                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
-            ];
-            const nodeName = (d.name || '').toLowerCase();
-            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
-                nodeName.includes(keyword.toLowerCase()) || 
-                keyword.toLowerCase().includes(nodeName)
-            );
-            
-            if (isLLMRecommended) return '#81C784';             // 强制淡绿色 - LLM推荐节点
-            
-            // 已有知识点：按熟练度着色
-            if (d.type === 'existing_kp') return getKnowledgePointColor(d.mastery_score);
-            if (d.type === 'supplement_kp') return '#81C784';   // 淡绿色 - LLM补充知识点
-            // 兼容旧的节点类型
-            if (d.type === 'milestone') return '#2196F3';       // 蓝色 - 里程碑
-            if (d.type === 'foundation') return '#9C27B0';      // 紫色 - 基础概念
-            if (d.type === 'supplement') return '#81C784';      // 淡绿色 - LLM补充知识
-            if (d.type === 'core') return '#4CAF50';            // 绿色 - 已有核心知识
-            if (d.type === 'advanced') return '#795548';        // 棕色 - 高级应用
-            return '#607D8B';                                   // 灰蓝色 - 默认
-        })
-        .attr('stroke', d => {
-            // 主线节点不要外圈
-            if (d.type === 'start' || d.type === 'end' || d.type === 'stage') return 'none';
-            
-            // 检查是否是LLM推荐的特定节点（强制淡绿色边框）
-            const llmRecommendedNodes = [
-                '账户登录与切换', '模型配置', '云环境管理', 
-                '系统状态查看', '成本监控', 'login', 'logout',
-                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
-            ];
-            const nodeName = (d.name || '').toLowerCase();
-            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
-                nodeName.includes(keyword.toLowerCase()) || 
-                keyword.toLowerCase().includes(nodeName)
-            );
-            
-            if (isLLMRecommended) return '#66BB6A';             // 强制淡绿色边框 - LLM推荐节点
-            
-            // LLM补充知识点使用淡绿色边框
-            if (d.type === 'supplement_kp') return '#66BB6A';   // 淡绿色边框 - LLM补充知识点
-            // 兼容旧的节点类型
-            if (d.type === 'supplement') return '#66BB6A';      // 淡绿色边框 - LLM补充
-            if (d.type === 'foundation') return '#7B1FA2';      // 深紫色边框 - 基础概念
-            return '#fff';                                      // 白色边框 - 其他
-        })
-        .attr('stroke-width', d => {
-            // 主线节点不显示边框
-            if (d.type === 'start' || d.type === 'end' || d.type === 'stage') return 0;
-            
-            // 检查是否是LLM推荐的特定节点（使用边框）
-            const llmRecommendedNodes = [
-                '账户登录与切换', '模型配置', '云环境管理', 
-                '系统状态查看', '成本监控', 'login', 'logout',
-                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
-            ];
-            const nodeName = (d.name || '').toLowerCase();
-            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
-                nodeName.includes(keyword.toLowerCase()) || 
-                keyword.toLowerCase().includes(nodeName)
-            );
-            
-            if (isLLMRecommended) return 3;                    // LLM推荐节点使用边框
-            
-            // LLM补充知识点使用边框
-            if (d.type === 'supplement_kp') return 3;          // LLM补充知识点
-            if (d.type === 'supplement' || d.type === 'foundation') return 3;
-            return 2;
-        })
-        .style('cursor', d => {
-            if (d.type === 'stage') return 'pointer';
-            if (d.type === 'existing_kp' && d.original_kp_id) return 'pointer';
-            
-            // 检查LLM推荐节点是否有original_kp_id（可点击）
-            const llmRecommendedNodes = [
-                '账户登录与切换', '模型配置', '云环境管理', 
-                '系统状态查看', '成本监控', 'login', 'logout',
-                'model', 'status', 'cost', 'gauntlet', 'compact', 'compaq'
-            ];
-            const nodeName = (d.name || '').toLowerCase();
-            const isLLMRecommended = llmRecommendedNodes.some(keyword => 
-                nodeName.includes(keyword.toLowerCase()) || 
-                keyword.toLowerCase().includes(nodeName)
-            );
-            
-            if (isLLMRecommended && d.original_kp_id) return 'pointer';
-            
-            return 'default';
-        });
-    
-    // 节点文字 - 多行显示以适应圆圈
-    nodeGroups.each(function(d) {
-        const group = d3.select(this);
-        const radius = group.select('circle').attr('r');
-        const name = d.name || '';
-        // 文本颜色：已有知识点按熟练度选择，其它使用白色
-        const textColor = (d.type === 'existing_kp') ? getKpTextColor(d.mastery_score) : 'white';
-        
-        // 根据圆圈大小决定文字处理方式
-        if (radius > 30) {
-            // 大圆圈：尝试多行显示
-            const words = name.split(/[\s\-()（）]/);
-            const maxCharsPerLine = Math.floor(radius / 6);
-            
-            if (words.length > 1 && name.length > maxCharsPerLine) {
-                // 多行显示
-                words.forEach((word, i) => {
-                    if (i < 2) { // 最多显示2行
-                        group.append('text')
-                            .attr('text-anchor', 'middle')
-                            .attr('dy', i === 0 ? '-0.2em' : '1em')
-                            .attr('font-size', '11px')
-                            .attr('font-weight', 'bold')
-                            .attr('fill', textColor)
-                            .text(word.length > maxCharsPerLine ? word.substring(0, maxCharsPerLine) + '...' : word);
-                    }
-                });
-            } else {
-                // 单行显示
-                group.append('text')
-                    .attr('text-anchor', 'middle')
-                    .attr('dy', '0.35em')
-                    .attr('font-size', '12px')
-                    .attr('font-weight', 'bold')
-                    .attr('fill', textColor)
-                    .text(name.length > maxCharsPerLine ? name.substring(0, maxCharsPerLine) + '...' : name);
-            }
-        } else {
-            // 小圆圈：单行显示
-            const maxLength = Math.floor(radius / 3);
-            group.append('text')
-                .attr('text-anchor', 'middle')
-                .attr('dy', '0.35em')
-                .attr('font-size', '10px')
-                .attr('font-weight', 'bold')
-                .attr('fill', textColor)
-                .text(name.length > maxLength ? name.substring(0, maxLength) + '...' : name);
-        }
+        .on('mouseover', function(event, n) { showLpTooltip(event, lpNodeTipHtml(n)); })
+        .on('mousemove', function(event) { moveLpTooltip(event); })
+        .on('mouseout', hideLpTooltip);
+
+    nodeGroups.each(function(n) {
+        drawLpCard(d3.select(this), n, mainTypes.has(n.type));
     });
-    
-    // 节点标签（在节点下方）
-    nodeGroups.append('text')
-        .attr('text-anchor', 'middle')
-        .attr('dy', '35px')
-        .attr('font-size', '10px')
-        .attr('fill', '#666')
-        .text(d => d.description || '');
-    
-    // 添加图例
-    const legend = svg.append('g')
-        .attr('class', 'learning-path-legend')
-        .attr('transform', 'translate(20, 20)');
-    
-    const legendData = [
-        { type: 'stage', color: '#2196F3', stroke: 'none', label: '学习阶段（主线）', strokeWidth: 0 },
-        // 图例颜色用于示意，实际已有知识点根据熟练度动态着色
-        { type: 'existing_kp', color: '#FDBA74', stroke: '#fff', label: '已有知识点（按熟练度着色）', strokeWidth: 2 },
-        { type: 'supplement_kp', color: '#81C784', stroke: '#66BB6A', label: 'LLM补充知识点', strokeWidth: 3 },
-        { type: 'start', color: '#2196F3', stroke: 'none', label: '学习起点', strokeWidth: 0 },
-        { type: 'end', color: '#2196F3', stroke: 'none', label: '学习终点', strokeWidth: 0 }
-    ];
-    
-    // 图例背景
-    legend.append('rect')
-        .attr('x', -10)
-        .attr('y', -10)
-        .attr('width', 180)
-        .attr('height', legendData.length * 25 + 20)
-        .attr('fill', 'rgba(255, 255, 255, 0.9)')
-        .attr('stroke', '#ddd')
-        .attr('rx', 5);
-    
-    // 图例标题
-    legend.append('text')
-        .attr('x', 0)
-        .attr('y', 5)
-        .attr('font-size', '14px')
-        .attr('font-weight', 'bold')
-        .attr('fill', '#333')
-        .text('节点类型说明');
-    
-    // 图例项目
-    const legendItems = legend.selectAll('.legend-item')
-        .data(legendData)
-        .enter().append('g')
-        .attr('class', 'legend-item')
-        .attr('transform', (d, i) => `translate(0, ${20 + i * 25})`);
-    
-    // 图例圆圈
-    legendItems.append('circle')
-        .attr('r', 8)
-        .attr('fill', d => d.color)
-        .attr('stroke', d => d.stroke)
-        .attr('stroke-width', d => d.strokeWidth);
-    
-    // 图例文字
-    legendItems.append('text')
-        .attr('x', 15)
-        .attr('y', 0)
-        .attr('dy', '0.35em')
-        .attr('font-size', '12px')
-        .attr('fill', '#333')
-        .text(d => d.label);
-    
-    // 更新位置 - 强制主线节点保持水平
-    simulation.on('tick', () => {
-        // 强制主线节点保持在固定的水平线上
-        nodes.forEach(d => {
-            if (d.type === 'start' || d.type === 'stage' || d.type === 'end') {
-                d.y = 350; // 强制主线节点Y坐标固定为350
-            }
-        });
-        
-        links
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
-        
-        nodeGroups.attr('transform', d => `translate(${d.x},${d.y})`);
-    });
-    
-    // 保存全局变量供点击事件使用
+
+    // 图例：HTML 悬浮卡片，语义与卡片样式对齐
+    showLearningLegend('linear');
+    // 内容尺寸按实际布局登记（全图适配看整体，实际大小模式取景对准主线起点）
+    _lpContentSize = { w: contentW, h: 700 };
+    _lpContentFocus = mainNodes.length ? { x: mainNodes[0].x, y: MAIN_Y } : { x: PAD_X, y: MAIN_Y };
+    applyLpFitView();
+
+    // 保存全局变量供高亮/恢复函数使用（边为解析后的 {s,t,kind} 结构）
     globalNodes = nodes;
-    globalEdges = finalEdges;
+    globalEdges = drawEdges;
     globalLinks = links;
     globalNodeGroups = nodeGroups;
-    
+
     // 添加背景点击事件，点击空白区域恢复正常显示
     svg.on('click', function(event) {
         // 检查点击的是否是背景（不是节点或连线）
@@ -3975,8 +2562,417 @@ function renderLearningPath() {
             resetHighlight();
         }
     });
+
+    log(`✅ 线性学习路径渲染完成: ${nodes.length}个节点, ${drawEdges.length}条连线`);
+}
+
+// ==================== 学习路径双视图（线性 / 技能树） ====================
+
+// 当前数据是否带前序依赖信息（新后端生成时必带 prerequisites 数组；老缓存没有该字段）
+function hasLearningPathPrerequisites() {
+    if (!currentLearningPathData || !Array.isArray(currentLearningPathData.nodes)) return false;
+    return currentLearningPathData.nodes.some(n =>
+        (n.type === 'existing_kp' || n.type === 'supplement_kp') && Array.isArray(n.prerequisites));
+}
+
+// 统一渲染入口：按当前 Tab 模式画对应图（节点集合完全相同，只是组织形式不同）
+function renderCurrentLpView() {
+    if (currentLpViewMode === 'tree') {
+        renderLearningPathTree();
+    } else {
+        renderLearningPath();
+    }
+}
+
+// Tab 切换
+function switchLpViewMode(mode) {
+    log(`🔀 切换学习路径视图模式: ${mode}`);
+    hideLpTooltip();  // 兜底：重绘移除旧 DOM 时 mouseout 不一定触发，防 tooltip 残留
+    currentLpViewMode = mode;
+    updateLpTabStyles();
     
-    log('✅ 学习路径图渲染完成');
+    // A 方案：老缓存缺依赖数据时，首次切到技能树自动触发一次重新生成（消耗一次 LLM 调用，之后两图共用新缓存）
+    if (mode === 'tree' && currentLearningPathData && !hasLearningPathPrerequisites()) {
+        if (!_lpTreeUpgradeTried) {
+            _lpTreeUpgradeTried = true;
+            regenerateForTreeMode();
+            return;
+        }
+        // 升级已尝试过仍无依赖数据（LLM 漏输出）：树视图会退化为按阶段串联，不再反复重生成
+    }
+    renderCurrentLpView();
+}
+
+function updateLpTabStyles() {
+    const linearBtn = document.getElementById('lpTabLinear');
+    const treeBtn = document.getElementById('lpTabTree');
+    if (!linearBtn || !treeBtn) return;
+    const active = 'bg-white text-gray-800 shadow';
+    const inactive = 'text-gray-500 hover:text-gray-700';
+    linearBtn.className = `px-3 py-1 rounded-md text-sm font-medium ${currentLpViewMode === 'linear' ? active : inactive}`;
+    treeBtn.className = `px-3 py-1 rounded-md text-sm font-medium ${currentLpViewMode === 'tree' ? active : inactive}`;
+}
+
+// 首次升级：清旧缓存 → 重新生成（带依赖）→ 按当前模式（tree）渲染
+async function regenerateForTreeMode() {
+    if (isGeneratingLearningPath) return;
+    const loading = document.getElementById('loadingState');
+    const loadingText = loading ? loading.querySelector('p') : null;
+    const originalLoadingText = loadingText ? loadingText.textContent : '';
+    if (loadingText) loadingText.textContent = '正在生成技能树依赖关系（首次需要一次 AI 分析）...';
+    if (loading) loading.classList.remove('hidden');
+    try {
+        if (window.pybridge && window.pybridge.clearLearningPathCache) {
+            const clearResp = await window.pybridge.clearLearningPathCache(currentSubjectName);
+            log(`🧹 清理旧学习路径缓存: ${clearResp && clearResp.success ? 'ok' : clearResp && clearResp.error}`);
+        }
+        // generateLearningPath 内部会走 renderCurrentLpView → 技能树
+        await generateLearningPath();
+        // 评审修复：升级未成功（生成失败/LLM 漏输出依赖/缓存未清掉命中旧数据）时，
+        // Tab 回退线性并重绘，避免"技能树高亮但画布仍是旧图"的状态不一致
+        if (!hasLearningPathPrerequisites()) {
+            log('⚠️ 技能树升级未成功（无依赖数据），回退到线性视图');
+            currentLpViewMode = 'linear';
+            updateLpTabStyles();
+            renderCurrentLpView();
+        }
+    } catch (e) {
+        log(`❌ 技能树依赖升级失败: ${e.message}`);
+        alert(`技能树依赖生成失败: ${e.message}`);
+    } finally {
+        if (loadingText) loadingText.textContent = originalLoadingText;
+        if (loading) loading.classList.add('hidden');
+    }
+}
+
+// 学习路径知识点节点 → 统一跳转知识点落地页（线性/树形两视图共用；P1 落地页统一，抽屉已下线）
+function openLearningPathNodeDetail(d) {
+    goKnowledgePointLanding(d.original_kp_id, d.name || d.point_name);
+}
+
+// 学习路径图例（HTML 悬浮卡片，字号固定不随 viewBox/缩放变小）
+function showLearningLegend(mode) {
+    const card = document.getElementById('learningLegendCard');
+    const itemsBox = document.getElementById('learningLegendItems');
+    if (!card || !itemsBox) return;
+    
+    let items = [];
+    if (mode === 'tree') {
+        items = [
+            { color: '#FDBA74', label: '已学知识点（按熟练度着色，颜色越黄越熟）' },
+            { color: '#E5E7EB', label: '未评估/未学知识点（浅灰）' },
+            { color: '#81C784', label: 'AI 补充知识点（绿）' },
+            { color: '#2196F3', label: '最终掌握目标（最右）' },
+            { line: true, label: '连线方向：前序知识点 → 依赖它的知识点' }
+        ];
+        itemsBox.innerHTML = items.map(it => `
+            <div class="flex items-center space-x-2 text-sm text-gray-700">
+                ${it.line
+                    ? '<span class="inline-block w-4 border-t-2 border-gray-400"></span>'
+                    : `<span class="inline-block w-4 h-4 rounded-full border border-white shadow-sm" style="background:${it.color}"></span>`}
+                <span>${it.label}</span>
+            </div>`).join('') +
+            '<div class="text-xs text-gray-500 pt-1">前序全部点亮后，即可去学右侧对应的知识点；悬停节点看全名与前序，点「实际大小」放大到能读字</div>';
+    } else {
+        items = [
+            { color: '#2196F3', label: '起点 / 阶段 / 终点（蓝色主线卡）' },
+            { color: '#FDBA74', label: '已有知识点（左侧色条按熟练度着色，越黄越熟）' },
+            { color: '#E5E7EB', label: '未评估知识点（浅灰色条）' },
+            { color: '#81C784', label: 'AI 补充知识点（绿色色条）' }
+        ];
+        itemsBox.innerHTML = items.map(it => `
+            <div class="flex items-center space-x-2 text-sm text-gray-700">
+                <span class="inline-block w-4 h-4 rounded-full border border-white shadow-sm" style="background:${it.color}"></span>
+                <span>${it.label}</span>
+            </div>`).join('') +
+            '<div class="text-xs text-gray-500 pt-1">点阶段卡高亮该组知识点；悬停卡片看全名与掌握度</div>';
+    }
+    card.classList.remove('hidden');
+}
+
+function hideLearningLegend() {
+    const card = document.getElementById('learningLegendCard');
+    if (card) card.classList.add('hidden');
+}
+
+// ==================== 学习路径显示模式与悬停提示（线性/树两视图共用） ====================
+// 全图适配：viewBox=内容尺寸（看结构，字会被压缩）；实际大小：viewBox=容器像素 1:1（字清晰），
+// 内容大于画布时用拖拽平移浏览（d3.zoom 原生支持）
+function applyLpFitView() {
+    const svgEl = document.getElementById('mindmapSvg');
+    if (!svgEl || !svg || !zoom) return;
+    if (lpActualSize) {
+        const cw = svgEl.clientWidth || 1200, ch = svgEl.clientHeight || 700;
+        svg.attr('viewBox', `0 0 ${cw} ${ch}`);
+        // 1:1 取景：优先对准学习路径起点（第一列），避免落在连线密集区；超出部分拖拽浏览
+        const fx = _lpContentFocus ? _lpContentFocus.x : _lpContentSize.w / 2;
+        const fy = _lpContentFocus ? _lpContentFocus.y : _lpContentSize.h / 2;
+        svg.call(zoom.transform, d3.zoomIdentity.translate(cw / 2 - fx, ch / 2 - fy));
+    } else {
+        svg.attr('viewBox', `0 0 ${_lpContentSize.w} ${_lpContentSize.h}`);
+        svg.call(zoom.transform, d3.zoomIdentity);
+    }
+}
+
+function toggleLpActualSize() {
+    lpActualSize = !lpActualSize;
+    const btn = document.getElementById('lpSizeToggle');
+    if (btn) btn.textContent = lpActualSize ? '查看全图' : '实际大小';
+    hideLpTooltip();
+    applyLpFitView();
+    log(`🔍 学习路径显示模式: ${lpActualSize ? '实际大小(可拖拽)' : '全图适配'}`);
+}
+
+// 悬停提示内容：全名 + 状态 + 前序清单（文本字段全部转义，防 XSS）
+function lpNodeTipHtml(n) {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const typeLabel = n.type === 'goal' ? '最终掌握目标'
+        : n.type === 'stage' ? '学习阶段'
+        : n.type === 'start' ? '学习起点'
+        : n.type === 'end' ? '学习终点'
+        : (n.type === 'supplement_kp' ? 'AI 补充知识点' : '已有知识点');
+    const parts = [`<div class="font-bold text-sm mb-1">${esc(n.name || '')}</div>`, `<div>${typeLabel}</div>`];
+    if (n.type === 'existing_kp') {
+        // -1 是"未评估"哨兵值（与 openLearningPathNodeDetail 同口径），不向用户露出
+        parts.push((n.mastery_score == null || n.mastery_score < 0) ? '<div>掌握度：未评估</div>' : `<div>掌握度：${esc(n.mastery_score)}%</div>`);
+    }
+    // 主线 stage/起终点卡与知识点卡都需要描述位（卡片只显标题，描述收在悬停提示里）
+    if (n.description) parts.push(`<div class="mt-1">${esc(n.description)}</div>`);
+    if (n.type !== 'goal' && Array.isArray(n.prerequisites) && n.prerequisites.length) {
+        const names = n.prerequisites.map(p => {
+            const m = (currentLearningPathData.nodes || []).find(x => x.id === p);
+            return m ? m.name : p;
+        });
+        parts.push(`<div class="mt-1">前序：${names.map(esc).join('、')}</div>`);
+    }
+    return parts.join('');
+}
+
+function showLpTooltip(event, html) {
+    const tip = document.getElementById('lpTooltip');
+    if (!tip || !html) return;
+    tip.innerHTML = html;
+    tip.classList.remove('hidden');
+    moveLpTooltip(event);
+}
+
+function moveLpTooltip(event) {
+    const tip = document.getElementById('lpTooltip');
+    if (!tip || tip.classList.contains('hidden')) return;
+    const w = tip.offsetWidth || 220, h = tip.offsetHeight || 60;
+    let x = event.clientX + 14, y = event.clientY + 12;
+    if (x + w > window.innerWidth - 8) x = event.clientX - w - 10;
+    if (y + h > window.innerHeight - 8) y = event.clientY - h - 10;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+}
+
+function hideLpTooltip() {
+    const tip = document.getElementById('lpTooltip');
+    if (tip) tip.classList.add('hidden');
+}
+
+// ==================== 技能树视图（DAG 分层，左→右） ====================
+// 数据源与线性图完全同一：同一批知识点节点，只是用 prerequisites 依赖边组织成技能树；
+// 一个节点可有多个前序（如 C ← A,B,D），最右侧为“掌握目标”汇总节点。
+function renderLearningPathTree() {
+    if (!currentLearningPathData || !Array.isArray(currentLearningPathData.nodes)) {
+        log('❌ 学习路径数据无效，无法渲染技能树');
+        return;
+    }
+    // 评审修复：空节点判定必须在 initSvg（会清空画布）之前，否则早退后留下空白画布；
+    // 无知识点节点时回退线性视图兜底
+    const kpNodesRaw = currentLearningPathData.nodes
+        .filter(n => n.type === 'existing_kp' || n.type === 'supplement_kp');
+    if (kpNodesRaw.length === 0) {
+        log('⚠️ 技能树：无知识点节点，回退线性视图');
+        currentLpViewMode = 'linear';
+        updateLpTabStyles();
+        renderLearningPath();
+        return;
+    }
+    if (!initSvg()) { log('❌ SVG初始化失败'); return; }
+    // 评审修复：同线性视图，重绘即复位高亮态
+    currentHighlightedStage = null;
+    hideStageInfo();
+    
+    // 1) 取知识点节点（与线性图同一批节点，不含 stage/start/end）
+    const kpNodes = kpNodesRaw
+        .map(n => ({ ...n, prerequisites: Array.isArray(n.prerequisites) ? n.prerequisites.slice() : [] }));
+    const byId = new Map(kpNodes.map(n => [n.id, n]));
+    kpNodes.forEach(n => { n.prerequisites = n.prerequisites.filter(p => byId.has(p) && p !== n.id); });
+    
+    // 2) 分层 depth = 最长依赖链深度（记忆化 DFS，visiting 防环）
+    const depthMemo = new Map();
+    const visiting = new Set();
+    function calcDepth(node) {
+        if (depthMemo.has(node.id)) return depthMemo.get(node.id);
+        if (visiting.has(node.id)) return 0;  // 成环极端情况：断开处理
+        visiting.add(node.id);
+        let d = 0;
+        if (node.prerequisites.length > 0) {
+            d = 1 + Math.max(...node.prerequisites.map(p => calcDepth(byId.get(p))));
+        }
+        visiting.delete(node.id);
+        depthMemo.set(node.id, d);
+        return d;
+    }
+    kpNodes.forEach(n => calcDepth(n));
+    
+    // 3) 没有任何依赖边（老缓存升级失败/全部空数组）：退化为按 level+parent_stage 单链，保证画得出
+    const hasAnyDep = kpNodes.some(n => n.prerequisites.length > 0);
+    if (!hasAnyDep && kpNodes.length > 1) {
+        log('⚠️ 技能树：无依赖数据，退化为按阶段顺序串联');
+        const sorted = kpNodes.slice().sort((a, b) =>
+            (a.level || 0) - (b.level || 0) || String(a.parent_stage || '').localeCompare(String(b.parent_stage || '')) || String(a.id).localeCompare(String(b.id)));
+        depthMemo.clear();
+        sorted.forEach((n, i) => {
+            depthMemo.set(n.id, i);
+            n.prerequisites = i > 0 ? [sorted[i - 1].id] : [];
+        });
+    }
+    
+    // 4) 目标节点（最右）：所有“不被任何节点依赖”的叶子连向它
+    const referenced = new Set();
+    kpNodes.forEach(n => n.prerequisites.forEach(p => referenced.add(p)));
+    const frontier = kpNodes.filter(n => !referenced.has(n.id));
+    const maxDepth = Math.max(0, ...kpNodes.map(n => depthMemo.get(n.id) || 0));
+    const goalNode = { id: 'lp_goal', name: `掌握${currentSubjectName || ''}`, type: 'goal', prerequisites: frontier.map(f => f.id) };
+    depthMemo.set(goalNode.id, maxDepth + 1);
+    
+    // 5) 依赖边：前序 → 被依赖（箭头向右，符合“从左往右逐步点亮”的阅读方向）
+    const treeEdges = [];
+    kpNodes.forEach(n => n.prerequisites.forEach(p => treeEdges.push({ source: p, target: n.id, kind: 'dep' })));
+    frontier.forEach(f => treeEdges.push({ source: f.id, target: goalNode.id, kind: 'goal' }));
+    const drawNodes = kpNodes.concat([goalNode]);
+    
+    // 6) 布局：dagre 分层布局引擎（Sugiyama 交叉最小化，边端点自动裁到卡片边界），
+    //    库不可用/异常时回退手写分列布局；viewBox 由 applyLpFitView 按显示模式统一应用
+    const CARD_W = 168, CARD_H = 52;
+    let layoutOk = false;
+    if (typeof dagre !== 'undefined' && dagre.graphlib && typeof dagre.layout === 'function') {
+        try {
+            const dg = new dagre.graphlib.Graph();
+            dg.setGraph({ rankdir: 'LR', nodesep: 26, ranksep: 96, marginx: 40, marginy: 40 });
+            dg.setDefaultEdgeLabel(() => ({}));
+            drawNodes.forEach(n => dg.setNode(n.id, { width: CARD_W, height: CARD_H }));
+            treeEdges.forEach(e => { if (!dg.hasEdge(e.source, e.target)) dg.setEdge(e.source, e.target); });
+            dagre.layout(dg);  // 内部先自动破环（greedy-fas），脏数据不会挂死
+            drawNodes.forEach(n => { const p = dg.node(n.id); if (p) { n.x = p.x; n.y = p.y; } });
+            treeEdges.forEach(e => { const pe = dg.edge(e.source, e.target); if (pe) e.points = pe.points; });
+            _lpContentSize = {
+                w: Math.max(1200, (dg.graph().width || 1200) + 40),
+                h: Math.max(700, (dg.graph().height || 700) + 40),
+            };
+            // 取景中心对准第一列（学习路径起点）：实际大小模式首屏不落在乱线区
+            let minX = Infinity;
+            drawNodes.forEach(n => { if (typeof n.x === 'number') minX = Math.min(minX, n.x); });
+            const firstCol = drawNodes.filter(n => Math.abs((n.x || 0) - minX) < 1);
+            if (firstCol.length) {
+                _lpContentFocus = { x: minX, y: firstCol.reduce((s, n) => s + n.y, 0) / firstCol.length };
+            } else {
+                _lpContentFocus = null;  // 防御：异常时退化到内容中心，不沿用上一轮旧坐标
+            }
+            layoutOk = true;
+        } catch (e) {
+            log(`⚠️ dagre 布局异常，回退手写分层: ${e.message}`);
+        }
+    } else {
+        log('⚠️ dagre 未加载，回退手写分层布局');
+    }
+    if (!layoutOk) {
+        // 回退：按最长依赖链深度手写分列（列内垂直居中）
+        const colSpacing = 360, rowSpacing = 170, padX = 220, padY = 90;
+        const cols = new Map();
+        drawNodes.forEach(n => {
+            const d = depthMemo.get(n.id) || 0;
+            if (!cols.has(d)) cols.set(d, []);
+            cols.get(d).push(n);
+        });
+        let maxRows = 1;
+        cols.forEach(arr => { maxRows = Math.max(maxRows, arr.length); });
+        const contentWidth = padX * 2 + (maxDepth + 1) * colSpacing;
+        const contentHeight = Math.max(700, (maxRows - 1) * rowSpacing + padY * 2);
+        _lpContentSize = { w: Math.max(3200, contentWidth), h: contentHeight };
+        const centerY = contentHeight / 2;
+        cols.forEach((arr, d) => {
+            arr.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'));
+            arr.forEach((n, i) => {
+                n.x = padX + d * colSpacing;
+                n.y = centerY + (i - (arr.length - 1) / 2) * rowSpacing;
+            });
+        });
+        _lpContentFocus = { x: padX, y: centerY };
+    }
+    applyLpFitView();
+    
+    // 7) 箭头 marker + 卡片投影
+    const defs = svg.append('defs');
+    const shadow = defs.append('filter')
+        .attr('id', 'treeCardShadow')
+        .attr('x', '-20%').attr('y', '-30%').attr('width', '140%').attr('height', '160%');
+    shadow.append('feDropShadow')
+        .attr('dx', 0).attr('dy', 1).attr('stdDeviation', 2)
+        .attr('flood-color', '#000000').attr('flood-opacity', 0.16);
+    defs.append('marker')
+        .attr('id', 'treeArrow').attr('viewBox', '0 -5 10 10')
+        .attr('refX', 10).attr('refY', 0)
+        .attr('markerWidth', 7).attr('markerHeight', 7)
+        .attr('orient', 'auto')
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', '#90A4AE');
+    
+    // 8) 连线：dagre 给出的边点序列（已裁到卡片边界）画平滑曲线；回退布局时画直线
+    const nodeById = new Map(drawNodes.map(n => [n.id, n]));
+    const lineGen = d3.line().x(p => p.x).y(p => p.y).curve(d3.curveBasis);
+    const links = g.selectAll('.tree-link')
+        .data(treeEdges)
+        .enter().append('path')
+        .attr('class', 'tree-link')
+        .attr('fill', 'none')
+        .attr('stroke', e => e.kind === 'goal' ? '#FF9800' : '#90A4AE')
+        .attr('stroke-width', e => e.kind === 'goal' ? 2.2 : 1.5)
+        .attr('opacity', 0.85)
+        .attr('d', e => {
+            if (e.points && e.points.length > 1) return lineGen(e.points);
+            // 回退直线：端点裁到卡片矩形边界（dagre 正常时 points 已裁），否则箭头被白底卡片盖住
+            const s = nodeById.get(e.source), t = nodeById.get(e.target);
+            const dx = t.x - s.x, dy = t.y - s.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len, uy = dy / len;
+            const kx = Math.abs(ux) > 1e-6 ? (CARD_W / 2 + 2) / Math.abs(ux) : Infinity;
+            const ky = Math.abs(uy) > 1e-6 ? (CARD_H / 2 + 2) / Math.abs(uy) : Infinity;
+            const k = Math.min(kx, ky, len / 2);
+            return `M${s.x + ux * k},${s.y + uy * k}L${t.x - ux * k},${t.y - uy * k}`;
+        });
+    if (treeEdges.length) links.attr('marker-end', 'url(#treeArrow)');
+    
+    // 9) 节点：圆角卡片（游戏技能树形态），左侧色条保留"点亮"语义（黄=已学/灰=未评估/绿=补充）；
+    //    颜色与点击详情与线性图同口径；悬停出全名/状态/前序，不用放大也能读
+    const nodeGroups = g.selectAll('.tree-node')
+        .data(drawNodes)
+        .enter().append('g')
+        .attr('class', 'tree-node')
+        .attr('transform', n => `translate(${n.x},${n.y})`)
+        .style('cursor', n => (n.type === 'existing_kp' && n.original_kp_id) ? 'pointer' : 'default')
+        .on('click', function(event, n) {
+            if (n.type === 'existing_kp' && n.original_kp_id) {
+                event.stopPropagation();
+                openLearningPathNodeDetail(n);
+            }
+        })
+        .on('mouseover', function(event, n) { showLpTooltip(event, lpNodeTipHtml(n)); })
+        .on('mousemove', function(event) { moveLpTooltip(event); })
+        .on('mouseout', hideLpTooltip);
+    
+    // 卡片绘制抽为公共函数与线性视图共用（drawLpCard），消除同款样式的双实现
+    nodeGroups.each(function(n) {
+        drawLpCard(d3.select(this), n, n.type === 'goal');
+    });
+    
+    // 10) 图例（HTML 卡片，与线性图同款修复）
+    showLearningLegend('tree');
+    
+    log(`✅ 技能树渲染完成: ${drawNodes.length}个节点, ${treeEdges.length}条依赖`);
 }
 
 // 全局变量存储当前突出显示的状态
@@ -4014,81 +3010,31 @@ function highlightStageAndChildren(stageNode) {
     // 更新当前突出显示的节点
     currentHighlightedStage = stageNode;
     
-    // 找到该stage的所有子知识点
+    // 找到该stage的所有子知识点（卡片化后边为渲染时手动解析的 {s,t,kind} 结构）
+    // 评审修复：主线相邻阶段（start/stage/end 之间的 main 边）不算子知识点，
+    // 否则阶段信息框计数虚高、相邻主线卡也跟着亮起
     const childrenIds = new Set();
-    
     globalEdges.forEach(edge => {
-        if (edge.source === stageNode.id || (typeof edge.source === 'object' && edge.source.id === stageNode.id)) {
-            const targetId = typeof edge.target === 'string' ? edge.target : edge.target.id;
-            childrenIds.add(targetId);
-        }
+        if (edge.kind === 'main') return;
+        if (edge.s && edge.s.id === stageNode.id) childrenIds.add(edge.t.id);
+        else if (edge.t && edge.t.id === stageNode.id) childrenIds.add(edge.s.id);
     });
-    
-    log(`📋 找到${childrenIds.size}个子节点: ${Array.from(childrenIds).join(', ')}`);
-    
-    // 突出显示相关节点，淡化其他节点
-    globalNodeGroups.selectAll('circle')
-        .transition()
+    log(`📋 找到${childrenIds.size}个子节点`);
+    const isRelated = d => d.id === stageNode.id || childrenIds.has(d.id);
+
+    // 整组卡片淡出/突出（含卡内文字，不再单独操作圆圈）
+    globalNodeGroups.transition()
         .duration(300)
-        .style('opacity', d => {
-            // 突出显示：当前stage节点 + 其子节点
-            if (d.id === stageNode.id || childrenIds.has(d.id)) {
-                return 1.0; // 完全不透明
-            }
-            // 淡化其他节点
-            return 0.2; // 很透明
-        })
-        .attr('stroke-width', d => {
-            // 突出显示的节点边框更粗
-            if (d.id === stageNode.id) {
-                return 6; // stage节点边框最粗
-            }
-            if (childrenIds.has(d.id)) {
-                return 4; // 子节点边框较粗
-            }
-            // 其他节点边框变细
-            return 1;
-        });
-    
-    // 突出显示相关文字
-    globalNodeGroups.selectAll('text')
-        .transition()
-        .duration(300)
-        .style('opacity', d => {
-            if (d.id === stageNode.id || childrenIds.has(d.id)) {
-                return 1.0;
-            }
-            return 0.3;
-        })
-        .style('font-weight', d => {
-            if (d.id === stageNode.id || childrenIds.has(d.id)) {
-                return 'bold';
-            }
-            return 'normal';
-        });
-    
-    // 突出显示相关连线
+        .style('opacity', d => isRelated(d) ? 1.0 : 0.2);
+
+    // 突出显示相关连线，淡化其他连线
     globalLinks.transition()
         .duration(300)
-        .style('opacity', d => {
-            const sourceId = typeof d.source === 'string' ? d.source : d.source.id;
-            const targetId = typeof d.target === 'string' ? d.target : d.target.id;
-            
-            // 突出显示：从stage到子节点的连线
-            if (sourceId === stageNode.id || targetId === stageNode.id) {
-                return 1.0;
-            }
-            // 淡化其他连线
-            return 0.1;
-        })
-        .attr('stroke-width', d => {
-            const sourceId = typeof d.source === 'string' ? d.source : d.source.id;
-            const targetId = typeof d.target === 'string' ? d.target : d.target.id;
-            
-            if (sourceId === stageNode.id || targetId === stageNode.id) {
-                return 4; // 相关连线更粗
-            }
-            return 1; // 其他连线变细
+        .style('opacity', e => (e.s.id === stageNode.id || e.t.id === stageNode.id) ? 1.0 : 0.1)
+        .attr('stroke-width', e => {
+            const on = e.s.id === stageNode.id || e.t.id === stageNode.id;
+            if (on) return e.kind === 'main' ? 3.5 : 2.5;
+            return e.kind === 'main' ? 2.5 : 1.5;
         });
     
     // 显示提示信息
@@ -4106,55 +3052,14 @@ function resetHighlight() {
         return;
     }
     
-    // 恢复所有节点的正常显示
-    globalNodeGroups.selectAll('circle')
-        .transition()
-        .duration(300)
-        .style('opacity', 1.0)
-        .attr('stroke-width', d => {
-            // 恢复原始边框宽度
-            if (d.type === 'stage') return 4;
-            if (d.type === 'supplement_kp') return 3;
-            if (d.type === 'supplement' || d.type === 'foundation') return 3;
-            return 2;
-        });
-    
-    // 恢复所有文字的正常显示
-    globalNodeGroups.selectAll('text')
-        .transition()
-        .duration(300)
-        .style('opacity', 1.0)
-        .style('font-weight', 'normal');
-    
-    // 恢复所有连线的正常显示
+    // 恢复所有卡片组的正常不透明度（卡片化后整组恢复）
+    globalNodeGroups.transition().duration(300).style('opacity', 1.0);
+
+    // 恢复所有连线的基准透明度与线宽
     globalLinks.transition()
         .duration(300)
-        .style('opacity', d => {
-            // 恢复原始透明度
-            const sourceType = typeof d.source === 'object' ? d.source.type : 
-                              globalNodes.find(n => n.id === d.source)?.type;
-            const targetType = typeof d.target === 'object' ? d.target.type : 
-                              globalNodes.find(n => n.id === d.target)?.type;
-            
-            if ((sourceType === 'start' || sourceType === 'stage') && 
-                (targetType === 'stage' || targetType === 'end')) {
-                return 1.0; // 主线完全不透明
-            }
-            return 0.8; // 分支线稍微透明
-        })
-        .attr('stroke-width', d => {
-            // 恢复原始线宽
-            const sourceType = typeof d.source === 'object' ? d.source.type : 
-                              globalNodes.find(n => n.id === d.source)?.type;
-            const targetType = typeof d.target === 'object' ? d.target.type : 
-                              globalNodes.find(n => n.id === d.target)?.type;
-            
-            if ((sourceType === 'start' || sourceType === 'stage') && 
-                (targetType === 'stage' || targetType === 'end')) {
-                return 4; // 主线粗线
-            }
-            return 2; // 分支线细线
-        });
+        .style('opacity', e => e.kind === 'main' ? 1.0 : 0.85)
+        .attr('stroke-width', e => e.kind === 'main' ? 2.5 : 1.5);
     
     // 隐藏提示信息
     hideStageInfo();
@@ -4181,8 +3086,9 @@ function showStageInfo(stageNode, childrenCount) {
         .style('z-index', '1000')
         .style('opacity', '0');
     
+    const escStage = String(stageNode.name == null ? '' : stageNode.name).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     infoBox.html(`
-        <div style="font-weight: bold; margin-bottom: 5px;">📚 ${stageNode.name}</div>
+        <div style="font-weight: bold; margin-bottom: 5px;">📚 ${escStage}</div>
         <div style="font-size: 12px; color: #ccc;">包含 ${childrenCount} 个知识点</div>
         <div style="font-size: 11px; color: #999; margin-top: 5px;">点击其他stage切换 | 再次点击恢复</div>
     `);
@@ -4239,394 +3145,10 @@ function dragended(event, d) {
     }
 }
 
-// 基于笔记练习功能
-async function startNoteBasedPractice() {
-    const detailLayer = document.getElementById('knowledgePointDetailLayer');
-    const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
-    
-    if (!nodeId) {
-        showToast('无法获取知识点信息', 'error');
-        return;
-    }
-    
-    log(`🎯 开始基于笔记练习 - 知识点ID: ${nodeId}`);
-    
-    // 提取真实的知识点ID（去掉kp_前缀）
-    const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
-    log(`🔍 提取真实ID: ${realId}`);
-    
-    try {
-        // 获取知识点的关联笔记列表
-        const response = await window.pybridge.getKnowledgePointNotes(realId);
-        const result = JSON.parse(response);
-        
-        if (!result.success || !result.notes || result.notes.length === 0) {
-            showToast('该知识点暂无关联笔记，无法生成练习', 'warning');
-            return;
-        }
-        
-        log(`📝 找到 ${result.notes.length} 篇关联笔记，开始获取详细内容...`);
-        
-        // 获取每个笔记的详细内容
-        const notesWithContent = [];
-        for (const note of result.notes) {
-            try {
-                const contentResponse = await window.pybridge.getNoteContent(note.id);
-                const contentResult = JSON.parse(contentResponse);
-                
-                if (contentResult.success && contentResult.note) {
-                    notesWithContent.push({
-                        title: contentResult.note.title,
-                        content: contentResult.note.content,
-                        file_name: contentResult.note.file_name
-                    });
-                    log(`✅ 获取笔记内容成功: ${contentResult.note.title}`);
-                } else {
-                    log(`⚠️ 获取笔记内容失败: ${note.title}`);
-                }
-            } catch (error) {
-                log(`❌ 获取笔记内容出错: ${note.title} - ${error.message}`);
-            }
-        }
-        
-        if (notesWithContent.length === 0) {
-            showToast('无法获取笔记内容，请稍后重试', 'error');
-            return;
-        }
-        
-        // 构建笔记内容
-        const notesContent = notesWithContent.map(note => {
-            return `【笔记标题】: ${note.title}\n【文件名】: ${note.file_name}\n【笔记内容】:\n${note.content}`;
-        }).join('\n\n---\n\n');
-        
-        // 获取知识点名称
-        const knowledgePointName = document.getElementById('detailTitle').textContent;
-        
-        // 构建练习生成提示词
-        const practicePrompt = `请基于以下笔记内容，为知识点"${knowledgePointName}"生成一套练习题。
+// P1 落地页统一（2026-10-09）：本页「关联笔记练习/举一反三」自由文本聊天窗路径与熟练度评估弹层已整体下线，
+// 知识点详情/评估/练习统一由 SPA knowledge_point 落地页承担（pm_pages.js bootKnowledgePoint，
+// 旗标契约见 goKnowledgePointLanding）；旧「批9 旗标消费 → 自动弹详情层」机制同步不再存在。
 
-**关联笔记内容：**
-${notesContent}
-
-**要求：**
-1. 仔细阅读上述笔记内容，找到与知识点"${knowledgePointName}"相关的原文内容
-2. 严格基于笔记中的原文内容出题，不要超出原文的范畴
-3. 题目类型包括：选择题、判断题、填空题、简答题
-4. 每种题型2-3道，总共8-10道题
-5. 题目难度适中，既考查基础理解，也考查应用能力
-
-**返回格式要求（严格按照以下格式）：**
-
-## 选择题
-
-**1. [题目内容]**
-A. [选项A]
-B. [选项B] 
-C. [选项C]
-D. [选项D]
-
-**答案：** [正确答案字母]
-**解析：** [详细解析]
-
-## 判断题
-
-**1. [题目内容]**
-
-**答案：** [正确/错误]
-**解析：** [详细解析]
-
-## 填空题
-
-**1. [题目内容，用______表示空白]**
-
-**答案：** [标准答案]
-**解析：** [详细解析]
-
-## 简答题
-
-**1. [题目内容]**
-
-**参考答案：** [详细答案]
-**评分要点：** [关键得分点]
-
-请确保所有题目都严格基于提供的笔记内容，不要添加笔记中没有的知识点。`;
-
-        // 打开AI聊天窗口
-        if (window.openAIChatWindow) {
-            window.openAIChatWindow();
-        }
-        
-        // 生成练习ID
-        const practiceId = 'note_practice_' + Date.now();
-        
-        // 创建练习数据（添加selected_text字段存储笔记内容）
-        const practiceData = {
-            id: practiceId,
-            type: 'note_based',
-            knowledgePoint: knowledgePointName,
-            notesCount: result.notes.length,
-            questions: null,
-            status: 'generating',
-            selected_text: notesContent,  // 存储笔记内容作为相关学习资料
-            selectedText: notesContent    // 兼容性字段
-        };
-        
-        // 🔥 缓存练习数据（包含selected_text）
-        currentPracticeDataCache[practiceId] = practiceData;
-        log(`💾 已缓存练习数据，ID: ${practiceId}, 包含笔记内容: ${notesContent.length}字符`);
-        
-        // 显示AI练习面板
-        if (window.showAIPracticePanel) {
-            window.showAIPracticePanel(practiceData);
-        }
-        
-        // 异步生成练习题目
-        setTimeout(() => {
-            generatePracticeQuestionsForAI(practicePrompt, practiceId);
-        }, 500);
-        
-    } catch (error) {
-        log(`❌ 获取关联笔记失败: ${error.message}`);
-        showToast('获取关联笔记失败，请稍后重试', 'error');
-    }
-}
-
-// 举一反三练习功能
-async function startAnalogyPractice() {
-    const detailLayer = document.getElementById('knowledgePointDetailLayer');
-    const nodeId = detailLayer ? detailLayer.dataset.nodeId : null;
-    
-    if (!nodeId) {
-        showToast('无法获取知识点信息', 'error');
-        return;
-    }
-    
-    log(`🎯 开始举一反三练习 - 知识点ID: ${nodeId}`);
-    
-    // 提取真实的知识点ID（去掉kp_前缀）
-    const realId = nodeId.startsWith('kp_') ? nodeId.substring(3) : nodeId;
-    log(`🔍 提取真实ID: ${realId}`);
-    
-    try {
-        // 获取知识点的错题记录
-        const response = await window.pybridge.getKnowledgePointQuestions(realId);
-        const result = JSON.parse(response);
-        
-        if (!result.success || !result.questions || result.questions.length === 0) {
-            showToast('该知识点暂无错题记录，无法生成举一反三练习', 'warning');
-            return;
-        }
-        
-        log(`📊 找到 ${result.questions.length} 道相关题目，筛选错题...`);
-        
-        // 筛选出错题（练习次数大于正确次数的题目）
-        const errorQuestions = result.questions.filter(q => {
-            const errorCount = q.practice_count - q.correct_count;
-            return errorCount > 0; // 有错误记录的题目
-        });
-        
-        if (errorQuestions.length === 0) {
-            showToast('该知识点暂无错题记录，无法生成举一反三练习', 'warning');
-            return;
-        }
-        
-        log(`❌ 筛选出 ${errorQuestions.length} 道错题`);
-        
-        // 构建错题内容
-        const errorQuestionsContent = errorQuestions.map((q, index) => {
-            const errorCount = q.practice_count - q.correct_count;
-            const correctRate = q.practice_count > 0 ? (q.correct_count / q.practice_count * 100).toFixed(1) : 0;
-            
-            return `【错题${index + 1}】
-题目内容: ${q.content}
-题目类型: ${q.type}
-练习次数: ${q.practice_count}次
-正确次数: ${q.correct_count}次
-错误次数: ${errorCount}次
-正确率: ${correctRate}%
-最后练习: ${q.last_practice_time}
-最后结果: ${q.last_result ? '正确' : '错误'}
-熟练度: ${q.mastery_stars}星`;
-        }).join('\n\n');
-        
-        // 获取知识点名称
-        const knowledgePointName = document.getElementById('detailTitle').textContent;
-        
-        // 构建练习生成提示词
-        const practicePrompt = `请基于以下错题记录，为知识点"${knowledgePointName}"生成举一反三练习题。
-
-**知识点错题记录：**
-${errorQuestionsContent}
-
-**要求：**
-1. 分析上述错题的题型、考查点和错误原因
-2. 保持与错题相同的题型和难度水平
-3. 出类似的题目供用户练习，但不要完全相同
-4. 重点针对用户容易出错的知识点进行强化练习
-5. 每种错题题型生成2-3道类似题目
-
-**返回格式要求（严格按照以下格式）：**
-
-## 选择题
-
-**1. [题目内容]**
-A. [选项A]
-B. [选项B] 
-C. [选项C]
-D. [选项D]
-
-**答案：** [正确答案字母]
-**解析：** [详细解析，说明易错点]
-
-## 判断题
-
-**1. [题目内容]**
-
-**答案：** [正确/错误]
-**解析：** [详细解析，说明易错点]
-
-## 填空题
-
-**1. [题目内容，用______表示空白]**
-
-**答案：** [标准答案]
-**解析：** [详细解析，说明易错点]
-
-## 简答题
-
-**1. [题目内容]**
-
-**参考答案：** [详细答案]
-**评分要点：** [关键得分点]
-**易错提醒：** [常见错误和注意事项]
-
-请确保题目与原错题类型一致，但内容有所变化，重点帮助用户克服相同类型的错误。`;
-
-        // 打开AI聊天窗口
-        if (window.openAIChatWindow) {
-            window.openAIChatWindow();
-        }
-        
-        // 生成练习ID
-        const practiceId = 'analogy_practice_' + Date.now();
-        
-        // 创建练习数据（添加selected_text字段存储错题内容）
-        const practiceData = {
-            id: practiceId,
-            type: 'analogy_based',
-            knowledgePoint: knowledgePointName,
-            errorQuestionsCount: result.questions.length,
-            questions: null,
-            status: 'generating',
-            selected_text: errorQuestionsContent,  // 存储错题内容作为相关学习资料
-            selectedText: errorQuestionsContent    // 兼容性字段
-        };
-        
-        // 🔥 缓存练习数据（包含selected_text）
-        currentPracticeDataCache[practiceId] = practiceData;
-        log(`💾 已缓存练习数据，ID: ${practiceId}, 包含错题内容: ${errorQuestionsContent.length}字符`);
-        
-        // 显示AI练习面板
-        if (window.showAIPracticePanel) {
-            window.showAIPracticePanel(practiceData);
-        }
-        
-        // 异步生成练习题目
-        setTimeout(() => {
-            generatePracticeQuestionsForAI(practicePrompt, practiceId);
-        }, 500);
-        
-    } catch (error) {
-        log(`❌ 获取错题记录失败: ${error.message}`);
-        showToast('获取错题记录失败，请稍后重试', 'error');
-    }
-}
-
-// 生成练习题目的通用函数（复用文档中的实现）
-function generatePracticeQuestionsForAI(promptText, practiceId) {
-    if (window.pybridge && window.pybridge.generatePracticeQuestions) {
-        try {
-            window.pybridge.generatePracticeQuestions(promptText, function(response) {
-                if (response && response.trim()) {
-                    // 发送成功消息到AI助手
-                    if (window.addAIPracticeMessage) {
-                        window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + response, 'ai');
-                    }
-                    
-                    // 🔥 从缓存中获取原始练习数据（包含selected_text）
-                    const cachedData = currentPracticeDataCache[practiceId] || {};
-                    log(`📦 从缓存恢复练习数据，ID: ${practiceId}, 缓存的selected_text长度: ${(cachedData.selected_text || '').length}`);
-                    
-                    // 更新练习数据（合并缓存数据，保留selected_text）
-                    const updatedPracticeData = {
-                        ...cachedData,  // 🔥 展开缓存数据，包含selected_text
-                        id: practiceId,
-                        questions: response,
-                        status: 'ready'
-                    };
-                    
-                    log(`✅ 更新后的练习数据包含selected_text: ${!!updatedPracticeData.selected_text}, 长度: ${(updatedPracticeData.selected_text || '').length}`);
-                    
-                    // 更新练习面板
-                    if (window.showAIPracticePanel) {
-                        window.showAIPracticePanel(updatedPracticeData);
-                    }
-                } else {
-                    // 生成失败
-                    if (window.addAIPracticeMessage) {
-                        window.addAIPracticeMessage('练习题目生成失败，请稍后重试。', 'error');
-                    }
-                }
-            });
-        } catch (error) {
-            console.error('调用generatePracticeQuestions失败:', error);
-            if (window.addAIPracticeMessage) {
-                window.addAIPracticeMessage('练习题目生成出错：' + error.message, 'error');
-            }
-        }
-    } else {
-        console.error('generatePracticeQuestions方法不可用');
-        if (window.addAIPracticeMessage) {
-            window.addAIPracticeMessage('练习功能暂不可用，请检查系统配置。', 'error');
-        }
-    }
-}
-
-// 显示提示消息的函数
-function showToast(message, type = 'info') {
-    // 创建提示元素
-    const toast = document.createElement('div');
-    toast.className = `fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 text-white font-semibold`;
-    
-    // 根据类型设置颜色
-    switch(type) {
-        case 'success':
-            toast.className += ' bg-green-500';
-            break;
-        case 'warning':
-            toast.className += ' bg-yellow-500';
-            break;
-        case 'error':
-            toast.className += ' bg-red-500';
-            break;
-        default:
-            toast.className += ' bg-blue-500';
-    }
-    
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    
-    // 3秒后自动移除
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.parentNode.removeChild(toast);
-        }
-    }, 3000);
-}
-
-// u10：原「批9 旗标消费 pm_pending_point → 自动弹详情层」已下线。
-// 直达知识点改用独立页 knowledge_point（pm_pages.js bootKnowledgePoint 消费旗标），
-// 不再先跳脑图再弹层（用户明确否定的路径）；本页内点脑图节点弹详情层行为保持不变。
 </script>
 </body>
 </html>

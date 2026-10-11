@@ -166,8 +166,9 @@
                 if (dash) p.setAttribute('stroke-dasharray', '4 3');
                 svg.appendChild(p);
             }
-            poly(function (pt) { return Number(pt.mastery); }, '#EF4444', false);
-            poly(function (pt) { return pt.retrievability != null ? Number(pt.retrievability) * 100 : null; }, '#3B82F6', true);
+            // 用户验收反馈（2026-10-08）：线必须与红点同走 Y() 换算（SVG y 轴向下，直接用原值会上下颠倒成镜像）
+            poly(function (pt) { return Y(Number(pt.mastery)); }, '#EF4444', false);
+            poly(function (pt) { return pt.retrievability != null ? Y(Number(pt.retrievability) * 100) : null; }, '#3B82F6', true);
             for (var i = 0; i < n; i++) {
                 var c = document.createElementNS(svgNS, 'circle');
                 c.setAttribute('cx', X(i)); c.setAttribute('cy', Y(pts[i].mastery)); c.setAttribute('r', 2.5);

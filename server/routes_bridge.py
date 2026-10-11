@@ -1078,7 +1078,8 @@ def point_detail(pid):
 @bridge_bp.route("/api/knowledge/points/<int:pid>/notes", methods=["GET"])
 @require_auth
 def point_notes(pid):
-    """getKnowledgePointNotes：content 为占位串（Qt 原语义）。"""
+    """getKnowledgePointNotes：content 为占位串（Qt 原语义）。
+    P1 落地页统一（2026-10-09）：去掉 LIMIT 5，落地页全量展示关联笔记。"""
     kms = get_kms()
     conn = kms.db_manager.get_connection()
     try:
@@ -1090,7 +1091,7 @@ def point_notes(pid):
             "SELECT n.id, n.title, n.file_name, n.created_time, n.updated_time, kps.extraction_time "
             "FROM knowledge_point_sources kps JOIN notes n ON n.note_uuid = kps.note_uuid "
             "WHERE kps.knowledge_point_id = ? AND n.user_id = ? "
-            "ORDER BY kps.extraction_time DESC LIMIT 5", (pid, g.user_id)).fetchall()
+            "ORDER BY kps.extraction_time DESC", (pid, g.user_id)).fetchall()
     finally:
         conn.close()
     return _ok({"success": True, "notes": [
@@ -1123,7 +1124,7 @@ def note_by_path():
 @bridge_bp.route("/api/notes/<int:nid>/content", methods=["GET"])
 @require_auth
 def note_content(nid):
-    """getNoteContent：正文超 1000 字符截断；关联知识点列表。"""
+    """getNoteContent：P4 去 1000 字符截断，完整返回正文供落地页 MD 预览；关联知识点列表。"""
     kms = get_kms()
     conn = kms.db_manager.get_connection()
     try:
@@ -1140,20 +1141,31 @@ def note_content(nid):
     finally:
         conn.close()
     file_path = row[3]
+    # P4 评审 m-3：去截断后补响应体闸门，防误挂超大文件拖垮前端同步渲染
     try:
         p = Path(file_path)
+        if p.is_file() and p.stat().st_size > 2 * 1024 * 1024:
+            return _ok({"success": False, "error": "笔记文件过大（>2MB），请拆分后再预览"})
         content = p.read_text(encoding="utf-8", errors="replace") if p.is_file() else "笔记文件不存在或路径无效"
     except Exception:  # noqa: BLE001
         content = "笔记文件不存在或路径无效"
-    clipped = content if len(content) <= 1000 else content[:1000] + "..."
     return _ok({"success": True, "note": {
         "id": row[0], "title": row[1], "file_name": row[2], "file_path": file_path,
-        "content": clipped, "content_length": len(content),
+        "content": content, "content_length": len(content),
         "created_time": row[4], "updated_time": row[5],
         "related_knowledge_points": [
             {"id": k[0], "name": k[1], "extraction_time": k[2]} for k in kps
         ],
     }})
+
+
+def _qtype_guess(text: str) -> str:
+    """无独立题库表：按题干启发式猜题型中文标签（P2 前为 point_questions 嵌套函数，提级供详情端点复用）。"""
+    if re.search(r"[A-D][.、）)]", text or "") or "选择" in (text or ""):
+        return "选择题"
+    if "_" in (text or "") or "（　）" in (text or "") or "填空" in (text or ""):
+        return "填空题"
+    return "简答题"
 
 
 @bridge_bp.route("/api/knowledge/points/<int:pid>/questions", methods=["GET"])
@@ -1180,20 +1192,13 @@ def point_questions(pid):
     finally:
         conn.close()
 
-    def _qtype(text: str) -> str:
-        if re.search(r"[A-D][.、）)]", text or "") or "选择" in (text or ""):
-            return "选择题"
-        if "_" in (text or "") or "（　）" in (text or "") or "填空" in (text or ""):
-            return "填空题"
-        return "简答题"
-
     out = []
     for content, practice_count, correct_count, last_time, last_correct in rows:
         correct_count = correct_count or 0
         rate = (correct_count / practice_count) if practice_count else 0
         out.append({
             "content": content,
-            "type": _qtype(content),
+            "type": _qtype_guess(content),
             "practice_count": practice_count,
             "correct_count": correct_count,
             "mastery_stars": min(5, max(1, int(rate * 5) + 1)),
@@ -1202,6 +1207,299 @@ def point_questions(pid):
             "is_favorite": content in favorites,
         })
     return _ok({"success": True, "questions": out})
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/question-detail", methods=["GET"])
+@require_auth
+def point_question_detail(pid):
+    """P2 关联题目（2026-10-09）：按题干查题目详情——全部作答流水 + 错题信息 + 重练参考答案。
+
+    query: content=题干（与 point_questions 聚合行一一对应）。
+    reference_answer 口径：错题行 correct_answer 优先；无非错题流水时回退最近一次答对的 user_answer
+    （无独立题库表，历史正确作答即重练判分基准）。
+    """
+    content = request.args.get("content") or ""
+    if not content.strip():
+        return _ok({"success": False, "error": "缺少题干"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        recs = conn.execute(
+            "SELECT id, user_answer, is_correct, question_type, options_json, practice_time "
+            "FROM practice_records WHERE knowledge_point_id = ? AND user_id = ? AND question_content = ? "
+            "ORDER BY practice_time DESC, id DESC", (pid, g.user_id, content)).fetchall()
+        if not recs:
+            return _ok({"success": False, "error": "未找到该题的练习记录"})
+        err = conn.execute(
+            "SELECT eq.id, eq.correct_answer, eq.explanation, eq.current_proficiency "
+            "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
+            "WHERE pr.knowledge_point_id = ? AND pr.user_id = ? AND pr.question_content = ? "
+            "AND eq.user_id = ? "  # P2 评审修复 m-3：错题表自身也按用户隔离（纵深防御）
+            "ORDER BY eq.created_time DESC, eq.id DESC LIMIT 1", (pid, g.user_id, content, g.user_id)).fetchone()
+        fav = conn.execute(
+            "SELECT 1 FROM favorite_questions WHERE knowledge_point_id = ? AND user_id = ? AND question_content = ? LIMIT 1",
+            (pid, g.user_id, content)).fetchone()
+    finally:
+        conn.close()
+    # 题型：流水里存的是生成时的英文 type，取最近一条非空；缺失退回题干启发式
+    qtype = _qtype_norm(next((r[3] for r in recs if r[3]), ""), content)
+    options = None
+    for r in recs:
+        if r[4]:
+            try:
+                parsed = json.loads(r[4])
+            except (TypeError, ValueError):
+                continue
+            if isinstance(parsed, list) and parsed:
+                options = parsed
+                break
+    correct_answer = (err[1] if err and err[1] else "") or next((r[1] for r in recs if r[2]), "")
+    return _ok({"success": True, "question": {
+        "content": content,
+        "type": qtype,
+        "options": options or [],
+        "practice_count": len(recs),
+        "correct_count": sum(1 for r in recs if r[2]),
+        "is_favorite": bool(fav),
+        "records": [{"time": r[5], "user_answer": r[1], "is_correct": bool(r[2])} for r in recs],
+        "error": None if not err else {
+            "error_id": err[0], "correct_answer": err[1] or "", "explanation": err[2] or "",
+            "current_proficiency": err[3],
+        },
+        "reference_answer": correct_answer,
+        "explanation": (err[2] if err and err[2] else ""),
+    }})
+
+
+def _qtype_norm(qtype_raw, content):
+    """题型归一：英文 type 直取；缺失/非法按题干启发式映射（question-detail 与 P5 错题练习共用）。"""
+    t = (qtype_raw or "").strip()
+    if t in _PRAC_TYPES:
+        return t
+    return {"选择题": "single", "填空题": "fill", "简答题": "short"}.get(_qtype_guess(content or ""), "single")
+
+
+def _parse_options_json(opts_json):
+    """选项 JSON 容错解析：损坏/非数组一律视为无选项（与 search_error_questions 同口径）。"""
+    if not opts_json:
+        return []
+    try:
+        o = json.loads(opts_json)
+    except (TypeError, ValueError):
+        return []
+    return o if isinstance(o, list) else []
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/error-practice", methods=["POST"])
+@require_auth
+def point_error_practice(pid):
+    """P5 错题练习（2026-10-08）：直接取本知识点错题行组卷，不经 LLM（零积分消耗）。
+
+    body: {mode: 'smart', count: N}  按熟练度升序（与练首页错题推荐同口径）取前 N 题
+          {mode: 'manual', error_ids: [eid]}  勾选指定错题行
+    同一题干多条错题行时去重，取熟练度最低的代表行；无判分基准（correct_answer 空）的行
+    跳过并计数返回。题目结构对齐 practice-submit 入参，判分/落库走既有通道。
+    """
+    body = request.get_json(silent=True) or {}
+    raw_mode = body.get("mode")
+    if raw_mode is None:
+        mode = "smart"
+    elif not isinstance(raw_mode, str):  # CodeReview Minor-2：非字符串 mode 返 400 语义而非 500
+        return _ok({"success": False, "error": "mode 必须为字符串"})
+    else:
+        mode = raw_mode.strip()
+    if mode not in ("smart", "manual"):
+        return _ok({"success": False, "error": "mode 必须为 smart 或 manual"})
+    ids = None
+    if mode == "smart":
+        try:
+            n = int(body.get("count", 5))
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "count 必须为整数"})
+        n = max(1, min(n, 20))
+    else:
+        raw_ids = body.get("error_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return _ok({"success": False, "error": "手动模式需勾选至少一道错题"})
+        try:
+            ids = [int(x) for x in raw_ids][:20]
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "error_ids 含非法项"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        if not conn.execute("SELECT 1 FROM knowledge_points WHERE id = ? AND user_id = ?",
+                            (pid, g.user_id)).fetchone():
+            return _ok({"success": False, "error": "未找到该知识点"})
+        base = ("SELECT eq.id, pr.question_content, pr.question_type, pr.options_json, "
+                "eq.correct_answer, eq.explanation, COALESCE(eq.current_proficiency, 0) "
+                "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
+                "WHERE eq.user_id = ? AND eq.knowledge_point_id = ?")
+        if ids is not None:
+            ph = ",".join("?" * len(ids))
+            rows = conn.execute(base + f" AND eq.id IN ({ph}) ORDER BY 7 ASC",
+                                (g.user_id, pid, *ids)).fetchall()
+        else:
+            # 多取一些再 python 层按题干去重，保证去重后仍凑得满 n 题
+            rows = conn.execute(base + " ORDER BY 7 ASC, eq.created_time DESC LIMIT 200",
+                                (g.user_id, pid)).fetchall()
+    finally:
+        conn.close()
+    seen, questions, skipped = set(), [], 0
+    for eid, content, qtype_raw, opts_json, ans, expl, prof in rows:
+        content = content or ""
+        if content in seen:
+            continue  # 同题干只出一题（行已按熟练度升序，先到的是最弱的代表行）
+        if mode == "smart" and len(questions) >= n:
+            break
+        seen.add(content)
+        if not (ans or "").strip():
+            skipped += 1
+            continue
+        questions.append({
+            "error_id": eid, "question": content,
+            "type": _qtype_norm(qtype_raw, content),
+            "options": _parse_options_json(opts_json),
+            "correct_answer": str(ans).strip(), "explanation": expl or "",
+            "difficulty": "中等",
+        })
+    if not questions:
+        return _ok({"success": False, "no_errors": True,
+                    "error": "该知识点暂无可判分的错题，先做一轮练习产生错题后再来"})
+    return _ok({"success": True, "questions": questions, "skipped_no_answer": skipped})
+
+
+# ---------------------------------------------------------------- P3 知识点描述编辑（2026-10-09）
+
+DESC_MAX_LEN = 5000  # 手动保存长度上限（防超长脏数据）
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/description", methods=["PUT"])
+@require_auth
+def point_description_update(pid):
+    """P3 方式1 手动输入：保存 core_description。
+
+    注意：core_description 参与 similarity_matcher 题→知识点匹配，用户改写后匹配口径随之变化。
+    """
+    body = request.get_json(silent=True) or {}
+    desc = body.get("description")
+    if not isinstance(desc, str):
+        return _ok({"success": False, "error": "description 需为字符串"})
+    desc = desc.strip()
+    if len(desc) > DESC_MAX_LEN:
+        return _ok({"success": False, "error": f"描述过长（上限 {DESC_MAX_LEN} 字）"})
+    conn = get_kms().db_manager.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM knowledge_points WHERE id = ? AND user_id = ?", (pid, g.user_id)).fetchone()
+        if not row:
+            return _ok({"success": False, "error": "未找到该知识点"})
+        conn.execute(
+            "UPDATE knowledge_points SET core_description = ? WHERE id = ? AND user_id = ?",
+            (desc, pid, g.user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return _ok({"success": True, "core_description": desc})
+
+
+def _point_note_texts(pid, uid, limit_per_note=20000):
+    """知识点关联笔记全文（P3 generate 上下文 / extract 摘取源），读原始 md 文件。"""
+    conn = get_kms().db_manager.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT n.title, n.file_path FROM knowledge_point_sources kps "
+            "JOIN notes n ON n.note_uuid = kps.note_uuid "
+            "WHERE kps.knowledge_point_id = ? AND n.user_id = ? "
+            "ORDER BY kps.extraction_time DESC", (pid, uid)).fetchall()
+    finally:
+        conn.close()
+    texts = []
+    for title, fp in rows:
+        try:
+            p = Path(fp or "")
+            if not p.is_file():
+                continue
+            t = p.read_text(encoding="utf-8", errors="replace")[:limit_per_note]
+            if t.strip():
+                texts.append({"title": title or "", "text": t})
+        except OSError:
+            continue
+    return texts
+
+
+def _extract_keyword_paragraphs(point_name, texts, max_paras=8, max_chars=2000):
+    """P3 方式3：纯字符串匹配从笔记原文摘含知识点关键字的段落（不调 LLM，忠实原文）。
+
+    关键字 = 知识点名 + 其名切分出的≥ 2 字词段；段落命中任一关键字即摘入，限量防失控。
+    """
+    kws = [point_name] + [w for w in re.split(r"[\s,，、/()（）\-·]+", point_name or "")
+                          if len(w) >= 2 and w != point_name]
+    out, total = [], 0
+    for item in texts:
+        for para in re.split(r"\n\s*\n", item["text"]):
+            p = para.strip()
+            if len(p) < 10:
+                continue
+            if any(k and k in p for k in kws):
+                out.append(p)
+                total += len(p)
+                if len(out) >= max_paras or total >= max_chars:
+                    return out
+    return out
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/description-assist", methods=["POST"])
+@require_auth
+def point_description_assist(pid):
+    """P3 方式2/3/4：generate=LLM 按名+笔记上下文生成 / extract=笔记关键字摘取（无 LLM）/ polish=LLM 润色。
+
+    只返回建议文本回填前端编辑框，保存仍走 PUT description（用户确认后才写库）。
+    """
+    body = request.get_json(silent=True) or {}
+    action = body.get("action")
+    if action not in ("generate", "extract", "polish"):
+        return _ok({"success": False, "error": "action 需为 generate/extract/polish"})
+    conn = get_kms().db_manager.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT point_name, core_description, subject_name FROM knowledge_points WHERE id = ? AND user_id = ?",
+            (pid, g.user_id)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return _ok({"success": False, "error": "未找到该知识点"})
+    point_name, cur_desc, subject = row[0], (row[1] or ""), (row[2] or "")
+    if action == "extract":
+        paras = _extract_keyword_paragraphs(point_name, _point_note_texts(pid, g.user_id))
+        if not paras:
+            return _ok({"success": False, "error": "关联笔记中未找到包含该知识点关键字的段落，可先确认关联笔记或改用其它方式"})
+        return _ok({"success": True, "text": "\n\n".join(paras), "llm": False})
+    if action == "generate":
+        notes = _point_note_texts(pid, g.user_id, limit_per_note=4000)
+        ctx = "\n\n".join(f"【{n['title']}】\n{n['text']}" for n in notes)[:8000]
+        prompt = (f"请为{subject}学科知识点「{point_name}」写一段简洁明了的核心描述（2-4 句话，纯文本，"
+                  f"不要标题/列表/markdown 标记）。可参考以下笔记材料，不要求忠实原文：\n\n{ctx}")
+        scene = "知识点描述生成"
+    else:
+        # 润色基底：前端可传编辑框当前内容（未保存也能量身润色），缺省回退库内描述
+        base = body.get("description") if isinstance(body.get("description"), str) and body.get("description").strip() else cur_desc
+        if not base.strip():
+            return _ok({"success": False, "error": "当前描述为空，请先手动输入或摘取一段内容后再整理"})
+        prompt = (f"请润色整理以下知识点「{point_name}」的描述，使其更通顺、结构清晰，保留原意，"
+                  f"只输出整理后的描述正文（纯文本）：\n\n{base}")
+        scene = "知识点描述润色"
+    try:
+        resp = _llm_call(prompt, scene)
+    except cr.InsufficientCreditsError as e:
+        return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+    except Exception as e:  # noqa: BLE001
+        # P3 评审：不透传异常原文（LLM 层报错含提供商名/内部 api_url/HTTP 状态码），只落日志
+        log.log_error("bridge", "desc_assist_llm_failed", str(e))
+        return _ok({"success": False, "error": "AI 处理失败，请稍后重试"})
+    if not resp or resp.startswith("LLM调用失败"):
+        return _ok({"success": False, "error": "生成失败，请稍后重试"})
+    return _ok({"success": True, "text": resp.strip(), "llm": True, **cr.billing_for_response()})
 
 
 # ---------------------------------------------------------------- 四、脑图保存 / 掌握度评估
@@ -2213,10 +2511,10 @@ def _parse_llm_json_array(response: str):
     return json.loads(r.strip())
 
 
-def _validate_practice_questions(questions):
-    """严格校验 8 题×题型结构，归一 correct_answer；非法抛 ValueError。"""
-    if not isinstance(questions, list) or len(questions) != 8:
-        raise ValueError("题目数量不正确（应为 8 题）")
+def _validate_practice_questions(questions, expected_n=8):
+    """严格校验 N 题逐题结构，归一 correct_answer；非法抛 ValueError。"""
+    if not isinstance(questions, list) or len(questions) != expected_n:
+        raise ValueError(f"题目数量不正确（应为 {expected_n} 题）")
     for i, q in enumerate(questions):
         if not isinstance(q, dict):
             raise ValueError(f"题目{i + 1}格式不完整")
@@ -2273,34 +2571,74 @@ def _collect_point_notes_text(kms, pid):
     return "\n\n---\n\n".join(blocks) if blocks else None
 
 
-def _collect_point_errors_text(kms, pid):
-    """组装知识点错题记录（做过的题中正确率<100% 者）；无错题返回 None。"""
+def _collect_point_errors_text(kms, pid, error_ids=None, limit=10):
+    """组装举一反三错题参考（P5 改造 2026-10-08）。
+
+    默认：本知识点错题按熟练度升序（与错题练习/练首页推荐同口径）取前 limit 题；
+    error_ids 指定时：只取勾选行（跨知识点/跨用户的 id 自动被过滤）。
+    同题干多行去重；无错题返回 None。
+    """
     conn = kms.db_manager.get_connection()
     try:
-        rows = conn.execute(
-            "SELECT question_content, COUNT(*) AS practice_count, "
-            "SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct_count "
-            "FROM practice_records WHERE knowledge_point_id = ? AND user_id = ? "
-            "GROUP BY question_content ORDER BY MAX(practice_time) DESC LIMIT 20",
-            (pid, g.user_id)).fetchall()
+        head = ("SELECT pr.question_content, COUNT(*) AS practice_count, "
+                "SUM(CASE WHEN pr.is_correct = 1 THEN 1 ELSE 0 END) AS correct_count "
+                "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
+                "WHERE eq.user_id = ? AND eq.knowledge_point_id = ?")
+        if error_ids:
+            ph = ",".join("?" * len(error_ids))
+            sql = head + f" AND eq.id IN ({ph}) GROUP BY pr.question_content"
+            params = [g.user_id, pid] + list(error_ids)
+        else:
+            # 按题干聚合后以该题最低熟练度行升序（最弱先复习），取前 limit 题
+            sql = (head + " GROUP BY pr.question_content"
+                   " ORDER BY MIN(COALESCE(eq.current_proficiency, 0)) ASC LIMIT ?")
+            params = [g.user_id, pid, max(1, min(int(limit), 20))]
+        rows = conn.execute(sql, params).fetchall()
     finally:
         conn.close()
-    errs = [(q, pc, cc or 0) for q, pc, cc in rows if pc and (pc - cc) > 0]
+    seen, errs = set(), []
+    for q, pc, cc in rows:
+        pc = pc or 0
+        cc = cc or 0
+        if not pc or (pc - cc) <= 0 or q in seen:  # 未全对的才算错题；手工模式下聚合行天然含错次
+            continue
+        seen.add(q)
+        errs.append((q, pc, cc))
+        if error_ids and len(errs) >= 20:
+            break
     if not errs:
         return None
     return "\n\n".join(
-        f"【错题{i + 1}】\n题目内容: {q}\n练习 {pc} 次，正确 {cc} 次"
+        f"【错题{i + 1}】\n题目内容: {q}\n该题曾错 {pc - cc} 次"
         for i, (q, pc, cc) in enumerate(errs))
 
 
 @bridge_bp.route("/api/knowledge/points/<int:pid>/generate-practice", methods=["POST"])
 @require_auth
 def point_generate_practice(pid):
-    """generatePointPractice：结构化多题型出题（source=notes|analogy），严格 JSON 校验。"""
+    """generatePointPractice：结构化多题型出题（source=notes|analogy），严格 JSON 校验。
+
+    P5 举一反三改造（2026-10-08）：count 参数化题量（默认 8，兼容旧调用）；
+    analogy 支持 error_ids 指定错题来源（缺省按熟练度升序智能取前 10 题）。
+    """
     body = request.get_json(silent=True) or {}
     source = (body.get("source") or "notes").strip()
     if source not in ("notes", "analogy"):
         return _ok({"success": False, "error": "source 必须为 notes 或 analogy"})
+    try:
+        n = int(body.get("count", 8))
+    except (TypeError, ValueError):
+        return _ok({"success": False, "error": "count 必须为整数"})
+    n = max(1, min(n, 20))
+    err_ids = None
+    if source == "analogy" and body.get("error_ids"):
+        raw = body.get("error_ids")
+        if not isinstance(raw, list):
+            return _ok({"success": False, "error": "error_ids 必须为列表"})
+        try:
+            err_ids = [int(x) for x in raw][:20]
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "error_ids 含非法项"})
     kms = get_kms()
     conn = kms.db_manager.get_connection()
     try:
@@ -2321,27 +2659,28 @@ def point_generate_practice(pid):
         material = ("**关联笔记内容（出题必须严格基于以下原文，不超出范畴）：**\n" + ref_text)
         extra = "题目考点须覆盖笔记中的关键概念与结论。"
     else:
-        ref_text = _collect_point_errors_text(kms, pid)
+        ref_text = _collect_point_errors_text(kms, pid, error_ids=err_ids)
         if not ref_text:
             return _ok({"success": False, "no_errors": True,
                         "error": "该知识点暂无错题记录，无需举一反三"})
         material = ("**该知识点的错题记录（保持与错题相同的考查点与难度，出类似但不相同的题）：**\n" + ref_text)
         extra = "优先针对错题暴露的薄弱考点设计题目。"
 
-    prompt = f"""请为知识点「{point_name}」（学科：{subject_name}；描述：{core_desc}）生成一套 8 道练习题。
+    prompt = f"""请为知识点「{point_name}」（学科：{subject_name}；描述：{core_desc}）生成一套 {n} 道练习题。
 
 {material}
 
-**题型构成（共 8 题，按此顺序排列）：**
-1. 选择题 3 道：type="single"，必须有 options 数组（4 个选项），correct_answer 为 A/B/C/D
-2. 判断题 2 道：type="judge"，correct_answer 只能是 "正确" 或 "错误"
-3. 填空题 2 道：type="fill"，题干必须包含一个空格 "______"，correct_answer 为答案文本（若可接受多种写法用 | 分隔，如 "A|B"）
-4. 简答题 1 道：type="short"，correct_answer 为参考答案要点（3-5 个要点）
+**题型构成（共 {n} 题，按此顺序排列）：**
+以选择题为主（约占四成），兼顾判断题、填空题与简答题；任选题型至少 1 道，具体题量按 {n} 酌定。
+- 选择题：type="single"，必须有 options 数组（4 个选项），correct_answer 为 A/B/C/D
+- 判断题：type="judge"，correct_answer 只能是 "正确" 或 "错误"
+- 填空题：type="fill"，题干必须包含一个空格 "______"，correct_answer 为答案文本（若可接受多种写法用 | 分隔，如 "A|B"）
+- 简答题：type="short"，correct_answer 为参考答案要点（3-5 个要点）
 
 **每题 JSON 字段：** type, question, options（仅选择题）, correct_answer, difficulty（容易/中等/困难）, explanation（答案解析）
 {extra}
 
-只返回 JSON 数组，不要任何其他文字：
+只返回 JSON 数组（元素个数必须恰好为 {n}），不要任何其他文字：
 [
   {{"type": "single", "question": "...", "options": ["...", "...", "...", "..."], "correct_answer": "A", "difficulty": "容易", "explanation": "..."}}
 ]"""
@@ -2355,7 +2694,7 @@ def point_generate_practice(pid):
     if not response:
         return _ok({"success": False, "error": "LLM调用失败"})
     try:
-        questions = _validate_practice_questions(_parse_llm_json_array(response))
+        questions = _validate_practice_questions(_parse_llm_json_array(response), n)
         return _ok({"success": True, "questions": questions, **cr.billing_for_response()})
     except json.JSONDecodeError:
         log.log_error("bridge", "generate_practice_badjson", f"source={source} pid={pid}")

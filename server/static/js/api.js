@@ -778,9 +778,13 @@
     }, { as: 'json', name: 'submitMasteryAssessment' });
 
     // 知识点结构化练习（2026-10-02 多题型答题模板：单选/判断/填空/简答）
-    bridge.generatePointPractice = bridgeFn(function (knowledgePointId, source) {
+    // P5 举一反三改造（2026-10-08）：opts 可选 {count, error_ids}，缺省行为与旧调用完全一致
+    bridge.generatePointPractice = bridgeFn(function (knowledgePointId, source, opts) {
+        var body = { source: source || 'notes' };
+        if (opts && opts.count != null) body.count = opts.count;
+        if (opts && opts.error_ids && opts.error_ids.length) body.error_ids = opts.error_ids;
         return req('POST', '/api/knowledge/points/' + encodeURIComponent(knowledgePointId) + '/generate-practice',
-            { source: source || 'notes' });
+            body);
     }, { as: 'json', name: 'generatePointPractice' });
 
     bridge.submitPointPractice = bridgeFn(function (knowledgePointId, questions, answers) {

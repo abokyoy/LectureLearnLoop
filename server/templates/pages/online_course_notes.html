@@ -14,6 +14,12 @@
 <!-- 二期：共享录音引擎（与悬浮窗同源，LLRecorder） -->
 <script src="/static/js/recorder.js"></script>
 
+<!-- 笔记 Markdown 编辑器 Vditor（本地 vendor 副本，参照知识点页先例保 exe 离线可用）：
+     脚本缺失时 NoteVditor 自动回退 textarea，编辑功能不中断 -->
+<link rel="stylesheet" href="/static/vendor/vditor/dist/index.css">
+<script src="/static/vendor/vditor/dist/index.min.js"></script>
+<script src="/static/js/note_vditor.js"></script>
+
 <!-- jQuery - 使用CDN加载 -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.3.16/themes/default/style.min.css" />
@@ -1318,6 +1324,24 @@ window.jsTreeLoading = false;
         overflow: hidden !important;
     }
     
+    /* Vditor 编辑器挂载层豁免（2026-10-08）：上方溢出/换行规则命中 #document-area 全部后代，
+       渗入编辑器会裁掉工具栏下拉面板；与 #edit-content 同款编辑器豁免语义。
+       2026-10-10 修正：通配 overflow:visible 把 Vditor 内部滚动容器（.vditor-content/.vditor-ir）
+       也强制成 visible → 内容超长时无垂直滚轴看不到底部；收窄为只豁免工具栏/下拉面板，
+       滚动容器交回 Vditor 原生 overflow，编辑器高度改为撑满文档区（height:100%）内部滚动 */
+    #document-area #note-editor-mount,
+    #document-area #note-editor-mount * {
+        word-wrap: normal !important;
+        overflow-wrap: normal !important;
+        word-break: normal !important;
+        min-width: auto !important;
+    }
+    #document-area #note-editor-mount .vditor-toolbar,
+    #document-area #note-editor-mount .vditor-panel,
+    #document-area #note-editor-mount .vditor-hint {
+        overflow: visible !important;
+    }
+    
     /* 右侧面板内部滚动区域 */
     #voice-panel,
     #knowledge-panel {
@@ -1618,6 +1642,9 @@ window.jsTreeLoading = false;
                     </div>
                 </div>
                 <textarea id="edit-content" class="w-full h-full border border-cl-border rounded-cl p-4 font-mono text-sm resize-none hidden focus:ring-2 focus:ring-cl-primary/30 focus:border-cl-primary" placeholder="在此编辑 Markdown 内容..."></textarea>
+                <!-- Vditor 编辑器挂载点（2026-10-08）：编辑模式显示此层，#edit-content 退居数据层镜像；
+                     保存/脏检测/守卫等既有链路继续读 textarea.value，由桥接代码保持同步 -->
+                <div id="note-editor-mount" class="w-full h-full"></div>
 
                 <!-- 大PDF原件阅读器（2026-10-04 S4）：点任意 .pdf 时显示，替代 Markdown 预览 -->
                 <div id="pdf-viewer-wrap" class="hidden h-full flex flex-col -m-4">
@@ -2957,7 +2984,10 @@ window.handleRenameKeydown = function(event, input) {
         debugLog('插入总结到文档');
         
         // 如果当前在编辑模式，直接插入到编辑器
-        if (isEditMode) {
+        // 编辑器显示层（Vditor）激活时优先走光标插入（内部已含数据层镜像与脏检测）
+        if (isEditMode && noteEdInsertAtCursor('\n\n## 🤖 AI总结\n\n' + summary + '\n\n')) {
+            debugLog('总结已插入到文档（编辑器显示层）');
+        } else if (isEditMode) {
             const editContent = document.getElementById('edit-content');
             if (editContent) {
                 let cursorPos = editContent.selectionStart;
@@ -3033,7 +3063,12 @@ window.handleRenameKeydown = function(event, input) {
     function insertScreenshotToDocument(imagePath) {
         debugLog('插入截图到文档: ' + imagePath);
         
-        if (isEditMode) {
+        // 编辑器显示层激活：Obsidian wikilink 转标准 MD 引用（attachments/ 与预览管线同语义）
+        if (isEditMode && noteEdActive()) {
+            const snapName = String(imagePath || '').split('/').pop().split('\\').pop();
+            noteEdInsertAtCursor('\n\n![' + snapName + '](attachments/' + snapName + ')\n\n');
+            debugLog('截图已插入到文档（编辑器显示层）: ' + snapName);
+        } else if (isEditMode) {
             const editContent = document.getElementById('edit-content');
             if (editContent) {
                 const cursorPos = editContent.selectionStart;
@@ -4800,6 +4835,8 @@ window.handleRenameKeydown = function(event, input) {
         // 后端拿到的目录名仍是 %E9%99%84%E4%BB%B6（磁盘真实目录是"附件"）→ 文件不存在。
         try { src = decodeURIComponent(src); } catch (e) { /* 非法百分号编码，保留原串 */ }
         if (src.indexOf('attachments/') === 0) return src;
+        // 粘贴截图落在 vault 根「截图/」保留目录（与 attachments/ 同类），根相对直送后端
+        if (src.indexOf('截图/') === 0) return src;
         if (!currentFilePath) return src;
         var sep = currentFilePath.indexOf('\\') >= 0 ? '\\' : '/';
         // 2026-10-01 第七轮：笔记在 vault 根时（currentFilePath 无目录段），
@@ -5090,6 +5127,9 @@ window.handleRenameKeydown = function(event, input) {
         }
         if (typeof closePdfViewer === 'function') closePdfViewer({ keepSelection: true });
         
+        // 文件切换前先冲刷编辑器镜像，未保存检测（guard/hasUnsavedChanges）才能读到最新值
+        if (typeof noteEdMirrorNow === 'function') noteEdMirrorNow();
+        
         // 检查是否切换到不同文件，如果是则进行未保存内容检测
         if (window.UnsavedChangesGuard && currentFilePath && currentFilePath !== normalizedPath) {
             console.log('🛡️ jsTree文件切换检测未保存内容');
@@ -5229,6 +5269,7 @@ window.handleRenameKeydown = function(event, input) {
                     // 更新编辑内容
                     if (editContent) {
                         editContent.value = content;
+                        noteEdSyncFromTextarea(); // 编辑态下同步编辑器显示层，防旧内容反向镜像（2026-10-08）
                     }
                     
                     // 触发文件切换的自动保存检查
@@ -5535,6 +5576,7 @@ window.handleRenameKeydown = function(event, input) {
         const pc = document.getElementById('preview-content'), ec = document.getElementById('edit-content');
         if (pc) pc.classList.add('hidden');
         if (ec) ec.classList.add('hidden');
+        noteEdHide(); // 编辑器显示层同步收起（2026-10-08）
         ['preview-btn', 'edit-btn', 'save-btn'].forEach(id => { const b = document.getElementById(id); if (b) b.style.visibility = 'hidden'; });
         const title = document.getElementById('preview-title'); if (title) title.textContent = name;
         document.getElementById('pdf-viewer-name').textContent = name;
@@ -5733,8 +5775,12 @@ window.handleRenameKeydown = function(event, input) {
                 // 确保处于预览模式（不重复调用switchToPreview）
                 if (!isEditMode) {
                     // 只更新UI状态，不重新加载内容
-                    document.getElementById('preview-content').classList.remove('hidden');
-                    document.getElementById('edit-content').classList.add('hidden');
+                    const pc = document.getElementById('preview-content');
+                    const ec = document.getElementById('edit-content');
+                    // 防御：清除历史上补丁版可能残留的行内 display，行内样式优先于 class 切换
+                    if (pc) { pc.style.display = ''; pc.classList.remove('hidden'); }
+                    if (ec) { ec.style.display = ''; ec.classList.add('hidden'); }
+                    noteEdHide(); // 防御：非编辑态时编辑器层必须收起（2026-10-08）
                     document.getElementById('save-btn').classList.add('hidden');
                     
                     // 更新按钮状态
@@ -5823,6 +5869,7 @@ window.handleRenameKeydown = function(event, input) {
         if (editContent) {
             editContent.value = '加载中...';
             editContent.disabled = true;
+            if (noteEdActive()) noteEdShow('加载中...'); // 显示层同步加载态（2026-10-08）
         }
         
         // 调用后端加载原始Markdown内容
@@ -5833,6 +5880,7 @@ window.handleRenameKeydown = function(event, input) {
                 if (editContent) {
                     editContent.value = markdownContent || '';
                     editContent.disabled = false;
+                    noteEdShow(markdownContent || ''); // 编辑器显示层同步新文件内容（回退模式恢复 textarea 显示）
                     
                     // 重置编辑状态
                     originalContent = markdownContent || '';
@@ -5844,8 +5892,7 @@ window.handleRenameKeydown = function(event, input) {
                         // 切换到编辑模式但不重新加载内容
                         isEditMode = true;
                         
-                        // 更新UI显示
-                        document.getElementById('edit-content').classList.remove('hidden');
+                        // 更新UI显示（edit-content 显隐由 noteEdShow 分层管理：编辑器优先，textarea 保持隐藏充当数据层）
                         document.getElementById('preview-content').classList.add('hidden');
                         document.getElementById('save-btn').classList.remove('hidden');
                         
@@ -5858,8 +5905,8 @@ window.handleRenameKeydown = function(event, input) {
                         debugLog('已切换到编辑模式');
                     }
                     
-                    // 聚焦到编辑器
-                    editContent.focus();
+                    // 聚焦到编辑器（显示层谁可见聚焦谁）
+                    if (noteEdActive()) { noteEd.focus(); } else { editContent.focus(); }
                 }
                 
                 // 自动加载该笔记相关的知识点
@@ -5870,6 +5917,7 @@ window.handleRenameKeydown = function(event, input) {
             if (editContent) {
                 editContent.value = '加载文件失败';
                 editContent.disabled = false;
+                if (noteEdActive()) noteEdShow('加载文件失败'); // 显示层同步失败态（与回退 textarea 行为对齐）
             }
         }
     }
@@ -6052,6 +6100,9 @@ window.handleRenameKeydown = function(event, input) {
     function switchToPreview() {
         debugLog('切换到预览模式');
         
+        // Vditor input 有 undoDelay(800ms) 去抖，先同步冲刷镜像再判脏，防最后一段输入漏保存（CodeReview 2026-10-08）
+        if (typeof noteEdMirrorNow === 'function') noteEdMirrorNow();
+        
         // 如果当前是编辑模式且有未保存的更改，先保存
         if (isEditMode && hasUnsavedChanges) {
             debugLog('检测到未保存的更改，自动保存...');
@@ -6076,6 +6127,7 @@ window.handleRenameKeydown = function(event, input) {
         
         document.getElementById('preview-content').classList.remove('hidden');
         document.getElementById('edit-content').classList.add('hidden');
+        noteEdHide(); // 编辑器显示层收起（2026-10-08）
         document.getElementById('save-btn').classList.add('hidden');
         
         // 更新按钮状态
@@ -6116,6 +6168,7 @@ window.handleRenameKeydown = function(event, input) {
                 console.log('调试输出失败:', e);
             }
             debugLog('没有选中的文件');
+            if (typeof showToast === 'function') showToast('请先在左侧选择一个笔记文件', 'warning');
             return;
         }
         
@@ -6180,7 +6233,7 @@ window.handleRenameKeydown = function(event, input) {
                 }
                 
                 document.getElementById('preview-content').classList.add('hidden');
-                document.getElementById('edit-content').classList.remove('hidden');
+                noteEdShow(rawContent); // 显示层交给 Vditor 编辑器（组件缺失时自动回退显示 textarea）
                 document.getElementById('save-btn').classList.remove('hidden');
                 
                 // 更新按钮状态
@@ -6189,21 +6242,21 @@ window.handleRenameKeydown = function(event, input) {
                 document.getElementById('preview-btn').classList.add('text-cl-text-2');
                 document.getElementById('preview-btn').classList.remove('bg-cl-surface', 'text-cl-primary', 'shadow-cl');
                 
-                // 聚焦到编辑器并防止自动滚动
-                // 保存当前滚动位置
-                const currentScrollTop = document.documentElement.scrollTop || document.body.scrollTop;
-                
-                // 将光标设置到文本开头
-                editContent.setSelectionRange(0, 0);
-                
-                // 聚焦到编辑器
-                editContent.focus({ preventScroll: true });
-                
-                // 恢复滚动位置
-                window.scrollTo(0, currentScrollTop);
-                
-                // 确保编辑器内部也滚动到顶部
-                editContent.scrollTop = 0;
+                // 聚焦到编辑器并防止自动滚动（编辑器显示层优先；回退 textarea 模式保持原逻辑）
+                if (noteEdActive()) {
+                    noteEd.focus();
+                } else {
+                    // 保存当前滚动位置
+                    const currentScrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+                    // 将光标设置到文本开头
+                    editContent.setSelectionRange(0, 0);
+                    // 聚焦到编辑器
+                    editContent.focus({ preventScroll: true });
+                    // 恢复滚动位置
+                    window.scrollTo(0, currentScrollTop);
+                    // 确保编辑器内部也滚动到顶部
+                    editContent.scrollTop = 0;
+                }
                 
                 // 重新初始化右键菜单（切换模式后需要重新绑定事件）
                 setTimeout(() => {
@@ -6236,6 +6289,125 @@ window.handleRenameKeydown = function(event, input) {
         }
     }
 
+    // ================= Vditor 编辑器桥接（2026-10-08） =================
+    // 分层：#edit-content textarea = 数据层（保存/脏检测/UnsavedChangesGuard 等既有链路照旧读其 value，零改动），
+    //       Vditor 即时渲染编辑器 = 显示层（挂载于 #note-editor-mount）。
+    // 约定：编辑态下任何外部代码写 textarea.value 后必须走 noteEdSyncFromTextarea，
+    //       防止编辑器旧内容反向镜像覆盖新值；Vditor 组件缺失时自动回退传统 textarea 编辑（降级兜底）。
+    var noteEd = null;           // NoteVditor API 实例
+    var noteEdShown = false;     // 显示层当前是否处于编辑器态
+    var noteEdSuppress = false;  // 程序化 setValue 期间抑制镜像回写（防误标脏）
+
+    function ensureNoteEditor() {
+        if (noteEd) return noteEd;
+        if (typeof window.NoteVditor === 'undefined' || !window.Vditor) return null; // 组件缺失→传统 textarea
+        var mount = document.getElementById('note-editor-mount');
+        if (!mount) return null;
+        noteEd = window.NoteVditor.create(mount, {
+            value: '',
+            placeholder: '在此编辑 Markdown 内容…截图可直接 Ctrl+V 粘贴',
+            height: '100%', // 撑满文档区、编辑器内部滚动；'auto' 会随内容撑高被外层 overflow:hidden 裁掉（用户验收 2026-10-10）
+            resolveImg: function (src) { return resolveNoteImgSrc(src); },
+            onUploadFile: function (file, cb) {
+                // 粘贴/拖入图片→ /api/vault/screenshot 落 vault根/截图/，回 rel 供插入 MD 引用
+                var reader = new FileReader();
+                reader.onload = function () {
+                    var b64 = String(reader.result).split(',')[1] || '';
+                    fetch('/api/vault/screenshot', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _impToken() },
+                        body: JSON.stringify({ image_b64: b64, name: 'note_' + Date.now() + '.png' })
+                    }).then(function (r) {
+                        if (!r.ok) throw new Error('图片上传失败 HTTP ' + r.status + (r.status === 401 ? '（登录已过期，请重新登录）' : ''));
+                        return r.json();
+                    }).then(function (d) {
+                        // 双层契约（与知识点页 postJSON 同口径）：外层 {success, data}，rel 在 data 内；
+                        // 直接读 d.rel 永远 undefined → 上传落盘成功但插图不生效（2026-10-10 CDP 断言实测）
+                        var inner = (d && d.data) || d;
+                        if (inner && inner.success && inner.rel) cb(null, inner.rel);
+                        else cb(new Error((inner && inner.error) || '图片保存失败'), null);
+                    }).catch(function (e) { cb(e, null); });
+                };
+                reader.onerror = function () { cb(new Error('读取图片数据失败'), null); };
+                reader.readAsDataURL(file);
+            },
+            onInput: function () { noteEdMirrorNow(); },
+            onNotice: function (msg, isErr) {
+                if (typeof showToast === 'function') showToast(msg, isErr ? 'error' : 'success');
+            }
+        });
+        return noteEd;
+    }
+
+    // 数据层镜像：编辑器 MD（getValue 内部已做 base64 换回原路径保护）→ textarea + 脏检测 + guard 的 input 事件
+    function noteEdMirrorNow() {
+        if (noteEdSuppress || !noteEd) return;
+        if (!noteEdActive()) return; // 非编辑显示态不回写，防隐藏编辑器的旧内容覆盖数据层新值
+        if (noteEd.isReady && !noteEd.isReady()) return; // 初始化完成前不回写，防半成品内容覆盖数据层
+        var ec = document.getElementById('edit-content');
+        if (!ec) return;
+        var newVal = noteEd.getValue();
+        if (newVal === ec.value) return; // 内容无变化不回写不广播，防块 C 监听器无条件标脏→空编辑也弹“未保存”
+        ec.value = newVal;
+        handleContentChange();
+        ec.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function noteEdActive() { return !!(noteEd && noteEdShown); }
+
+    // 进入编辑器显示态：md 为当前编辑内容；组件缺失回退时显示传统 textarea
+    function noteEdShow(md) {
+        var ec = document.getElementById('edit-content');
+        var mount = document.getElementById('note-editor-mount');
+        var ed = ensureNoteEditor();
+        if (!ed) {
+            if (mount) mount.classList.add('hidden');
+            if (ec) { ec.classList.remove('hidden'); if (typeof md === 'string') ec.value = md; }
+            noteEdShown = false;
+            return false;
+        }
+        if (ec) ec.classList.add('hidden');
+        mount.classList.remove('hidden');
+        noteEdSuppress = true;
+        try {
+            if (ec) ec.value = md || '';
+            ed.setValue(md || '');
+        } finally { noteEdSuppress = false; }
+        noteEdShown = true;
+        return true;
+    }
+
+    // 退出编辑器显示态（预览/PDF 等场景）；textarea 的隐藏由调用方原有逻辑负责
+    function noteEdHide() {
+        noteEdShown = false;
+        var mount = document.getElementById('note-editor-mount');
+        if (mount) mount.classList.add('hidden');
+    }
+
+    // 外部代码已写 textarea.value（加载文件等）→ 同步显示层；程序化 setValue 不触发脏检测
+    function noteEdSyncFromTextarea() {
+        if (!noteEdActive()) return;
+        var ec = document.getElementById('edit-content');
+        if (!ec) return;
+        noteEdSuppress = true;
+        try { noteEd.setValue(ec.value || ''); } finally { noteEdSuppress = false; }
+    }
+
+    // 编辑器态下在光标处插入 MD（Vditor insertMD 即光标级插入）；返回是否已由编辑器处理
+    function noteEdInsertAtCursor(mdText) {
+        if (!noteEdActive()) return false;
+        try { noteEd.insertMD(mdText); } catch (e) { return false; }
+        noteEdMirrorNow(); // 主动镜像一次，不依赖 Vditor 是否触发 input 回调
+        return true;
+    }
+
+    // SPA fragment 内函数不自动上全局，显式暴露供其它模块/CDP 断言调用
+    window.NoteEdBridge = {
+        show: noteEdShow, hide: noteEdHide, active: noteEdActive,
+        sync: noteEdSyncFromTextarea, insertAtCursor: noteEdInsertAtCursor,
+        mirror: noteEdMirrorNow, getInstance: function () { return noteEd; }
+    };
+
     // 显示未保存指示器
     function showUnsavedIndicator() {
         const indicator = document.getElementById('unsaved-indicator');
@@ -6266,6 +6438,9 @@ window.handleRenameKeydown = function(event, input) {
             debugError('编辑器元素未找到');
             return;
         }
+        
+        // 保存前强制冲刷编辑器→数据层镜像（input 去抖 800ms，同步读 value 会丢尾）
+        if (typeof noteEdMirrorNow === 'function') noteEdMirrorNow();
         
         const content = editContent.value;
         debugLog(`保存文件: ${currentFileName}, 内容长度: ${content.length}`);
@@ -9419,13 +9594,16 @@ window.handleRenameKeydown = function(event, input) {
         const editContent = document.getElementById('edit-content');
         const previewContent = document.getElementById('preview-content');
         
-        if (isEditMode && editContent) {
+        if (isEditMode && noteEdInsertAtCursor(content)) {
+            // 已由编辑器显示层光标处插入（内部含镜像与脏检测）
+        } else if (isEditMode && editContent) {
             // 编辑模式：插入到编辑器
             insertTextToEditor(editContent, content);
         } else if (!isEditMode && previewContent) {
             // 预览模式：先切换到编辑模式，然后插入
             switchToEdit();
             setTimeout(() => {
+                if (noteEdInsertAtCursor(content)) return; // 编辑器已就绪则直接插入显示层
                 const editContentAfterSwitch = document.getElementById('edit-content');
                 if (editContentAfterSwitch) {
                     insertTextToEditor(editContentAfterSwitch, content);
@@ -11140,6 +11318,7 @@ window.handleRenameKeydown = function(event, input) {
 function initTextSelectionContextMenu() {
     const previewContent = document.getElementById('preview-content');
     const editContent = document.getElementById('edit-content');
+    const noteMount = document.getElementById('note-editor-mount');
     if (previewContent) {
         previewContent.removeEventListener('contextmenu', handleTextContextMenu);
         previewContent.addEventListener('contextmenu', handleTextContextMenu);
@@ -11148,6 +11327,11 @@ function initTextSelectionContextMenu() {
         editContent.removeEventListener('contextmenu', handleTextContextMenu);
         editContent.addEventListener('contextmenu', handleTextContextMenu);
     }
+    // 编辑器显示层也要能呼出统一右键菜单（contenteditable 的 window.getSelection 同样有效）
+    if (noteMount) {
+        noteMount.removeEventListener('contextmenu', handleTextContextMenu);
+        noteMount.addEventListener('contextmenu', handleTextContextMenu);
+    }
     console.log('✅ 统一右键菜单已绑定预览/编辑区域');
 }
 
@@ -11155,7 +11339,8 @@ function initTextSelectionContextMenu() {
 function handleTextContextMenu(e) {
     const previewContent = document.getElementById('preview-content');
     const editContent = document.getElementById('edit-content');
-    const inArea = (previewContent && previewContent.contains(e.target)) || (editContent && editContent.contains(e.target));
+    const noteMount = document.getElementById('note-editor-mount');
+    const inArea = (previewContent && previewContent.contains(e.target)) || (editContent && editContent.contains(e.target)) || (noteMount && noteMount.contains(e.target));
     if (!inArea) return;
     let sel = '';
     try { sel = String(window.getSelection() || '').trim(); } catch (err) { sel = ''; }
@@ -11541,76 +11726,10 @@ if (fileTreeElement) {
 // 2026-10-04 B5：删除“2秒后强制设置 + 5秒看门狗复位 scroll”两段调试代码：
 // 它们把面板 overflow 锁成 visible（收起态裁切失效、漏出半截树），并让横向滚动条常驻。滚动能力由 CSS 接管。
 
-// 预览/编辑按钮切换功能 - 直接DOM操作
-function switchToPreview() {
-    console.log('🔄 切换到预览模式');
-    
-    const previewContent = document.getElementById('preview-content');
-    const editContent = document.getElementById('edit-content');
-    
-    // 显示预览内容，隐藏编辑内容
-    if (previewContent) {
-        previewContent.style.display = 'block';
-        previewContent.classList.remove('hidden');
-    }
-    if (editContent) {
-        editContent.style.display = 'none';
-        editContent.classList.add('hidden');
-    }
-    
-    // 更新按钮状态
-    updateButtonStates('preview');
-    
-    // 更新全局状态
-    window.isEditMode = false;
-    
-    console.log('✅ 已切换到预览模式');
-}
-
-function switchToEdit() {
-    console.log('🔄 切换到编辑模式');
-    
-    const previewContent = document.getElementById('preview-content');
-    const editContent = document.getElementById('edit-content');
-    
-    // 加载原始内容到编辑器（如果当前为空或未加载）
-    if (editContent && !editContent.value && currentFilePath) {
-        if (window.pybridge && window.pybridge.loadMarkdownRaw) {
-            window.pybridge.loadMarkdownRaw(currentFilePath, function(rawContent) {
-                if (editContent) {
-                    editContent.value = rawContent || '';
-                    originalContent = rawContent || '';
-                    hasUnsavedChanges = false;
-                }
-            });
-        } else {
-            // Web fallback: use rawfile API
-            const tk = localStorage.getItem('ll_token') || '';
-            fetch('/api/vault/rawfile?path=' + encodeURIComponent(currentFilePath), { headers: { 'Authorization': 'Bearer ' + tk } })
-                .then(r => r.json()).then(j => {
-                    if (editContent) { editContent.value = (j.data || ''); originalContent = j.data || ''; hasUnsavedChanges = false; }
-                }).catch(() => {});
-        }
-    }
-    
-    // 显示编辑内容，隐藏预览内容
-    if (editContent) {
-        editContent.style.display = 'block';
-        editContent.classList.remove('hidden');
-    }
-    if (previewContent) {
-        previewContent.style.display = 'none';
-        previewContent.classList.add('hidden');
-    }
-    
-    // 更新按钮状态
-    updateButtonStates('edit');
-    
-    // 更新全局状态
-    window.isEditMode = true;
-    
-    console.log('✅ 已切换到编辑模式');
-}
+// 2026-10-08 修复：删除此处补丁版 switchToPreview/switchToEdit（行内 style.display + window.isEditMode）。
+// 它们后定义覆盖了上方完整版（L6052/L6100），导致：点“编辑”给 #preview-content 写行内 display:none，
+// 再点 MD 文件时 loadFileContent 只清 hidden class 不清行内样式 → 内容渲染进隐形容器→预览区空白；
+// 且补丁版写的 window.isEditMode 与主逻辑 IIFE 闭包变量 isEditMode（L1907）状态分裂，编辑模式分支永远走不到。统一回归完整版（class 切换 + 自动保存 + 重载）。
 
 // 更新按钮状态的辅助函数
 function updateButtonStates(activeMode) {
@@ -11656,6 +11775,9 @@ function handleSaveButton() {
         addDebugLog('❌ 编辑区域未找到');
         return;
     }
+    
+    // 保存前冲刷编辑器→数据层镜像（Vditor input 去抖 800ms，见学页桥接块）
+    if (window.NoteEdBridge) window.NoteEdBridge.mirror();
     
     const content = editContent.value;
     addDebugLog('📊 准备保存内容，长度: ' + content.length);
@@ -11767,6 +11889,9 @@ function autoSaveCurrentFile() {
     const editContent = document.getElementById('edit-content');
     const currentFilePath = window.currentFilePath;
     
+    // 失焦/隐藏自动保存前同样先冲刷镜像，否则脏标记滞后 800ms 会整段跳过保存
+    if (window.NoteEdBridge) window.NoteEdBridge.mirror();
+    
     addDebugLog('📊 自动保存条件检查:');
     addDebugLog('📊 - currentFilePath: ' + (currentFilePath || '无'));
     addDebugLog('📊 - editContent: ' + (editContent ? '存在' : '不存在'));
@@ -11847,7 +11972,8 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(() => {
         addDebugLog('🔄 设置默认预览模式');
         updateButtonStates('preview');
-        window.isEditMode = false;
+        // 2026-10-08 评审修正：此处不写 isEditMode——主逻辑的 isEditMode 是脚本块 IIFE 闭包变量（L1907 已初始化 false），
+        // 块 C 在 IIFE 外写不到它，旧代码 window.isEditMode/隐式全局均属无效状态残留，直接删除。
         addDebugLog('✅ 默认模式设置完成');
     }, 500);
     
@@ -11887,37 +12013,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     addDebugLog('✅ 按钮初始化完成');
 });
-
-// 测试按钮功能
-function testButtonFunctions() {
-    addDebugLog('🧪 测试按钮功能');
-    
-    const previewBtn = document.getElementById('preview-btn');
-    const editBtn = document.getElementById('edit-btn');
-    const saveBtn = document.getElementById('save-btn');
-    const previewContent = document.getElementById('preview-content');
-    const editContent = document.getElementById('edit-content');
-    
-    addDebugLog('📊 按钮元素检查:');
-    addDebugLog('- 预览按钮: ' + (previewBtn ? '✅' : '❌'));
-    addDebugLog('- 编辑按钮: ' + (editBtn ? '✅' : '❌'));
-    addDebugLog('- 保存按钮: ' + (saveBtn ? '✅' : '❌'));
-    addDebugLog('- 预览内容: ' + (previewContent ? '✅' : '❌'));
-    addDebugLog('- 编辑内容: ' + (editContent ? '✅' : '❌'));
-    
-    // 测试切换功能
-    if (previewBtn && editBtn) {
-        addDebugLog('🔄 测试切换到编辑模式');
-        switchToEdit();
-        
-        setTimeout(() => {
-            addDebugLog('🔄 测试切换到预览模式');
-            switchToPreview();
-        }, 1000);
-    } else {
-        addDebugLog('❌ 按钮元素缺失，无法测试切换功能');
-    }
-}
 
 // 页面切换时的自动保存功能
 function setupAutoSaveOnPageChange() {
@@ -11994,10 +12089,6 @@ window.updateButtonStates = updateButtonStates;
 window.handleSaveButton = handleSaveButton;
 window.autoSaveCurrentFile = autoSaveCurrentFile;
 window.onFileSwitch = onFileSwitch;
-window.testButtonFunctions = testButtonFunctions;
-
-// 5秒后自动测试按钮功能
-setTimeout(testButtonFunctions, 5000);
 
 </script>
 

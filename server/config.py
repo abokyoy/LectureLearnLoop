@@ -45,6 +45,19 @@ PADDLE_OCR_TOKEN = os.getenv("PADDLE_OCR_TOKEN", "")
 PADDLE_OCR_MODEL = os.getenv("PADDLE_OCR_MODEL", "PaddleOCR-VL-1.6")
 IMPORT_MAX_BYTES = 200 * 1024 * 1024       # 单文件上限 200MB（2026-10-04 大PDF分段；Flask MAX_CONTENT_LENGTH 同值）
 
+# ---------------------------------------------------------------- 手机拍照传图（错题录入，2026-10-13）
+# 独立小服务监听 0.0.0.0:PHOTO_PORT（占用则 9900-9999 内自适应）；主 Flask 仍仅 127.0.0.1（P006 口径不变）。
+PHOTO_PORT = int(os.getenv("PHOTO_PORT", "9991"))
+PHOTO_PUBLIC_BASE = os.getenv("PHOTO_PUBLIC_BASE", "")  # 公网可达完整前缀，如 http://xxx.oicp.vip:12345（穿透公网端口由服务商定，整串配置不自动拼）
+PHOTO_DISABLE = os.getenv("PHOTO_DISABLE", "") == "1"   # 测试/禁用环境不拉起小服务
+
+# ---------------------------------------------------------------- 错题智能分析：视觉大模型（2026-10-13）
+# 系统级 VL 通道（硅基流动 OpenAI 兼容）；国内直连，请求侧 trust_env=False 避开 V2RAYN（实测代理对
+# paddle/siliconflow 通道会 SSL 握手失败）。用户自备视觉 Key 优先，此段仅作系统兜底。
+VL_API_BASE = os.getenv("VL_API_BASE", "https://api.siliconflow.cn/v1")
+VL_API_KEY = os.getenv("VL_API_KEY", "")
+VL_MODEL = os.getenv("VL_MODEL", "Qwen/Qwen3-VL-32B-Instruct")
+
 # 大 PDF 书籍分段导入（2026-10-04 方案：docs/计划/2026-10-04-大PDF分段导入与阅读基础版方案.md）
 PDF_SEG_PAGE_SIZE = 20        # 固定 20 页一个桶段（数字=真实页码，所有落段计算唯一来源）
 PDF_BOOK_PAGE_MIN = 20        # 分流主驱动：页数 > 此值才可能走书籍文件夹（体积不得单独作为免除条件，裁定#1）

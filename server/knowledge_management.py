@@ -78,14 +78,26 @@ class SubjectManager:
             return False
 
     def update_error_kp(self, error_question_id: int, new_kp_id: int, user_id: str = "0001") -> bool:
-        """更新错题的知识点归属。"""
+        """更新错题的知识点归属。影子流水行同步改归属：独立错题的题干分组锁定在 pr 行
+        的 kp 上匹配，不同步会造成 move 后编辑/删除的锁组落空（2026-10-12 c5 排查）。"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         try:
             cursor.execute(
+                "SELECT practice_record_id FROM error_questions WHERE id = ? AND user_id = ?",
+                (int(error_question_id), user_id))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            cursor.execute(
                 "UPDATE error_questions SET knowledge_point_id = ? WHERE id = ? AND user_id = ?",
                 (int(new_kp_id), int(error_question_id), user_id)
             )
+            if row[0]:
+                cursor.execute(
+                    "UPDATE practice_records SET knowledge_point_id = ? WHERE id = ? AND user_id = ?",
+                    (int(new_kp_id), int(row[0]), user_id)
+                )
             success = cursor.rowcount > 0
             conn.commit()
             conn.close()
@@ -97,6 +109,45 @@ class SubjectManager:
                 pass
             conn.close()
             return False
+
+    def delete_knowledge_point(self, pid: int, user_id: str = "0001") -> bool:
+        """删除知识点（知识库管理增强，2026-10-12）：删知识点行及其来源/熟练度曲线/kp 记忆卡片；
+        错题与练习流水不删——错题的 kp 引用置 NULL 转为独立错题（仍可复习），
+        历史保留（用户裁定的删除口径）。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT id FROM knowledge_points WHERE id = ? AND user_id = ?", (pid, user_id))
+            if not cursor.fetchone():
+                return False
+            cursor.execute(
+                "UPDATE error_questions SET knowledge_point_id = NULL WHERE knowledge_point_id = ? AND user_id = ?",
+                (pid, user_id))
+            cursor.execute(
+                "UPDATE practice_records SET knowledge_point_id = NULL WHERE knowledge_point_id = ? AND user_id = ?",
+                (pid, user_id))
+            cursor.execute(
+                "DELETE FROM knowledge_point_sources WHERE knowledge_point_id = ?", (pid,))
+            cursor.execute(
+                "DELETE FROM kp_proficiency_history WHERE knowledge_point_id = ? AND user_id = ?", (pid, user_id))
+            cursor.execute(
+                "DELETE FROM memory_cards WHERE card_type = 'kp' AND ref_id = ? AND user_id = ?", (pid, user_id))
+            cursor.execute(
+                "DELETE FROM knowledge_points WHERE id = ? AND user_id = ?", (pid, user_id))
+            conn.commit()
+            return True
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 class KnowledgePointManager:
@@ -897,67 +948,134 @@ class ErrorQuestionManager:
         conn.close()
         return result
 
-    def update_error_question_content(self, error_question_id: int, new_content: str, user_id: str = "0001") -> bool:
-        """根据错题ID更新其关联的题干（practice_records.question_content）。"""
+    def update_error_question_content(self, error_question_id: int, new_content: str, user_id: str = "0001",
+                                      options=None, correct_answer=None, explanation=None) -> bool:
+        """P5 错题编辑（2026-10-08）：题干/选项同步该知识点下同题干的全部流水行
+        （题干是列表聚合键，只改单行会造成展示不一致）；答案/解析同步同题干全部错题行。
+        None 字段不动（兼容旧调用仅传 content）；未命中错题/无权访问返回 False。
+        CodeReview Major-1：改名前先锚定旧题干对应的流水行 id 集合，重命名与答案/解析
+        同步都只作用于该集合，避免新题干撞上已存在题干时覆写无关错题组。
+        """
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         try:
-            # 找到关联的练习记录ID（限定本人错题）
             cursor.execute(
-                "SELECT practice_record_id FROM error_questions WHERE id = ? AND user_id = ?",
-                (error_question_id, user_id)
-            )
+                "SELECT eq.knowledge_point_id, pr.question_content FROM error_questions eq "
+                "JOIN practice_records pr ON eq.practice_record_id = pr.id "
+                "WHERE eq.id = ? AND eq.user_id = ?", (error_question_id, user_id))
             row = cursor.fetchone()
             if not row:
-                conn.close()
                 return False
-            rec_id = int(row[0])
-            # 更新题干（限定本人练习记录）
+            kp_id = None if row[0] is None else int(row[0])  # 独立错题 kp 为 NULL，禁 int(None)
+            old_content = row[1] or ""
+            content = (new_content or "").strip() or old_content
+            kp_cond, kp_params = self._kp_match("knowledge_point_id", kp_id)
+            # 先抓取旧题干在本知识点下的全部流水行 id（改名后旧题干即消失，事后反查会错锚）
             cursor.execute(
-                "UPDATE practice_records SET question_content = ? WHERE id = ? AND user_id = ?",
-                (new_content or "", rec_id, user_id)
-            )
-            success = cursor.rowcount > 0
+                "SELECT id FROM practice_records "
+                "WHERE user_id = ? AND " + kp_cond + " AND question_content = ?",
+                (user_id,) + kp_params + (old_content,))
+            pr_ids = [r[0] for r in cursor.fetchall()]
+            ph = ",".join("?" * len(pr_ids))
+            if pr_ids and content and (content != old_content or options is not None):
+                # 题干或选项有变更：整组流水行一起更新（选项随题干同批写回）
+                if options is not None:
+                    cursor.execute(
+                        f"UPDATE practice_records SET question_content = ?, options_json = ? WHERE id IN ({ph})",
+                        [content, json.dumps(options if isinstance(options, list) else [], ensure_ascii=False)]
+                        + pr_ids)
+                else:
+                    cursor.execute(
+                        f"UPDATE practice_records SET question_content = ? WHERE id IN ({ph})",
+                        [content] + pr_ids)
+            upd = {}
+            if correct_answer is not None:
+                upd["correct_answer"] = str(correct_answer).strip()
+            if explanation is not None:
+                upd["explanation"] = str(explanation).strip()
+            if upd and pr_ids:
+                sets = ", ".join(f"{k} = ?" for k in upd)  # 列名固定白名单，无注入面
+                cursor.execute(
+                    f"UPDATE error_questions SET {sets} WHERE user_id = ? AND " + kp_cond + " "
+                    f"AND practice_record_id IN ({ph})",
+                    list(upd.values()) + [user_id] + list(kp_params) + pr_ids)
             conn.commit()
-            conn.close()
-            return success
+            return True
         except Exception:
             try:
                 conn.rollback()
             except Exception:
                 pass
-            conn.close()
             return False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-    def delete_error_question(self, error_question_id: int, user_id: str = "0001") -> bool:
-        """删除一条错题及其熟练度历史记录（不删除原始练习记录）。"""
+    def delete_error_question(self, error_question_id: int, user_id: str = "0001", purge: bool = False) -> bool:
+        """删除一条错题。默认仅删错题行+熟练度历史（保留原始练习流水，转收藏路径依赖此行为）；
+        P5 删除整题（purge=True，2026-10-08）：该知识点下同题干的全部错题行及其熟练度历史、
+        练习流水行、收藏行一并清除（题从本知识点彻底消失，符合用户"删除这道题"语义）。
+        """
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         try:
-            # 先删除历史（仅限本人错题）
+            if not purge:
+                # 先删除历史（仅限本人错题）
+                cursor.execute(
+                    """DELETE FROM error_proficiency_history 
+                       WHERE error_question_id = ? AND error_question_id IN (
+                           SELECT id FROM error_questions WHERE user_id = ?
+                       )""",
+                    (error_question_id, user_id)
+                )
+                # 再删除错题
+                cursor.execute(
+                    "DELETE FROM error_questions WHERE id = ? AND user_id = ?",
+                    (error_question_id, user_id)
+                )
+                success = cursor.rowcount > 0
+                conn.commit()
+                return success
             cursor.execute(
-                """DELETE FROM error_proficiency_history 
-                   WHERE error_question_id = ? AND error_question_id IN (
-                       SELECT id FROM error_questions WHERE user_id = ?
-                   )""",
-                (error_question_id, user_id)
-            )
-            # 再删除错题
+                "SELECT eq.knowledge_point_id, pr.question_content FROM error_questions eq "
+                "JOIN practice_records pr ON eq.practice_record_id = pr.id "
+                "WHERE eq.id = ? AND eq.user_id = ?", (error_question_id, user_id))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            kp_id = None if row[0] is None else int(row[0])  # 独立错题 kp 为 NULL
+            content = row[1] or ""
+            kp_cond, kp_params = self._kp_match("knowledge_point_id", kp_id)
             cursor.execute(
-                "DELETE FROM error_questions WHERE id = ? AND user_id = ?",
-                (error_question_id, user_id)
-            )
-            success = cursor.rowcount > 0
+                "SELECT eq.id FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
+                "WHERE eq.user_id = ? AND " + kp_cond.replace("knowledge_point_id", "eq.knowledge_point_id") + " AND pr.question_content = ?",
+                (user_id,) + kp_params + (content,))
+            eids = [r[0] for r in cursor.fetchall()]
+            if eids:
+                ph = ",".join("?" * len(eids))
+                cursor.execute(f"DELETE FROM error_proficiency_history WHERE error_question_id IN ({ph})", eids)
+                cursor.execute(f"DELETE FROM error_questions WHERE id IN ({ph})", eids)
+            cursor.execute(
+                "DELETE FROM practice_records WHERE user_id = ? AND " + kp_cond + " AND question_content = ?",
+                (user_id,) + kp_params + (content,))
+            cursor.execute(
+                "DELETE FROM favorite_questions WHERE user_id = ? AND " + kp_cond + " AND question_content = ?",
+                (user_id,) + kp_params + (content,))
             conn.commit()
-            conn.close()
-            return success
+            return bool(eids)
         except Exception:
             try:
                 conn.rollback()
             except Exception:
                 pass
-            conn.close()
             return False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
     def mark_as_reviewed(self, error_question_id: int, user_id: str = "0001") -> bool:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
@@ -966,6 +1084,86 @@ class ErrorQuestionManager:
         conn.commit()
         conn.close()
         return success
+
+    # ---- 独立错题（手动录入，2026-10-12，影子练习记录架构）----
+    @staticmethod
+    def _kp_match(col: str, kp_id) -> tuple:
+        """知识点匹配子句：kp 为 None 时匹配 IS NULL（独立错题无归属）。
+        PG/SQLite 下 `col = NULL` 永远不成立，直接传 None 会静默失效，必须显式分支。"""
+        if kp_id is None:
+            return f"{col} IS NULL", ()
+        return f"{col} = ?", (int(kp_id),)
+
+    def save_manual_error(self, subject_name: str, question_content: str,
+                          correct_answer=None, explanation=None,
+                          knowledge_point_id=None, user_id: str = "0001"):
+        """手动新增独立错题：写一行 practice_records（题干 MD 存这里，影子流水）
+        + 一行 error_questions（source='manual'，知识点可空）。既有 eq JOIN pr 全部展示/复习/
+        编辑/删除链路原样生效。返回错题 id，失败返回 None。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """INSERT INTO practice_records
+                   (user_id, subject_name, knowledge_point_id, question_content, user_answer, is_correct, question_type)
+                   VALUES (?, ?, ?, ?, '', 0, '')""",
+                (user_id, subject_name, knowledge_point_id, question_content))
+            pr_id = cursor.lastrowid
+            if not pr_id:
+                return None
+            cursor.execute(
+                """INSERT INTO error_questions
+                   (user_id, subject_name, knowledge_point_id, practice_record_id, correct_answer, explanation, source)
+                   VALUES (?, ?, ?, ?, ?, ?, 'manual')""",
+                (user_id, subject_name, knowledge_point_id, pr_id,
+                 (correct_answer or None), (explanation or None)))
+            eid = cursor.lastrowid
+            conn.commit()
+            return int(eid) if eid else None
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def unbind_error_knowledge_point(self, error_question_id: int, user_id: str = "0001") -> bool:
+        """错题与知识点解绑：错题行及其影子流水行的 knowledge_point_id 一并置 NULL。
+        流水同步置空是为了知识点删除时无残留引用（历史保留、归属消失）。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT practice_record_id FROM error_questions WHERE id = ? AND user_id = ?",
+                (error_question_id, user_id))
+            row = cursor.fetchone()
+            if not row:
+                return False
+            cursor.execute(
+                "UPDATE error_questions SET knowledge_point_id = NULL WHERE id = ? AND user_id = ?",
+                (error_question_id, user_id))
+            if row[0]:
+                cursor.execute(
+                    "UPDATE practice_records SET knowledge_point_id = NULL WHERE id = ? AND user_id = ?",
+                    (int(row[0]), user_id))
+            conn.commit()
+            return True
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     def get_proficiency_history(self, error_question_id: int, user_id: str = "0001") -> List[Tuple[str, int]]:
         conn = self.db_manager.get_connection()
@@ -1777,7 +1975,7 @@ class KnowledgeManagementSystem:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         base_sql = (
-            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id, eq.review_status, pr.question_type, pr.options_json "
+            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id, eq.review_status, pr.question_type, pr.options_json, eq.source "
             "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
             "WHERE eq.user_id = ? AND eq.subject_name = ?"
         )
@@ -1817,6 +2015,8 @@ class KnowledgeManagementSystem:
             # 错题翻卡：题型与选项（存量旧题未落库时为 None，前端降级显示）
             "question_type": r[9] or "",
             "options": _safe_opts(r[10]),
+            # 独立错题（手动录入）：来源标记，前端据此显徽章并走 MD 富文本渲染
+            "source": r[11] or "practice",
         } for r in rows]
 
     def get_favorite_questions(self, subject_name: str, knowledge_point_id: Optional[int] = None,
@@ -2188,17 +2388,35 @@ class KnowledgeManagementSystem:
         """获取错题"""
         return self.error_manager.get_error_questions_by_knowledge_point(subject_name, knowledge_point_id, user_id=user_id)
 
-    def update_error_question_content(self, error_question_id: int, new_content: str, user_id: str = "0001") -> bool:
-        """修改错题题干内容（更新其对应的练习记录题目文本）。"""
-        return self.error_manager.update_error_question_content(error_question_id, new_content, user_id=user_id)
+    def update_error_question_content(self, error_question_id: int, new_content: str, user_id: str = "0001",
+                                      options=None, correct_answer=None, explanation=None) -> bool:
+        """修改错题（P5：题干/选项同步流水，答案/解析同步错题行；None 字段不动）。"""
+        return self.error_manager.update_error_question_content(
+            error_question_id, new_content, user_id=user_id,
+            options=options, correct_answer=correct_answer, explanation=explanation)
 
-    def delete_error_question(self, error_question_id: int, user_id: str = "0001") -> bool:
-        """删除错题（同时清理熟练度历史）。"""
-        return self.error_manager.delete_error_question(error_question_id, user_id=user_id)
+    def delete_error_question(self, error_question_id: int, user_id: str = "0001", purge: bool = False) -> bool:
+        """删除错题（purge=True 时连同该题流水/收藏一并清除）。"""
+        return self.error_manager.delete_error_question(error_question_id, user_id=user_id, purge=purge)
 
     def update_error_knowledge_point(self, error_question_id: int, new_kp_id: int, user_id: str = "0001") -> bool:
         """修改错题的知识点归属。"""
         return self.subject_manager.update_error_kp(error_question_id, new_kp_id, user_id=user_id)
+
+    def save_manual_error(self, subject_name: str, question_content: str, correct_answer=None,
+                          explanation=None, knowledge_point_id=None, user_id: str = "0001"):
+        """手动新增独立错题（影子练习记录，返回错题 id）。"""
+        return self.error_manager.save_manual_error(
+            subject_name, question_content, correct_answer=correct_answer,
+            explanation=explanation, knowledge_point_id=knowledge_point_id, user_id=user_id)
+
+    def unbind_error_knowledge_point(self, error_question_id: int, user_id: str = "0001") -> bool:
+        """错题与知识点解绑（错题与影子流水的 kp 一并置 NULL）。"""
+        return self.error_manager.unbind_error_knowledge_point(error_question_id, user_id=user_id)
+
+    def delete_knowledge_point(self, pid: int, user_id: str = "0001") -> bool:
+        """删除知识点：关联错题解绑保留，流水历史保留。"""
+        return self.subject_manager.delete_knowledge_point(pid, user_id=user_id)
 
     def convert_error_to_favorite(self, error_question_id: int, user_id: str = "0001") -> Optional[int]:
         """将一条错题转存为收藏题：复制题干/答案/解析到 favorite_questions 并删除错题。
@@ -2222,9 +2440,9 @@ class KnowledgeManagementSystem:
             if not row:
                 return None
             subject_name, kp_id, q_text, correct, expl = row
-            # 保存到收藏
+            # 保存到收藏（解绑后的独立错题 kp 为 NULL，收藏表已放宽可空）
             fav_id = self.favorite_manager.save_favorite_question(
-                subject_name, int(kp_id), q_text or "", correct, expl, user_id
+                subject_name, int(kp_id) if kp_id is not None else None, q_text or "", correct, expl, user_id
             )
             # 删除错题
             self.error_manager.delete_error_question(error_question_id, user_id=user_id)
@@ -2635,8 +2853,9 @@ class MindmapManager:
         # 缓存不存在，生成新的学习路径
         print(f"🔍 缓存不存在，开始生成新的学习路径")
         
-        # 获取学科的所有知识点
-        knowledge_points = self._get_knowledge_points_by_subject(subject_name)
+        # 获取学科的所有知识点（2026-10-09 修复：必须透传 user_id，否则落到默认用户 "0001" 查到 0 个知识点，
+        # 导致“梳理知识点”永远报“学习路径生成失败”）
+        knowledge_points = self._get_knowledge_points_by_subject(subject_name, user_id=user_id)
         if not knowledge_points:
             print(f"⚠️ 学科 '{subject_name}' 没有知识点，无法生成学习路径")
             return None
@@ -2739,12 +2958,21 @@ class MindmapManager:
 - **start**: 学习起点
 - **end**: 学习终点
 
+**知识点前序依赖（用于技能树视图，非常重要）：**
+每个知识点节点（existing_kp 和 supplement_kp）必须额外输出 `prerequisites` 字段：
+- 含义：掌握该知识点之前必须先学会的其他知识点节点 id 列表（可以有多个，也可为空数组）
+- 引用范围：只能引用本 JSON 中 nodes 里出现过的知识点节点 id（kp_ 开头的 existing_kp/supplement_kp），不能引用 stage/start/end，不能编造不存在的 id
+- 必须真实反映知识依赖（如：学"正则化"需要先学"过拟合"和"损失函数"），不要为了链式好看而随意串联
+- 依赖关系不得成环（A 的前序含 B，则 B 的前序不得直接或间接含 A）
+- 没有前序的知识点（最基础的入口知识）输出空数组 []
+
 **输出格式：**
 请返回鱼骨图结构的JSON，包含：
 1. 线性主线：start → stage1 → stage2 → ... → end
 2. 知识点分支：每个stage下挂载相关的知识点
 3. 现有知识点归类：标注为existing_kp类型
 4. 补充知识点：标注为supplement_kp类型
+5. 知识点前序依赖：每个知识点节点带 prerequisites 数组
 
 JSON格式示例：
 {{
@@ -2755,9 +2983,10 @@ JSON格式示例：
     {{"id": "stage3", "name": "实践应用阶段", "type": "stage", "level": 3, "description": "动手实践和项目应用"}},
     {{"id": "end", "name": "掌握{subject_name}", "type": "end", "level": 4, "description": "完成学习目标"}},
     
-    {{"id": "kp_math", "name": "数学基础", "type": "supplement_kp", "level": 1, "parent_stage": "stage1", "description": "LLM补充：线性代数、概率统计"}},
-    {{"id": "kp_123", "name": "现有知识点名称", "type": "existing_kp", "level": 2, "parent_stage": "stage2", "description": "学生已掌握的概念"}},
-    {{"id": "kp_project", "name": "项目实践", "type": "supplement_kp", "level": 3, "parent_stage": "stage3", "description": "LLM补充：综合项目练习"}}
+    {{"id": "kp_math", "name": "数学基础", "type": "supplement_kp", "level": 1, "parent_stage": "stage1", "prerequisites": [], "description": "LLM补充：线性代数、概率统计"}},
+    {{"id": "kp_stat", "name": "统计学基础", "type": "supplement_kp", "level": 1, "parent_stage": "stage1", "prerequisites": ["kp_math"], "description": "LLM补充：需要数学基础"}},
+    {{"id": "kp_123", "name": "现有知识点名称", "type": "existing_kp", "level": 2, "parent_stage": "stage2", "prerequisites": ["kp_math", "kp_stat"], "description": "学生已掌握的概念"}},
+    {{"id": "kp_project", "name": "项目实践", "type": "supplement_kp", "level": 3, "parent_stage": "stage3", "prerequisites": ["kp_123"], "description": "LLM补充：综合项目练习"}}
   ],
   "edges": [
     {{"source": "start", "target": "stage1", "relationship": "开始学习"}},
@@ -2766,6 +2995,7 @@ JSON格式示例：
     {{"source": "stage3", "target": "end", "relationship": "完成学习"}},
     
     {{"source": "stage1", "target": "kp_math", "relationship": "包含知识点"}},
+    {{"source": "stage1", "target": "kp_stat", "relationship": "包含知识点"}},
     {{"source": "stage2", "target": "kp_123", "relationship": "包含知识点"}},
     {{"source": "stage3", "target": "kp_project", "relationship": "包含知识点"}}
   ]
@@ -2777,7 +3007,8 @@ JSON格式示例：
 3. **使用正确ID**：现有知识点必须使用提供的ID（如kp_123），不要自己编造
 4. **补充缺失**：从严谨的学习路径设计角度，必须掌握的知识点必须要补充
 5. **鱼骨结构**：stage是主干，knowledge_point是分支
-6. **只返回JSON**：不要其他说明文字
+6. **前序依赖**：每个知识点节点必须带 prerequisites 数组，只引用 JSON 中出现过的 kp_ 节点 id，不成环
+7. **只返回JSON**：不要其他说明文字
 
 请确保学习计划具有清晰的线性进阶路径！"""
 
@@ -2814,6 +3045,9 @@ JSON格式示例：
                 # 将原始知识点信息合并到生成的节点中
                 self._merge_knowledge_point_info(learning_path_data, knowledge_points, kp_id_map)
                 
+                # 规范化前序依赖（技能树视图用）：非法/自引用/不存在的 id 一律过滤，防前端画崩
+                self._normalize_learning_path_prerequisites(learning_path_data)
+                
                 print(f"✅ 学习路径生成成功: {len(learning_path_data.get('nodes', []))}个节点, {len(learning_path_data.get('edges', []))}条路径")
                 return learning_path_data
                 
@@ -2826,6 +3060,63 @@ JSON格式示例：
             import traceback
             traceback.print_exc()
             return None
+    
+    def _normalize_learning_path_prerequisites(self, learning_path_data: Dict) -> None:
+        """规范化知识点前序依赖字段（技能树视图使用）。
+
+        LLM 输出不可信：prerequisites 可能缺失、非数组、引用不存在的节点、自引用或成环。
+        统一清洗为：每个 kp 节点都有合法 prerequisites（只引用存在的 kp 节点、去重、不自引用），
+        并强制破环（DFS 回边删除），保证落盘缓存必然是 DAG，前端分层布局不会被环污染。
+        """
+        nodes = learning_path_data.get('nodes', []) or []
+        kp_ids = {n.get('id') for n in nodes
+                  if n.get('type') in ('existing_kp', 'supplement_kp') and n.get('id')}
+        bad_count = 0
+        for node in nodes:
+            if node.get('type') not in ('existing_kp', 'supplement_kp'):
+                continue
+            raw = node.get('prerequisites')
+            if not isinstance(raw, list):
+                bad_count += 1
+                raw = []
+            cleaned = []
+            for pid in raw:
+                if (isinstance(pid, str) and pid in kp_ids
+                        and pid != node.get('id') and pid not in cleaned):
+                    cleaned.append(pid)
+            node['prerequisites'] = cleaned
+        if bad_count:
+            print(f"⚠️ 规范化：{bad_count} 个节点 prerequisites 缺失/非法，已置为空数组")
+        
+        # 强制不成环：一次 DFS 收集全部回边后删除（DFS 回边集能打断图中所有环）。
+        # 遍历期间不改动列表，避免迭代器跳过元素导致漏检
+        prereq_map = {n['id']: n['prerequisites'] for n in nodes if n.get('id') in kp_ids}
+        color = {pid: 0 for pid in kp_ids}  # 0 未访问 1 在栈 2 完成
+        back_edges = []
+        for root in sorted(kp_ids):
+            if color[root]:
+                continue
+            color[root] = 1
+            stack = [(root, iter(prereq_map[root]))]
+            while stack:
+                node_id, it = stack[-1]
+                advanced = False
+                for pid in it:
+                    if color[pid] == 1:
+                        back_edges.append((node_id, pid))
+                    elif color[pid] == 0:
+                        color[pid] = 1
+                        stack.append((pid, iter(prereq_map[pid])))
+                        advanced = True
+                        break
+                if not advanced:
+                    color[node_id] = 2
+                    stack.pop()
+        if back_edges:
+            for node_id, pid in back_edges:
+                if pid in prereq_map[node_id]:
+                    prereq_map[node_id].remove(pid)
+            print(f"⚠️ 规范化：剔除 prerequisites 依赖环边 {len(back_edges)} 条")
     
     def _validate_learning_path_data(self, data: Dict) -> bool:
         """验证学习路径数据格式"""

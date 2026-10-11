@@ -48,6 +48,7 @@ module.exports = {
           'text-2': '#78716C',
           'text-3': '#A8A29E',
           danger: '#EF4444',
+          'danger-soft': '#FEECEC',
           warning: '#F59E0B',
         },
       },

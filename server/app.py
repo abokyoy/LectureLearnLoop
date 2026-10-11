@@ -101,5 +101,9 @@ def create_app() -> Flask:
 if __name__ == "__main__":
     application = create_app()
     debug_logger.log("server", "starting", data={"port": config.SERVER_PORT})
-    # P006 修复：debug=False + 仅监听回环地址
+    # 手机拍照传图独立小服务（0.0.0.0:9991，占用则 9900-9999 自适应）；与主服务同进程共享会话表
+    if not config.PHOTO_DISABLE:
+        from services import photo_drop
+        photo_drop.start_in_background()
+    # P006 修复：debug=False + 仅监听回环地址（手机传图走独立小服务，不扩大主服务暴露面）
     application.run(host="127.0.0.1", port=config.SERVER_PORT, debug=False, threaded=True)

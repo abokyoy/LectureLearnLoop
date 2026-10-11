@@ -21,11 +21,20 @@ function loadServerPage(win) {
 }
 
 function createMainWindow() {
+  const isMac = process.platform === 'darwin';
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 860,
     title: '柯基学习小助手',
     autoHideMenuBar: true, // 不展示原生菜单栏（菜单本体已在 whenReady 里置 null）
+    backgroundColor: '#FAF7F2',
+    // 一体化头部：去掉 Windows 原生标题栏，页面顶栏即为窗口头。
+    // Windows：hidden + titleBarOverlay，原生最小化/最大化/关闭按钮用顶栏同色融合（产品规则：页面内不自绘窗口按钮）；
+    // macOS：hidden + 自定义位置红绿灯，CSS 侧让侧边栏logo下移避让。
+    titleBarStyle: 'hidden',
+    ...(isMac
+      ? { trafficLightPosition: { x: 18, y: 16 } }
+      : { titleBarOverlay: { color: '#FFFFFF', symbolColor: '#78716C', height: 56 } }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

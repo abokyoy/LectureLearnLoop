@@ -39,6 +39,18 @@
         };
     })();
     </script>
+    <!-- Electron 无边框壳层：桌面端环境打标（ll-electron / ll-electron-win / ll-electron-mac），
+         激活顶栏拖拽区与平台避让样式；浏览器端无 llShell 接口，不打标、零影响 -->
+<script>
+    (function () {
+        if (!window.llShell) return;
+        var de = document.documentElement;
+        de.classList.add('ll-electron');
+        var ua = navigator.userAgent || '';
+        if (/Macintosh|Mac OS X/.test(ua)) de.classList.add('ll-electron-mac');
+        else if (/Windows/.test(ua)) de.classList.add('ll-electron-win');
+    })();
+</script>
     <!-- 批1：Tailwind 由 CDN 运行时切换为预编译静态 CSS（构建：frontend/ npm run build） -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/cl.css') }}">
     <!-- Flask版本：使用API封装替代QWebChannel -->

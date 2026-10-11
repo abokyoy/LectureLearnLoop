@@ -127,7 +127,9 @@ class TestPageStatics:
 
     def test_spa_layout_loads_dashboard_fragment(self):
         text = (TPL / "spa_layout.html").read_text(encoding="utf-8")
-        assert "loadContent('dashboard')" in text
+        # P1 改造后首帧为三元分支：存在未过期 pm_pending_point 旗标时先跳知识点落地页，否则去工作台
+        assert "loadContent(pendingKp ? 'knowledge_point' : 'dashboard')" in text
+        assert "loadContent('dashboard')" not in text  # 无旗标分支仍须走 dashboard（上面三元已覆盖）
 
     def test_learn_materials_no_hardcoded_subject(self):
         text = (TPL / "pages" / "learn_from_materials.html").read_text(encoding="utf-8")

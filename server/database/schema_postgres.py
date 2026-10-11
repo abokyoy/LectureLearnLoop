@@ -138,6 +138,12 @@ PG_TABLES = [
     "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS due_time TEXT",
     "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS mastery_manual INTEGER DEFAULT 0",
 
+    # ---- 独立错题（手动录入，2026-10-12）：知识点绑定放宽为可空 + 来源标记 ----
+    # 影子练习记录架构：手动错题也写 practice_records（题干存那里），kp 置 NULL 表示不依附知识点
+    "ALTER TABLE practice_records ALTER COLUMN knowledge_point_id DROP NOT NULL",
+    "ALTER TABLE error_questions ALTER COLUMN knowledge_point_id DROP NOT NULL",
+    "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'practice'",
+
     # 知识点熟练度历史（FSRS 曲线，与错题 error_proficiency_history 对称）
     """
     CREATE TABLE IF NOT EXISTS kp_proficiency_history (
@@ -205,6 +211,8 @@ PG_TABLES = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_fq_user ON favorite_questions (user_id)",
+    # 解绑后的错题允许转收藏（无知识点归属），收藏表同步放宽——必须在建表之后（fresh install 时 ALTER 不存在表会整体 abort）
+    "ALTER TABLE favorite_questions ALTER COLUMN knowledge_point_id DROP NOT NULL",
 
     # 知识脑图
     """

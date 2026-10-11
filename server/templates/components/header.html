@@ -1,13 +1,14 @@
 <!-- 批1 壳层重构：56px 简洁顶栏（DESIGN.md §6），仅页面标题 + 右侧轻操作 -->
-<header class="flex justify-between items-center h-14 shrink-0 px-8 bg-cl-surface border-b border-cl-border">
+<!-- Electron 壳层：顶栏即窗口头（ll-titlebar-drag 拖拽/双击最大化，ll-titlebar-pad 避让原生 overlay 按钮） -->
+<header class="ll-titlebar-drag ll-titlebar-pad flex justify-between items-center h-14 shrink-0 px-8 bg-cl-surface border-b border-cl-border">
     <h2 id="page-title" class="text-[17px] font-semibold text-cl-text truncate">{{ page_title | default('柯基的学习乐园') }}</h2>
-    <div class="flex items-center gap-3 shrink-0">
+    <div class="ll-titlebar-nodrag flex items-center gap-3 shrink-0">
         <button id="btn-open-overlay" title="打开学习悬浮窗（录音/转写/截屏）"
                 class="cl-btn-ghost !h-8 !px-3 !text-xs"
                 onclick="(function(){if(window.llShell&&window.llShell.openOverlay){window.llShell.openOverlay();}else{alert('悬浮窗需在 Electron 桌面端打开');}})()">
             <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-headphones"/></svg>
             悬浮窗
         </button>
-        <!-- 窗口控制由 Electron 原生标题栏承担（产品要求：界面内部不出现窗口按钮） -->
+        <!-- 窗口控制：页面内不自绘按钮；Windows 由顶栏同色原生 overlay 按钮叠显，macOS 由红绿灯承担 -->
     </div>
 </header>

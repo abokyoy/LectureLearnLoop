@@ -16,6 +16,7 @@ from flask import Blueprint, g, jsonify, request
 from auth import require_auth
 import credits_service as cr
 from config import VAULT_DIR, load_config
+import config as _cfg  # 手机传图公网地址等运行期配置（photo-session 端点用）
 from logger_module import debug_logger as log
 from services import fsrs_service as F
 
@@ -513,6 +514,16 @@ def knowledge_point_sources(pid):
     return _ok(get_kms().get_knowledge_point_sources(pid, user_id=g.user_id))
 
 
+@kb_bp.route("/api/knowledge/points/<int:pid>", methods=["DELETE"])
+@require_auth
+def knowledge_point_delete(pid):
+    """知识点删除（知识库管理增强）：关联错题自动解绑保留，流水历史保留。"""
+    ok = get_kms().delete_knowledge_point(pid, user_id=g.user_id)
+    if not ok:
+        return _err("知识点不存在或无权访问", 404)
+    return _ok({"deleted": True})
+
+
 # ---------------------------------------------------------------- 知识库统计（别名，兼容旧页面命名）
 @kb_bp.route("/api/kb/stats", methods=["GET"])
 @require_auth
@@ -530,6 +541,159 @@ def list_errors():
     if not subject:
         return _err("subject 参数不能为空", 400)
     return _ok(get_kms().search_error_questions(subject, knowledge_point_id=kp, keyword=keyword, user_id=g.user_id))
+
+
+@kb_bp.route("/api/kb/errors", methods=["POST"])
+@require_auth
+def create_manual_error():
+    """手动新增独立错题（题干为 MD，图片用 vault 相对路径引用）。
+    影子练习记录架构：同事务写 practice_records + error_questions(source='manual')。"""
+    body = request.get_json(silent=True) or {}
+    subject = (body.get("subject_name") or "").strip()
+    question = (body.get("question") or "").strip()
+    kp_id = body.get("knowledge_point_id")
+    if not subject:
+        return _err("subject_name 不能为空", 400)
+    if not question:
+        return _err("题干不能为空", 400)
+    if kp_id is not None:
+        try:
+            kp_id = int(kp_id)
+        except (TypeError, ValueError):
+            return _err("knowledge_point_id 非法", 400)
+        conn = get_kms().db_manager.get_connection()
+        try:
+            # 归属学科一并校验：防跨学科绑点造成「按科目/按知识点」两条查询链路视图不一致（CodeReview Minor-6）
+            row = conn.execute(
+                "SELECT id FROM knowledge_points WHERE id = ? AND user_id = ? AND subject_name = ?",
+                (kp_id, g.user_id, subject)).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return _err("知识点不存在、不属于该学科或无权访问", 404)
+    else:
+        kp_id = None
+    kms = get_kms()
+    kms.add_subject(subject, user_id=g.user_id)  # 科目不存在时自动建（与 point-new 同口径）
+    eid = kms.save_manual_error(
+        subject, question,
+        correct_answer=(body.get("correct_answer") or None),
+        explanation=(body.get("explanation") or None),
+        knowledge_point_id=kp_id, user_id=g.user_id)
+    if eid is None:
+        return _err("错题保存失败", 500)
+    log.log("api", "create_manual_error", "success", {"eid": eid, "subject": subject, "kp": kp_id})
+    return _ok({"id": eid})
+
+
+@kb_bp.route("/api/kb/errors/<int:eid>/unbind", methods=["POST"])
+@require_auth
+def error_unbind_kp(eid):
+    """错题与知识点解绑：错题变独立（知识点页不再展示，科目错题列表仍在）。"""
+    ok = get_kms().unbind_error_knowledge_point(eid, user_id=g.user_id)
+    if not ok:
+        return _err("错题不存在或无权访问", 404)
+    return _ok({"unbound": True})
+
+
+# ---------------------------------------------------------------- 错题图片 OCR 识别
+@kb_bp.route("/api/kb/error-ocr", methods=["POST"])
+@require_auth
+def error_ocr_start():
+    """提交错题图片识别（异步）：body {image: vault 相对路径} → task_id。
+    图片由前端先经 /api/vault/screenshot 上传落盘；服务不可用时任务以 error 结束，前端降级手填。"""
+    from services import error_ocr
+    body = request.get_json(silent=True) or {}
+    rel = (body.get("image") or "").strip()
+    target = _safe_vault_path(g.user_id, rel)
+    if target is None or not target.is_file():
+        return _err("图片不存在或路径非法", 400)
+    if not error_ocr.is_image(target.name):
+        return _err("仅支持图片文件识别", 400)
+    task_id = error_ocr.start_ocr(str(target), user_id=g.user_id)
+    return _ok({"task_id": task_id})
+
+
+@kb_bp.route("/api/kb/error-ocr/<task_id>", methods=["GET"])
+@require_auth
+def error_ocr_result(task_id):
+    from services import error_ocr
+    res = error_ocr.get_result(task_id, user_id=g.user_id)
+    if res is None:
+        return _err("识别任务不存在或已过期，请重新提交", 404)
+    return _ok(res)
+
+
+# ---------------------------------------------------------------- 错题智能分析（图片+文字 → 视觉大模型整理，2026-10-13）
+@kb_bp.route("/api/kb/error-analyze", methods=["POST"])
+@require_auth
+def error_analyze_start():
+    """提交智能分析（异步）：body {content: 题干 MD} → task_id。
+    MD 内图片路径逐个过 _safe_vault_path；任一非法即整体 400（用户应看到明确错误而非静默跳过）。"""
+    from services import error_analyze
+    body = request.get_json(silent=True) or {}
+    content = str(body.get("content") or "")
+    items = []
+    for rel in error_analyze.md_image_paths(content):
+        target = _safe_vault_path(g.user_id, rel)
+        if target is None or not target.is_file():
+            return _err(f"引用的图片不存在或路径非法：{rel}", 400)
+        items.append((rel, str(target)))
+    if not content.strip() and not items:
+        return _err("没有可分析的内容", 400)
+    task_id = error_analyze.start_analyze(content, items, user_id=g.user_id)
+    log.log("api", "error_analyze_start", "success", {"task": task_id, "imgs": len(items)})
+    return _ok({"task_id": task_id})
+
+
+@kb_bp.route("/api/kb/error-analyze/<task_id>", methods=["GET"])
+@require_auth
+def error_analyze_result(task_id):
+    """轮询智能分析结果；done 后 TTL 内可重复读取（前端处理异常可重试）。"""
+    from services import error_analyze
+    res = error_analyze.get_result(task_id, user_id=g.user_id)
+    if res is None:
+        return _err("分析任务不存在或已过期，请重新提交", 404)
+    return _ok(res)
+
+
+# ---------------------------------------------------------------- 手机拍照传图（错题录入，2026-10-13）
+@kb_bp.route("/api/kb/photo-session", methods=["POST"])
+@require_auth
+def photo_session_create():
+    """创建一次性手机传图会话：返回 token + 可扫码地址候选（局域网 IP × 小服务端口，附公网前缀）。"""
+    from services import photo_drop
+    body = request.get_json(silent=True) or {}
+    port = photo_drop.current_port()
+    if port is None:
+        return _err("手机传图服务未启动（端口 9900-9999 全占用或已禁用）", 503)
+    token = photo_drop.create_session(g.user_id, (body.get("subject") or "").strip())
+    paths = {"page": f"/c/{token}"}
+    lan = photo_drop.lan_ip_candidates()
+    public = (_cfg.PHOTO_PUBLIC_BASE or "").rstrip("/")
+    log.log("api", "photo_session_create", "success", {"token": token, "ips": lan[:3]})
+    return _ok({"token": token, "port": port, "lan_ips": lan, "public_base": public, "paths": paths})
+
+
+@kb_bp.route("/api/kb/photo-session/<token>", methods=["GET"])
+@require_auth
+def photo_session_poll(token):
+    """PC 轮询取新图：?since=已收数量；非本人/失效一律 404（前端据此停轮询并提示）。"""
+    from services import photo_drop
+    since = max(0, request.args.get("since", default=0, type=int) or 0)  # 负值会致 images[-n:] 重复下发旧图（CodeReview m-2）
+    res = photo_drop.touch(token, g.user_id, since)
+    if res is None:
+        return _err("会话已失效或不属于当前用户", 404)
+    return _ok(res)
+
+
+@kb_bp.route("/api/kb/photo-session/<token>", methods=["DELETE"])
+@require_auth
+def photo_session_close(token):
+    """PC 关闭弹窗即失效：手机后续上传/打开页一律拒绝。"""
+    from services import photo_drop
+    photo_drop.close(token, g.user_id)
+    return _ok({"closed": True})
 
 
 @kb_bp.route("/api/kb/errors/<int:eid>/history", methods=["GET"])
@@ -666,8 +830,15 @@ def fsr_rate_entity(kind, rid):
 @kb_bp.route("/api/kb/errors/<int:eid>", methods=["PUT"])
 @require_auth
 def error_update_content(eid):
+    """P5 错题编辑：支持题干/选项（同步流水行）+ 正确答案/解析（同步错题行）。
+
+    仅传 content 时保持旧行为（只改题干）；None/缺失字段不动。
+    """
     body = request.get_json(silent=True) or {}
-    ok = get_kms().update_error_question_content(eid, body.get("content", ""), user_id=g.user_id)
+    ok = get_kms().update_error_question_content(
+        eid, body.get("content", ""), user_id=g.user_id,
+        options=body.get("options"), correct_answer=body.get("correct_answer"),
+        explanation=body.get("explanation"))
     return _ok({"updated": bool(ok)})
 
 
@@ -694,7 +865,8 @@ def error_to_favorite(eid):
 @kb_bp.route("/api/kb/errors/<int:eid>", methods=["DELETE"])
 @require_auth
 def error_delete(eid):
-    ok = get_kms().delete_error_question(eid, user_id=g.user_id)
+    """P5 错题删除（确认制由前端把门）：purge 整题——错题行+熟练度历史+该知识点下同题干流水/收藏行。"""
+    ok = get_kms().delete_error_question(eid, user_id=g.user_id, purge=True)
     return _ok({"deleted": bool(ok)})
 
 
@@ -783,6 +955,9 @@ def get_learning_path():
     except Exception as e:
         log.log_error("api", "learning_path_failed", str(e), data={"subject": subject})
         return _err(f"学习路径生成失败: {e}", 500)
+    if result is None:
+        # 与脑图路由同口径（相似业务相似实现）：把“无知识点/LLM 无有效结构”的失败原因透传给前端
+        return _err("学习路径生成失败：学科无知识点或 LLM 未返回有效结构", 500)
     return _ok(result, **cr.billing_for_response())
 
 

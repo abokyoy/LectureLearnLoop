@@ -72,7 +72,13 @@
         function boot() {
             try { setActiveMenuItem('{{ active_menu | default("dashboard") }}'); } catch (e) { /* noop */ }
             if (location.pathname === '/' && window.bridge && typeof window.bridge.loadContent === 'function') {
-                try { window.bridge.loadContent('dashboard'); } catch (e) { /* ignore */ }
+                // P1 落地页统一（评审修复）：非 iframe 兜底路径写了旗标跳首页，首帧检测未过期旗标直达落地页（消费端 bootKnowledgePoint 读后自删）
+                var pendingKp = false;
+                try {
+                    var raw = localStorage.getItem('pm_pending_point');
+                    if (raw) { var pt = JSON.parse(raw); pendingKp = !!(pt && pt.id && Date.now() - (pt.ts || 0) <= 10000); }
+                } catch (e) { /* 旗标损坏走默认 */ }
+                try { window.bridge.loadContent(pendingKp ? 'knowledge_point' : 'dashboard'); } catch (e) { /* ignore */ }
             }
         }
         if (document.readyState === 'complete' || document.readyState === 'interactive') setTimeout(boot, 0);
