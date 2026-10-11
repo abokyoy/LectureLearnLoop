@@ -24,6 +24,7 @@ from flask import Blueprint, current_app, g, jsonify, request, send_file
 
 from auth import require_auth
 from config import DATA_DIR, VAULT_DIR, load_config, save_runtime_config
+from knowledge_management import difficulty_label_to_score
 from logger_module import debug_logger as log
 import credits_service as cr
 from services import fsrs_service as F
@@ -2703,29 +2704,11 @@ def point_generate_practice(pid):
         return _ok({"success": False, "error": f"题目格式校验失败: {e}"})
 
 
-@bridge_bp.route("/api/knowledge/points/<int:pid>/practice-submit", methods=["POST"])
-@require_auth
-def point_practice_submit(pid):
-    """submitPointPractice：多题型判分（客观题本地、简答题 LLM）→ 全量落库 → 整批折叠一次 FSRS 复习更新掌握度。"""
-    body = request.get_json(silent=True) or {}
-    questions = body.get("questions") or []
-    answers = body.get("answers") or []
-    if not isinstance(questions, list) or not questions or len(questions) != len(answers):
-        return _ok({"success": False, "error": "题目和答案数量不匹配"})
-    kms = get_kms()
-    conn = kms.db_manager.get_connection()
-    try:
-        row = conn.execute(
-            "SELECT subject_name FROM knowledge_points WHERE id = ? AND user_id = ?",
-            (pid, g.user_id)).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        return _ok({"success": False, "error": "未找到该知识点"})
-    subject = row[0]
-
-    # ---- 1) 客观题本地判分；简答题收集待 LLM 判 ----
-    results = []  # 与 questions 对齐：{is_correct, comment}
+def _grade_practice_set(questions, answers, log_tag, ident):
+    """判分公共函数（错题学习单元升级 P3 抽取，2026-10-14，计划：禁止复制粘贴）：
+    客观题本地判分 + 简答题 LLM 批量判分。practice-submit 与 error-set-submit 共用。
+    返回 (results, None)；失败返回 (None, err_payload)，调用方 _ok(err_payload) 原样返回。"""
+    results = []
     short_items = []
     for i, (q, a) in enumerate(zip(questions, answers)):
         t = (q.get("type") or "single") if isinstance(q, dict) else "single"
@@ -2745,7 +2728,6 @@ def point_practice_submit(pid):
             short_items.append((i, q, user_ans))
             results.append({"is_correct": False, "comment": ""})  # 占位，稍后由 LLM 判分覆盖
 
-    # ---- 2) 简答题 LLM 批量判分（失败则整体报错，不落库，避免半套留痕） ----
     if short_items:
         lines = "\n\n".join(
             f"[题序{j}]\n题目: {str(q.get('question') or '')[:500]}\n参考答案: {str(q.get('correct_answer') or '')[:500]}\n学生答案: {(ua or '（未作答）')[:500]}"
@@ -2771,10 +2753,40 @@ def point_practice_submit(pid):
                 results[idx] = {"is_correct": bool(g_item.get("is_correct")),
                                 "comment": str(g_item.get("comment") or "")}
         except cr.InsufficientCreditsError as e:
-            return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+            return None, {"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance}
         except Exception as e:  # noqa: BLE001
-            log.log_error("bridge", "practice_short_grade", f"pid={pid} err={e}")
-            return _ok({"success": False, "error": f"简答题判分失败，请重试: {e}"})
+            log.log_error("bridge", log_tag, f"{ident} err={e}")
+            return None, {"success": False, "error": f"简答题判分失败，请重试: {e}"}
+    return results, None
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/practice-submit", methods=["POST"])
+@require_auth
+def point_practice_submit(pid):
+    """submitPointPractice：多题型判分（客观题本地、简答题 LLM）→ 全量落库 → 整批折叠一次 FSRS 复习更新掌握度。"""
+    body = request.get_json(silent=True) or {}
+    questions = body.get("questions") or []
+    answers = body.get("answers") or []
+    if not isinstance(questions, list) or not questions or len(questions) != len(answers):
+        return _ok({"success": False, "error": "题目和答案数量不匹配"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        # 错题学习单元升级 P2：随学科一并取知识点重要度，答错入池时继承（用户裁定）
+        row = conn.execute(
+            "SELECT subject_name, importance_score FROM knowledge_points WHERE id = ? AND user_id = ?",
+            (pid, g.user_id)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return _ok({"success": False, "error": "未找到该知识点"})
+    subject = row[0]
+    kp_importance = float(row[1]) if len(row) > 1 and row[1] is not None else 5.0
+
+    # ---- 1)+2) 判分（P3 抽公共函数：客观题本地 + 简答题 LLM 批量，与 error-set-submit 同一实现） ----
+    results, grade_err = _grade_practice_set(questions, answers, "practice_short_grade", f"pid={pid}")
+    if grade_err is not None:
+        return _ok(grade_err)
 
     # ---- 3) 全量落库：practice_records 流水 + 答错自动入 error_questions 错题池；逐题收集 rating ----
     correct_count = 0
@@ -2795,7 +2807,10 @@ def point_practice_submit(pid):
             kms.practice_manager.save_practice_record(
                 subject, pid, q_text, user_ans, ok, g.user_id, c_ans, expl,
                 question_type=(q.get("type") if isinstance(q, dict) else "") or "",
-                options=(q.get("options") if isinstance(q, dict) and isinstance(q.get("options"), list) else None))
+                options=(q.get("options") if isinstance(q, dict) and isinstance(q.get("options"), list) else None),
+                # P2 继承（用户裁定）：难度按出题标注映射、重要度取知识点当前值；入池同题不堆行由同一函数内部处理
+                difficulty_score=difficulty_label_to_score(difficulty),
+                importance_score=kp_importance)
         except Exception as e:  # noqa: BLE001
             log.log_error("bridge", "practice_persist", f"pid={pid} i={i} err={e}")
         detailed.append({
@@ -2838,3 +2853,514 @@ def point_practice_submit(pid):
         "accuracy": accuracy, "detailed_results": detailed,
         **cr.billing_for_response(),
     })
+
+
+# ---------------------------------------------------------------- 错题学习单元升级 P3（2026-10-14）：科目级错题练习闭环
+# 与 pid 版 error-practice/generate-practice/practice-submit 并存，pid 版行为不动（计划兼容裁定）。
+
+def _difficulty_label(score):
+    """0-10 存储分 → 出题标注标签（difficulty_label_to_score 的逆映射，按 P2 裁定三档）。"""
+    v = float(score) if score is not None else 5.0
+    if v <= 4.0:
+        return "容易"
+    if v <= 6.5:
+        return "中等"
+    return "困难"
+
+
+def _fetch_error_pool_rows(kms, uid, subject=None, ids=None, limit=200):
+    """错题池候选行（与错题列表同构：行 JOIN 其首条流水取题干），含 FSRS 状态与双星。
+    返回 dict 列表：eid/content/qtype/options/correct/expl/prof/kp_id/subject/difficulty_score/importance_score/state。"""
+    conn = kms.db_manager.get_connection()
+    try:
+        base = ("SELECT eq.id, pr.question_content, pr.question_type, pr.options_json, "
+                "eq.correct_answer, eq.explanation, COALESCE(eq.current_proficiency, 0), "
+                "eq.knowledge_point_id, eq.subject_name, eq.difficulty_score, eq.importance_score, "
+                "pr.user_answer "
+                "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
+                "WHERE eq.user_id = ?")
+        params = [uid]
+        if subject:
+            base += " AND eq.subject_name = ?"
+            params.append(subject)
+        if ids is not None:
+            ph = ",".join("?" * len(ids))
+            base += f" AND eq.id IN ({ph})"
+            params.extend(ids)
+        base += " ORDER BY eq.id DESC LIMIT ?"
+        params.append(int(limit))
+        rows = conn.execute(base, tuple(params)).fetchall()
+        out = []
+        for r in rows:
+            out.append({
+                "eid": r[0], "content": r[1] or "", "qtype": r[2], "options": _parse_options_json(r[3]),
+                "correct": str(r[4] or "").strip(), "expl": r[5] or "", "prof": r[6],
+                "kp_id": r[7], "subject": r[8],
+                "difficulty_score": float(r[9]) if r[9] is not None else 5.0,
+                "importance_score": float(r[10]) if r[10] is not None else 5.0,
+                "user_answer": r[11] or "",
+                "state": F.load_state(conn, "error", r[0], uid),
+            })
+        return out
+    finally:
+        conn.close()
+
+
+def _pool_question(row):
+    """错题行 → 练习题目结构（对齐 practice-submit/error-set-submit 入参，携 error_id/kp_id）。"""
+    return {
+        "error_id": row["eid"], "kp_id": row["kp_id"], "question": row["content"],
+        "type": _qtype_norm(row["qtype"], row["content"]), "options": row["options"],
+        "correct_answer": row["correct"], "explanation": row["expl"],
+        "difficulty": _difficulty_label(row["difficulty_score"]),
+        "difficulty_score": row["difficulty_score"], "importance_score": row["importance_score"],
+    }
+
+
+@bridge_bp.route("/api/practice/error-pool", methods=["POST"])
+@require_auth
+def practice_error_pool():
+    """科目级错题组卷（零积分）：mode smart|manual|single。
+
+    smart：FSRS 三因子排序组卷（R 升→重要度降→难度升，用户裁定替代熟练度升序），复用
+           F.build_sprint_pool；同题干去重取排序首位代表行；
+    manual：勾选 error_ids（≤20 题）；single：error_id 单题「练这题」。
+    题目结构对齐 error-set-submit 入参（每题带 error_id、kp_id）；无判分基准行跳过并计数。"""
+    body = request.get_json(silent=True) or {}
+    subject = (body.get("subject") or body.get("subject_name") or "").strip()
+    if not subject:
+        return _ok({"success": False, "error": "subject 必填"})
+    mode = (body.get("mode") or "smart").strip()
+    if mode not in ("smart", "manual", "single"):
+        return _ok({"success": False, "error": "mode 必须为 smart、manual 或 single"})
+    kms = get_kms()
+    ids = None
+    n = 5
+    if mode == "smart":
+        try:
+            n = max(1, min(int(body.get("count", 5)), 20))
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "count 必须为整数"})
+    elif mode == "manual":
+        raw = body.get("error_ids")
+        if not isinstance(raw, list) or not raw:
+            return _ok({"success": False, "error": "手动模式需勾选至少一道错题"})
+        try:
+            ids = [int(x) for x in raw][:20]
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "error_ids 含非法项"})
+    else:
+        try:
+            ids = [int(body.get("error_id"))]
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "error_id 必须为整数"})
+    rows = _fetch_error_pool_rows(kms, g.user_id, subject, ids)
+    if ids is not None and len({r["eid"] for r in rows}) != len(set(ids)):
+        return _ok({"success": False, "error": "部分错题不存在或不属于该学科/用户"})
+    if mode == "smart":
+        rows = F.build_sprint_pool(rows, len(rows))  # 三因子全量排序，去重后取前 n
+    seen, questions, skipped = set(), [], 0
+    for row in rows:
+        if row["content"] in seen:
+            continue
+        seen.add(row["content"])
+        if mode == "smart" and len(questions) >= n:
+            break
+        if not row["correct"]:
+            skipped += 1
+            continue
+        questions.append(_pool_question(row))
+    if not questions:
+        return _ok({"success": False, "no_errors": True,
+                    "error": "该学科暂无可判分的错题，先做一轮练习产生错题后再来"})
+    log.log("api", "error_pool", "success", {"mode": mode, "picked": len(questions), "skipped": skipped})
+    return _ok({"success": True, "questions": questions, "skipped_no_answer": skipped})
+
+
+@bridge_bp.route("/api/practice/error-set-submit", methods=["POST"])
+@require_auth
+def practice_error_set_submit():
+    """跨知识点错题混合卷提交（P3）：判分复用 _grade_practice_set，禁止复制。
+
+    questions[] 携 error_id（重练=该行本身；举一反三派生=root_error_id）与可选 kp_id。
+    逐题：流水挂回错题（save_practice_record error_question_id）+ 错题行 FSRS 更新（'error' 逐题 apply，
+    练和记都调熟练度：对→升错→降）；答错按裁定：重练不重复入池，派生新题干照常入池（pool_new_on_wrong）；
+    kp 掌握度按知识点分组折叠更新（与 pid 版同口径：min(ratings) + 组内实测正确率封顶）。"""
+    body = request.get_json(silent=True) or {}
+    questions = body.get("questions") or []
+    answers = body.get("answers") or []
+    if not isinstance(questions, list) or not questions or len(questions) != len(answers):
+        return _ok({"success": False, "error": "题目和答案数量不匹配"})
+    subject = (body.get("subject_name") or body.get("subject") or "").strip()
+    kms = get_kms()
+    # root 行缓存：一次查清本批涉及的错题行，供学科/kp/继承值/重练 vs 派生判定
+    root_ids = []
+    for q in questions:
+        if isinstance(q, dict):
+            try:
+                v = q.get("error_id") or q.get("root_error_id")
+                if v is not None:
+                    root_ids.append(int(v))
+            except (TypeError, ValueError):
+                continue
+    roots = {r["eid"]: r for r in _fetch_error_pool_rows(kms, g.user_id, None, root_ids or None)} if root_ids else {}
+    if not root_ids and not subject:
+        return _ok({"success": False, "error": "无错题归属时 subject_name 必填"})
+    # 评审 m-2：提供的 error_id 必须全部归属本人（与 error-pool 非法 id 拦截同口径），
+    # 防全为 foreign eid 时落入 subject_name="" 的孤儿流水
+    if root_ids and len(roots) != len(set(root_ids)):
+        return _ok({"success": False, "error": "部分错题不存在或不属于当前用户"})
+
+    results, grade_err = _grade_practice_set(questions, answers, "error_set_grade", f"subject={subject}")
+    if grade_err is not None:
+        return _ok(grade_err)
+
+    correct_count = 0
+    detailed = []
+    now = F.utcnow()
+    kp_groups = {}  # kp_id -> {ratings, correct, total}（整组折叠一次复习，与 pid 版同口径）
+    for i, (q, a) in enumerate(zip(questions, answers)):
+        q = q if isinstance(q, dict) else {}
+        ok = results[i]["is_correct"]
+        if ok:
+            correct_count += 1
+        try:
+            eid = int(q.get("error_id") or q.get("root_error_id") or 0) or None
+        except (TypeError, ValueError):
+            eid = None
+        root = roots.get(eid)
+        kp_id = q.get("kp_id")
+        if kp_id is None and root is not None:
+            kp_id = root["kp_id"]
+        q_text = str(q.get("question") or "")
+        # 派生判定：题干与 root 原题不同 ⇒ 举一反三派生题（答错照常入池；重练则同题不堆行）
+        derived = bool(root) and q_text.strip() != root["content"].strip()
+        rating = F.rating_from_practice(ok)
+        user_ans = str(a if a is not None else "").strip()
+        c_ans = str(q.get("correct_answer") or "")
+        expl = str(q.get("explanation") or "")
+        q_subj = root["subject"] if root else subject
+        try:
+            kms.practice_manager.save_practice_record(
+                q_subj, kp_id, q_text, user_ans, ok, g.user_id, c_ans, expl,
+                question_type=str(q.get("type") or ""),
+                options=q.get("options") if isinstance(q.get("options"), list) else None,
+                # 入池继承：难度按题目标注映射，重要度继承来源错题行（=所属知识点链路）；无 root 时缺省 5.0
+                difficulty_score=difficulty_label_to_score(q.get("difficulty")),
+                importance_score=root["importance_score"] if root else None,
+                error_question_id=eid,
+                pool_new_on_wrong=derived)
+        except Exception as e:  # noqa: BLE001
+            log.log_error("bridge", "error_set_persist", f"i={i} eid={eid} err={e}")
+        # 错题行 FSRS：重练/派生题都算对 root 记忆的提取（举一反三为复习 root 而生）
+        if eid is not None:
+            try:
+                F.apply_review("error", eid, g.user_id, rating, now=now)
+            except Exception as e:  # noqa: BLE001
+                log.log_error("bridge", "error_set_error_fsrs", f"eid={eid} err={e}")
+        if kp_id is not None:
+            # 评审 M-1：kp_id 客户端可控，非法值不走 kp 分组（流水照常），避免裸 int() 炸 500 半批提交
+            try:
+                kp_key = int(kp_id)
+            except (TypeError, ValueError):
+                kp_key = None
+            if kp_key is not None:
+                grp = kp_groups.setdefault(kp_key, {"ratings": [], "correct": 0, "total": 0})
+                grp["ratings"].append(rating)
+                grp["total"] += 1
+                grp["correct"] += 1 if ok else 0
+        detailed.append({
+            "question_index": i, "question": q_text, "type": str(q.get("type") or "single"),
+            "user_answer": user_ans, "correct_answer": c_ans, "is_correct": ok,
+            "difficulty": str(q.get("difficulty") or ""), "explanation": expl,
+            "comment": results[i]["comment"], "rating": rating,
+            "error_id": eid, "derived": derived,
+        })
+
+    # ---- kp 分组折叠更新 + 回读展示值 ----
+    # 评审 m-1：不共享事务（与 error FSRS 循环同口径）：单条失败不污染 PG aborted 事务、
+    # 不回滚同批已成功的 kp 更新；回读用独立连接
+    kp_mastery = {}
+    for kp_id, grp in kp_groups.items():
+        if not grp["ratings"]:
+            continue
+        acc = grp["correct"] / grp["total"]
+        try:
+            F.apply_review("kp", kp_id, g.user_id, min(grp["ratings"]), now=now,
+                           mastery_cap=round(100 * acc))
+        except Exception as e:  # noqa: BLE001
+            log.log_error("bridge", "error_set_kp_update", f"kp={kp_id} err={e}")
+    if kp_groups:
+        conn = kms.db_manager.get_connection()
+        try:
+            for kp_id in kp_groups:
+                r2 = conn.execute(
+                    "SELECT mastery_score FROM knowledge_points WHERE id = ? AND user_id = ?",
+                    (kp_id, g.user_id)).fetchone()
+                kp_mastery[str(kp_id)] = F.mastery_view(r2[0] if r2 else None)
+        finally:
+            conn.close()
+    touched_subjects = {roots[e]["subject"] for e in root_ids if e in roots} | ({subject} if subject else set())
+    for s in touched_subjects:
+        try:
+            kms.clear_mindmap_cache(s, user_id=g.user_id)
+        except Exception:  # noqa: BLE001
+            pass
+    accuracy = correct_count / len(questions)
+    log.log("api", "error_set_submit", "success",
+            {"subject": subject, "correct": correct_count, "total": len(questions), "kps": len(kp_groups)})
+    return _ok({
+        "success": True, "correct_count": correct_count, "total_count": len(questions),
+        "accuracy": accuracy, "detailed_results": detailed, "kp_mastery": kp_mastery,
+        **cr.billing_for_response(),
+    })
+
+
+@bridge_bp.route("/api/practice/analogy", methods=["POST"])
+@require_auth
+def practice_analogy():
+    """举一反三统一出题（行级/页级/报告薄弱点复用，耗积分同现有出题口径）。
+
+    body {subject, error_ids?, count?(默认 5，上限 10), point?, source_text?}
+    - error_ids：素材=错题题干+正确答案+解析+所属知识点描述（独立错题 kp 留 NULL）；
+    - point/source_text：报告薄弱点节点直接传素材（P4 闭环），root 归属置空。
+    每题回填 root_error_id（优先 LLM 标注的合法 source_error_id，否则轮转分配）+ kp_id（root 的知识点）；
+    提交复用 error-set-submit（派生题答错照常入池）。"""
+    body = request.get_json(silent=True) or {}
+    subject = (body.get("subject") or body.get("subject_name") or "").strip()
+    if not subject:
+        return _ok({"success": False, "error": "subject 必填"})
+    try:
+        n = max(1, min(int(body.get("count", 5)), 10))
+    except (TypeError, ValueError):
+        return _ok({"success": False, "error": "count 必须为整数"})
+    raw_ids = body.get("error_ids")
+    ids = None
+    if raw_ids:
+        if not isinstance(raw_ids, list):
+            return _ok({"success": False, "error": "error_ids 必须为列表"})
+        try:
+            ids = [int(x) for x in raw_ids][:10]
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "error_ids 含非法项"})
+    kms = get_kms()
+    rows, roots, row_map = [], [], {}
+    if ids:
+        rows = _fetch_error_pool_rows(kms, g.user_id, subject, ids)
+        if len({r["eid"] for r in rows}) != len(set(ids)):
+            return _ok({"success": False, "error": "部分错题不存在或不属于该学科"})
+        conn = kms.db_manager.get_connection()
+        try:
+            kp_ids = sorted({r["kp_id"] for r in rows if r["kp_id"] is not None})
+            kp_info = {}
+            if kp_ids:
+                ph = ",".join("?" * len(kp_ids))
+                for kid, name, desc in conn.execute(
+                        f"SELECT id, point_name, COALESCE(core_description, '') FROM knowledge_points "
+                        f"WHERE user_id = ? AND id IN ({ph})", (g.user_id, *kp_ids)):
+                    kp_info[kid] = (name, desc)
+        finally:
+            conn.close()
+        lines = []
+        for r in rows:
+            name, desc = kp_info.get(r["kp_id"], ("（独立错题，无所属知识点）", ""))
+            lines.append(f"- 错题ID {r['eid']}｜知识点：{name}｜{str(desc)[:200]}\n"
+                         f"  题干：{r['content'][:500]}\n  正确答案：{r['correct'][:300]}\n  解析：{str(r['expl'])[:500]}")
+        roots = [r["eid"] for r in rows]
+        row_map = {r["eid"]: r for r in rows}
+        material = ("**错题记录（保持与错题相同的考查点与难度，出类似但不相同的题，禁止抄原题题干）：**\n"
+                    + "\n".join(lines))
+        extra = "优先针对错题暴露的薄弱考查点设计题目；每题必须用 source_error_id 标注它针对上面哪道错题ID举一反三。"
+        # P4 报告闭环：薄弱点节点「针对练习」同时带 point，素材前置该薄弱点聚焦出题
+        pt = (body.get("point") or "").strip()
+        if pt:
+            material = f"**针对薄弱点：**{pt[:200]}\n" + material
+    else:
+        point = (body.get("point") or "").strip()
+        st = (body.get("source_text") or "").strip()
+        if not point and not st:
+            return _ok({"success": False, "error": "error_ids 与 point/source_text 至少给一组"})
+        material = f"**薄弱点：**{point[:200]}\n**相关素材（错题题干与解析）：**\n{st[:4000]}"
+        extra = "围绕该薄弱点出类似但不同的针对性练习题；可省略 source_error_id。"
+
+    sid_line = "，并额外包含 source_error_id（整数，取自素材中的错题ID）" if roots else ""
+    prompt = f"""请基于以下素材，为学科「{subject}」举一反三生成 {n} 道针对性练习题。
+
+{material}
+
+**题型构成（共 {n} 题，按此顺序排列）：**
+以选择题为主（约占四成），兼顾判断题、填空题与简答题；任选题型至少 1 道，具体题量按 {n} 酌定。
+- 选择题：type="single"，必须有 options 数组（4 个选项），correct_answer 为 A/B/C/D
+- 判断题：type="judge"，correct_answer 只能是 "正确" 或 "错误"
+- 填空题：type="fill"，题干必须包含一个空格 "______"，correct_answer 为答案文本（若可接受多种写法用 | 分隔，如 "A|B"）
+- 简答题：type="short"，correct_answer 为参考答案要点（3-5 个要点）
+
+**每题 JSON 字段：** type, question, options（仅选择题）, correct_answer, difficulty（容易/中等/困难）, explanation（答案解析）{sid_line}
+{extra}
+
+只返回 JSON 数组（元素个数必须恰好为 {n}），不要任何其他文字：
+[
+  {{"type": "single", "question": "...", "options": ["...", "...", "...", "..."], "correct_answer": "A", "difficulty": "容易", "explanation": "..."}}
+]"""
+    try:
+        response = _llm_call(prompt, "举一反三针对性出题")
+    except cr.InsufficientCreditsError as e:
+        return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+    except Exception as e:  # noqa: BLE001
+        return _ok({"success": False, "error": f"LLM调用失败: {e}"})
+    if not response:
+        return _ok({"success": False, "error": "LLM调用失败"})
+    try:
+        questions = _validate_practice_questions(_parse_llm_json_array(response), n)
+    except json.JSONDecodeError:
+        log.log_error("bridge", "analogy_badjson", f"subject={subject} ids={bool(ids)}")
+        return _ok({"success": False, "error": "题目格式解析失败，请重试"})
+    except ValueError as e:
+        return _ok({"success": False, "error": f"题目格式校验失败: {e}"})
+    # root 归属回填：LLM 标注合法优先，否则按题序轮转分配（页面级多错题时均匀覆盖）
+    for i, q in enumerate(questions):
+        try:
+            rid = int(q.pop("source_error_id", None))
+        except (TypeError, ValueError):
+            rid = None
+        if rid not in row_map:
+            rid = roots[i % len(roots)] if roots else None
+        q["root_error_id"] = rid
+        q["error_id"] = rid  # error-set-submit 统一入参字段（语义=root）
+        q["kp_id"] = row_map[rid]["kp_id"] if rid in row_map else None
+    log.log("api", "analogy", "success", {"subject": subject, "count": n, "roots": len(roots)})
+    return _ok({"success": True, "questions": questions, **cr.billing_for_response()})
+
+
+# ---------------- P4：薄弱点分析报告（生成/列表/详情） ----------------
+
+def _report_material_items(kms, uid, rows):
+    """错题行 → 报告素材（题干/我的答案/正确答案/解析 + 知识点名）。"""
+    conn = kms.db_manager.get_connection()
+    try:
+        kp_ids = sorted({r["kp_id"] for r in rows if r["kp_id"] is not None})
+        names = {}
+        if kp_ids:
+            ph = ",".join("?" * len(kp_ids))
+            for kid, nm in conn.execute(
+                    f"SELECT id, point_name FROM knowledge_points WHERE user_id = ? AND id IN ({ph})",
+                    (uid, *kp_ids)):
+                names[kid] = nm
+    finally:
+        conn.close()
+    return [{"error_id": r["eid"], "kp_name": names.get(r["kp_id"], ""),
+             "question": r["content"], "user_answer": r["user_answer"],
+             "correct": r["correct"], "explanation": r["expl"]} for r in rows]
+
+
+@bridge_bp.route("/api/practice/weakness-report", methods=["POST"])
+@require_auth
+def practice_weakness_report():
+    """生成薄弱点分析报告：scope=global 全学科错题 / selected 勾选 error_ids。
+
+    LLM 结构化输出严格校验（services.weakness_report），校验失败**不落库**；
+    耗积分同现有 LLM 口径（billing_for_response）；报告范围=当前学科（裁定）。"""
+    body = request.get_json(silent=True) or {}
+    subject = (body.get("subject") or body.get("subject_name") or "").strip()
+    if not subject:
+        return _ok({"success": False, "error": "subject 必填"})
+    scope = (body.get("scope") or "global").strip()
+    if scope not in ("global", "selected"):
+        return _ok({"success": False, "error": "scope 只能是 global 或 selected"})
+    ids = None
+    if scope == "selected":
+        raw_ids = body.get("error_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return _ok({"success": False, "error": "scope=selected 需 error_ids 列表"})
+        try:
+            ids = [int(x) for x in raw_ids][:60]
+        except (TypeError, ValueError):
+            return _ok({"success": False, "error": "error_ids 含非法项"})
+    kms = get_kms()
+    rows = _fetch_error_pool_rows(kms, g.user_id, subject, ids)
+    if ids is not None and len({r["eid"] for r in rows}) != len(set(ids)):
+        return _ok({"success": False, "error": "部分错题不存在或不属于该学科"})
+    if not rows:
+        return _ok({"success": False, "error": "该学科还没有可用于分析的错题"})
+    items = _report_material_items(kms, g.user_id, rows)
+    from services import weakness_report as WR  # 延迟导入避免启动环
+    try:
+        rep = WR.generate_report(subject, items, lambda p: _llm_call(p, "错题薄弱点分析报告"))
+    except cr.InsufficientCreditsError as e:
+        return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+    except ValueError as e:  # JSON/结构校验失败：诚实报错，不产生半成品报告
+        log.log_error("bridge", "weakness_report_badjson", f"subject={subject}: {e}")
+        return _ok({"success": False, "error": f"解析结果格式校验失败：{e}"})
+    except Exception as e:  # noqa: BLE001
+        log.log_error("bridge", "weakness_report_failed", e)
+        return _ok({"success": False, "error": f"生成失败，请稍后重试：{str(e)[:120]}"})
+    conn = kms.db_manager.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO weakness_reports (user_id, subject_name, scope, error_ids, report_md, mindmap_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (str(g.user_id), subject, scope, json.dumps([it["error_id"] for it in items]),
+             rep["summary_md"], json.dumps(rep["nodes"], ensure_ascii=False)))
+        rid = cur.lastrowid
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
+    log.log("api", "weakness_report", "success", {"subject": subject, "scope": scope, "errors": len(items)})
+    return _ok({"success": True, "report_id": rid, "report_md": rep["summary_md"],
+                "nodes": rep["nodes"], "error_count": len(items), **cr.billing_for_response()})
+
+
+@bridge_bp.route("/api/practice/weakness-reports", methods=["GET"])
+@require_auth
+def practice_weakness_reports():
+    """报告列表（科目内按分析日期倒序）：id/范围/来源错题数/摘要/时间。"""
+    subject = (request.args.get("subject") or "").strip()
+    if not subject:
+        return _ok({"success": False, "error": "subject 必填"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, scope, error_ids, report_md, created_time FROM weakness_reports "
+            "WHERE user_id = ? AND subject_name = ? ORDER BY created_time DESC, id DESC LIMIT 100",
+            (str(g.user_id), subject)).fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        try:
+            nerr = len(json.loads(r[2] or "[]"))
+        except (TypeError, ValueError):
+            nerr = 0
+        preview = re.sub(r"[#*`>\-]+", "", str(r[3] or "")).strip().replace("\n", " ")[:80]
+        out.append({"id": r[0], "scope": r[1], "error_count": nerr,
+                    "preview": preview, "created_time": r[4]})
+    return _ok({"success": True, "reports": out})
+
+
+@bridge_bp.route("/api/practice/weakness-report/<int:report_id>", methods=["GET"])
+@require_auth
+def practice_weakness_report_detail(report_id):
+    """报告详情：文字报告 MD + 脑图 nodes（双重隔离：id+user_id）。"""
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        r = conn.execute(
+            "SELECT id, subject_name, scope, error_ids, report_md, mindmap_json, created_time "
+            "FROM weakness_reports WHERE id = ? AND user_id = ?", (report_id, str(g.user_id))).fetchone()
+    finally:
+        conn.close()
+    if not r:
+        return _ok({"success": False, "error": "报告不存在"})
+    try:
+        nodes = json.loads(r[5] or "[]")
+    except (TypeError, ValueError):
+        nodes = []
+    try:
+        eids = json.loads(r[3] or "[]")
+    except (TypeError, ValueError):
+        eids = []
+    return _ok({"success": True, "report": {"id": r[0], "subject": r[1], "scope": r[2],
+                "error_ids": eids, "report_md": r[4], "nodes": nodes, "created_time": r[6]}})

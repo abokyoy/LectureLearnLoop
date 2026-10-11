@@ -859,6 +859,16 @@ class KnowledgePointManager:
             return False
 
 
+# 错题学习单元升级（P2，2026-10-14）：出题难度标注 → 0-10 存储分映射（用户裁定：容易→3 中等→5 困难→8）。
+# 公共函数：practice-submit / error-set-submit / analogy 全部走本函数，禁止各端点自写映射。
+_DIFFICULTY_LABEL_MAP = {"容易": 3.0, "中等": 5.0, "困难": 8.0}
+
+
+def difficulty_label_to_score(label) -> Optional[float]:
+    """题目标注难度（容易/中等/困难）→ 存储分；未知标注返回 None（入池缺省 5.0）。"""
+    return _DIFFICULTY_LABEL_MAP.get(str(label or "").strip())
+
+
 class PracticeRecordManager:
     """练习记录管理器"""
     def __init__(self, db_manager: DatabaseManager):
@@ -870,29 +880,83 @@ class PracticeRecordManager:
                              correct_answer: Optional[str] = None,
                              explanation: Optional[str] = None,
                              question_type: str = "",
-                             options: Optional[List[str]] = None) -> int:
+                             options: Optional[List[str]] = None,
+                             difficulty_score: Optional[float] = None,
+                             importance_score: Optional[float] = None,
+                             error_question_id: Optional[int] = None,
+                             pool_new_on_wrong: bool = False) -> int:
         """保存练习记录，并在错误时写入错题表（含正确答案与解析）。
-        question_type/options 随流水留存，供错题翻卡复习时还原选择题选项。"""
+        question_type/options 随流水留存，供错题翻卡复习时还原选择题选项。
+
+        错题学习单元升级（2026-10-14，用户裁定）：
+        - difficulty_score/importance_score：入池继承值（0-10 存储分），缺省 5.0；
+        - error_question_id：重练/举一反三流水挂回来源错题（错题练习历史的数据基础）；
+        - 同题干不堆行：已有错题行时不重复入池，流水挂原行并把原行重置为待强化；
+          新入池时首条流水也挂回新建错题行；
+        - pool_new_on_wrong：举一反三派生题（新题干）答错时照常入池（裁定：派生题不受
+          同题不堆行约束），流水仍挂 root（error_question_id），新建行另立 fsrs 初始态。"""
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
 
         options_json = json.dumps(options, ensure_ascii=False) if options else None
         cursor.execute(
             """INSERT INTO practice_records 
-               (user_id, subject_name, knowledge_point_id, question_content, user_answer, is_correct, question_type, options_json) 
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (user_id, subject_name, knowledge_point_id, question_content, user_answer, is_correct, question_type, options_json, error_question_id) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (user_id, subject_name, knowledge_point_id, question_content, user_answer, int(is_correct),
-             question_type or "", options_json)
+             question_type or "", options_json, error_question_id)
         )
         record_id = cursor.lastrowid
 
         if not is_correct:
-            cursor.execute(
-                """INSERT INTO error_questions 
-                   (user_id, subject_name, knowledge_point_id, practice_record_id, correct_answer, explanation) 
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (user_id, subject_name, knowledge_point_id, record_id, correct_answer, explanation)
-            )
+            if pool_new_on_wrong:
+                # 举一反三派生题答错：新题干照常入池（裁定：派生题不受同题堆行约束）；
+                # 流水仍挂 root（error_question_id 不改写），新行以 practice_record_id 关联本流水取题干。
+                # PG：显式传 NULL 会绕过列 DEFAULT，继承缺省在此层归一为 5.0
+                cursor.execute(
+                    """INSERT INTO error_questions 
+                       (user_id, subject_name, knowledge_point_id, practice_record_id, correct_answer, explanation,
+                        difficulty_score, importance_score) 
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (user_id, subject_name, knowledge_point_id, record_id, correct_answer, explanation,
+                     float(difficulty_score) if difficulty_score is not None else 5.0,
+                     float(importance_score) if importance_score is not None else 5.0))
+            elif error_question_id is not None:
+                # 重练旧错题又错：不新建行，重置待强化（流水 INSERT 已挂 error_question_id）
+                cursor.execute(
+                    "UPDATE error_questions SET review_status = 0 WHERE id = ? AND user_id = ?",
+                    (error_question_id, user_id))
+            else:
+                # 同题干去重（用户裁定：同题不堆行）：已有行则流水挂原行并重置待强化
+                cursor.execute(
+                    """SELECT eq.id FROM error_questions eq
+                       JOIN practice_records pr ON eq.practice_record_id = pr.id
+                       WHERE eq.user_id = ? AND eq.subject_name = ? AND pr.question_content = ?
+                       ORDER BY eq.id DESC LIMIT 1""",
+                    (user_id, subject_name, question_content))
+                hit = cursor.fetchone()
+                if hit:
+                    cursor.execute(
+                        "UPDATE error_questions SET review_status = 0 WHERE id = ? AND user_id = ?",
+                        (hit[0], user_id))
+                    cursor.execute(
+                        "UPDATE practice_records SET error_question_id = ? WHERE id = ?",
+                        (hit[0], record_id))
+                else:
+                    # PG：显式传 NULL 会绕过列 DEFAULT，继承缺省在此层归一为 5.0
+                    cursor.execute(
+                        """INSERT INTO error_questions 
+                           (user_id, subject_name, knowledge_point_id, practice_record_id, correct_answer, explanation,
+                            difficulty_score, importance_score) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (user_id, subject_name, knowledge_point_id, record_id, correct_answer, explanation,
+                         float(difficulty_score) if difficulty_score is not None else 5.0,
+                         float(importance_score) if importance_score is not None else 5.0))
+                    new_eid = cursor.lastrowid
+                    if new_eid:
+                        cursor.execute(
+                            "UPDATE practice_records SET error_question_id = ? WHERE id = ?",
+                            (new_eid, record_id))
 
         conn.commit()
         conn.close()
@@ -1975,7 +2039,7 @@ class KnowledgeManagementSystem:
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         base_sql = (
-            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id, eq.review_status, pr.question_type, pr.options_json, eq.source "
+            "SELECT eq.id, pr.question_content, pr.user_answer, pr.practice_time, eq.current_proficiency, eq.correct_answer, eq.explanation, eq.knowledge_point_id, eq.review_status, pr.question_type, pr.options_json, eq.source, eq.difficulty_score, eq.importance_score "
             "FROM error_questions eq JOIN practice_records pr ON eq.practice_record_id = pr.id "
             "WHERE eq.user_id = ? AND eq.subject_name = ?"
         )
@@ -2017,6 +2081,9 @@ class KnowledgeManagementSystem:
             "options": _safe_opts(r[10]),
             # 独立错题（手动录入）：来源标记，前端据此显徽章并走 MD 富文本渲染
             "source": r[11] or "practice",
+            # 错题学习单元升级（P1）：难度/重要度 0-10 存储分随列表返回，前端 LLStars 直接消费
+            "difficulty_score": float(r[12]) if r[12] is not None else 5.0,
+            "importance_score": float(r[13]) if r[13] is not None else 5.0,
         } for r in rows]
 
     def get_favorite_questions(self, subject_name: str, knowledge_point_id: Optional[int] = None,

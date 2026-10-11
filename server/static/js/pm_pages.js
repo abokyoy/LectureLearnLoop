@@ -364,14 +364,39 @@
         h += '</div>';
         h += '<div class="flex items-center gap-3 mt-3">' + progressBar(e.current_proficiency)
             + '<span class="text-xs text-cl-text-3 whitespace-nowrap">' + (unrated ? '未评估' : prof + '%') + '</span></div>';
+        // 错题学习单元升级 P2（2026-10-14）：行内属性区=难度/重要度双星（行上可调，0-10 存储分 → /api/kb/error/<id>/stars）
+        if (opts && opts.unit) {
+            h += '<div class="flex items-center gap-5 mt-2 text-xs text-cl-text-3">'
+                + '<span class="flex items-center gap-1.5">难度<span data-us="diff" data-uv="' + (Number(e.difficulty_score) || 5) + '"></span></span>'
+                + '<span class="flex items-center gap-1.5">重要度<span data-us="imp" data-uv="' + (Number(e.importance_score) || 5) + '"></span></span></div>';
+        }
         h += '<p class="text-xs text-cl-text-3 mt-2">' + icon('clock', 'w-3.5 h-3.5 inline -mt-0.5') + ' 练习于 ' + esc(relTime(e.practice_time)) + '</p>';
         h += '<div class="hidden mt-3 pt-3 border-t border-cl-border space-y-2 text-xs" data-detail="' + e.id + '">';
         // 错题带选项时展开区直接列出（高亮正确项）；存量旧题未落库选项则不显示此块
         h += optionsHtml(e, true);
-        if (!manual) h += '<p><span class="font-semibold text-cl-text-2">我的答案：</span><span class="' + (reviewed ? 'text-cl-text' : 'text-cl-danger') + '">' + esc(truncate(e.user_answer, 200) || '—') + '</span></p>';
-        h += '<p><span class="font-semibold text-cl-text-2">正确答案：</span><span class="text-cl-secondary">' + esc(truncate(e.correct_answer, 200) || '—') + '</span></p>';
-        if (e.explanation) h += '<p><span class="font-semibold text-cl-text-2">解析：</span><span class="text-cl-text-2">' + esc(truncate(e.explanation, 300)) + '</span></p>';
+        // 错题学习单元升级 P1（2026-10-13 用户验收反馈）：答案/解析不再截断、与题干同管线渲染（MD+KaTeX），
+        // 展开即完整信息；行内容器用 span 版 mdqHtml，hydrateMdSlots 统一回填
+        if (!manual) h += '<div><span class="font-semibold text-cl-text-2">我的答案：</span>'
+            + mdqHtml(e.user_answer || '—', (reviewed ? 'text-cl-text' : 'text-cl-danger') + ' inline', true) + '</div>';
+        h += '<div><span class="font-semibold text-cl-text-2">正确答案：</span>'
+            + mdqHtml(e.correct_answer || '—', 'text-cl-secondary inline', true) + '</div>';
+        if (e.explanation) h += '<div><span class="font-semibold text-cl-text-2">解析：</span>'
+            + mdqHtml(e.explanation, 'text-cl-text-2 mt-1', false) + '</div>';
+        // P2：展开区挂公共记忆面板（曲线+星值+手动熟练度，懒加载）+ 练习历史（首次展开异步拉）
+        if (opts && opts.unit) {
+            h += '<div><button class="cl-btn-ghost !h-8 !text-xs" data-mw-toggle>记忆数据</button></div>'
+                + '<div class="hidden rounded-clbtn bg-cl-surface px-3 py-2" data-mw-root>' + memoryPanelHtml() + '</div>';
+            h += '<div><p class="font-semibold text-cl-text-2">练习历史</p>'
+                + '<div data-ehistory="' + e.id + '"><p class="text-cl-text-3">加载中…</p></div></div>';
+        }
         h += '</div>';
+        // P3 行级按钮：练这题（single 组卷）/ 举一反三（analogy 针对该行）
+        if (opts && opts.unit && (opts.onSingle || opts.onAnalogy)) {
+            h += '<div class="mt-3 flex items-center gap-2">'
+                + (opts.onSingle ? '<button class="cl-btn-ghost !h-8 !text-xs" data-pp-single="' + e.id + '">' + icon('dumbbell', 'w-4 h-4') + ' 练这题</button>' : '')
+                + (opts.onAnalogy ? '<button class="cl-btn-ghost !h-8 !text-xs" data-pp-analogy="' + e.id + '">' + icon('lightbulb', 'w-4 h-4') + ' 举一反三</button>' : '')
+                + '</div>';
+        }
         // 标记按钮放在折叠区外常显（批4 自测发现：藏在 hidden 详情内用户无法直接点击）
         if (opts && opts.reviewBtn && !reviewed) {
             h += '<div class="mt-3"><button class="cl-btn-ghost !h-8 !text-xs pm-review-btn" data-eid="' + e.id + '">' + icon('check-circle-2', 'w-4 h-4') + ' 标记已复习</button></div>';
@@ -379,14 +404,76 @@
         h += '</div>';
         return h;
     }
+    // P2：错题练习历史（重练+举一反三派生流水，后端 practice-history 端点）；前端分页 10/页
+    function loadErrorHistory(root, eid) {
+        var box = root.querySelector('[data-ehistory="' + eid + '"]');
+        if (!box || box.dataset.ehLoaded) return;
+        box.dataset.ehLoaded = '1';
+        getJSON('/api/kb/errors/' + eid + '/practice-history').then(function (rows) {
+            rows = rows || [];
+            if (!rows.length) { box.innerHTML = '<p class="text-cl-text-3">还没有练习历史</p>'; return; }
+            var page = 1, PER = 10;
+            function paint() {
+                var pages = Math.max(1, Math.ceil(rows.length / PER));
+                if (page > pages) page = pages;
+                var h = rows.slice((page - 1) * PER, page * PER).map(function (r) {
+                    return '<div class="rounded-clbtn bg-cl-bg px-3 py-2 mb-1">'
+                        + mdqHtml(r.question_content, 'text-cl-text-2 max-h-32 overflow-y-auto')
+                        + '<p class="text-cl-text-3 mt-1">' + esc(relTime(r.practice_time)) + ' · '
+                        + (r.is_correct ? '<span class="text-cl-secondary">答对</span>' : '<span class="text-cl-danger">答错</span>')
+                        + ' · 我的答案：' + esc(truncate(r.user_answer, 60)) + '</p></div>';
+                }).join('');
+                if (pages > 1) h += '<div class="flex items-center gap-2 mt-1">'
+                    + '<button class="cl-btn-ghost !h-7 !text-xs" data-eh-prev' + (page <= 1 ? ' disabled' : '') + '>上一页</button>'
+                    + '<span class="text-xs text-cl-text-3">' + page + ' / ' + pages + '</span>'
+                    + '<button class="cl-btn-ghost !h-7 !text-xs" data-eh-next' + (page >= pages ? ' disabled' : '') + '>下一页</button></div>';
+                box.innerHTML = h;
+                hydrateMdSlots(box);
+                var pv = box.querySelector('[data-eh-prev]'), nx = box.querySelector('[data-eh-next]');
+                if (pv) pv.addEventListener('click', function () { page--; paint(); });
+                if (nx) nx.addEventListener('click', function () { page++; paint(); });
+            }
+            paint();
+        }).catch(function (err) {
+            box.innerHTML = '<p class="text-cl-danger">' + esc(err.message) + '</p>';
+        });
+    }
     function bindErrorRows(root, opts) {
         hydrateMdSlots(root); // manual 行 MD 题干占位统一渲染（重复调用以 data-done 幂等短路）
         root.querySelectorAll('.pm-q-toggle').forEach(function (btn) {
             btn.addEventListener('click', function () {
                 var d = root.querySelector('[data-detail="' + btn.getAttribute('data-toggle') + '"]');
                 if (d) d.classList.toggle('hidden');
+                // P2：首次展开异步拉该错题的练习历史
+                if (opts && opts.unit && d && !d.classList.contains('hidden')) {
+                    loadErrorHistory(root, btn.getAttribute('data-toggle'));
+                }
             });
         });
+        if (opts && opts.unit) {
+            // P2：行内属性双星（与记忆面板同一 /api/kb/error/<id>/stars 入口）+ 折叠记忆面板懒挂载
+            root.querySelectorAll('.cl-card[data-eid]').forEach(function (card) {
+                var eid = card.getAttribute('data-eid');
+                [['diff', 'difficulty'], ['imp', 'importance']].forEach(function (pair) {
+                    var el = card.querySelector('[data-us="' + pair[0] + '"]');
+                    if (!el || !global.LLStars) return;
+                    global.LLStars.mount(el, { value: Number(el.getAttribute('data-uv')) || 5, onChange: function (v) {
+                        var body = {}; body[pair[1]] = v;
+                        postJSON('/api/kb/error/' + eid + '/stars', body)
+                            .catch(function (err) { el.textContent = '保存失败：' + err.message; });
+                    } });
+                });
+                bindMemoryToggle(card, 'error', eid);
+                if (opts.onSingle) {
+                    var bs = card.querySelector('[data-pp-single]');
+                    if (bs) bs.addEventListener('click', function () { opts.onSingle(Number(bs.getAttribute('data-pp-single'))); });
+                }
+                if (opts.onAnalogy) {
+                    var ba = card.querySelector('[data-pp-analogy]');
+                    if (ba) ba.addEventListener('click', function () { opts.onAnalogy(Number(ba.getAttribute('data-pp-analogy'))); });
+                }
+            });
+        }
         if (opts && opts.reviewBtn) {
             root.querySelectorAll('.pm-review-btn').forEach(function (btn) {
                 btn.addEventListener('click', function () {
@@ -473,10 +560,161 @@
         });
     }
 
+    // ---------------- 公共练习引擎 pmPractice（错题学习单元升级 P3，2026-10-14） ----------------
+    // 组卷→逐题作答→提交→结果面板状态机（自知识点详情页内嵌 prac 状态机收敛为顶层公共件；
+    // 错题练习页用本引擎 + error-pool/error-set-submit/analogy 端点）。弹窗形态，ESC/关闭可退。
+    // opts: {title, load: () -> Promise(payload{questions}), submit: (qs, ans) -> Promise(payload), onDone(payload)}
+    function pmPractice(host, opts) {
+        var old = host.querySelector('[data-pp-overlay]');
+        if (old) { if (old._onEsc) document.removeEventListener('keydown', old._onEsc); old.remove(); }
+        var st = { qs: [], ans: [], idx: 0, gen: 0, busy: false };
+        var ov = document.createElement('div');
+        ov.setAttribute('data-pp-overlay', '1');
+        ov.className = 'fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto';
+        ov.innerHTML = '<div class="cl-card p-6 w-full max-w-2xl my-8" data-pp-card></div>';
+        ov._onEsc = function (e) { if (e.key === 'Escape' && !st.busy) close(); };
+        document.addEventListener('keydown', ov._onEsc);
+        ov.addEventListener('click', function (e) { if (e.target === ov && !st.busy) close(); });
+        host.appendChild(ov);
+        var card = ov.querySelector('[data-pp-card]');
+        function close() { st.gen++; if (ov._onEsc) document.removeEventListener('keydown', ov._onEsc); ov.remove(); }
+        function head(sub) {
+            return '<div class="flex items-center justify-between mb-3"><div class="cl-section-title">'
+                + icon('dumbbell', 'w-4 h-4 text-cl-primary') + ' ' + esc(opts.title) + (sub ? ' · ' + esc(sub) : '') + '</div>'
+                + '<button class="text-cl-text-3 hover:text-cl-text" data-pp-close aria-label="关闭">' + icon('x', 'w-4 h-4') + '</button></div>';
+        }
+        function bindClose() { var b = card.querySelector('[data-pp-close]'); if (b) b.addEventListener('click', close); }
+        function fail(text, danger) {
+            card.innerHTML = head() + '<p class="text-sm ' + (danger ? 'text-cl-danger' : 'text-cl-text-2') + ' py-2">' + esc(text) + '</p>';
+            bindClose();
+        }
+        card.innerHTML = head('组卷') + '<p class="text-sm text-cl-text-2 py-4">题目加载中，可能需要几十秒，请稍候…</p>';
+        bindClose();
+        var myGen = ++st.gen;
+        Promise.resolve(opts.load()).then(function (r) {
+            if (st.gen !== myGen) return;
+            if (!r || r.success !== true || !r.questions || !r.questions.length) {
+                fail((r && r.error) || '练习启动失败，请稍后重试', !(r && (r.no_errors || r.no_notes)));
+                return;
+            }
+            st.qs = r.questions; st.ans = new Array(r.questions.length).fill(null); st.idx = 0;
+            renderQ();
+        }).catch(function (e) {
+            if (st.gen !== myGen) return;
+            fail('题目加载失败：' + (e.message || '未知错误'), true);
+        });
+        function pickAns() {
+            var r = card.querySelector('input[name="pp-ans"]:checked');
+            if (r) { st.ans[st.idx] = r.value; return; }
+            var inp = card.querySelector('[data-pp-text]');
+            if (inp) { var v = inp.value.trim(); st.ans[st.idx] = v ? v : null; }
+        }
+        function renderQ() {
+            var q = st.qs[st.idx], total = st.qs.length;
+            var pct = Math.round(((st.idx + 1) / total) * 100);
+            var h = head('第 ' + (st.idx + 1) + '/' + total + ' 题');
+            h += '<div class="flex items-center gap-3 mb-4"><div class="flex-1 cl-progress"><div class="cl-progress-bar" style="width:' + pct + '%"></div></div>'
+                + '<span class="text-xs text-cl-text-3 shrink-0">' + (st.idx + 1) + '/' + total + '</span></div>';
+            h += '<div class="flex items-center gap-2 mb-2">'
+                + '<span class="cl-badge bg-cl-primary-soft text-cl-primary">题目 ' + (st.idx + 1) + '</span>'
+                + '<span class="cl-badge bg-cl-secondary-soft text-cl-secondary">' + esc({ single: '选择题', judge: '判断题', fill: '填空题', short: '简答题' }[q.type] || '选择题') + '</span>'
+                + '<span class="text-xs text-cl-text-3">难度: ' + esc(q.difficulty || '中等') + '</span></div>';
+            h += mdqHtml(q.question, 'text-sm font-medium text-cl-text mb-3 break-words');
+            if (q.type === 'single' || q.type === 'judge') {
+                h += '<div class="space-y-2">';
+                if (q.type === 'judge') {
+                    ['正确', '错误'].forEach(function (v) {
+                        h += '<label class="flex items-center gap-3 rounded-clbtn border border-cl-border px-3 py-2 cursor-pointer hover:bg-cl-bg">'
+                            + '<input type="radio" name="pp-ans" value="' + esc(v) + '"' + (st.ans[st.idx] === v ? ' checked' : '') + '>'
+                            + '<span class="text-[13px] text-cl-text-2">' + esc(v) + '</span></label>';
+                    });
+                } else {
+                    (q.options || []).forEach(function (opt, i) {
+                        var letter = String.fromCharCode(65 + i);
+                        h += '<label class="flex items-center gap-3 rounded-clbtn border border-cl-border px-3 py-2 cursor-pointer hover:bg-cl-bg">'
+                            + '<input type="radio" name="pp-ans" value="' + letter + '"' + (st.ans[st.idx] === letter ? ' checked' : '') + '>'
+                            + '<span class="text-[13px] text-cl-text-2"><strong>' + letter + '.</strong> ' + mdqHtml(opt, '', true) + '</span></label>';
+                    });
+                }
+                h += '</div>';
+            } else if (q.type === 'fill') {
+                h += '<input type="text" data-pp-text maxlength="200" placeholder="填写空格处的答案"'
+                    + ' class="w-full rounded-clbtn border border-cl-border px-3 py-2 text-sm text-cl-text focus:outline-none focus:border-cl-primary" value="' + esc(st.ans[st.idx] || '') + '">';
+            } else {
+                h += '<textarea data-pp-text rows="5" maxlength="2000" placeholder="写下你的答案，提交后由 AI 对照参考答案判分"'
+                    + ' class="w-full rounded-clbtn border border-cl-border px-3 py-2 text-sm text-cl-text focus:outline-none focus:border-cl-primary">' + esc(st.ans[st.idx] || '') + '</textarea>';
+            }
+            h += '<p class="text-xs text-cl-danger mt-2 min-h-4" data-pp-msg></p>';
+            h += '<div class="flex items-center justify-between mt-3">'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-pp-prev' + (st.idx === 0 ? ' disabled' : '') + '>上一题</button>'
+                + '<button class="cl-btn-primary !h-8 text-xs" data-pp-next>' + (st.idx === total - 1 ? '提交作答' : '下一题') + '</button></div>';
+            card.innerHTML = h;
+            hydrateMdSlots(card);
+            bindClose();
+            var msg = card.querySelector('[data-pp-msg]');
+            var prev = card.querySelector('[data-pp-prev]');
+            if (prev && st.idx > 0) prev.addEventListener('click', function () { pickAns(); st.idx--; renderQ(); });
+            card.querySelector('[data-pp-next]').addEventListener('click', function () {
+                pickAns();
+                if (st.ans[st.idx] == null) { msg.textContent = (q.type === 'short' || q.type === 'fill') ? '请填写答案后继续（AI 判分需要答案）' : '请先作答本题'; return; }
+                msg.textContent = '';
+                if (st.idx < st.qs.length - 1) { st.idx++; renderQ(); } else submitAll();
+            });
+        }
+        function submitAll() {
+            st.busy = true;
+            var myGen = st.gen;
+            card.innerHTML = head('判分') + '<p class="text-sm text-cl-text-2 py-6 text-center">正在判分…（含简答题时需 AI 判分，稍候）</p>';
+            Promise.resolve(opts.submit(st.qs, st.ans)).then(function (r) {
+                st.busy = false;
+                if (st.gen !== myGen) return;
+                if (!r || r.success !== true) {
+                    fail('提交判分失败：' + (r && r.credits_insufficient ? '积分不足：' + (r.error || '请先充值') : ((r && r.error) || '未知错误')), true);
+                    return;
+                }
+                renderResult(r);
+            }).catch(function (e) {
+                st.busy = false;
+                if (st.gen !== myGen) return;
+                fail('提交异常：' + (e.message || '未知错误'), true);
+            });
+        }
+        function renderResult(r) {
+            var wrong = (r.detailed_results || []).filter(function (d) { return !d.is_correct; }).length;
+            var h = head('判分结果');
+            h += '<div class="text-center py-2">';
+            if (r.mastery_score != null && Number(r.mastery_score) >= 0) {
+                var score = Number(r.mastery_score) || 0;
+                var level = score >= 90 ? '精通' : score >= 70 ? '熟练' : score >= 50 ? '一般' : '待提高';
+                h += '<div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-cl-primary-soft mb-3"><span class="text-2xl font-bold text-cl-primary">' + score + '</span></div>'
+                    + '<p class="text-base font-semibold text-cl-text">熟练度：' + level + '</p>';
+            }
+            h += '<p class="text-xs text-cl-text-2 mt-1">答对 ' + esc(String(r.correct_count)) + '/' + esc(String(r.total_count)) + ' 题'
+                + (wrong ? '，错题已更新到错题本' : '，全部答对！') + '</p></div>';
+            h += '<div class="mt-4 pt-4 border-t border-cl-border space-y-3">';
+            (r.detailed_results || []).forEach(function (d) {
+                var oq = st.qs[d.question_index] || {};
+                h += '<div class="rounded-clbtn bg-cl-bg px-3 py-2">'
+                    + '<div class="flex items-start gap-2">' + (d.is_correct ? icon('check', 'w-4 h-4 text-cl-secondary shrink-0') : icon('x', 'w-4 h-4 text-cl-danger shrink-0'))
+                    + mdqHtml(d.question, 'text-[13px] text-cl-text flex-1 break-words max-h-32 overflow-y-auto') + '</div>'
+                    + optionsHtml(oq, true, d.user_answer)
+                    + '<p class="text-xs text-cl-text-3 mt-1">你的答案：' + mdqHtml(d.user_answer || '未答', '', true) + '　正确答案：' + mdqHtml(d.correct_answer, '', true) + '</p>'
+                    + (d.comment ? '<div class="mt-1"><span class="text-xs text-cl-text-3">AI 点评：</span>' + mdqHtml(d.comment, 'text-xs text-cl-text-3 break-words') + '</div>' : '')
+                    + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '') + '</div>';
+            });
+            h += '</div>';
+            card.innerHTML = h;
+            hydrateMdSlots(card);
+            bindClose();
+            if (opts.onDone) opts.onDone(r);
+        }
+    }
+
     // ---------------- 页2：基于错题练习 ----------------
     function bootPracticeErrors(root) {
         var search = root.querySelector('[data-role="search"]');
         var cache = { subject: '', rows: [] };
+        var page = 1, PER = 20; // 错题学习单元升级 P2：前端分页 20 题/页（用户裁定）
         function render(main) {
             var rows = cache.rows;
             var kw = search ? search.value.trim() : '';
@@ -488,17 +726,333 @@
                 bindGoLinks(root);
                 return;
             }
-            main.innerHTML = '<div class="space-y-3">' + filtered.map(function (e) { return errorRow(e, { reviewBtn: false }); }).join('') + '</div>';
-            bindErrorRows(main, { reviewBtn: false });
+            var pages = Math.max(1, Math.ceil(filtered.length / PER));
+            if (page > pages) page = pages;
+            var slice = filtered.slice((page - 1) * PER, page * PER);
+            var h = '<div class="space-y-3">' + slice.map(function (e) { return errorRow(e, { reviewBtn: false, unit: true, onSingle: startSingle, onAnalogy: startAnalogyRow }); }).join('') + '</div>';
+            if (pages > 1) h += '<div class="flex items-center justify-center gap-3 mt-4">'
+                + '<button class="cl-btn-ghost !h-8 !text-xs" data-pg-prev' + (page <= 1 ? ' disabled' : '') + '>' + icon('chevron-left', 'w-4 h-4') + ' 上一页</button>'
+                + '<span class="text-xs text-cl-text-3">第 ' + page + ' / ' + pages + ' 页</span>'
+                + '<button class="cl-btn-ghost !h-8 !text-xs" data-pg-next' + (page >= pages ? ' disabled' : '') + '>下一页 ' + icon('chevron-right', 'w-4 h-4') + '</button></div>';
+            main.innerHTML = h;
+            bindErrorRows(main, { reviewBtn: false, unit: true, onSingle: startSingle, onAnalogy: startAnalogyRow });
+            var pv = main.querySelector('[data-pg-prev]'), nx = main.querySelector('[data-pg-next]');
+            if (pv) pv.addEventListener('click', function () { if (page > 1) { page--; render(main); main.scrollIntoView({ block: 'start' }); } });
+            if (nx) nx.addEventListener('click', function () { if (page < pages) { page++; render(main); main.scrollIntoView({ block: 'start' }); } });
         }
+        // ---- P3 练习闭环：公共引擎 pmPractice + error-pool/error-set-submit/analogy（提交后刷新列表） ----
+        function refresh() {
+            if (!cache.subject) return;
+            getJSON('/api/kb/errors?subject=' + encodeURIComponent(cache.subject)).then(function (rows) {
+                cache.rows = rows || [];
+                var main = root.querySelector('[data-role="main"]');
+                if (main) render(main);
+            }).catch(function () { /* 刷新失败保留旧列表 */ });
+        }
+        function practiceSubmit(qs, ans) {
+            return postJSON('/api/practice/error-set-submit', {
+                subject_name: cache.subject, questions: qs, answers: ans,
+            });
+        }
+        function startSingle(eid) {
+            pmPractice(root, {
+                title: '练这题',
+                load: function () { return postJSON('/api/practice/error-pool', { subject: cache.subject, mode: 'single', error_id: eid }); },
+                submit: practiceSubmit, onDone: refresh,
+            });
+        }
+        function startAnalogyRow(eid) {
+            pmPractice(root, {
+                title: '举一反三 · 针对该题',
+                load: function () { return postJSON('/api/practice/analogy', { subject: cache.subject, error_ids: [eid], count: 3 }); },
+                submit: practiceSubmit, onDone: refresh,
+            });
+        }
+        // 简易选项弹窗（题量/勾题）；与知识点页 openPracticeChooser 同构但科目级+分页（PM 公共引擎口径）
+        function openModal(inner, onMount) {
+            var old = root.querySelector('[data-pp-chooser]');
+            if (old) { if (old._onEsc) document.removeEventListener('keydown', old._onEsc); old.remove(); }
+            var ov = document.createElement('div');
+            ov.setAttribute('data-pp-chooser', '1');
+            ov.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
+            ov.innerHTML = '<div class="cl-card p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">' + inner + '</div>';
+            ov._onEsc = function (e) { if (e.key === 'Escape') closeModal(); };
+            document.addEventListener('keydown', ov._onEsc);
+            ov.addEventListener('click', function (e) { if (e.target === ov) closeModal(); });
+            root.appendChild(ov);
+            function closeModal() {
+                if (ov._onEsc) document.removeEventListener('keydown', ov._onEsc);
+                ov.remove();
+            }
+            var x = ov.querySelector('[data-ppmc-close]');
+            if (x) x.addEventListener('click', closeModal);
+            if (onMount) onMount(ov, closeModal);
+        }
+        function countPicker(titleText, hint, counts, onStart) {
+            var sel = counts[1];
+            openModal('<div class="flex items-center justify-between mb-3"><div class="cl-section-title">'
+                + icon('dumbbell', 'w-4 h-4 text-cl-primary') + ' ' + esc(titleText) + '</div>'
+                + '<button class="text-cl-text-3 hover:text-cl-text" data-ppmc-close aria-label="关闭">' + icon('x', 'w-4 h-4') + '</button></div>'
+                + '<p class="text-xs text-cl-text-2 mb-4">' + esc(hint) + '</p>'
+                + '<div class="flex items-center gap-2 mb-5 flex-wrap">练习题量：'
+                + counts.map(function (c) { return '<button class="cl-badge cursor-pointer" data-ppmc-cnt="' + c + '">' + c + ' 题</button>'; }).join('')
+                + '</div><div class="flex justify-end"><button class="cl-btn-primary !h-9 text-xs" data-ppmc-start>开始</button></div>',
+                function (ov, close) {
+                    function paint() {
+                        ov.querySelectorAll('[data-ppmc-cnt]').forEach(function (b) {
+                            var on = Number(b.getAttribute('data-ppmc-cnt')) === sel;
+                            b.className = 'cl-badge cursor-pointer ' + (on ? 'bg-cl-primary-soft text-cl-primary' : 'bg-cl-bg text-cl-text-2 hover:text-cl-text');
+                        });
+                    }
+                    ov.querySelectorAll('[data-ppmc-cnt]').forEach(function (b) {
+                        b.addEventListener('click', function () { sel = Number(b.getAttribute('data-ppmc-cnt')); paint(); });
+                    });
+                    paint();
+                    ov.querySelector('[data-ppmc-start]').addEventListener('click', function () { close(); onStart(sel); });
+                });
+        }
+        // 勾选练习：MD 题干 + 熟练度/双星标注 + 分页（20/页）+ 缺判分基准不可勾
+        function openManualPicker(onStart) {
+            var selectable = cache.rows.filter(function (r) { return String(r.correct_answer || '').trim(); });
+            if (!selectable.length) { countPicker('勾选练习', '当前学科没有可判分的错题（缺正确答案），不可勾选练习。', [3, 5, 10], function () {}); return; }
+            var chosen = {}, mp = 1, MPER = 20;
+            selectable.forEach(function (r) { chosen[r.id] = true; }); // 默认全选（与知识点页勾题弹窗同口径）
+            var pages = Math.max(1, Math.ceil(selectable.length / MPER));
+            openModal('<div class="flex items-center justify-between mb-3"><div class="cl-section-title">'
+                + icon('clipboard-check', 'w-4 h-4 text-cl-primary') + ' 勾选错题练习</div>'
+                + '<button class="text-cl-text-3 hover:text-cl-text" data-ppmc-close aria-label="关闭">' + icon('x', 'w-4 h-4') + '</button></div>'
+                + '<p class="text-xs text-cl-text-2 mb-3">只练所选错题（直接组卷，不消耗积分）；缺正确答案的行不可勾。</p>'
+                + '<div class="space-y-2 max-h-96 overflow-y-auto mb-3" data-ppmc-list></div>'
+                + '<div class="flex items-center justify-between"><div class="flex items-center gap-2 text-xs text-cl-text-3" data-ppmc-pg></div>'
+                + '<button class="cl-btn-primary !h-9 text-xs" data-ppmc-start></button></div>',
+                function (ov, close) {
+                    var list = ov.querySelector('[data-ppmc-list]'), pg = ov.querySelector('[data-ppmc-pg]');
+                    var startBtn = ov.querySelector('[data-ppmc-start]');
+                    function syncStart() {
+                        var n = Object.keys(chosen).filter(function (k) { return chosen[k]; }).length;
+                        startBtn.disabled = n === 0;
+                        startBtn.textContent = '练习所选 ' + n + ' 题';
+                    }
+                    function paint() {
+                        if (mp > pages) mp = pages;
+                        list.innerHTML = selectable.slice((mp - 1) * MPER, mp * MPER).map(function (r) {
+                            var prof = isUnrated(r.current_proficiency) ? '未评估' : (Number(r.current_proficiency) || 0) + '%';
+                            return '<label class="flex items-start gap-2 rounded-clbtn border border-cl-border px-3 py-2 cursor-pointer hover:bg-cl-bg">'
+                                + '<input type="checkbox" data-ppmc-row="' + r.id + '"' + (chosen[r.id] ? ' checked' : '') + ' class="mt-0.5 shrink-0">'
+                                + '<span class="flex-1 min-w-0">' + mdqHtml(r.question_content, 'text-[13px] text-cl-text break-words max-h-24 overflow-y-auto')
+                                + '<span class="block text-[11px] text-cl-text-3 mt-0.5">熟练度 ' + esc(prof) + ' · 难度 ' + esc(String(r.difficulty_score == null ? 5 : r.difficulty_score))
+                                + ' · 重要度 ' + esc(String(r.importance_score == null ? 5 : r.importance_score)) + '</span></span></label>';
+                        }).join('');
+                        hydrateMdSlots(list);
+                        list.querySelectorAll('[data-ppmc-row]').forEach(function (cb) {
+                            cb.addEventListener('change', function () {
+                                chosen[Number(cb.getAttribute('data-ppmc-row'))] = cb.checked;
+                                syncStart();
+                            });
+                        });
+                        pg.innerHTML = pages > 1
+                            ? '<button class="cl-btn-ghost !h-7 !text-xs" data-ppmc-prev' + (mp <= 1 ? ' disabled' : '') + '>上一页</button>'
+                                + '<span>' + mp + ' / ' + pages + '</span>'
+                                + '<button class="cl-btn-ghost !h-7 !text-xs" data-ppmc-next' + (mp >= pages ? ' disabled' : '') + '>下一页</button>'
+                            : '<span>共 ' + selectable.length + ' 题</span>';
+                        var pv = pg.querySelector('[data-ppmc-prev]'), nx = pg.querySelector('[data-ppmc-next]');
+                        if (pv) pv.addEventListener('click', function () { if (mp > 1) { mp--; paint(); } });
+                        if (nx) nx.addEventListener('click', function () { if (mp < pages) { mp++; paint(); } });
+                        syncStart();
+                    }
+                    paint();
+                    startBtn.addEventListener('click', function () {
+                        var ids = Object.keys(chosen).filter(function (k) { return chosen[k]; }).map(Number).slice(0, 20);
+                        close();
+                        onStart(ids);
+                    });
+                });
+        }
+        // ---- P4 薄弱点分析报告：列表 / 文字+脑图双视图 / 薄弱点「针对练习」闭环（analogy→pmPractice） ----
+        function startTargetedPractice(point, evidence) {
+            pmPractice(root, {
+                title: '针对练习 · ' + point,
+                load: function () {
+                    var body = { subject: cache.subject, point: point, count: 5 };
+                    if (evidence && evidence.length) body.error_ids = evidence.slice(0, 10);
+                    return postJSON('/api/practice/analogy', body);
+                },
+                submit: practiceSubmit, onDone: refresh,
+            });
+        }
+        // 自绘递归 HTML 树卡片（不引入第三方脑图库）：绿=掌握尚可、红=薄弱，节点带证据错题
+        function mindmapHtml(nodes, nested) {
+            return '<div class="' + (nested ? 'mt-2 ml-3 pl-3 border-l-2 border-cl-border' : '') + ' space-y-2">' + (nodes || []).map(function (nd) {
+                var weak = nd.status === 'weak';
+                return '<div class="rounded-clbtn border px-3 py-2 ' + (weak ? 'border-cl-danger/40 bg-cl-danger-soft' : 'border-cl-secondary/40 bg-cl-secondary-soft') + '">'
+                    + '<div class="flex items-center gap-2 flex-wrap">'
+                    + '<span class="text-[13px] font-semibold ' + (weak ? 'text-cl-danger' : 'text-cl-secondary') + '">' + esc(nd.name) + '</span>'
+                    + '<span class="cl-badge text-[11px] ' + (weak ? 'bg-cl-danger-soft text-cl-danger' : 'bg-cl-secondary-soft text-cl-secondary') + '">' + (nd.kind === 'kp' ? '知识点' : '总结点') + (weak ? ' · 薄弱' : ' · 尚可') + '</span>'
+                    + ((nd.evidence || []).length ? '<span class="text-[11px] text-cl-text-3">证据错题：' + nd.evidence.map(function (x) { return '#' + x; }).join(' ') + '</span>' : '')
+                    + '<span class="ml-auto shrink-0">'
+                    + (weak ? '<button class="cl-btn-ghost !h-7 text-[11px]" data-mm-prac="' + esc(nd.name) + '" data-mm-ev="' + esc((nd.evidence || []).join(',')) + '">' + icon('dumbbell', 'w-3.5 h-3.5') + ' 针对练习</button>' : '')
+                    + '</span></div>'
+                    + ((nd.children || []).length ? mindmapHtml(nd.children, true) : '')
+                    + '</div>';
+            }).join('') + '</div>';
+        }
+        function openReports() {
+            var old = root.querySelector('[data-wr-overlay]');
+            if (old) { if (old._onEsc) document.removeEventListener('keydown', old._onEsc); old.remove(); }
+            var ov = document.createElement('div');
+            ov.setAttribute('data-wr-overlay', '1');
+            ov.className = 'fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto';
+            ov.innerHTML = '<div class="cl-card p-6 w-full max-w-3xl my-8" data-wr-card></div>';
+            ov._onEsc = function (e) { if (e.key === 'Escape') close(); };
+            document.addEventListener('keydown', ov._onEsc);
+            ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+            root.appendChild(ov);
+            var card = ov.querySelector('[data-wr-card]');
+            function close() { if (ov._onEsc) document.removeEventListener('keydown', ov._onEsc); ov.remove(); }
+            function head(title, back) {
+                return '<div class="flex items-center justify-between mb-3"><div class="cl-section-title">'
+                    + icon('clipboard-check', 'w-4 h-4 text-cl-primary') + ' ' + esc(title) + '</div><div class="flex items-center gap-2">'
+                    + (back ? '<button class="cl-btn-ghost !h-7 text-xs" data-wr-back>返回列表</button>' : '')
+                    + '<button class="text-cl-text-3 hover:text-cl-text" data-wr-close aria-label="关闭">' + icon('x', 'w-4 h-4') + '</button></div></div>';
+            }
+            function bindCommon() {
+                var x = card.querySelector('[data-wr-close]');
+                if (x) x.addEventListener('click', close);
+                var bk = card.querySelector('[data-wr-back]');
+                if (bk) bk.addEventListener('click', loadList);
+            }
+            function failBox(title, text, back) {
+                card.innerHTML = head(title, back) + '<p class="text-sm text-cl-danger py-2">' + esc(text) + '</p>';
+                bindCommon();
+            }
+            function analyze(scope, ids) {
+                card.innerHTML = head('薄弱点分析') + '<p class="text-sm text-cl-text-2 py-6 text-center">AI 正在分析错题，可能需要几十秒，请稍候…（消耗积分）</p>';
+                bindCommon();
+                var body = { subject: cache.subject, scope: scope };
+                if (ids) body.error_ids = ids;
+                postJSON('/api/practice/weakness-report', body).then(function (d) {
+                    if (!document.contains(card)) return;
+                    if (!d || d.success !== true) { failBox('薄弱点分析', (d && d.error) || '分析失败，请稍后重试', true); return; }
+                    openDetail({ report_md: d.report_md, nodes: d.nodes, created_time: '' });
+                }).catch(function (e) {
+                    if (document.contains(card)) failBox('薄弱点分析', '分析请求异常：' + (e.message || '未知错误'), true);
+                });
+            }
+            function openDetail(rep) {
+                var tab = 'text';
+                function paint() {
+                    var h = head('报告详情' + (rep.created_time ? ' · ' + rep.created_time : ''), true)
+                        + '<div class="flex items-center gap-2 mb-4">'
+                        + '<button class="cl-badge cursor-pointer" data-wr-tab="text">文字报告</button>'
+                        + '<button class="cl-badge cursor-pointer" data-wr-tab="map">脑图视图</button></div>';
+                    if (tab === 'text') h += mdqHtml(rep.report_md || '', 'text-sm text-cl-text break-words leading-relaxed');
+                    else h += mindmapHtml(rep.nodes || [], false);
+                    card.innerHTML = h;
+                    hydrateMdSlots(card);
+                    bindCommon();
+                    card.querySelectorAll('[data-wr-tab]').forEach(function (b) {
+                        var on = b.getAttribute('data-wr-tab') === tab;
+                        b.className = 'cl-badge cursor-pointer ' + (on ? 'bg-cl-primary-soft text-cl-primary' : 'bg-cl-bg text-cl-text-2 hover:text-cl-text');
+                        b.addEventListener('click', function () { tab = b.getAttribute('data-wr-tab'); paint(); });
+                    });
+                    card.querySelectorAll('[data-mm-prac]').forEach(function (b) {
+                        b.addEventListener('click', function () {
+                            var ev = (b.getAttribute('data-mm-ev') || '').split(',').filter(Boolean).map(Number);
+                            startTargetedPractice(b.getAttribute('data-mm-prac'), ev);
+                        });
+                    });
+                }
+                paint();
+            }
+            function loadList() {
+                card.innerHTML = head('薄弱点分析报告') + '<p class="text-xs text-cl-text-2 py-4">报告列表加载中…</p>';
+                bindCommon();
+                getJSON('/api/practice/weakness-reports?subject=' + encodeURIComponent(cache.subject)).then(function (d) {
+                    if (!document.contains(card)) return;
+                    var reports = (d && d.reports) || [];
+                    var h = head('薄弱点分析报告')
+                        + '<div class="flex items-center gap-2 mb-4 flex-wrap">'
+                        + '<button class="cl-btn-primary !h-9 text-xs" data-wr-global>全局分析（本学科全部错题）</button>'
+                        + '<button class="cl-btn-ghost !h-9 text-xs" data-wr-selected>勾选错题分析</button></div>';
+                    if (!reports.length) h += '<p class="text-xs text-cl-text-3 py-4">还没有分析报告，点上方按钮生成第一份（消耗积分）</p>';
+                    else h += '<div class="space-y-2">' + reports.map(function (r) {
+                        return '<div class="rounded-clbtn border border-cl-border px-3 py-2 flex items-center gap-3">'
+                            + '<div class="flex-1 min-w-0"><p class="text-[13px] text-cl-text font-medium">' + esc(r.created_time || '') + ' · ' + (r.scope === 'selected' ? '勾选' : '全局') + ' ' + r.error_count + ' 题</p>'
+                            + '<p class="text-xs text-cl-text-3 mt-0.5 break-words max-h-16 overflow-y-auto">' + esc(r.preview || '') + '</p></div>'
+                            + '<button class="cl-btn-ghost !h-7 text-[11px] shrink-0" data-wr-open="' + r.id + '">' + icon('search', 'w-3.5 h-3.5') + ' 查看</button></div>';
+                    }).join('') + '</div>';
+                    card.innerHTML = h;
+                    bindCommon();
+                    card.querySelector('[data-wr-global]').addEventListener('click', function () { analyze('global', null); });
+                    card.querySelector('[data-wr-selected]').addEventListener('click', function () {
+                        openManualPicker(function (ids) { analyze('selected', ids); });
+                    });
+                    card.querySelectorAll('[data-wr-open]').forEach(function (b) {
+                        b.addEventListener('click', function () {
+                            getJSON('/api/practice/weakness-report/' + b.getAttribute('data-wr-open')).then(function (d2) {
+                                if (!document.contains(card)) return;
+                                if (!d2 || d2.success !== true) { failBox('报告详情', (d2 && d2.error) || '加载失败', true); return; }
+                                openDetail(d2.report);
+                            }).catch(function (e) {
+                                if (document.contains(card)) failBox('报告详情', '加载异常：' + (e.message || '未知错误'), true);
+                            });
+                        });
+                    });
+                }).catch(function (e) {
+                    if (document.contains(card)) failBox('薄弱点分析报告', '列表加载失败：' + (e.message || '未知错误'));
+                });
+            }
+            loadList();
+        }
+        var tb = root.querySelector('[data-role="toolbar"]');
+        if (tb) tb.addEventListener('click', function (e) {
+            var b = e.target.closest('[data-tb]');
+            if (!b || !cache.subject) return;
+            var act = b.getAttribute('data-tb');
+            if (act === 'smart') {
+                countPicker('智能练错题', '按 FSRS 三因子（记忆保留率→重要度→难度）自动选最该复习的错题，直接组卷答题，不消耗积分。', [3, 5, 10], function (n) {
+                    pmPractice(root, {
+                        title: '智能练错题',
+                        load: function () { return postJSON('/api/practice/error-pool', { subject: cache.subject, mode: 'smart', count: n }); },
+                        submit: practiceSubmit, onDone: refresh,
+                    });
+                });
+            } else if (act === 'manual') {
+                openManualPicker(function (ids) {
+                    pmPractice(root, {
+                        title: '错题练习 · 勾选',
+                        load: function () { return postJSON('/api/practice/error-pool', { subject: cache.subject, mode: 'manual', error_ids: ids }); },
+                        submit: practiceSubmit, onDone: refresh,
+                    });
+                });
+            } else if (act === 'analogy') {
+                countPicker('举一反三', 'AI 智能选取应复习的错题，针对其薄弱考点生成相似新题（消耗积分）；新题答错照常入池。', [3, 5, 10], function (n) {
+                    pmPractice(root, {
+                        title: '举一反三',
+                        load: function () {
+                            return postJSON('/api/practice/error-pool', { subject: cache.subject, mode: 'smart', count: n }).then(function (pool) {
+                                if (!pool || pool.success !== true) return pool;
+                                var ids = pool.questions.map(function (q) { return q.error_id; }).filter(Boolean);
+                                return postJSON('/api/practice/analogy', { subject: cache.subject, error_ids: ids, count: n });
+                            });
+                        },
+                        submit: practiceSubmit, onDone: refresh,
+                    });
+                });
+            } else if (act === 'report') {
+                openReports(); // P4：报告列表/双视图/针对练习闭环
+            }
+        });
         if (search) search.addEventListener('keydown', function (e) {
             if (e.key !== 'Enter') return;
+            page = 1; // 换搜索词回到第一页
             var main = root.querySelector('[data-role="main"]');
             if (cache.subject && main) render(main);
         });
         mountSubjects(root, function (subject, token) {
             var main = root.querySelector('[data-role="main"]');
             main.innerHTML = '<p class="text-sm text-cl-text-3 py-6">加载中…</p>';
+            page = 1; // 换学科回到第一页
             getJSON('/api/kb/errors?subject=' + encodeURIComponent(subject)).then(function (rows) {
                 if (token !== latestTk(root)) return; // 旧学科响应不得污染 cache/页面
                 cache.subject = subject;

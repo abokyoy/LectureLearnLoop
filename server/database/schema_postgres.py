@@ -144,6 +144,25 @@ PG_TABLES = [
     "ALTER TABLE error_questions ALTER COLUMN knowledge_point_id DROP NOT NULL",
     "ALTER TABLE error_questions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'practice'",
 
+    # ---- 错题学习单元升级（2026-10-14）：重练/举一反三流水挂回来源错题 + 薄弱点分析报告 ----
+    # error_question_id：练这道错题的历史（每错题一份，类似知识点学习历史）；
+    # 举一反三新题携带 root_error_id 语义同列（新题行存于派生题自己的流水上）
+    "ALTER TABLE practice_records ADD COLUMN IF NOT EXISTS error_question_id BIGINT",
+    "CREATE INDEX IF NOT EXISTS idx_pr_error ON practice_records (error_question_id)",
+    """
+    CREATE TABLE IF NOT EXISTS weakness_reports (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL DEFAULT '0001',
+        subject_name TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT 'global',
+        error_ids TEXT,
+        report_md TEXT NOT NULL,
+        mindmap_json TEXT,
+        created_time TEXT DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS'))
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_wr_user_subject ON weakness_reports (user_id, subject_name)",
+
     # 知识点熟练度历史（FSRS 曲线，与错题 error_proficiency_history 对称）
     """
     CREATE TABLE IF NOT EXISTS kp_proficiency_history (

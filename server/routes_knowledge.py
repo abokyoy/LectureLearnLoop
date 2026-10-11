@@ -721,6 +721,34 @@ def error_mark_reviewed(eid):
     return _ok({"reviewed": bool(ok)})
 
 
+@kb_bp.route("/api/kb/errors/<int:eid>/practice-history", methods=["GET"])
+@require_auth
+def error_practice_history(eid):
+    """错题学习单元升级（P2）：该错题的历次练习流水（重练本题 + 举一反三派生题，按 root 挂回同列）。
+    与知识点学习历史同构：时间倒序列表，前端分页展示。"""
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, question_content, user_answer, is_correct, question_type, practice_time "
+            "FROM practice_records WHERE user_id = ? AND error_question_id = ? "
+            "ORDER BY practice_time DESC, id DESC",
+            (g.user_id, eid),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+    return _ok([{
+        "id": r[0],
+        "question_content": r[1],
+        "user_answer": r[2],
+        "is_correct": int(r[3] or 0),
+        "question_type": r[4] or "",
+        "practice_time": r[5],
+    } for r in rows])
+
+
 # --------------------------------------------- 记忆内核共享：星值/手动熟练度/曲线/四档自评（kind=kp|error）
 _FSR_KINDS = ("kp", "error")
 
