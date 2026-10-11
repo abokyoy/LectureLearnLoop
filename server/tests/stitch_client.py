@@ -7,7 +7,20 @@ import json, sys, io, os
 import requests
 
 URL = "https://stitch.googleapis.com/mcp"
-KEY = "*REMOVED-BY-FILTER-REPO*"
+
+
+def _load_key():
+    """密钥禁止明文入库：优先环境变量 STITCH_API_KEY，否则从本地 .qoder/mcp.json 读取
+    （该文件在 .gitignore 中，是项目唯一的 Stitch 密钥存放地，2026-10-13 Push Protection 整改）。"""
+    k = os.environ.get("STITCH_API_KEY")
+    if k:
+        return k
+    cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", ".qoder", "mcp.json")
+    with open(cfg, encoding="utf-8") as f:
+        return json.load(f)["mcpServers"]["stitch"]["headers"]["X-Goog-Api-Key"]
+
+
+KEY = _load_key()
 PROXY = {"http": "http://127.0.0.1:10808", "https": "http://127.0.0.1:10808"}
 OUT = r"e:\LLM\LectureLearnLoop\server\logs\stitch_last.json"
 

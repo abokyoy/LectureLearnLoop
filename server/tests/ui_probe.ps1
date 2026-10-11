@@ -14,7 +14,8 @@ try {
 $env:HTTP_PROXY = 'http://127.0.0.1:10808'
 $env:HTTPS_PROXY = 'http://127.0.0.1:10808'
 $env:NO_PROXY = 'localhost,127.0.0.1'
-$key = '*REMOVED-BY-FILTER-REPO*'
+# 密钥禁止明文入库（2026-10-13 Push Protection 整改）：从本地 .qoder/mcp.json 读取（已被 git 忽略）
+$key = (Get-Content (Join-Path $PSScriptRoot '..\..\.qoder\mcp.json') -Raw | ConvertFrom-Json).mcpServers.stitch.headers.'X-Goog-Api-Key'
 $body = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"qoder-probe","version":"1.0"}}}'
 try {
   $headers = @{ 'X-Goog-Api-Key' = $key; 'Content-Type' = 'application/json'; 'Accept' = 'application/json, text/event-stream' }
