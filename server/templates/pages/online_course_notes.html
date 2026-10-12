@@ -579,7 +579,6 @@ window.jsTreeLoading = false;
     }
     
     /* 去除jsTree默认容器的边框和阴影 - 更强的覆盖 */
-    #file-tree .jstree-default,
     #file-tree.jstree-default,
     .jstree-default {
         border: none !important;
@@ -590,10 +589,10 @@ window.jsTreeLoading = false;
     
     /* 去除jsTree容器的所有可能边框样式 */
     #file-tree *,
-    #file-tree .jstree-default *,
+    #file-tree.jstree-default *,
     #file-tree .jstree-container-ul,
-    #file-tree .jstree-default .jstree-container-ul,
-    #file-tree .jstree-default .jstree-wholerow-ul {
+    #file-tree.jstree-default .jstree-container-ul,
+    #file-tree.jstree-default .jstree-wholerow-ul {
         border: none !important;
         box-shadow: none !important;
         outline: none !important;
@@ -609,14 +608,14 @@ window.jsTreeLoading = false;
     }
     
     /* jsTree 节点样式 */
-    #file-tree .jstree-default .jstree-node {
+    #file-tree.jstree-default .jstree-node {
         min-height: 32px;
         line-height: 32px;
         margin: 0;
         padding: 0;
     }
     
-    #file-tree .jstree-default .jstree-anchor {
+    #file-tree.jstree-default .jstree-anchor {
         height: 32px;
         line-height: 32px;
         padding: 0 8px;
@@ -627,14 +626,15 @@ window.jsTreeLoading = false;
         transition: all 0.2s ease;
     }
     
-    #file-tree .jstree-default .jstree-anchor:hover {
+    #file-tree.jstree-default .jstree-anchor:hover {
         background-color: #f7fafc;
         color: #2d3748;
     }
     
-    #file-tree .jstree-default .jstree-anchor.jstree-clicked {
+    #file-tree.jstree-default .jstree-anchor.jstree-clicked {
         background-color: #e6f3ff;
         color: #2b6cb0;
+        font-weight: 600;
         box-shadow: none;
     }
     
@@ -686,7 +686,7 @@ window.jsTreeLoading = false;
     }
     
     /* 文件夹图标 - 默认状态 */
-    #file-tree .jstree-default .jstree-icon.jstree-folder,
+    #file-tree.jstree-default .jstree-icon.jstree-folder,
     #file-tree .jstree-anchor.folder-node .jstree-icon {
         background-image: none !important;
         color: #6b7280 !important; /* 默认灰色 */
@@ -698,7 +698,7 @@ window.jsTreeLoading = false;
         height: 24px !important;
     }
     
-    #file-tree .jstree-default .jstree-icon.jstree-folder:before,
+    #file-tree.jstree-default .jstree-icon.jstree-folder:before,
     #file-tree .jstree-anchor.folder-node .jstree-icon:before {
         content: 'folder' !important;
         font-family: 'Material Icons Outlined' !important;
@@ -711,13 +711,13 @@ window.jsTreeLoading = false;
     /* 移除空的CSS规则，避免警告 */
     
     /* 文件夹悬停效果 */
-    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-folder,
+    #file-tree.jstree-default .jstree-anchor:hover .jstree-icon.jstree-folder,
     #file-tree .jstree-anchor.folder-node:hover .jstree-icon {
         color: #4b5563 !important; /* 悬停时稍深的灰色 */
     }
     
     /* 文件图标 - 默认状态 */
-    #file-tree .jstree-default .jstree-icon.jstree-file,
+    #file-tree.jstree-default .jstree-icon.jstree-file,
     #file-tree .jstree-anchor:not(.folder-node) .jstree-icon {
         background-image: none !important;
         color: #6b7280 !important; /* 默认灰色 */
@@ -730,7 +730,7 @@ window.jsTreeLoading = false;
     }
     
     /* 所有文件使用统一的文档图标 */
-    #file-tree .jstree-default .jstree-icon.jstree-file:before,
+    #file-tree.jstree-default .jstree-icon.jstree-file:before,
     #file-tree .jstree-anchor:not(.folder-node) .jstree-icon:before {
         content: 'description' !important; /* 统一使用文档图标 */
         font-family: 'Material Icons Outlined' !important;
@@ -740,7 +740,7 @@ window.jsTreeLoading = false;
     /* 移除CSS选中状态，由JavaScript统一管理 */
     
     /* 文件悬停效果 */
-    #file-tree .jstree-default .jstree-anchor:hover .jstree-icon.jstree-file,
+    #file-tree.jstree-default .jstree-anchor:hover .jstree-icon.jstree-file,
     #file-tree .jstree-anchor:not(.folder-node):hover .jstree-icon {
         color: #4b5563 !important; /* 悬停时稍深的灰色 */
     }
@@ -748,7 +748,7 @@ window.jsTreeLoading = false;
     /* 移除特定文件类型的样式，统一使用文档图标 */
     
     /* 展开/收缩图标 - 现代化设计 */
-    #file-tree .jstree-default .jstree-ocl {
+    #file-tree.jstree-default .jstree-ocl {
         width: 20px;
         height: 20px;
         margin-right: 4px;
@@ -762,16 +762,16 @@ window.jsTreeLoading = false;
         border-radius: 2px; /* 轻微圆角 */
     }
     
-    #file-tree .jstree-default .jstree-ocl:before {
+    #file-tree.jstree-default .jstree-ocl:before {
         content: 'keyboard_arrow_right'; /* 更现代的箭头 */
     }
     
-    #file-tree .jstree-default .jstree-open > .jstree-ocl:before {
+    #file-tree.jstree-default .jstree-open > .jstree-ocl:before {
         content: 'keyboard_arrow_down'; /* 向下箭头 */
     }
     
     /* 展开/收缩图标悬停效果 */
-    #file-tree .jstree-default .jstree-ocl:hover {
+    #file-tree.jstree-default .jstree-ocl:hover {
         color: #4b5563; /* 悬停时更深的颜色 */
         background-color: #f3f4f6; /* 轻微背景色 */
         transform: scale(1.1); /* 轻微放大 */
@@ -800,7 +800,7 @@ window.jsTreeLoading = false;
     }
     
     /* 重命名输入框样式 */
-    #file-tree .jstree-default .jstree-rename-input {
+    #file-tree.jstree-default .jstree-rename-input {
         border: 2px solid #4299e1;
         border-radius: 4px;
         padding: 2px 6px;
@@ -857,7 +857,7 @@ window.jsTreeLoading = false;
     }
     
     /* 确保jsTree容器支持水平滚动 */
-    #file-tree .jstree-default {
+    #file-tree.jstree-default {
         max-width: none; /* 移除宽度限制 */
         overflow-x: visible; /* 允许内容溢出 */
         min-width: max-content; /* 确保容器宽度适应内容 */
@@ -937,7 +937,7 @@ window.jsTreeLoading = false;
         overflow-y: auto !important;
     }
     
-    #file-tree .jstree-default {
+    #file-tree.jstree-default {
         /* 让jsTree内容可以超出容器宽度（B5：去掉 min-width:500px 强制撑宽，避免常驻横向滚动条） */
         width: max-content !important;
     }
@@ -1009,10 +1009,10 @@ window.jsTreeLoading = false;
     /* 终极覆盖 - 确保去除所有jsTree边框和阴影 */
     div#file-tree,
     div#file-tree.jstree,
-    div#file-tree .jstree-default,
+    div#file-tree.jstree-default,
     #file-structure #file-tree,
     #file-structure #file-tree.jstree,
-    #file-structure #file-tree .jstree-default {
+    #file-structure #file-tree.jstree-default {
         border: none !important;
         box-shadow: none !important;
         background: transparent !important;
@@ -1825,7 +1825,8 @@ window.jsTreeLoading = false;
 
 <!-- 四期：设备选择弹窗已下线（音源简化为系统声音/麦克风二选一，与悬浮窗一致） -->
 
-<!-- 四期D组：文件树/文本统一右键菜单（一套四项，样式沿用灰色系 .context-menu） -->
+<!-- 四期D组：文件树/文本统一右键菜单（一套，样式沿用灰色系 .context-menu）；
+     2026-10-15：新增文件夹专属三项（子文件夹/新笔记/导入），显隐由 showFileContextMenu 按节点类型用内联 display 控制 -->
 <div id="file-context-menu" class="context-menu hidden">
     <div class="context-menu-item" data-action="deep">
         <span class="material-icons-outlined">psychology</span>
@@ -1834,6 +1835,19 @@ window.jsTreeLoading = false;
     <div class="context-menu-item" data-action="practice">
         <span class="material-icons-outlined">quiz</span>
         开始练习
+    </div>
+    <div class="context-menu-separator" data-folder-only style="display:none"></div>
+    <div class="context-menu-item" data-action="newFolder" data-folder-only style="display:none">
+        <span class="material-icons-outlined">create_new_folder</span>
+        新建子文件夹
+    </div>
+    <div class="context-menu-item" data-action="newNote" data-folder-only style="display:none">
+        <span class="material-icons-outlined">note_add</span>
+        新建笔记
+    </div>
+    <div class="context-menu-item" data-action="importFile" data-folder-only style="display:none">
+        <span class="material-icons-outlined">upload_file</span>
+        导入文件
     </div>
     <div class="context-menu-separator"></div>
     <div class="context-menu-item" data-action="rename">
@@ -4273,13 +4287,17 @@ window.handleRenameKeydown = function(event, input) {
             'core': {
                 'data': treeData,
                 'check_callback': true, // 允许编辑操作
+                // 2026-10-15：单选模式——之前默认 multiple 会多选叠加（新建/右键后旧选中不清除），
+                // 导致“选中文件夹→新建落点”语义漂移
+                'multiple': false,
                 'themes': {
                     'name': 'default',
                     'dots': false,
                     'icons': true
                 }
             },
-            'plugins': ['dnd', 'types'],
+            // 2026-10-15 补 'edit'：新建文件夹/笔记后的内联重命名（fileTreeInstance.edit）依赖此插件，之前缺失导致重命名框不出现
+            'plugins': ['dnd', 'types', 'edit'],
             'types': {
                 'folder': {
                     'icon': 'jstree-folder'
@@ -4312,6 +4330,15 @@ window.handleRenameKeydown = function(event, input) {
                     if (!node || !node.data || !node.data.path) return;
                     ev.preventDefault();
                     ev.stopPropagation();
+                    // 右键即选中（2026-10-15）：菜单操作与后续工具栏新建的落点与所见一致
+                    // jsTree 的 API select_node 是叠加语义（互斥只在交互层），先清旧选中
+                    inst.deselect_all(true);
+                    // 右键只高亮，不触发 select_node 处理器里的自动打开预览（2026-10-15：
+                    // 右键 md 文件会意外打开编辑器并引发树状态副作用，用标志位抑制）
+                    inst._llCtxSelect = true;
+                    inst.select_node(node);
+                    setTimeout(function () { inst._llCtxSelect = false; }, 0);
+                    // updateSelectionPath 已由 select_node.jstree 处理器同步调用，此处不重复（CodeReview N3）
                     showFileContextMenu(ev, node.data.path, node.data.type, node.text);
                 });
             }
@@ -4460,8 +4487,8 @@ window.handleRenameKeydown = function(event, input) {
                     $icon.css('content', "'description'");
                 }
                 
-                // 移除jsTree的选中状态类
-                $anchor.removeClass('jstree-clicked');
+                // 注意：不得移除 jstree-clicked（2026-10-15 修复）——那是 jsTree 自己的选中态高亮，
+                // 之前这里手动删导致“看不出选中了哪个文件夹”
             });
             
             addDebugLog('🔄 所有节点已重置为默认样式');
@@ -4606,6 +4633,8 @@ window.handleRenameKeydown = function(event, input) {
                 updateSelectionPath(node);
                 
                 if (node.data.type === 'file') {
+                    // 右键菜单引起的选中只高亮，不自动打开文件（2026-10-15）
+                    if (data.instance && data.instance._llCtxSelect) return;
                     const isPdf = /\.pdf$/i.test(node.data.path || '') || node.data.extension === '.pdf';
                     if (node.data.is_markdown) {
                         addDebugLog('✅ 这是md文件，可以打开');
@@ -4738,6 +4767,8 @@ window.handleRenameKeydown = function(event, input) {
                     
                     // 添加新节点到 jsTree
                     const newPath = folderPath === 'vault' ? result : `${folderPath}/${result}`;
+                    // data 必须带 is_markdown/extension：否则 select_node 处理器会把新建 .md 误判为
+                    // “不支持打开”而反选+弹警告，破坏选中+重命名链路（CodeReview M2，2026-10-15）
                     const newNode = {
                         id: newPath,
                         text: result,
@@ -4745,7 +4776,9 @@ window.handleRenameKeydown = function(event, input) {
                         data: {
                             path: newPath,
                             name: result,
-                            type: 'file'
+                            type: 'file',
+                            is_markdown: /\.md$/i.test(result),
+                            extension: (result.match(/\.[^.]+$/) || [''])[0]
                         }
                     };
                     
@@ -4753,7 +4786,10 @@ window.handleRenameKeydown = function(event, input) {
                     const nodeId = fileTreeInstance.create_node(parentId, newNode);
                     
                     if (nodeId) {
-                        // 选中新节点并进入重命名模式
+                        // 展开父文件夹，新建项立即可见（2026-10-15：之前建到收起文件夹里看不见，只能刷新页面）
+                        if (parentId !== '#') fileTreeInstance.open_node(parentId);
+                        // 选中新节点并进入重命名模式（API select_node 为叠加，先清旧选中）
+                        fileTreeInstance.deselect_all(true);
                         fileTreeInstance.select_node(nodeId);
                         setTimeout(() => {
                             fileTreeInstance.edit(nodeId);
@@ -4792,7 +4828,10 @@ window.handleRenameKeydown = function(event, input) {
                     const nodeId = fileTreeInstance.create_node(parentId, newNode);
                     
                     if (nodeId) {
-                        // 选中新节点并进入重命名模式
+                        // 展开父文件夹，新建项立即可见（2026-10-15）
+                        if (parentId !== '#') fileTreeInstance.open_node(parentId);
+                        // 选中新节点并进入重命名模式（API select_node 为叠加，先清旧选中）
+                        fileTreeInstance.deselect_all(true);
                         fileTreeInstance.select_node(nodeId);
                         setTimeout(() => {
                             fileTreeInstance.edit(nodeId);
@@ -4805,14 +4844,13 @@ window.handleRenameKeydown = function(event, input) {
         }
     }
     
-    // 在根目录创建新笔记
+    // 在根目录创建新笔记/文件夹（2026-10-15）：落点与导入同口径 —— 选中文件夹→其下；选中文件→其所在文件夹；未选→vault 根
     function createNewNoteInRoot() {
-        createNewNoteInFolder('vault');
+        createNewNoteInFolder(_impResolveTarget());
     }
     
-    // 在根目录创建新文件夹
     function createNewFolderInRoot() {
-        createNewFolderInFolder('vault');
+        createNewFolderInFolder(_impResolveTarget());
     }
     
     // ---- 文件导入（2026-09-30）：PDF/MD/TXT → vault。PDF 走后端 PaddleOCR-VL 任务转换，本端轮询状态 ----
@@ -6645,6 +6683,9 @@ window.handleRenameKeydown = function(event, input) {
         console.log('菜单元素当前样式:', contextMenu.style.cssText);
         
         contextMenuTarget = { path, type, name };
+
+        // 按节点类型切菜单形态（2026-10-15）：文件夹→新建子文件夹/新笔记/导入+重命名/删除；文件→学习两项+重命名/删除
+        _applyFileMenuMode(type);
         
         // 四期D组：菜单项事件已在定义处一次性全局绑定（文本区/文件树共用同一菜单），这里只清除文本快照
         window.llMenuText = '';
@@ -6670,6 +6711,19 @@ window.handleRenameKeydown = function(event, input) {
             contextMenu.classList.add('hidden');
         }
         contextMenuTarget = null;
+    }
+
+    // 菜单形态切换（2026-10-15）：context-menu-item 自带 display:flex 会盖过 hidden 类，必须用内联 style.display 切换
+    function _applyFileMenuMode(type) {
+        var menu = document.getElementById('file-context-menu');
+        if (!menu) return;
+        var isFolder = type === 'folder';
+        menu.querySelectorAll('[data-folder-only]').forEach(function (el) {
+            el.style.display = isFolder ? (el.classList.contains('context-menu-separator') ? 'block' : 'flex') : 'none';
+        });
+        menu.querySelectorAll('[data-action="deep"],[data-action="practice"]').forEach(function (el) {
+            el.style.display = isFolder ? 'none' : 'flex';
+        });
     }
 
     function handleFileMenuClick(e) {
@@ -6736,10 +6790,16 @@ window.handleRenameKeydown = function(event, input) {
                 deleteItem(path, name);
                 break;
             case 'newNote':
-                createNewNote(path);
+                // 2026-10-15：改走 jsTree 路径（旧 DOM 拼接版 addFileToTreeStructure 已死，那是视图错乱根因）
+                createNewNoteInFolder(path);
                 break;
             case 'newFolder':
-                createNewFolder(path);
+                createNewFolderInFolder(path);
+                break;
+            case 'importFile':
+                // 落点冻结为右键文件夹（与工具栏导入同机制 MF-4）
+                _impTargetPath = path;
+                _impPickLocalFiles();
                 break;
         }
         
@@ -7104,92 +7164,9 @@ window.handleRenameKeydown = function(event, input) {
         }
     }
 
-    // 文件操作函数
-    function createNewNote(parentPath = 'vault') {
-        debugLog('创建新笔记');
-        if (window.pybridge && window.pybridge.createNewNote) {
-            window.pybridge.createNewNote(parentPath, function(result) {
-                debugLog('新笔记创建结果: ' + result);
-                if (result && result.trim() !== '') {
-                    // 直接通过JS更新树形结构，不重新加载
-                    const newFileElement = addFileToTreeStructure(result, parentPath, 'file');
-                    if (newFileElement) {
-                        // 定位到新创建的文件并进入重命名模式
-                        scrollToElement(newFileElement);
-                        setTimeout(() => {
-                            const nameSpan = newFileElement.querySelector('.file-name');
-                            if (nameSpan) {
-                                startInlineRename(nameSpan);
-                                showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
-                            }
-                        }, 100);
-                    } else {
-                        // 如果JS更新失败，不要立即重新加载，先显示错误信息
-                        debugError(`❌ JS更新失败：无法将文件 '${result}' 添加到 '${parentPath}'`);
-                        debugError('❌ 详细信息：请检查控制台日志');
-                        
-                        // 显示错误提示，但不重新加载
-                        showFileOperationFeedback('文件创建成功，但界面更新失败，请手动刷新', 'warning');
-                        
-                        // 临时禁用重新加载，用于调试
-                        // loadFileStructure();
-                        // setTimeout(() => {
-                        //     const newFileElement = findNewlyCreatedFile(result, 'file');
-                        //     if (newFileElement) {
-                        //         const nameSpan = newFileElement.querySelector('.file-name');
-                        //         if (nameSpan) {
-                        //             startInlineRename(nameSpan);
-                        //             showFileOperationFeedback('笔记创建成功，请输入名称', 'success');
-                        //         }
-                        //     }
-                        // }, 200);
-                    }
-                } else {
-                    showFileOperationFeedback('创建笔记失败', 'error');
-                }
-            });
-        }
-    }
-
-    function createNewFolder(parentPath = 'vault') {
-        debugLog('创建新文件夹');
-        if (window.pybridge && window.pybridge.createNewFolder) {
-            window.pybridge.createNewFolder(parentPath, function(result) {
-                debugLog('新文件夹创建结果: ' + result);
-                if (result && result.trim() !== '') {
-                    // 直接通过JS更新树形结构，不重新加载
-                    const newFolderElement = addFileToTreeStructure(result, parentPath, 'folder');
-                    if (newFolderElement) {
-                        // 定位到新创建的文件夹并进入重命名模式
-                        scrollToElement(newFolderElement);
-                        setTimeout(() => {
-                            const nameSpan = newFolderElement.querySelector('.file-name');
-                            if (nameSpan) {
-                                startInlineRename(nameSpan);
-                                showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
-                            }
-                        }, 100);
-                    } else {
-                        // 如果JS更新失败，回退到重新加载
-                        debugLog('JS更新失败，回退到重新加载文件结构');
-                        loadFileStructure();
-                        setTimeout(() => {
-                            const newFolderElement = findNewlyCreatedFile(result, 'folder');
-                            if (newFolderElement) {
-                                const nameSpan = newFolderElement.querySelector('.file-name');
-                                if (nameSpan) {
-                                    startInlineRename(nameSpan);
-                                    showFileOperationFeedback('文件夹创建成功，请输入名称', 'success');
-                                }
-                            }
-                        }, 200);
-                    }
-                } else {
-                    showFileOperationFeedback('创建文件夹失败', 'error');
-                }
-            });
-        }
-    }
+    // 文件操作函数：旧版 createNewNote/createNewFolder（靠 addFileToTreeStructure 拼 DOM，属 jsTree 前的自定义树系统，
+    // 在 jsTree 下永远找不到父容器 → 回退全量重载 → “视图错乱/要刷新页面才可见”的根因）已于 2026-10-15 删除，
+    // 统一改走 createNewNoteInFolder / createNewFolderInFolder（jsTree create_node 即时插入）。
     
     // 文件操作状态反馈
     function showFileOperationFeedback(message, type = 'info') {
@@ -9550,8 +9527,7 @@ window.handleRenameKeydown = function(event, input) {
     window.switchToPreview = switchToPreview;
     window.switchToEdit = switchToEdit;
     window.saveCurrentFile = saveCurrentFile;
-    window.createNewNote = createNewNote;
-    window.createNewFolder = createNewFolder;
+    // 2026-10-15：旧版 createNewNote/createNewFolder 已删（jsTree 路径统一由 createNewNoteInRoot/createNewFolderInRoot 提供）
     window.validateBackendFunctions = validateBackendFunctions;
     window.testBridgeConnection = testBridgeConnection;
     
@@ -11166,6 +11142,8 @@ window.handleRenameKeydown = function(event, input) {
     //      IIFE 内定义的函数必须挂到 window 才能被点击事件找到（缺失时静默无反应）。
     //      清单由静态扫描内联事件引用生成，勿凭印象增删。 ----
     window.addDebugLog = addDebugLog;
+    // 菜单形态切换：被另一 <script> 块里的 llShowUnifiedMenu 调用，必须导出（CodeReview C1，2026-10-15）
+    window._applyFileMenuMode = _applyFileMenuMode;
     window.createNewNoteInRoot = createNewNoteInRoot;
     window.createNewFolderInRoot = createNewFolderInRoot;
     window.selectFile = selectFile;
@@ -11598,6 +11576,8 @@ function llShowUnifiedMenu(x, y) {
     menu.style.left = x + 'px';
     menu.style.top = y + 'px';
     menu.classList.remove('hidden');
+    // 文本/文件右键共用本菜单：先复位为通用形态（隐藏文件夹专属三项，2026-10-15）
+    if (window._applyFileMenuMode) window._applyFileMenuMode('');
     var rect = menu.getBoundingClientRect();
     if (rect.right > window.innerWidth) menu.style.left = (x - rect.width) + 'px';
     if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
