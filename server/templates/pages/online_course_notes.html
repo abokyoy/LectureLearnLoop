@@ -752,13 +752,15 @@ window.jsTreeLoading = false;
     /* 展开/收缩图标 - 现代化设计 */
     #file-tree.jstree-default .jstree-ocl {
         width: 20px;
-        height: 20px;
+        /* 主题 .jstree-icon 是 vertical-align:top，若高度小于行高（32px）箭头会贴顶与文字错位；
+           撑满行高并居中，与 anchor/node 的 32px 对齐（2026-10-15 错位修复） */
+        height: 32px;
+        line-height: 32px;
         margin-right: 4px;
         background-image: none;
         color: #9ca3af; /* 更柔和的灰色 */
         font-family: 'Material Icons Outlined';
         font-size: 16px; /* 适配24px图标 */
-        line-height: 20px;
         text-align: center;
         transition: all 0.2s ease; /* 添加过渡效果 */
         border-radius: 2px; /* 轻微圆角 */
@@ -770,6 +772,11 @@ window.jsTreeLoading = false;
     
     #file-tree.jstree-default .jstree-open > .jstree-ocl:before {
         content: 'keyboard_arrow_down'; /* 向下箭头 */
+    }
+    
+    /* 文件（leaf）节点无可展开内容，不渲染箭头（主题靠 sprite 空白格隐藏，我们换成字体图标后需显式清空，评审 M4） */
+    #file-tree.jstree-default .jstree-leaf > .jstree-ocl:before {
+        content: '';
     }
     
     /* 展开/收缩图标悬停效果 */

@@ -33,8 +33,9 @@
         this.transcript = '';           // 本次会话 final 全文
         this.finalLines = [];           // 四期：逐句 final 历史（SPA 片段切换后回填转写面板）
         this.sinceSummary = '';         // 上次总结以来新增（UI 侧总结逻辑使用）
-        this.summaryLog = '';           // 段落总结累计（markdown）
+        this.summaryLog = '';           // 段落总结累计（markdown，兼容展示层引用）
         this.shotsLog = '';             // 截图 markdown 累计
+        this.timeline = [];             // 2026-10-15：总结/截图按用户操作时间序记录 [{kind, md}]，成文时交错排布
 
         // 音频/会话内部状态
         this.audioCtx = null; this.analyser = null; this.procNode = null;
@@ -148,7 +149,7 @@
             var cur = await this.api('/api/notes/content?path=' + encodeURIComponent(o.notePath));
             this.baseContent = (cur && cur.data && cur.data.exists) ? (cur.data.content || '') : '';
         } catch (e) { this.baseContent = ''; }
-        this.transcript = ''; this.finalLines = []; this.sinceSummary = ''; this.summaryLog = ''; this.shotsLog = '';
+        this.transcript = ''; this.finalLines = []; this.sinceSummary = ''; this.summaryLog = ''; this.shotsLog = ''; this.timeline = [];
 
         await global.llAsr.start(cfg);
         var self = this;
@@ -276,6 +277,7 @@
     /** UI 侧总结逻辑产出后回填（同样进入单一写者会话块） */
     LLRecorder.prototype.appendSummary = function (mdText) {
         this.summaryLog += (this.summaryLog ? '\n\n' : '') + mdText;
+        this.timeline.push({ kind: 'summary', md: mdText });
         this.sinceSummary = '';
         this.markDirty();
     };
@@ -283,13 +285,20 @@
     /** 截图 markdown（![](截图/xxx.png)）纳入会话，由 autosave 单写者入库 */
     LLRecorder.prototype.addScreenshot = function (markdown) {
         this.shotsLog += (this.shotsLog ? '\n\n' : '') + markdown;
+        this.timeline.push({ kind: 'shot', md: markdown });
         this.markDirty();
     };
 
     LLRecorder.prototype.buildContent = function () {
+        // 2026-10-15 用户裁定：截图插在最近一次总结之下、后续总结接在截图之后，
+        // 即总结/截图按实际发生时间交错排布（旧版是两个独立段落区，截图永远沉底）。
+        // timeline 为空或无有效内容（外部直赋 logs 的调试/恢复路径）时回退旧式分区，不丢内容（评审 M2）。
+        var parts = this.timeline.map(function (t) { return (t.md || '').trim(); }).filter(Boolean);
+        if (!parts.length) {
+            parts = [this.summaryLog && this.summaryLog.trim(), this.shotsLog && this.shotsLog.trim()].filter(Boolean);
+        }
         var session = '# 听课笔记\n\n## 转写全文\n\n' + this.transcript +
-            '\n\n## 段落总结\n\n' + (this.summaryLog || '') +
-            ((this.shotsLog) ? '\n\n## 截图\n\n' + this.shotsLog + '\n' : '\n');
+            '\n\n## 段落总结与截图\n\n' + parts.join('\n\n') + '\n';
         var base = (this.baseContent || '').trim();
         if (!base) return session;
         return base + '\n\n---\n\n' + session;
