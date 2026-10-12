@@ -6,6 +6,18 @@
  */
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 登录态跨窗口同步：未勾选“记住登录”时 token 只存在于主窗口 sessionStorage（子窗口不共享），
+// 由主进程 auth:getToken 按需拉取主窗口实时 token 缓存在此；页面 token() 读缓存，
+// 关键操作前 await llAuth.refresh() 取最新值（overlay.html / note_picker.html）。
+let __llAuthToken = '';
+contextBridge.exposeInMainWorld('llAuth', {
+  getToken: () => __llAuthToken,
+  refresh: async () => {
+    try { __llAuthToken = (await ipcRenderer.invoke('auth:getToken')) || ''; } catch (e) { /* 保留当前缓存 */ }
+    return __llAuthToken;
+  },
+});
+
 contextBridge.exposeInMainWorld('llShell', {
   getServerBase: () => ipcRenderer.invoke('app:getServerBase'),
   openOverlay: () => ipcRenderer.invoke('overlay:open'),

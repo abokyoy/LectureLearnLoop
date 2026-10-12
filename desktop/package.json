@@ -1,6 +1,6 @@
 {
   "name": "lecturelearnloop-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "LectureLearnLoop Electron 桌面客户端（悬浮窗录音 + 学习闭环）",
   "main": "main.js",
   "scripts": {

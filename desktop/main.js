@@ -21,6 +21,22 @@ function readServerUrlFile() {
 }
 const SERVER_BASE = process.env.LL_SERVER || readServerUrlFile() || 'http://127.0.0.1:9992';
 
+// 客户版连接的是 http://域名:端口（非安全上下文），Chromium 会把 navigator.mediaDevices 置为
+// undefined → 悬浮窗录音报 "Cannot read properties of undefined (reading 'getDisplayMedia')"；
+// 开发机用 127.0.0.1（回环天然安全）故从不复现。这里把当前服务地址明确视为安全上下文。
+// 必须在 app ready 前追加；回环/https 地址下不追加。用 URL().origin 归一化：
+// Chromium 要求开关值是纯 origin（带尾斜杠/路径会被静默忽略，导致修复失效）；
+// 客户手改 server_url.txt 时从地址栏粘贴常带 "/"，此处兜住。
+if (/^http:\/\//i.test(SERVER_BASE)) {
+  try {
+    const _u = new URL(SERVER_BASE);
+    const _isLoopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(_u.hostname);
+    if (!_isLoopback) {
+      app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', _u.origin);
+    }
+  } catch (e) { /* 地址畸形：不追加开关，后续 loadURL 会走 did-fail-load 提示链路 */ }
+}
+
 let mainWindow = null;
 let overlayWindow = null;
 let captureWindow = null;
@@ -69,6 +85,25 @@ function createMainWindow() {
   loadServerPage(mainWindow);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
+
+/* ------------------------------------------------------- 登录态跨窗口同步 */
+// 登录未勾选“记住登录”时 token 只存在主窗口 sessionStorage，而子窗口（悬浮窗/笔记选择窗）
+// 是独立 BrowserWindow，sessionStorage 不跨窗口共享 → 子窗口会误报“未登录”。
+// 方案：主进程提供 auth:getToken 按需拉取（与 app:getServerBase 同口径），子窗口在关键操作前
+// 经 preload 的 llAuth.refresh() 实时读主窗口 token；避免 argv 快照的旧 token 滞留/登出不生效问题。
+async function getMainAuthToken() {
+  if (!mainWindow || mainWindow.isDestroyed()) return '';
+  const js = "(window.llGetToken ? window.llGetToken() : (localStorage.getItem('ll_token') || sessionStorage.getItem('ll_token') || '')) || ''";
+  try {
+    // executeJavaScript 在主窗口页面未加载完时会排队，加 2s 兜底超时防挂起
+    return await Promise.race([
+      mainWindow.webContents.executeJavaScript(js),
+      new Promise((res) => setTimeout(() => res(''), 2000)),
+    ]) || '';
+  } catch (e) { return ''; }
+}
+
+ipcMain.handle('auth:getToken', async () => getMainAuthToken());
 
 /* ------------------------------------------------------- 悬浮录音窗（P4） */
 

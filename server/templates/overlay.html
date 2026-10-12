@@ -95,8 +95,9 @@
   };
 
   function token() {
-    // 四期：记住登录在 localStorage，会话级在 sessionStorage（跨窗口不可见时提示主窗口登录）
-    try { return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
+    // 四期：记住登录在 localStorage，会话级在主窗口 sessionStorage（本窗 sessionStorage 跨窗口不可见），
+    // 兜底读 preload 经 auth:getToken 拉取的主窗口实时 token 缓存（desktop/preload.js llAuth）
+    try { return localStorage.getItem(TOKEN_KEY) || (window.llAuth && window.llAuth.getToken()) || sessionStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; }
   }
   function toast(msg, ms) {
     const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -226,6 +227,8 @@
   async function onStart() {
     if (rec.state === 'paused') { rec.resume(); return; }
     if (rec.state !== 'idle') return;
+    // 先拉取主窗口实时登录态再判定（未勾选“记住登录”时本窗 storage 里没有 token；登出后也能及时拦截）
+    try { if (window.llAuth && window.llAuth.refresh) await window.llAuth.refresh(); } catch (e) { /* 降级走 storage 兜底 */ }
     if (!token()) { toast('未登录：请先在主窗口登录', 3000); return; }
     if (!window.llAsr) { toast('Electron 桥不可用（请在桌面端打开）', 3000); return; }
     const pick = await pickNote();

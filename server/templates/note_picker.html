@@ -53,7 +53,11 @@
   let items = [];           // /api/notes/list 返回
   let selected = null;      // 当前选中项
 
-  function token() { return localStorage.getItem(TOKEN_KEY) || ''; }
+  function token() {
+    // 本窗是独立窗口：未勾选“记住登录”时 localStorage 里没有 token（主窗口只存它自己的 sessionStorage），
+    // 兜底读 preload 经 auth:getToken 拉取的主窗口实时 token 缓存（desktop/preload.js llAuth）
+    return localStorage.getItem(TOKEN_KEY) || (window.llAuth && window.llAuth.getToken()) || '';
+  }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
   function fail(msg) { $('err').textContent = msg; }
   async function api(path, opts) {
@@ -140,7 +144,11 @@
   $('search').oninput = render;
   $('newname').onkeydown = (e) => { if (e.key === 'Enter') createNew(); };
 
-  load();
+  // 首屏先拉取主窗口实时登录态再加载列表（未勾选“记住登录”时本窗 storage 里没有 token）
+  (async () => {
+    try { if (window.llAuth && window.llAuth.refresh) await window.llAuth.refresh(); } catch (e) { /* 降级走 storage 兜底 */ }
+    load();
+  })();
 })();
 </script>
 </body>
