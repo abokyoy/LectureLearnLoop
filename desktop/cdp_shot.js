@@ -14,7 +14,7 @@ function getJSON(url) {
 
 (async () => {
   const targets = await getJSON('http://127.0.0.1:9222/json');
-  const page = targets.find((t) => t.type === 'page' && /online_course|6001/.test(t.url) && !/note-picker|overlay|capture/.test(t.url))
+  const page = targets.find((t) => t.type === 'page' && /online_course|9992|oicp/.test(t.url) && !/note-picker|overlay|capture/.test(t.url))
     || targets.find((t) => t.type === 'page');
   if (!page) throw new Error('no page target');
   console.log('target:', page.url);

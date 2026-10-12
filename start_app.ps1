@@ -1,24 +1,24 @@
 # LectureLearnLoop one-click launcher (portable delivery entry)
 # Usage: powershell -ExecutionPolicy Bypass -File .\start_app.ps1 [-Dev]
-#   default: start server(:6001) + portable client dist\win-unpacked\LectureLearnLoop.exe
+#   default: start server(:9992) + portable client dist\win-unpacked\LectureLearnLoop.exe
 #   -Dev   : run Electron from source (desktop/) with CDP :9222 for automation
 param([switch]$Dev)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # 1) server: start only if port not listening (hidden background process)
-$up = Test-NetConnection -ComputerName 127.0.0.1 -Port 6001 -InformationLevel Quiet -WarningAction SilentlyContinue
+$up = Test-NetConnection -ComputerName 127.0.0.1 -Port 9992 -InformationLevel Quiet -WarningAction SilentlyContinue
 if (-not $up) {
-    Write-Output 'starting server on :6001 ...'
+    Write-Output 'starting server on :9992 ...'
     Start-Process -FilePath 'python' -ArgumentList (Join-Path $root 'server\app.py') `
         -WorkingDirectory (Join-Path $root 'server') -WindowStyle Hidden
     for ($i = 0; $i -lt 20; $i++) {
         Start-Sleep -Seconds 1
-        if (Test-NetConnection -ComputerName 127.0.0.1 -Port 6001 -InformationLevel Quiet -WarningAction SilentlyContinue) { $up = $true; break }
+        if (Test-NetConnection -ComputerName 127.0.0.1 -Port 9992 -InformationLevel Quiet -WarningAction SilentlyContinue) { $up = $true; break }
     }
     if (-not $up) { Write-Error 'server not up in 20s. Check: pip install -r server\requirements.txt and server\.env'; exit 1 }
 }
-Write-Output 'server OK (http://127.0.0.1:6001)'
+Write-Output 'server OK (http://127.0.0.1:9992)'
 
 # 2) client
 if ($Dev) {

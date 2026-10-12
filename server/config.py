@@ -29,7 +29,7 @@ for _d in (DATA_DIR, VAULT_DIR, LOG_DIR):
 # ---------------------------------------------------------------- .env
 load_dotenv(BASE_DIR / ".env")
 
-SERVER_PORT = int(os.getenv("SERVER_PORT", "6001"))
+SERVER_PORT = int(os.getenv("SERVER_PORT", "9992"))
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 # P6 实测：Deepgram nova-2 language=multi 对中文音频返回空转写，中文课程默认 zh-CN。

@@ -4,7 +4,7 @@
 const http = require('http');
 const WebSocket = require('ws');
 
-const BASE = process.argv[2] || 'http://127.0.0.1:6001';
+const BASE = process.argv[2] || 'http://127.0.0.1:9992';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function getJSON(url) {

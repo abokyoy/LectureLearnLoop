@@ -6,9 +6,20 @@
  */
 const { app, BrowserWindow, ipcMain, session, desktopCapturer, screen, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const asr = require('./asr_proxy');
 
-const SERVER_BASE = process.env.LL_SERVER || 'http://127.0.0.1:6001';
+// 服务器地址：环境变量 > 随附 server_url.txt（与 main.js 同目录或 resources 下，打包时写入）> 本地默认 127.0.0.1:9992
+// 不依赖 app.isPackaged（win-unpacked 目录注入方式下其判定不可靠），直接按文件存在性解析
+function readServerUrlFile() {
+  var cands = [path.join(__dirname, 'server_url.txt')];
+  try { cands.push(path.join(process.resourcesPath, 'server_url.txt')); } catch (e) {}
+  for (var i = 0; i < cands.length; i++) {
+    try { if (fs.existsSync(cands[i])) return fs.readFileSync(cands[i], 'utf8').trim(); } catch (e) {}
+  }
+  return '';
+}
+const SERVER_BASE = process.env.LL_SERVER || readServerUrlFile() || 'http://127.0.0.1:9992';
 
 let mainWindow = null;
 let overlayWindow = null;
@@ -49,8 +60,8 @@ function createMainWindow() {
       setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) loadServerPage(mainWindow); }, 2000);
     } else {
       mainWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
-        '<h2 style="font-family:sans-serif">⚠️ 无法连接服务端 ' + SERVER_BASE + '</h2>' +
-        '<p style="font-family:sans-serif">请先运行 <code>python server/app.py</code>，然后重启本应用。</p>'));
+        '<h2 style="font-family:sans-serif">⚠️ 无法连接服务器 ' + SERVER_BASE + '</h2>' +
+        '<p style="font-family:sans-serif">请检查本机网络后重新打开本应用；若仍无法连接，请联系管理员确认服务是否在线。</p>'));
     }
   });
   mainWindow.webContents.on('did-finish-load', () => { serverDownRetries = 0; });

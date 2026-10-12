@@ -105,5 +105,6 @@ if __name__ == "__main__":
     if not config.PHOTO_DISABLE:
         from services import photo_drop
         photo_drop.start_in_background()
-    # P006 修复：debug=False + 仅监听回环地址（手机传图走独立小服务，不扩大主服务暴露面）
-    application.run(host="127.0.0.1", port=config.SERVER_PORT, debug=False, threaded=True)
+    # P006 曾只监听回环；2026-10-15 用户裁定改 0.0.0.0：贝锐穿透 9992 线经局域网 IP 回源，
+    # 验收口径 192.168.0.113:9992 可访问；暴露面由 JWT 认证 + 开放注册业务自行控制
+    application.run(host="0.0.0.0", port=config.SERVER_PORT, debug=False, threaded=True)

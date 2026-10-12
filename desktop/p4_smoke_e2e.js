@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const asr = require('./asr_proxy');
 
-const BASE = process.env.LL_SERVER || 'http://127.0.0.1:6001';
+const BASE = process.env.LL_SERVER || 'http://127.0.0.1:9992';
 const WAV = path.join(__dirname, '..', 'server', 'tests', 'fixtures', 'lecture_sample.wav');
 const USER = 'p4_user_' + Date.now().toString().slice(-6);
 const PWD = 'P4pass123!';
