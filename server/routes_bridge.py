@@ -2704,12 +2704,83 @@ def point_generate_practice(pid):
         return _ok({"success": False, "error": f"题目格式校验失败: {e}"})
 
 
-def _grade_practice_set(questions, answers, log_tag, ident):
-    """判分公共函数（错题学习单元升级 P3 抽取，2026-10-14，计划：禁止复制粘贴）：
-    客观题本地判分 + 简答题 LLM 批量判分。practice-submit 与 error-set-submit 共用。
+def _call_vision(uid, prompt, images, scene):
+    """判分视觉通道包装（2026-10-15 用户裁定：拍照答案判分与错题智能分析同链路）：
+    call_llm_vision 统一路由——用户视觉端点优先不扣分 → 系统 VL 兜底扣分，同一计费链。
+    独立模块级函数便于单测注入（模式同 _llm_call）。"""
+    from llm_provider_factory import call_llm_vision  # 延迟导入避免启动环（同 error_analyze 约定）
+    return call_llm_vision(uid, prompt, images, context=scene, scene=scene)
+
+
+def _resolve_vault_images(uid, *md_texts):
+    """从 MD 文本提取 vault 内有效图片并构建 payload（相对路径去重保序）：
+    与错题分析同口径 md_image_paths 提取 → _bridge_path 防穿越并校验真实存在；
+    2026-10-15 评审 m2/m3/n1：返回 [(rel, payload)] 消下游二次解析与重复 stat，
+    空文件/PIL 不可解码的坏图丢弃并留痕（grade_img_unreadable），避免坏图阻断整批判分。"""
+    from services import error_analyze as _ea  # 延迟导入（PIL 等重依赖不在启动期加载）
+    out, seen = [], set()
+    for md in md_texts:
+        for rel in _ea.md_image_paths(md or ""):
+            if rel in seen:
+                continue
+            seen.add(rel)
+            p = _bridge_path(uid, rel)
+            if p is None or not p.is_file():
+                log.log_error("bridge", "grade_img_unresolved", f"uid={uid} rel={rel}")
+                continue
+            try:
+                if p.stat().st_size == 0:
+                    raise ValueError("空文件")
+                _ea.Image.open(p).verify()  # 坏图探测（verify 只校验不解全图）
+                payload = _ea._image_payload_items(str(p), _ea._mime_of(rel))
+            except Exception as e:  # noqa: BLE001
+                log.log_error("bridge", "grade_img_unreadable", f"uid={uid} rel={rel} err={e}")
+                continue
+            out.append((rel, payload))
+    return out
+
+
+def _grade_short_vision(uid, q, ua, imgs):
+    """单题拍照判分（视觉模型看图批改手写过程）：题干/作答内图片附进请求，
+    返回 {is_correct, comment}；失败抛异常由调用方整批失败处理（与文本通道同口径，
+    判分不成功不落库）。imgs 为 _resolve_vault_images 已解析的 [(rel, payload)]
+    （评审 m3/n1：payload 在分流时一次构建，此处直接使用，图片 payload 复用
+    error_analyze._image_payload_items 超大图压缩同口径）。"""
+    stem = str(q.get("question") or "")[:500]
+    ref = str(q.get("correct_answer") or "")[:500]
+    expl = str(q.get("explanation") or "")[:500]
+    # 文字作答剔除图片引用行（图片已另附 payload，prompt 内留原始 MD 对模型是噪声）；
+    # 剔完为空 = 纯照片作答，明确告知以照片为准
+    clean = re.sub(r"^\s*!\[[^\]]*\]\(\s*(?:截图|attachments)/[^)\s]*\s*\)\s*$", "",
+                   str(ua or ""), flags=re.M).strip()
+    ans = (clean or "（无文字作答，解答以照片为准）")[:500]
+    images = [pl for _rel, pl in imgs]
+    expl_line = ("解析: " + expl + "\n") if expl else ""
+    prompt = f"""你是判题助手。学生提交了作答（可能含手写解题过程的照片，共 {len(images)} 张附图，请逐张看清照片中的过程与结论）。
+题目: {stem}
+参考答案: {ref}
+{expl_line}学生文字作答: {ans}
+请结合照片内容与文字作答，判断学生答案是否答对（结论与参考答案要点一致即判对，措辞可不同；过程严重不完整或答非所问判错）。
+只返回 JSON 数组，例如: [{{"index": 0, "is_correct": true, "comment": "一句中文点评"}}]，不要其他文字："""
+    resp = _call_vision(uid, prompt, images, "简答题拍照判分")
+    graded = _parse_llm_json_array(resp)
+    graded_list = [x for x in graded if isinstance(x, dict)] if isinstance(graded, list) else []
+    if not graded_list:
+        raise ValueError("判分结果为空")
+    return {"is_correct": bool(graded_list[0].get("is_correct")),
+            "comment": str(graded_list[0].get("comment") or "")}
+
+
+def _grade_practice_set(uid, questions, answers, log_tag, ident):
+    """判分公共函数（错题学习单元升级 P3 抽取，2026-10-14，计划：禁止复制粘贴；
+    2026-10-15 增拍照判分分支）：客观题本地判分 + 简答题分流——
+    作答/题干含 vault 图片时走视觉模型看图批改（与错题智能分析同一条 call_llm_vision
+    链路与路由计费口径，用户裁定）；纯文字简答仍走 LLM 批量文本判分。
+    practice-submit 与 error-set-submit 共用。
     返回 (results, None)；失败返回 (None, err_payload)，调用方 _ok(err_payload) 原样返回。"""
     results = []
     short_items = []
+    vision_items = []
     for i, (q, a) in enumerate(zip(questions, answers)):
         t = (q.get("type") or "single") if isinstance(q, dict) else "single"
         user_ans = str(a if a is not None else "").strip()
@@ -2725,8 +2796,26 @@ def _grade_practice_set(questions, answers, log_tag, ident):
             ok = bool(un) and any(un == _fill_norm(v) for v in correct_raw.replace("｜", "|").split("|") if v.strip())
             results.append({"is_correct": ok, "comment": ""})
         else:
-            short_items.append((i, q, user_ans))
+            # 分流：作答或题干含有效图片引用 → 视觉逐题看图批改；否则文字批量判分
+            # （payload 在此一次解析，随 vision_items 下传，避免重复提图/解码）
+            imgs = _resolve_vault_images(uid, user_ans, str(q.get("question") or ""))
+            if imgs:
+                vision_items.append((i, q, user_ans, imgs))
+            else:
+                short_items.append((i, q, user_ans))
             results.append({"is_correct": False, "comment": ""})  # 占位，稍后由 LLM 判分覆盖
+
+    # 拍照判分（评审 m1：视觉先跑）：逐题视觉批改，任一题失败即整批失败不落库。
+    # 先于文字批量是为了：若文本通道已扣分后视觉才失败，已扣不退会造成计费泄漏；
+    # 视觉先失败则整批未进文字通道，与「整批失败不落库」语义一致。
+    for idx, q, ua, imgs in vision_items:
+        try:
+            results[idx] = _grade_short_vision(uid, q, ua, imgs)
+        except cr.InsufficientCreditsError as e:
+            return None, {"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance}
+        except Exception as e:  # noqa: BLE001
+            log.log_error("bridge", log_tag, f"{ident} vision idx={idx} err={e}")
+            return None, {"success": False, "error": f"拍照答案判分失败，请重试: {e}"}
 
     if short_items:
         lines = "\n\n".join(
@@ -2757,6 +2846,7 @@ def _grade_practice_set(questions, answers, log_tag, ident):
         except Exception as e:  # noqa: BLE001
             log.log_error("bridge", log_tag, f"{ident} err={e}")
             return None, {"success": False, "error": f"简答题判分失败，请重试: {e}"}
+
     return results, None
 
 
@@ -2784,7 +2874,7 @@ def point_practice_submit(pid):
     kp_importance = float(row[1]) if len(row) > 1 and row[1] is not None else 5.0
 
     # ---- 1)+2) 判分（P3 抽公共函数：客观题本地 + 简答题 LLM 批量，与 error-set-submit 同一实现） ----
-    results, grade_err = _grade_practice_set(questions, answers, "practice_short_grade", f"pid={pid}")
+    results, grade_err = _grade_practice_set(g.user_id, questions, answers, "practice_short_grade", f"pid={pid}")
     if grade_err is not None:
         return _ok(grade_err)
 
@@ -3011,7 +3101,7 @@ def practice_error_set_submit():
     if root_ids and len(roots) != len(set(root_ids)):
         return _ok({"success": False, "error": "部分错题不存在或不属于当前用户"})
 
-    results, grade_err = _grade_practice_set(questions, answers, "error_set_grade", f"subject={subject}")
+    results, grade_err = _grade_practice_set(g.user_id, questions, answers, "error_set_grade", f"subject={subject}")
     if grade_err is not None:
         return _ok(grade_err)
 

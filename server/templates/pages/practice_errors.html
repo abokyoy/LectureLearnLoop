@@ -33,6 +33,10 @@
 <!-- 错题题干公式渲染（2026-10-13）：KaTeX 本地 vendor + md_render.js 公共件（与知识库页同一套文件） -->
 <link rel="stylesheet" href="/static/vendor/vditor/dist/js/katex/katex.min.css">
 <script src="/static/vendor/vditor/dist/js/katex/katex.min.js"></script>
+<!-- MD 渲染管线（拍照判分 2026-10-15 补齐）：无 marked/DOMPurify 时 hydrateMdSlots 始终走纯文本回退，
+     作答照片/图片题干不显示；与知识库页同 CDN 同版本（hydrateMdSlots 缺件时仍有文字回退，不白屏） -->
+<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
 <script src="/static/js/md_render.js"></script>
 <!-- 错题学习单元升级 P2（2026-10-14）：行内双星/记忆面板依赖 widgets.js（LLStars 等） -->
 <script src="/static/js/widgets.js"></script>

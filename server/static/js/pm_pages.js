@@ -560,6 +560,45 @@
         });
     }
 
+    // ---------------- 作答拍照上传（简答题拍照判分，2026-10-15 用户裁定） ----------------
+    // 手写解题过程照片上传走错题录入同链路 /api/vault/screenshot（存 vault 截图/）；
+    // 答案内部形态 = 文字 + 换行的 ![手写解答](截图/x.png) 行，回显时拆分、提交时合成
+    // user_answer（后端判分分流认同样的 MD 图片引用，与错题智能分析同一视觉链路）。
+    var PP_IMG_MD_RE = /!\[[^\]]*\]\(\s*(截图|attachments)\/[^)\s]*\s*\)/g;
+    function ppAnsText(a) { return String(a || '').replace(PP_IMG_MD_RE, '').trim(); }
+    function ppAnsRelList(a) {
+        var out = [];
+        (String(a || '').match(PP_IMG_MD_RE) || []).forEach(function (md) {
+            var m = /\]\(\s*([^)\s]+)\s*\)/.exec(md);
+            if (m) out.push(m[1]);
+        });
+        return out;
+    }
+    function ppComposeAns(text, rels) {
+        var imgLines = (rels || []).map(function (r) { return '![手写解答](' + r + ')'; });
+        return [String(text || '').trim()].concat(imgLines).filter(Boolean).join('\n');
+    }
+    function ppImgBridge() {
+        if (window.pybridge && window.pybridge.getImageAsBase64) return window.pybridge;
+        if (window.bridge && window.bridge.getImageAsBase64) return window.bridge;
+        return null;
+    }
+    function ppUploadPhoto(file) {
+        return new Promise(function (resolve, reject) {
+            if (!file || !/^image\//i.test(file.type || '')) { reject(new Error('仅支持图片文件')); return; }
+            var fr = new FileReader();
+            fr.onload = function () {
+                postJSON('/api/vault/screenshot', { image_b64: String(fr.result) }).then(function (d) {
+                    d = (d && d.data) || d; // 双层契约剥壳（同错题录入 uploadImage 口径）
+                    if (d && d.success && d.rel) resolve(d.rel);
+                    else reject(new Error((d && d.error) || '图片保存失败'));
+                }).catch(reject);
+            };
+            fr.onerror = function () { reject(new Error('读取图片数据失败')); };
+            fr.readAsDataURL(file);
+        });
+    }
+
     // ---------------- 公共练习引擎 pmPractice（错题学习单元升级 P3，2026-10-14） ----------------
     // 组卷→逐题作答→提交→结果面板状态机（自知识点详情页内嵌 prac 状态机收敛为顶层公共件；
     // 错题练习页用本引擎 + error-pool/error-set-submit/analogy 端点）。弹窗形态，ESC/关闭可退。
@@ -567,7 +606,7 @@
     function pmPractice(host, opts) {
         var old = host.querySelector('[data-pp-overlay]');
         if (old) { if (old._onEsc) document.removeEventListener('keydown', old._onEsc); old.remove(); }
-        var st = { qs: [], ans: [], idx: 0, gen: 0, busy: false };
+        var st = { qs: [], ans: [], idx: 0, gen: 0, busy: false, uploading: false, imgs: {} };
         var ov = document.createElement('div');
         ov.setAttribute('data-pp-overlay', '1');
         ov.className = 'fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto';
@@ -607,7 +646,42 @@
             var r = card.querySelector('input[name="pp-ans"]:checked');
             if (r) { st.ans[st.idx] = r.value; return; }
             var inp = card.querySelector('[data-pp-text]');
-            if (inp) { var v = inp.value.trim(); st.ans[st.idx] = v ? v : null; }
+            if (inp) {
+                if (card.querySelector('[data-pp-photo]')) {
+                    // 简答：文字 + 照片引用合入 user_answer（后端据此分流视觉判分）；n3 兜底防 undefined
+                    st.ans[st.idx] = ppComposeAns(inp.value, st.imgs[st.idx] || []) || null;
+                } else {
+                    var v = inp.value.trim(); st.ans[st.idx] = v ? v : null;
+                }
+            }
+        }
+        function renderPhotoPrev() {
+            var box = card.querySelector('[data-pp-photo-prev]');
+            if (!box) return;
+            var rels = st.imgs[st.idx] || [];
+            box.innerHTML = rels.map(function (rel, k) {
+                return '<div class="relative"><img data-pp-rel="' + esc(rel) + '" alt="手写解答照片" class="w-24 h-24 object-cover rounded-clbtn border border-cl-border bg-cl-bg">'
+                    + '<button type="button" class="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-cl-danger text-white text-xs leading-5" data-pp-rm="' + k + '" aria-label="移除照片">×</button></div>';
+            }).join('');
+            var br = ppImgBridge();
+            box.querySelectorAll('img[data-pp-rel]').forEach(function (img) {
+                if (!br) { img.setAttribute('alt', '图片预览不可用（不影响提交判分）'); return; }
+                br.getImageAsBase64(img.getAttribute('data-pp-rel'), function (result) {
+                    try {
+                        var resp = JSON.parse(result);
+                        // n2（评审）：用 card 而非 box 做存活守卫——整题重渲染后 box 已随
+                        // card.innerHTML 替换脱离 DOM，detached 子树内 contains 仍为 true 会误写旧图
+                        if (!card.contains(img)) return; // 已切题/已移除 → 回包丢弃
+                        if (resp.success && resp.dataUrl) img.setAttribute('src', resp.dataUrl);
+                    } catch (e) { /* 解析失败保持占位 */ }
+                });
+            });
+            box.querySelectorAll('[data-pp-rm]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    (st.imgs[st.idx] || []).splice(parseInt(btn.getAttribute('data-pp-rm'), 10), 1);
+                    renderPhotoPrev();
+                });
+            });
         }
         function renderQ() {
             var q = st.qs[st.idx], total = st.qs.length;
@@ -641,8 +715,13 @@
                 h += '<input type="text" data-pp-text maxlength="200" placeholder="填写空格处的答案"'
                     + ' class="w-full rounded-clbtn border border-cl-border px-3 py-2 text-sm text-cl-text focus:outline-none focus:border-cl-primary" value="' + esc(st.ans[st.idx] || '') + '">';
             } else {
-                h += '<textarea data-pp-text rows="5" maxlength="2000" placeholder="写下你的答案，提交后由 AI 对照参考答案判分"'
-                    + ' class="w-full rounded-clbtn border border-cl-border px-3 py-2 text-sm text-cl-text focus:outline-none focus:border-cl-primary">' + esc(st.ans[st.idx] || '') + '</textarea>';
+                h += '<textarea data-pp-text rows="5" maxlength="2000" placeholder="写下你的答案，或点下方按钮拍照上传手写解题过程，提交后由 AI 对照参考答案判分（照片由视觉模型看图批改）"'
+                    + ' class="w-full rounded-clbtn border border-cl-border px-3 py-2 text-sm text-cl-text focus:outline-none focus:border-cl-primary">' + esc(ppAnsText(st.ans[st.idx])) + '</textarea>';
+                h += '<div class="flex items-center gap-2 mt-2">'
+                    + '<button type="button" class="cl-btn-ghost !h-8 text-xs" data-pp-photo>' + icon('camera', 'w-3.5 h-3.5') + ' 上传手写过程</button>'
+                    + '<span class="text-[11px] text-cl-text-3" data-pp-photo-hint></span></div>';
+                h += '<div class="flex flex-wrap gap-3 mt-2" data-pp-photo-prev></div>';
+                h += '<input type="file" accept="image/*" multiple class="hidden" data-pp-photo-input>';
             }
             h += '<p class="text-xs text-cl-danger mt-2 min-h-4" data-pp-msg></p>';
             h += '<div class="flex items-center justify-between mt-3">'
@@ -653,10 +732,50 @@
             bindClose();
             var msg = card.querySelector('[data-pp-msg]');
             var prev = card.querySelector('[data-pp-prev]');
-            if (prev && st.idx > 0) prev.addEventListener('click', function () { pickAns(); st.idx--; renderQ(); });
+            if (prev && st.idx > 0) prev.addEventListener('click', function () { if (st.uploading) return; pickAns(); st.idx--; renderQ(); });
+            if (card.querySelector('[data-pp-photo]')) {
+                // 回显：从已存答案恢复照片列表（「上一题」往返场景）
+                st.imgs[st.idx] = ppAnsRelList(st.ans[st.idx]);
+                var pBtn = card.querySelector('[data-pp-photo]');
+                var pInp = card.querySelector('[data-pp-photo-input]');
+                var pHint = card.querySelector('[data-pp-photo-hint]');
+                pBtn.addEventListener('click', function () { pInp.click(); });
+                pInp.addEventListener('change', function () {
+                    var files = Array.prototype.slice.call(pInp.files || []);
+                    pInp.value = '';
+                    if (!files.length) return;
+                    // 评审 M1：异步回调禁止动态读 st.idx——快照目标题与数组引用；
+                    // 并锁定上一题/下一题/提交直到上传完成，消除切题污染与半途中提交丢图竞态
+                    var targetIdx = st.idx;
+                    var targetArr = st.imgs[targetIdx] = st.imgs[targetIdx] || [];
+                    st.uploading = true;
+                    [card.querySelector('[data-pp-prev]'), card.querySelector('[data-pp-next]')].forEach(function (b) { if (b) b.disabled = true; });
+                    pHint.textContent = '照片上传中…';
+                    var chain = Promise.resolve();
+                    files.forEach(function (f) {
+                        chain = chain.then(function () {
+                            return ppUploadPhoto(f).then(function (rel) { targetArr.push(rel); });
+                        });
+                    });
+                    chain.then(function () {
+                        pHint.textContent = '';
+                        if (st.idx === targetIdx) { renderPhotoPrev(); }
+                        else { st.ans[targetIdx] = ppComposeAns(ppAnsText(st.ans[targetIdx]), targetArr) || null; } // 防御：已切题则补写回该题答案
+                    }).catch(function (e) { pHint.textContent = '照片上传失败：' + (e.message || '请重试'); })
+                         .finally(function () {
+                             st.uploading = false;
+                             if (st.idx === targetIdx && card.contains(pHint)) {
+                                 var pv = card.querySelector('[data-pp-prev]'); if (pv) pv.disabled = st.idx === 0;
+                                 var nx = card.querySelector('[data-pp-next]'); if (nx) nx.disabled = false;
+                             }
+                         });
+                });
+                renderPhotoPrev();
+            }
             card.querySelector('[data-pp-next]').addEventListener('click', function () {
+                if (st.uploading) return;
                 pickAns();
-                if (st.ans[st.idx] == null) { msg.textContent = (q.type === 'short' || q.type === 'fill') ? '请填写答案后继续（AI 判分需要答案）' : '请先作答本题'; return; }
+                if (st.ans[st.idx] == null) { msg.textContent = (q.type === 'short' || q.type === 'fill') ? '请填写答案或上传手写过程照片后继续（AI 判分需要作答）' : '请先作答本题'; return; }
                 msg.textContent = '';
                 if (st.idx < st.qs.length - 1) { st.idx++; renderQ(); } else submitAll();
             });
@@ -664,7 +783,7 @@
         function submitAll() {
             st.busy = true;
             var myGen = st.gen;
-            card.innerHTML = head('判分') + '<p class="text-sm text-cl-text-2 py-6 text-center">正在判分…（含简答题时需 AI 判分，稍候）</p>';
+            card.innerHTML = head('判分') + '<p class="text-sm text-cl-text-2 py-6 text-center">正在判分…（简答题 AI 判分；含手写照片时由视觉模型看图批改，稍候）</p>';
             Promise.resolve(opts.submit(st.qs, st.ans)).then(function (r) {
                 st.busy = false;
                 if (st.gen !== myGen) return;
