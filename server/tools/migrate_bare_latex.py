@@ -4,6 +4,8 @@
 范围：error_questions.explanation / error_questions.correct_answer /
       practice_records.question_content（同题干全部流水行一并同步，与「题干=聚合键」
       既有编辑口径一致；改后同题干仍指向同一新文本，聚合不破坏）。
+      favorite_questions.question_content（2026-10-15 评审 Minor-3 补口：收藏态
+      is_favorite 按题干文本比对，历史裸行会让已收藏题在新归一写入下漏判）。
 口径：完全复用 services.error_analyze._wrap_bare_latex（单一实现，不另写一套规则）。
 安全：默认 dry-run 只报告将改哪些行；--apply 时先把每行原值备份到
       logs/bare_latex_backup_<时间戳>.jsonl，再逐行 UPDATE。不碰 practice_records.user_answer
@@ -50,6 +52,18 @@ def _plan_rows(cur):
         new_text = _wrap_bare_latex(old_text)
         for rid in ids:
             changes.append(("practice_records", rid, "question_content", old_text, new_text))
+
+    # 评审 Minor-3：收藏表题干同口径纳入（收藏态/重练匹配按题干文本比对）
+    cur.execute("SELECT id, question_content FROM favorite_questions")
+    fav_by_text = {}
+    for rid, qc in cur.fetchall():
+        new = _wrap_bare_latex(qc or "")
+        if qc and new != qc:
+            fav_by_text.setdefault(qc, []).append(rid)
+    for old_text, ids in fav_by_text.items():
+        new_text = _wrap_bare_latex(old_text)
+        for rid in ids:
+            changes.append(("favorite_questions", rid, "question_content", old_text, new_text))
     return changes
 
 
@@ -80,7 +94,7 @@ def main():
         for table, rid, col, old, new in changes:
             # 评审 Minor-6：f-string 拼列名虽无实际注入面（表/列均来自本脚本固定清单），
             # 仍用白名单断言锁死，防后续改动引入风险
-            assert table in ("error_questions", "practice_records"), table
+            assert table in ("error_questions", "practice_records", "favorite_questions"), table
             assert col in ("explanation", "correct_answer", "question_content"), col
             cur.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (new, rid))
             n += 1

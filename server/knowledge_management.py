@@ -15,6 +15,26 @@ from database import db_adapter, schema_postgres
 from services import fsrs_service as _fsrs
 
 
+def _wrap_math_safe(text):
+    """落库前公式定界符兜底（2026-10-15 用户裁定 B，堵裸 LaTeX 新数据源头）：
+    复用 services.error_analyze._wrap_bare_latex 单一实现（与存量迁移脚本同口径，
+    保守判定宁漏不错包，幂等可重复调用）。只用于题干/正确答案/解析三个展示字段；
+    user_answer 按「如实留原文」规则不碰。兜底失败不得阻断落库，原样返回。"""
+    if not text or not str(text).strip():
+        return text
+    try:
+        from services.error_analyze import _wrap_bare_latex
+        return _wrap_bare_latex(str(text))
+    except Exception as e:
+        # 评审 Minor-1：吞异常保落库，但留痕防兜底「静默失效」（裸 LaTeX 重新无声入库）
+        try:
+            from logger_module import debug_logger
+            debug_logger.log("db", "math_wrap_failed", "warn", {"err": str(e)[:200]})
+        except Exception:
+            pass
+        return text
+
+
 class DatabaseManager:
     """数据库管理器（PostgreSQL 唯一后端，通过 database.db_adapter 连接池获取连接）"""
 
@@ -894,7 +914,12 @@ class PracticeRecordManager:
         - 同题干不堆行：已有错题行时不重复入池，流水挂原行并把原行重置为待强化；
           新入池时首条流水也挂回新建错题行；
         - pool_new_on_wrong：举一反三派生题（新题干）答错时照常入池（裁定：派生题不受
-          同题不堆行约束），流水仍挂 root（error_question_id），新建行另立 fsrs 初始态。"""
+          同题不堆行约束），流水仍挂 root（error_question_id），新建行另立 fsrs 初始态。
+        公式定界兜底（2026-10-15）：题干/答案/解析落库前统一补 $ 定界符，
+        后续同题匹配、展示全链路看到的都是归一后文本；user_answer 保持如实原文。"""
+        question_content = _wrap_math_safe(question_content)
+        correct_answer = _wrap_math_safe(correct_answer)
+        explanation = _wrap_math_safe(explanation)
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
 
@@ -1032,7 +1057,8 @@ class ErrorQuestionManager:
                 return False
             kp_id = None if row[0] is None else int(row[0])  # 独立错题 kp 为 NULL，禁 int(None)
             old_content = row[1] or ""
-            content = (new_content or "").strip() or old_content
+            # 公式定界兜底（2026-10-15）：新题干/答案/解析入库前归一；old_content 取自库已归一，不重复处理
+            content = _wrap_math_safe((new_content or "").strip()) or old_content
             kp_cond, kp_params = self._kp_match("knowledge_point_id", kp_id)
             # 先抓取旧题干在本知识点下的全部流水行 id（改名后旧题干即消失，事后反查会错锚）
             cursor.execute(
@@ -1054,9 +1080,9 @@ class ErrorQuestionManager:
                         [content] + pr_ids)
             upd = {}
             if correct_answer is not None:
-                upd["correct_answer"] = str(correct_answer).strip()
+                upd["correct_answer"] = _wrap_math_safe(str(correct_answer).strip())
             if explanation is not None:
-                upd["explanation"] = str(explanation).strip()
+                upd["explanation"] = _wrap_math_safe(str(explanation).strip())
             if upd and pr_ids:
                 sets = ", ".join(f"{k} = ?" for k in upd)  # 列名固定白名单，无注入面
                 cursor.execute(
@@ -1163,7 +1189,11 @@ class ErrorQuestionManager:
                           knowledge_point_id=None, user_id: str = "0001"):
         """手动新增独立错题：写一行 practice_records（题干 MD 存这里，影子流水）
         + 一行 error_questions（source='manual'，知识点可空）。既有 eq JOIN pr 全部展示/复习/
-        编辑/删除链路原样生效。返回错题 id，失败返回 None。"""
+        编辑/删除链路原样生效。返回错题 id，失败返回 None。
+        公式定界兜底（2026-10-15）：题干/答案/解析入库前归一。"""
+        question_content = _wrap_math_safe(question_content)
+        correct_answer = _wrap_math_safe(correct_answer)
+        explanation = _wrap_math_safe(explanation)
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
         try:
@@ -1748,6 +1778,10 @@ except NameError:
         def save_favorite_question(self, subject_name: str, knowledge_point_id: int,
                                    question_content: str, correct_answer: Optional[str] = None,
                                    explanation: Optional[str] = None, user_id: str = "0001") -> int:
+            # 公式定界兜底（2026-10-15）：与错题落库同口径
+            question_content = _wrap_math_safe(question_content)
+            correct_answer = _wrap_math_safe(correct_answer)
+            explanation = _wrap_math_safe(explanation)
             conn = self.db_manager.get_connection()
             cursor = conn.cursor()
             cursor.execute(
