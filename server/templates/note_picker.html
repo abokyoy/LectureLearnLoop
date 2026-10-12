@@ -4,145 +4,479 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>选择学习笔记</title>
+<!-- 2026-10-15：平铺列表 → 文件树（与「学」模块文件结构 1:1：同 jsTree、同行高/缩进/图标/操作）。
+     资源全部本地化（Electron 离线可用）：jQuery / jsTree / 主题 CSS / Material 图标字体 -->
+<link rel="stylesheet" href="/static/css/material-icons-outlined.css">
+<link rel="stylesheet" href="/static/css/jstree/style.min.css">
 <style>
-  /* 批7 重设计：暗窗形态保留，主题色统一设计系统橙/薄荷绿；图标去 emoji 改 sprite */
+  /* 批7 重设计：暗窗形态保留，主题色统一设计系统橙/薄荷绿 */
   :root { --bg:#1f2430; --fg:#eef1f7; --accent:#F97316; --muted:#8a94a6; --ok:#10B981; --warn:#EF4444; --card:#171b24; --line:#3a4256; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); }
   #wrap { display:flex; flex-direction:column; height:100%; padding:14px 16px; gap:10px; }
   h3 { margin:0; font-size:15px; }
-  #search { width:100%; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
-  #list { flex:1; overflow-y:auto; background:var(--card); border-radius:10px; padding:6px; }
-  .item { display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:8px; cursor:pointer; border:1px solid transparent; }
-  .item:hover { background:#20283a; }
-  .item.sel { background:#20283a; border-color:var(--accent); }
-  .item .nm { flex:1; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .item .meta { font-size:11px; color:var(--muted); white-space:nowrap; }
-  .item .badge { font-size:10.5px; color:#fff; background:var(--accent); border-radius:6px; padding:1px 6px; }
-  .item svg.ic { width:14px; height:14px; color:var(--muted); flex-shrink:0; }
+  #searchrow { display:flex; gap:8px; }
+  #search { flex:1; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
+  #treebox { flex:1; display:flex; overflow:hidden; background:var(--card); border-radius:10px; padding:6px; }
   .muted { color:var(--muted); font-size:12px; }
-  #newrow { display:flex; gap:8px; }
-  #newname { flex:1; background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:13px; }
+  #toolrow { display:flex; align-items:center; gap:6px; }
+  #toolrow .iconbtn { border:none; background:transparent; color:var(--muted); cursor:pointer; padding:4px; border-radius:6px; display:flex; }
+  #toolrow .iconbtn:hover { background:#20283a; color:var(--fg); }
+  #toolrow .material-icons-outlined { font-size:20px; }
+  #hint { margin-left:auto; }
   button { border:none; border-radius:8px; padding:9px 14px; font-size:13px; cursor:pointer; }
   button.main { background:var(--accent); color:#fff; }
   button.main:disabled { opacity:.45; cursor:not-allowed; }
   button.ghost { background:#2b3242; color:var(--fg); border:1px solid var(--line); }
-  #foot { display:flex; justify-content:space-between; gap:8px; }
+  #foot { display:flex; justify-content:flex-end; gap:8px; }
   #err { color:var(--warn); font-size:12px; min-height:16px; }
+
+  /* ================= jsTree 定制：结构与「学」页 online_course_notes 1:1，配色适配暗窗 ================= */
+  #file-tree { font-family:inherit; font-size:14px; border:none !important; box-shadow:none !important;
+    background:transparent !important; flex:1; min-height:0; width:100%;
+    overflow:auto; white-space:nowrap; }
+  #file-tree.jstree-default, .jstree-default { border:none !important; box-shadow:none !important; background:transparent !important; outline:none !important; }
+  #file-tree *, #file-tree.jstree-default .jstree-container-ul, #file-tree.jstree-default .jstree-wholerow-ul { border:none !important; box-shadow:none !important; outline:none !important; }
+
+  /* 节点行：32px 行高 + 每层 24px 缩进（margin-left 是 jsTree 层级缩进唯一来源，禁止清零） */
+  #file-tree.jstree-default .jstree-node { min-height:32px; line-height:32px; margin:0 0 0 24px; padding:0; width:auto; }
+  #file-tree.jstree-default .jstree-anchor { height:32px; line-height:32px; padding:0 8px; color:#cbd5e1;
+    text-decoration:none; border-radius:6px; margin:1px 0; transition:all .2s ease;
+    display:inline-block !important; white-space:nowrap !important; min-width:max-content; max-width:none; }
+  #file-tree.jstree-default .jstree-anchor:hover { background-color:#20283a; color:#fff; }
+  /* 选中标志：浅蓝高亮的暗色变体 + 橙描边（与旧列表 .item.sel 同一视觉语言） */
+  #file-tree.jstree-default .jstree-anchor.jstree-clicked { background-color:#2f4160; color:#fff; font-weight:600;
+    box-shadow:inset 0 0 0 1px var(--accent); }
+
+  /* md 可选高亮 / 非 md 置灰斜体（与「学」同语义：不可作为笔记） */
+  #file-tree .jstree-anchor.file-md { font-weight:500; color:#93c5fd; }
+  #file-tree .jstree-anchor.file-md:hover { background-color:#20283a; color:#bfdbfe; }
+  #file-tree .jstree-anchor:not(.file-md):not(.folder-node) { opacity:.55; font-style:italic; }
+  #file-tree .jstree-anchor.folder-node { font-style:normal; font-weight:normal; }
+
+  /* 文件夹/文件图标：Material 字体（与「学」同款 folder / description） */
+  #file-tree.jstree-default .jstree-icon.jstree-folder,
+  #file-tree .jstree-anchor.folder-node .jstree-icon { background-image:none !important; color:#9aa7bd !important;
+    font-family:'Material Icons Outlined' !important; font-size:24px !important; line-height:24px !important;
+    width:24px !important; height:24px !important; vertical-align:middle; }
+  #file-tree.jstree-default .jstree-icon.jstree-folder:before,
+  #file-tree .jstree-anchor.folder-node .jstree-icon:before { content:'folder' !important; font-family:'Material Icons Outlined' !important; }
+  #file-tree.jstree-default .jstree-icon.jstree-file,
+  #file-tree .jstree-anchor:not(.folder-node) .jstree-icon { background-image:none !important; color:#9aa7bd !important;
+    font-family:'Material Icons Outlined' !important; font-size:24px !important; line-height:24px !important;
+    width:24px !important; height:24px !important; vertical-align:middle; }
+  #file-tree.jstree-default .jstree-icon.jstree-file:before,
+  #file-tree .jstree-anchor:not(.folder-node) .jstree-icon:before { content:'description' !important; font-family:'Material Icons Outlined' !important; }
+  #file-tree.jstree-default .jstree-anchor:hover .jstree-icon { color:#cbd5e1 !important; }
+
+  /* 展开箭头：撑满 32px 行高居中（主题 vertical-align:top 下小于行高会贴顶错位——「学」2026-10-15 教训） */
+  #file-tree.jstree-default .jstree-ocl { width:20px; height:32px; line-height:32px; margin-right:4px;
+    background-image:none; color:#8a94a6; font-family:'Material Icons Outlined'; font-size:16px; text-align:center;
+    transition:all .2s ease; border-radius:2px; }
+  #file-tree.jstree-default .jstree-ocl:before { content:'keyboard_arrow_right'; }
+  #file-tree.jstree-default .jstree-open > .jstree-ocl:before { content:'keyboard_arrow_down'; }
+  #file-tree.jstree-default .jstree-leaf > .jstree-ocl:before { content:''; }
+  #file-tree.jstree-default .jstree-ocl:hover { color:#e5e7eb; background-color:#20283a; }
+
+  /* 内联重命名输入框（暗色） */
+  #file-tree.jstree-default .jstree-rename-input { border:2px solid var(--accent); border-radius:4px; padding:2px 6px;
+    font-size:14px; background:var(--card); color:var(--fg); outline:none; }
+
+  /* 搜索命中高亮 */
+  #file-tree .jstree-anchor.ll-hit { box-shadow:inset 0 0 0 1px #f59e0b; }
+  #file-tree .jstree-anchor.ll-cur { background-color:#4a3316; color:#fff; }
+
+  /* 滚动条（暗色） */
+  #file-tree::-webkit-scrollbar { width:8px; height:8px; }
+  #file-tree::-webkit-scrollbar-track { background:#20283a; border-radius:4px; }
+  #file-tree::-webkit-scrollbar-thumb { background:#4b5568; border-radius:4px; }
+
+  /* 右键菜单（与「学」页同一交互形态，暗色配色） */
+  #ctxmenu { position:fixed; z-index:1000; background:#20283a; border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 10px 25px rgba(0,0,0,.45); padding:4px 0; font-size:13px; min-width:150px; }
+  #ctxmenu .cm-item { padding:8px 16px; color:#cbd5e1; cursor:pointer; }
+  #ctxmenu .cm-item:hover { background:#2b3242; color:#fff; }
+  #ctxmenu .cm-sep { border-top:1px solid var(--line); margin:4px 0; }
+  #ctxmenu .cm-danger { color:#f87171; }
 </style>
 </head>
 <body>
   <div id="wrap">
     <h3>选择学习笔记<span class="muted" style="margin-left:8px">录音内容将实时写入所选笔记</span></h3>
-    <input id="search" type="text" placeholder="搜索笔记名称…">
-    <div id="list"><div class="muted" style="padding:12px">加载中…</div></div>
+    <div id="searchrow">
+      <input id="search" type="text" placeholder="输入关键字筛选/定位名称…（Enter 跳到下一个匹配）">
+      <button class="ghost" id="btnFilter" title="切换：筛选（只看匹配项）/ 定位（全树高亮匹配）">筛选</button>
+    </div>
+    <div id="treebox"><div id="file-tree"></div></div>
     <div id="err"></div>
-    <div id="newrow">
-      <input id="newname" type="text" placeholder="新笔记名称（可省略 .md）">
-      <button class="main" id="btnNew">新建并使用</button>
+    <div id="toolrow">
+      <button class="iconbtn" id="btnNewFolder" title="新建文件夹（落在选中文件夹下）"><span class="material-icons-outlined">create_new_folder</span></button>
+      <button class="iconbtn" id="btnNewNote" title="新建笔记（落在选中文件夹下）"><span class="material-icons-outlined">note_add</span></button>
+      <span class="muted" id="hint">右键节点：新建 / 重命名 / 删除</span>
     </div>
     <div id="foot">
       <button class="ghost" id="btnCancel">取消</button>
       <button class="main" id="btnOpen" disabled>打开所选笔记</button>
     </div>
   </div>
+  <div id="ctxmenu" hidden></div>
+<script src="/static/js/jquery-3.7.1.min.js"></script>
+<script src="/static/js/jstree.min.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
+  const jq = window.jQuery;
   const TOKEN_KEY = 'll_token';
-  let items = [];           // /api/notes/list 返回
-  let selected = null;      // 当前选中项
+  let inst = null;            // jsTree 实例
+  let selected = null;        // { path, name } 当前选中的可选笔记
+  let filterMode = 'filter';  // filter=只看匹配 | locate=全树高亮定位
+  let hits = [];              // 匹配的 md 节点 id 列表
+  let hitIdx = 0;
 
   function token() {
     // 本窗是独立窗口：未勾选“记住登录”时 localStorage 里没有 token（主窗口只存它自己的 sessionStorage），
     // 兜底读 preload 经 auth:getToken 拉取的主窗口实时 token 缓存（desktop/preload.js llAuth）
     return localStorage.getItem(TOKEN_KEY) || (window.llAuth && window.llAuth.getToken()) || '';
   }
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
-  function fail(msg) { $('err').textContent = msg; }
+  function fail(msg) { $('err').textContent = msg || ''; }
+  function hint(msg) { $('hint').textContent = msg; }
   async function api(path, opts) {
     const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() } }, opts || {}));
     return r.json().catch(() => ({ success: false, error: '非JSON响应' }));
   }
+  // 双层契约（envelope + 业务 data）：操作类接口必须解包到 data 层判断成败（掉坑笔记 2026-10-15）
+  function okData(r) { return r && r.success && r.data === true; }
 
-  function fmtTime(s) {
-    if (!s) return '';
-    try {
-      const d = new Date(s.replace(' ', 'T') + 'Z');  // 服务端 UTC 'YYYY-MM-DD HH:MM:SS'
-      if (isNaN(d)) return s;
-      const now = new Date();
-      const sameDay = d.toDateString() === now.toDateString();
-      return sameDay ? d.toLocaleTimeString().slice(0, 5) : d.toLocaleDateString();
-    } catch (e) { return s; }
-  }
+  function isMd(nd) { return !!(nd && nd.data && nd.data.type === 'file' && nd.data.is_markdown); }
+  function isFile(nd) { return !!(nd && nd.type === 'file'); }
+  function aClass(nd) { return nd.type === 'folder' ? 'folder-node' : (nd.data && nd.data.is_markdown ? 'file-md' : 'file-other'); }
 
-  function render() {
-    const kw = $('search').value.trim().toLowerCase();
-    const shown = items.filter((it) => !kw || String(it.name).toLowerCase().includes(kw) || String(it.title || '').toLowerCase().includes(kw));
-    const el = $('list');
-    if (!shown.length) { el.innerHTML = '<div class="muted" style="padding:12px">没有匹配的笔记，可在下方新建</div>'; return; }
-    el.innerHTML = shown.map((it, i) => (
-      '<div class="item' + (selected && selected.path === it.path ? ' sel' : '') + '" data-i="' + i + '">' +
-      '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-file-text"/></svg>' +
-      '<span class="nm" title="' + esc(it.rel || it.path) + '">' + esc(it.name) +
-        (it.recording ? ' <span class="badge">录制中</span>' : '') + '</span>' +
-      '<span class="meta">' + (it.word_count ? it.word_count + ' 字 · ' : '') + esc(fmtTime(it.updated_time)) + '</span>' +
-      '</div>'
-    )).join('');
-    el.querySelectorAll('.item').forEach((node) => {
-      node.onclick = () => { selected = shown[+node.dataset.i]; render(); $('btnOpen').disabled = false; };
-      node.ondblclick = () => { selected = shown[+node.dataset.i]; chooseOpen(); };
+  // ---- 数据转换：/api/vault/tree-nested → jsTree（与「学」convertToJsTreeFormat 同构，节点 id=服务端绝对路径） ----
+  function convert(items) {
+    return items.map(function (it) {
+      const node = {
+        id: it.path, text: it.name, type: it.type,
+        data: { path: it.path, name: it.name, type: it.type,
+                is_markdown: it.is_markdown || false, extension: it.extension || '' },
+        a_attr: { class: it.type === 'folder' ? 'folder-node' : (it.is_markdown ? 'file-md' : 'file-other') }
+      };
+      if (it.type === 'folder') { node.children = convert(it.children || []); node.state = { opened: false }; }
+      return node;
     });
   }
 
+  // ---- 树构建与加载 ----
   async function load() {
-    if (!token()) { $('list').innerHTML = '<div class="muted" style="padding:12px">未登录：请先在主窗口登录后再录音</div>'; return; }
-    const r = await api('/api/notes/list');
-    if (r.success && r.data) { items = r.data.items || []; }
-    else { items = []; fail('笔记列表加载失败: ' + (r.error || (r.data && r.data.error) || '')); }
-    render();
+    if (!token()) { $('treebox').innerHTML = '<div class="muted" style="padding:12px">未登录：请先在主窗口登录后再录音</div>'; return; }
+    const r = await api('/api/vault/tree-nested');
+    if (!(r && r.success && r.data)) { fail('文件结构加载失败: ' + ((r.data && r.data.error) || r.error || '')); return; }
+    const data = convert(r.data);
+    if (inst) { jq('#file-tree').jstree('destroy'); inst = null; }
+    if (!$('file-tree')) { $('treebox').innerHTML = '<div id="file-tree"></div>'; }
+    jq('#file-tree').jstree({
+      core: { data: data, check_callback: true, multiple: false,
+              themes: { name: 'default', dots: false, icons: true } },
+      // 与「学」同插件集：拖拽换目录 / 类型图标 / 内联重命名
+      plugins: ['dnd', 'types', 'edit'],
+      types: { folder: { icon: 'jstree-folder' }, file: { icon: 'jstree-file' } },
+      dnd: { is_draggable: function () { return true; } }
+    });
+    inst = jq('#file-tree').jstree(true);
+    bindTreeEvents();
+    applySearch();
   }
 
+  function bindTreeEvents() {
+    const $t = jq('#file-tree');
+    // load() 会多次重建树：#file-tree 容器跨 load 复用，jsTree destroy 只清 .jstree 命名空间，
+    // 自定义/dblclick/contextmenu 必须用自有命名空间并先 off，防监听器叠加（CodeReview M1）
+    $t.off('.llpick');
+    $t.on('select_node.jstree', function (e, d) {
+        // 交互单选互斥由 core.multiple:false 保证；API select 前已自行 deselect_all，
+        // 此处再 deselect 会抹掉刚点中的高亮（2026-10-15 自查纠正）
+        onSel(d.node);
+      })
+      .on('rename_node.jstree', function (e, d) { onRenamed(d); })
+      .on('move_node.jstree', function (e, d) { onMoved(d); });
+    // 双击 md 文件 = 直接选用并回传悬浮窗
+    $t.on('dblclick.llpick', '.jstree-anchor', function (ev) {
+      const nd = inst && inst.get_node(ev.target);
+      if (!nd) return;
+      if (isMd(nd)) chooseOpen(nd);
+      else if (isFile(nd)) fail('该文件类型不能作为学习笔记，请选择 .md 笔记');
+    });
+    // 右键：选中节点 + 弹菜单（与「学」同交互：右键即选中，落点/所见一致）
+    $t.on('contextmenu.llpick', function (ev) {
+      const li = ev.target.closest ? ev.target.closest('li[id]') : null;
+      if (!li || !inst) return;
+      const nd = inst.get_node(li);
+      if (!nd || !nd.data || !nd.data.path) return;
+      ev.preventDefault(); ev.stopPropagation();
+      inst.deselect_all(true);
+      inst.select_node(nd);
+      showCtx(ev.originalEvent || ev, nd);
+    });
+  }
+
+  function onSel(nd) {
+    if (isFile(nd) && !nd.data.is_markdown) {
+      fail('该文件类型不能作为学习笔记，请选择 .md 笔记');
+      inst.deselect_node(nd);   // 与「学」一致：不可用文件反选
+      selected = null; $('btnOpen').disabled = true;
+      return;
+    }
+    if (nd.type === 'folder') {
+      selected = null; $('btnOpen').disabled = true;
+      hint('已选中文件夹「' + nd.text + '」，新建将落在其下');
+      return;
+    }
+    selected = { path: nd.data.path, name: nd.data.name };
+    $('btnOpen').disabled = false;
+    fail('');
+    hint('已选中：' + nd.data.name);
+  }
+
+  // ---- 重命名 / 移动 / 删除（路径牵一发动全身：成功后整树重拉保证一致，失败也重拉回正） ----
+  async function onRenamed(d) {
+    // 本构建 jsTree rename_node 事件 payload 为 {node, text, old}（源码实锤，与官方文档 new_text/old_text 不同；
+    // 2026-10-15 自测：取错字段→空名提交被服务端拒绝）
+    const newName = d.text || '';
+    const oldPath = d.node.data && d.node.data.path;
+    if (!oldPath || !newName || newName === d.old) return;
+    const r = await api('/api/vault/rename', { method: 'POST', body: JSON.stringify({ old_path: oldPath, new_name: newName }) });
+    if (!okData(r)) { fail('重命名失败（名称可能已存在）'); await load(); return; }
+    const sep = oldPath.indexOf('\\') >= 0 ? '\\' : '/';
+    const dir = oldPath.replace(/[\\/][^\\/]*$/, '');
+    await load();
+    // 重拉后把新路径节点选回（select_node 会触发 onSel，不手工重复调——CodeReview m2）
+    const np = dir + sep + newName;
+    const nd = inst && (inst.get_node(np) || inst.get_node(dir + '/' + newName));
+    if (nd) { inst.select_node(nd); }
+  }
+  async function onMoved(d) {
+    const src = d.node.data && d.node.data.path;
+    const name = d.node.data && d.node.data.name;
+    const pnode = d.parent === '#' ? null : inst.get_node(d.parent);
+    const target = pnode && pnode.data ? pnode.data.path : 'vault';
+    const r = await api('/api/vault/move', { method: 'POST', body: JSON.stringify({ source_path: src, target_folder: target }) });
+    if (!okData(r)) { fail('移动失败'); await load(); return; }
+    await load();
+    // 移动后绝对路径已变：按新路径选回，防 selected 指向旧路径误回传（CodeReview M3）
+    const np = target === 'vault' ? name : target + '\\' + name;
+    const nd = inst && (inst.get_node(np) || inst.get_node(target === 'vault' ? name : target + '/' + name));
+    if (nd) { inst.select_node(nd); }
+    else if (selected && selected.path === src) { selected = null; $('btnOpen').disabled = true; }
+  }
+  async function delNode(nd) {
+    const what = nd.type === 'folder' ? '文件夹（其中全部内容将被删除）' : '笔记';
+    if (!window.confirm('确定删除' + what + '「' + nd.text + '」？此操作不可恢复。')) return;
+    const r = await api('/api/vault/delete', { method: 'POST', body: JSON.stringify({ path: nd.id }) });
+    if (!okData(r)) { fail('删除失败'); return; }
+    if (selected && selected.path === nd.id) { selected = null; $('btnOpen').disabled = true; }
+    await load();
+  }
+
+  // ---- 新建（落点与「学」同口径：选中文件夹→其下；选中文件→其所在文件夹；未选→vault 根） ----
+  function resolveTarget() {
+    try {
+      if (!inst) return 'vault';
+      const sel = inst.get_selected(true);
+      if (!sel || !sel.length) return 'vault';
+      const nd = sel[0];
+      if (nd.type === 'folder') return nd.id;
+      const pid = inst.get_parent(nd);
+      const p = pid && pid !== '#' ? inst.get_node(pid) : null;
+      return (p && p.id !== '#') ? p.id : 'vault';
+    } catch (e) { return 'vault'; }
+  }
+  // 快速连点防拖：一次新建未落树前短路（CodeReview m1；本窗处于“点录制→选笔记”高频时序）
+  let creating = false;
+  async function createNote(targetPath) {
+    if (creating) return;
+    creating = true;
+    try {
+      const folder = targetPath || resolveTarget();
+      const r = await api('/api/vault/note', { method: 'POST', body: JSON.stringify({ folder_path: folder }) });
+      const name = r && r.data;
+      if (!name) { fail('新建笔记失败'); return; }
+      insertAndEdit(folder, name, 'file');
+    } finally { creating = false; }
+  }
+  async function createFolder(targetPath) {
+    if (creating) return;
+    creating = true;
+    try {
+      const parent = targetPath || resolveTarget();
+      const r = await api('/api/vault/folder', { method: 'POST', body: JSON.stringify({ parent_path: parent }) });
+      const name = r && r.data;
+      if (!name) { fail('新建文件夹失败'); return; }
+      insertAndEdit(parent, name, 'folder');
+    } finally { creating = false; }
+  }
+  // 即时插入 + 展开父级 + 选中 + 内联重命名（与「学」createNewNoteInFolder 同链路；
+  // data 必须带 is_markdown/extension，否则 onSel 误判不可用而反选——CodeReview M2 教训）
+  function insertAndEdit(parentPath, name, type) {
+    // 首屏 load() 未完成时 inst 为 null：已落盘的文件靠重拉展示，不得裸用 inst（CodeReview M2）
+    if (!inst) { load(); return; }
+    const newPath = parentPath === 'vault' ? name : parentPath + '/' + name;
+    const node = {
+      id: newPath, text: name, type: type,
+      data: { path: newPath, name: name, type: type,
+              is_markdown: type === 'file' && /\.md$/i.test(name),
+              extension: (name.match(/\.[^.]+$/) || [''])[0] },
+      a_attr: { class: type === 'folder' ? 'folder-node' : (/\.md$/i.test(name) ? 'file-md' : 'file-other') }
+    };
+    if (type === 'folder') node.children = [];
+    const parentId = parentPath === 'vault' ? '#' : parentPath;
+    const nid = inst.create_node(parentId, node);
+    if (!nid) { load(); return; }
+    if (parentId !== '#') inst.open_node(parentId);
+    inst.deselect_all(true);
+    inst.select_node(nid);
+    setTimeout(function () { inst.edit(nid); }, 100);
+  }
+
+  // ---- 右键菜单（形态与「学」一致：按节点类型切换条目） ----
+  function showCtx(ev, nd) {
+    const menu = $('ctxmenu');
+    const items = [];
+    if (nd.type === 'folder') {
+      items.push(['新建子文件夹', function () { createFolder(nd.id); }]);
+      items.push(['新建笔记', function () { createNote(nd.id); }]);
+    } else if (nd.data.is_markdown) {
+      items.push(['用此笔记打开', function () { chooseOpen(nd); }]);
+    }
+    items.push(['重命名', function () { inst.select_node(nd); inst.edit(nd); }]);
+    items.push(['删除', function () { delNode(nd); }, true]);
+    menu.innerHTML = items.map(function (it, i) {
+      return '<div class="cm-item' + (it[2] ? ' cm-danger' : '') + '" data-i="' + i + '">' + it[0] + '</div>';
+    }).join('');
+    menu.hidden = false;
+    menu.style.left = Math.min(ev.clientX, window.innerWidth - 170) + 'px';
+    menu.style.top = Math.min(ev.clientY, window.innerHeight - items.length * 34 - 12) + 'px';
+    menu.querySelectorAll('.cm-item').forEach(function (el) {
+      el.onclick = function () { hideCtx(); items[+el.dataset.i][1](); };
+    });
+  }
+  function hideCtx() { $('ctxmenu').hidden = true; }
+  document.addEventListener('click', hideCtx);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideCtx(); });
+
+  // ---- 搜索：筛选（隐藏不匹配分支）/ 定位（全树高亮，Enter 循环） ----
+  // jsTree 无 open_parent API（2026-10-15 自测实锤：TypeError），逐级 open_node 展开祖先链
+  function openAncestors(id) {
+    const nd = inst.get_node(id);
+    if (!nd) return;
+    (nd.parents || []).forEach(function (p) { if (p !== '#') inst.open_node(p); });
+  }
+  // 取节点 anchor DOM：本地下 nd.element 为 undefined（2026-10-15 自测实锤），改用 li 的 DOM id 直查
+  function anchorOf(id) {
+    const li = document.getElementById(id);
+    return li ? li.querySelector('.jstree-anchor') : null;
+  }
+  function clearMarks() {
+    document.querySelectorAll('#file-tree .jstree-anchor.ll-hit, #file-tree .jstree-anchor.ll-cur').forEach(function (a) {
+      a.classList.remove('ll-hit'); a.classList.remove('ll-cur');
+    });
+  }
+  function eachRealNode(fn) {
+    const data = inst._model.data;
+    Object.keys(data).forEach(function (id) {
+      const nd = data[id];
+      if (!nd || nd.id === '#' || !nd.data || !nd.data.path) return;
+      fn(nd, id);
+    });
+  }
+  function showAllNodes() {
+    eachRealNode(function (nd, id) { inst.show_node(id); });
+  }
+  // 后序遍历：节点可见 = 自身命中 或 有可见后代
+  function computeKeep(kw) {
+    const keep = {};
+    hits = []; hitIdx = 0;
+    function walk(id) {
+      const nd = inst.get_node(id);
+      if (!nd) return false;
+      const selfM = nd.text.toLowerCase().indexOf(kw) >= 0;
+      let childKeep = false;
+      (nd.children || []).forEach(function (c) { if (walk(c)) childKeep = true; });
+      if (selfM || childKeep) keep[id] = true;
+      if (selfM && isMd(nd)) hits.push(id);
+      return selfM || childKeep;
+    }
+    (inst.get_node('#').children || []).forEach(walk);
+    return keep;
+  }
+  function applySearch() {
+    if (!inst) return;
+    clearMarks();
+    const kw = $('search').value.trim().toLowerCase();
+    if (!kw) { showAllNodes(); hits = []; return; }
+    const keep = computeKeep(kw);
+    if (filterMode === 'filter') {
+      eachRealNode(function (nd, id) {
+        if (keep[id]) { inst.show_node(id); } else { inst.hide_node(id); }
+      });
+      // 展开命中路径
+      hits.forEach(openAncestors);
+      Object.keys(keep).forEach(function (id) {
+        const nd = inst.get_node(id);
+        if (nd && nd.type === 'folder' && (nd.children || []).some(function (c) { return keep[c]; })) inst.open_node(id);
+      });
+    } else {
+      showAllNodes();
+      hits.forEach(function (id) {
+        const a = anchorOf(id);
+        if (a) a.classList.add('ll-hit');
+      });
+    }
+    if (hits.length) gotoHit(0);
+  }
+  function gotoHit(i) {
+    if (!hits.length) return;
+    hitIdx = (i + hits.length) % hits.length;
+    clearMarks();
+    const id = hits[hitIdx];
+    const nd = inst.get_node(id);
+    if (!nd) return;
+    openAncestors(id);
+    inst.deselect_all(true);
+    inst.select_node(nd);
+    // 本树滚到可见：本地 jstree 构建无 scroll_to（2026-10-15 自测实锤），用原生 DOM 滚动等价实现
+    const li = document.getElementById(id);
+    if (li) { li.scrollIntoView({ block: 'nearest' }); }
+    const a = anchorOf(id);
+    if (a) { a.classList.add('ll-cur'); if (filterMode === 'locate') hits.forEach(function (h) { const a2 = anchorOf(h); if (a2) a2.classList.add('ll-hit'); }); }
+  }
+
+  // ---- 选择回传（悬浮窗契约：{action, path, name}，path=服务端绝对路径） ----
   function choose(sel) {
     if (window.llNotePickerSel) { window.llNotePickerSel.choose(sel); }
     else { fail('请在桌面端（Electron）中使用本窗口'); }
   }
-  function chooseOpen() {
+  function chooseOpen(nd) {
+    choose({ action: 'open', path: nd.data.path, name: nd.data.name });
+  }
+
+  // ---- 绑定 ----
+  $('btnNewFolder').onclick = function () { createFolder(); };
+  $('btnNewNote').onclick = function () { createNote(); };
+  $('btnOpen').onclick = function () {
     if (!selected) return;
     choose({ action: 'open', path: selected.path, name: selected.name });
-  }
-
-  function normName(raw) {
-    let n = String(raw || '').trim().replace(/[\\/:*?"<>|]/g, '_');
-    if (!n) return null;
-    if (!/\.(md|markdown|txt)$/i.test(n)) n += '.md';
-    return n;
-  }
-
-  async function createNew() {
-    fail('');
-    const n = normName($('newname').value);
-    if (!n) { fail('请输入新笔记名称'); return; }
-    const rel = 'vault/' + n;
-    // 重名检测：库/文件任一存在即拒绝，避免覆盖既有正文
-    const cur = await api('/api/notes/content?path=' + encodeURIComponent(rel));
-    if (cur.success && cur.data && cur.data.exists) { fail('已存在同名笔记：' + n + '，请直接选择它'); return; }
-    const r = await api('/api/notes/autosave', {
-      method: 'POST',
-      body: JSON.stringify({ path: rel, content: '#' + ' ' + n.replace(/\.(md|markdown|txt)$/i, '') + '\n\n', title: n }),
-    });
-    if (!(r.success && r.data && r.data.success)) { fail('新建笔记失败: ' + ((r.data && r.data.error) || r.error || '')); return; }
-    choose({ action: 'new', path: rel, name: n });
-  }
-
-  $('btnNew').onclick = createNew;
-  $('btnOpen').onclick = chooseOpen;
-  $('btnCancel').onclick = () => {
+  };
+  $('btnCancel').onclick = function () {
     if (window.llNotePickerSel) window.llNotePickerSel.cancel();
     else if (window.close) window.close();
   };
-  $('search').oninput = render;
-  $('newname').onkeydown = (e) => { if (e.key === 'Enter') createNew(); };
+  $('search').oninput = function () { applySearch(); };
+  $('search').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); gotoHit(hitIdx + (e.shiftKey ? -1 : 1)); } };
+  $('btnFilter').onclick = function () {
+    filterMode = filterMode === 'filter' ? 'locate' : 'filter';
+    $('btnFilter').textContent = filterMode === 'filter' ? '筛选' : '定位';
+    $('btnFilter').title = filterMode === 'filter' ? '当前：只看匹配项（点击切换为全树高亮定位）' : '当前：全树高亮匹配（点击切换为只看匹配项）';
+    applySearch();
+  };
 
   // 首屏先拉取主窗口实时登录态再加载列表（未勾选“记住登录”时本窗 storage 里没有 token）
   (async () => {
