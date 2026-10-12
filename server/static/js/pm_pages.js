@@ -930,38 +930,50 @@
                     ov.querySelector('[data-ppmc-start]').addEventListener('click', function () { close(); onStart(sel); });
                 });
         }
-        // 勾选练习：MD 题干 + 熟练度/双星标注 + 分页（20/页）+ 缺判分基准不可勾
+        // 勾选练习：MD 题干 + 熟练度/双星标注 + 分页（20/页）+ 缺判分基准不可勾 + 题干关键词搜索筛选
         function openManualPicker(onStart) {
             var selectable = cache.rows.filter(function (r) { return String(r.correct_answer || '').trim(); });
             if (!selectable.length) { countPicker('勾选练习', '当前学科没有可判分的错题（缺正确答案），不可勾选练习。', [3, 5, 10], function () {}); return; }
-            var chosen = {}, mp = 1, MPER = 20;
+            var chosen = {}, mp = 1, MPER = 20, kw = '';
             selectable.forEach(function (r) { chosen[r.id] = true; }); // 默认全选（与知识点页勾题弹窗同口径）
-            var pages = Math.max(1, Math.ceil(selectable.length / MPER));
+            // 筛选只影响视图；chosen 按 id 记录，跨过滤保留勾选（与「练习所选 N 题」计数口径一致）
+            function filtered() {
+                if (!kw) return selectable;
+                var k = kw.toLowerCase();
+                return selectable.filter(function (r) { return String(r.question_content || '').toLowerCase().indexOf(k) >= 0; });
+            }
             openModal('<div class="flex items-center justify-between mb-3"><div class="cl-section-title">'
                 + icon('clipboard-check', 'w-4 h-4 text-cl-primary') + ' 勾选错题练习</div>'
                 + '<button class="text-cl-text-3 hover:text-cl-text" data-ppmc-close aria-label="关闭">' + icon('x', 'w-4 h-4') + '</button></div>'
-                + '<p class="text-xs text-cl-text-2 mb-3">只练所选错题（直接组卷，不消耗积分）；缺正确答案的行不可勾。</p>'
+                + '<p class="text-xs text-cl-text-2 mb-2">只练所选错题（直接组卷，不消耗积分）；缺正确答案的行不可勾。</p>'
+                + '<div class="flex items-center gap-2 mb-3">'
+                + '<input type="text" data-ppmc-search maxlength="100" placeholder="搜索题干关键词" autocomplete="off" '
+                + 'class="flex-1 rounded-clbtn border border-cl-border px-3 py-2 text-xs text-cl-text focus:outline-none focus:border-cl-primary">'
+                + '<button class="cl-btn-ghost !h-8 text-xs whitespace-nowrap" data-ppmc-only style="display:none">只选匹配项</button></div>'
                 + '<div class="space-y-2 max-h-96 overflow-y-auto mb-3" data-ppmc-list></div>'
                 + '<div class="flex items-center justify-between"><div class="flex items-center gap-2 text-xs text-cl-text-3" data-ppmc-pg></div>'
                 + '<button class="cl-btn-primary !h-9 text-xs" data-ppmc-start></button></div>',
                 function (ov, close) {
                     var list = ov.querySelector('[data-ppmc-list]'), pg = ov.querySelector('[data-ppmc-pg]');
-                    var startBtn = ov.querySelector('[data-ppmc-start]');
+                    var startBtn = ov.querySelector('[data-ppmc-start]'), search = ov.querySelector('[data-ppmc-search]');
+                    var onlyBtn = ov.querySelector('[data-ppmc-only]');
                     function syncStart() {
                         var n = Object.keys(chosen).filter(function (k) { return chosen[k]; }).length;
                         startBtn.disabled = n === 0;
                         startBtn.textContent = '练习所选 ' + n + ' 题';
                     }
                     function paint() {
+                        var rows = filtered();
+                        var pages = Math.max(1, Math.ceil(rows.length / MPER));
                         if (mp > pages) mp = pages;
-                        list.innerHTML = selectable.slice((mp - 1) * MPER, mp * MPER).map(function (r) {
+                        list.innerHTML = rows.slice((mp - 1) * MPER, mp * MPER).map(function (r) {
                             var prof = isUnrated(r.current_proficiency) ? '未评估' : (Number(r.current_proficiency) || 0) + '%';
                             return '<label class="flex items-start gap-2 rounded-clbtn border border-cl-border px-3 py-2 cursor-pointer hover:bg-cl-bg">'
                                 + '<input type="checkbox" data-ppmc-row="' + r.id + '"' + (chosen[r.id] ? ' checked' : '') + ' class="mt-0.5 shrink-0">'
                                 + '<span class="flex-1 min-w-0">' + mdqHtml(r.question_content, 'text-[13px] text-cl-text break-words max-h-24 overflow-y-auto')
                                 + '<span class="block text-[11px] text-cl-text-3 mt-0.5">熟练度 ' + esc(prof) + ' · 难度 ' + esc(String(r.difficulty_score == null ? 5 : r.difficulty_score))
                                 + ' · 重要度 ' + esc(String(r.importance_score == null ? 5 : r.importance_score)) + '</span></span></label>';
-                        }).join('');
+                        }).join('') || '<p class="text-xs text-cl-text-3 py-4">没有匹配「' + esc(kw) + '」的题目</p>';
                         hydrateMdSlots(list);
                         list.querySelectorAll('[data-ppmc-row]').forEach(function (cb) {
                             cb.addEventListener('change', function () {
@@ -971,14 +983,24 @@
                         });
                         pg.innerHTML = pages > 1
                             ? '<button class="cl-btn-ghost !h-7 !text-xs" data-ppmc-prev' + (mp <= 1 ? ' disabled' : '') + '>上一页</button>'
-                                + '<span>' + mp + ' / ' + pages + '</span>'
+                                + '<span>' + mp + ' / ' + pages + (kw ? '（匹配 ' + rows.length + ' 题）' : '') + '</span>'
                                 + '<button class="cl-btn-ghost !h-7 !text-xs" data-ppmc-next' + (mp >= pages ? ' disabled' : '') + '>下一页</button>'
-                            : '<span>共 ' + selectable.length + ' 题</span>';
+                            : (kw ? '<span>匹配 ' + rows.length + ' / ' + selectable.length + ' 题</span>'
+                                 : '<span>共 ' + selectable.length + ' 题</span>');
                         var pv = pg.querySelector('[data-ppmc-prev]'), nx = pg.querySelector('[data-ppmc-next]');
                         if (pv) pv.addEventListener('click', function () { if (mp > 1) { mp--; paint(); } });
                         if (nx) nx.addEventListener('click', function () { if (mp < pages) { mp++; paint(); } });
+                        // 搜索态下提供「只选匹配项」：匹配行全勾、非匹配行全不勾（避免默认全选时过滤掉的题被误带入组卷）
+                        // cl-btn-ghost 自带 inline-flex 会盖过原生 hidden 属性，故用内联 display 切换
+                        onlyBtn.style.display = kw ? '' : 'none';
                         syncStart();
                     }
+                    search.addEventListener('input', function () { kw = search.value.trim(); mp = 1; paint(); });
+                    onlyBtn.addEventListener('click', function () {
+                        selectable.forEach(function (r) { chosen[r.id] = false; });
+                        filtered().forEach(function (r) { chosen[r.id] = true; });
+                        paint();
+                    });
                     paint();
                     startBtn.addEventListener('click', function () {
                         var ids = Object.keys(chosen).filter(function (k) { return chosen[k]; }).map(Number).slice(0, 20);
