@@ -611,7 +611,9 @@ window.jsTreeLoading = false;
     #file-tree.jstree-default .jstree-node {
         min-height: 32px;
         line-height: 32px;
-        margin: 0;
+        /* margin-left 是 jsTree 层级缩进的唯一来源（每层 li 叠加 24px，与 ocl 图标宽对齐），
+           2026-10-15 回归教训：此规则从死选择器救活后曾误写 margin:0 把缩进抹平，树变无层级 */
+        margin: 0 0 0 24px;
         padding: 0;
     }
     
