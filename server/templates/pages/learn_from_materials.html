@@ -1244,7 +1244,7 @@
     // 显示保存成功消息
     function showSaveSuccessMessage() {
         const message = document.createElement('div');
-        message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        message.className = 'fixed top-16 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
         message.innerHTML = `
             <div class="flex items-center">
                 <span class="material-icons-outlined text-sm mr-2">check_circle</span>
@@ -1463,7 +1463,7 @@
         // 显示验证开始提示
         const loadingDiv = document.createElement('div');
         loadingDiv.id = 'validation-loading';
-        loadingDiv.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        loadingDiv.className = 'fixed top-16 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
         loadingDiv.innerHTML = `
             <div class="flex items-center">
                 <div class="animate-spin mr-2">
@@ -1489,7 +1489,7 @@
                 
                 // 显示验证结果
                 const resultDiv = document.createElement('div');
-                resultDiv.className = 'fixed top-4 right-4 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-w-md p-4';
+                resultDiv.className = 'fixed top-16 right-4 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-w-md p-4';
                 resultDiv.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
                         <h3 class="font-semibold text-gray-800">后端功能验证结果</h3>
@@ -3681,45 +3681,7 @@
         return true;
     };
     
-    // 显示提示消息
-    function showToast(message, type = 'info') {
-        // 创建提示元素
-        const toast = document.createElement('div');
-        toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
-        
-        // 根据类型设置颜色
-        switch (type) {
-            case 'success':
-                toast.className += ' bg-green-500';
-                break;
-            case 'warning':
-                toast.className += ' bg-yellow-500';
-                break;
-            case 'error':
-                toast.className += ' bg-red-500';
-                break;
-            default:
-                toast.className += ' bg-blue-500';
-        }
-        
-        toast.textContent = message;
-        document.body.appendChild(toast);
-        
-        // 显示动画
-        setTimeout(() => {
-            toast.classList.remove('translate-x-full');
-        }, 100);
-        
-        // 自动隐藏
-        setTimeout(() => {
-            toast.classList.add('translate-x-full');
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
-        }, 3000);
-    }
+    // v0.1.7：重复的 showToast 副本已删除，统一由 base.html 全局实现接管（含 z-index/功能区避让修复）
 
     // 智能插入文本到编辑器
     function insertTextToEditor(editor, content) {
@@ -3994,6 +3956,15 @@
         
         hideContextMenu();
         
+        // v0.1.7：出题前先弹练习配置窗（题型/数量/难度），走考卷结构化组卷链路
+        if (window.openQuizConfigDialog && window.startQuizFlow) {
+            const textToPractice = selectedText;
+            window.openQuizConfigDialog(textToPractice, function(cfg) {
+                window.startQuizFlow(textToPractice, cfg);
+            });
+            return;
+        }
+        
         // 首先确保AI聊天窗口打开
         if (window.openAIChatWindow) {
             window.openAIChatWindow();
@@ -4057,10 +4028,9 @@
                             }
                             
                             if (actualQuestions && actualQuestions.trim()) {
-                                // 发送成功消息到AI助手
+                                // 发送成功消息到AI助手（v0.1.6：题面全文不进消息，关键词自动附加开始练习按钮）
                                 if (window.addAIPracticeMessage) {
-                                    window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + actualQuestions, 'ai');
-                                    window.addAIPracticeMessage('生成成功！题目已准备就绪。', 'ai');
+                                    window.addAIPracticeMessage('**练习题目生成完成！**请点击下方「点击这里开始练习」按钮，进入 AI 练习助手答题。', 'ai');
                                 }
                                 
                                 // 更新练习数据
@@ -4123,8 +4093,8 @@
             setTimeout(() => {
                 const mockQuestions = generateMockQuestions(selectedText);
                 if (window.addAIPracticeMessage) {
-                    window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + mockQuestions, 'ai');
-                    window.addAIPracticeMessage('题目已生成完成，请点击下方"开始练习"按钮开始答题。', 'ai');
+                    // v0.1.6：题面全文不进消息，关键词自动附加开始练习按钮
+                    window.addAIPracticeMessage('**练习题目生成完成！**请点击下方「点击这里开始练习」按钮，进入 AI 练习助手答题。', 'ai');
                 }
                 
                 const updatedPracticeData = {

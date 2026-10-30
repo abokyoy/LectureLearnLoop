@@ -59,6 +59,10 @@
   .cl-page {
     @apply p-8 max-w-[1120px] mx-auto;
   }
+  /* 练链页面全宽自适应（u11）：覆盖 cl-page 的 1120px 限宽，随窗口填满 */
+  .cl-page.cl-page-wide {
+    @apply max-w-none;
+  }
   /* 区块标题 */
   .cl-section-title {
     @apply text-[17px] font-semibold text-cl-text flex items-center gap-2;

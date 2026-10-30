@@ -28,6 +28,16 @@ class TaskRegistry:
             self._tasks[task_id] = {"status": "running", "user": user_id, "ts": now}
         return task_id
 
+    def update(self, task_id: str, **fields) -> None:
+        """running 期间增量更新任务明细（批量识别等长任务的进度上报）。
+        刷新 ts 防超长运行被 TTL 误回收；已终态任务不再接受更新（防竞态覆写结果）。"""
+        with self._lock:
+            t = self._tasks.get(task_id)
+            if not t or t.get("status") != "running":
+                return
+            t.update(fields)
+            t["ts"] = time.time()
+
     def finish(self, task_id: str, status: str, user_id: str = "", **fields) -> None:
         """写终态（done/error 等）；未显式给 user_id 时保留 create 时绑定的发起者。"""
         with self._lock:

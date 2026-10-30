@@ -46,8 +46,9 @@ contextBridge.exposeInMainWorld('llCapture', {
   fullScreen: () => ipcRenderer.invoke('capture:fullScreen'),
 });
 
-// 悬浮窗拖拽 / 收起 / 关闭（overlay.html 使用）；两者均销毁主进程窗口，避免黑浮层残留
-contextBridge.exposeInMainWorld('llOverlayDrag', (dx, dy) => ipcRenderer.send('overlay:drag', dx, dy));
+// 悬浮窗拖拽已改 CSS app-region 原生拖（不再需要逐帧 IPC）；收起 / 关闭均销毁主进程窗口，避免黑浮层残留
+// llOverlayResize：右下角把手拖拽改尺寸（目标宽高由页面计算，主进程钳范）
+contextBridge.exposeInMainWorld('llOverlayResize', (w, h) => ipcRenderer.send('overlay:resize', w, h));
 contextBridge.exposeInMainWorld('overlayMin', () => ipcRenderer.invoke('overlay:close'));
 contextBridge.exposeInMainWorld('overlayClose', () => ipcRenderer.invoke('overlay:close'));
 

@@ -10,7 +10,14 @@
  *   /api/vault/screenshot 的文件追加互相覆盖；
  * - 录制中标识：start/done 联动 /api/notes/recording on:true|false（主面板横幅数据源）。
  *
- * 事件（onEvent）：{type:'status'|'state'|'interim'|'final'|'saved'|'saving'|'error'|'level'}
+ * 事件（onEvent）：{type:'status'|'state'|'interim'|'final'|'saved'|'saving'|'error'|'level'|'recapture'}
+ *
+ * 2026-10-12 悬浮窗体验改造新增（服务 overlay.html，主面板同样受益）：
+ * - seconds()：实际录制秒数公开读（UI 计时显示）；
+ * - 系统声音（loopback）输出设备守护：插/拔耳机等切换默认输出后，WASAPI 回环轨道
+ *   绑在旧设备上会变哑（电平归零、转写停止）。这里监听轨道 ended/mute + devicechange +
+ *   无声看门狗，命中后自动静默重取屏幕回环流（restartLoopAudio），录制/会话不中断；
+ *   Electron 主进程已预配 setDisplayMediaRequestHandler，重取无需用户操作（免共享弹窗）。
  */
 (function (global) {
     'use strict';
@@ -46,6 +53,15 @@
         this._dirty = false;
         this._recSec = 0;               // 2026-09-28 积分：实际录制秒数（暂停停表）
         this._tickTimer = null;
+        // 2026-10-12 系统声音输出设备守护
+        this._srcType = null;           // loopback | mic | file
+        this._loopTrack = null;         // 当前回环音频轨道
+        this._loopWatchTimer = null;
+        this._silenceTicks = 0;         // 连续 3s 无声采样计数（看门狗）
+        this._recapBudget = 2;          // 持续无声时最多自动重连次数（有声音恢复后重置）
+        this._lastRecapTs = 0;          // 重连去抖
+        this._restartInFlight = false;  // restart 串行化屏障（三轮评审非阻塞建议：显式初始化）
+        this._deviceChangeBound = false; // devicechange 监听每实例只注册一次
     }
 
     // ---------------------------------------------------------------- HTTP
@@ -173,6 +189,7 @@
 
         // 音源（四期：缺省 loopback；mic 为新增主音源；file 仅供演示脚本）
         var src = o.source || 'loopback';
+        this._srcType = src;
         try {
             if (src === 'loopback') await this._startLoopback();
             else if (src === 'mic') await this._startMic();
@@ -198,7 +215,7 @@
         // 实时保存：周期兜底（句子级由 markDirty 防抖触发）
         this._cycleTimer = setInterval(function () { self.saveNow(); }, this.autoSaveMs);
         // 录制中标识（失败不阻断录音）
-        this.api('/api/notes/recording', { method: 'POST', body: JSON.stringify({ path: this.note.path, on: true }) })
+                this.api('/api/notes/recording', { method: 'POST', body: JSON.stringify({ path: this.note.path, on: true }) })
             .catch(function () {});
         return true;
     };
@@ -222,6 +239,8 @@
     };
 
     // ------------------------------------------------ 录音时长计时（积分计费用）
+    /** 公开读：实际录制秒数（暂停不计），供 UI 计时显示 */
+    LLRecorder.prototype.seconds = function () { return this._recSec; };
     LLRecorder.prototype._tickStart = function () {
         var self = this;
         if (this._tickTimer) clearInterval(this._tickTimer);
@@ -244,8 +263,16 @@
         this.state = 'idle';
         this.emit('state', { state: this.state });
         if (this.note) {
-            this.api('/api/notes/recording', { method: 'POST', body: JSON.stringify({ path: this.note.path, on: false }) })
-                .catch(function () {});
+            // 必须 await：悬浮窗 done() 后立即销毁窗口，fire-and-forget 的 fetch 会被 renderer
+            // 销毁掐死→notes.recording 残留 1→笔记页生成脑图被 409 误拦（用户实测 bug）。
+            // 3s 超时兜底（CodeReview Major）：后端挂起时不能卡死关闭流程；
+            // 超时残留的标识会被下次录制 on:true/false 或下一轮 done 自然覆写。
+            try {
+                await Promise.race([
+                    this.api('/api/notes/recording', { method: 'POST', body: JSON.stringify({ path: this.note.path, on: false }) }),
+                    new Promise(function (_, rej) { setTimeout(function () { rej(new Error('clear-flag timeout')); }, 3000); })
+                ]);
+            } catch (e) { this.emit('status', { text: '录制标识清理超时，下次录制会自动覆写' }); }
         }
         // 2026-09-28 积分：录音转文字按实际时长上报扣分（失败不自毁，仅事件提示）
         if (secs > 0) {
@@ -367,6 +394,102 @@
             throw new Error('无音频轨道（本机 loopback 可能不可用）');
         }
         this._connectStream(stream);
+        this._watchLoopTrack(at);
+        this._ensureLoopWatch();
+    };
+
+    /** 绑定当前回环轨道的设备切换信号（ended/mute 即时触发重连） */
+    LLRecorder.prototype._watchLoopTrack = function (at) {
+        var self = this;
+        this._loopTrack = at;
+        at.addEventListener('ended', function () {
+            if (self.state === 'recording' && self._srcType === 'loopback') self.restartLoopAudio('音频轨道已结束');
+        });
+        at.addEventListener('mute', function () {
+            // 拔耳机瞬间旧设备轨道被置 mute；恢复采集后 mute 自然解除
+            if (self.state === 'recording' && self._srcType === 'loopback') self.restartLoopAudio('音频轨道已静音');
+        });
+    };
+
+    /** 无声看门狗 + devicechange：覆盖“轨道活着但一直是静音采样”（默认输出已换到耳机）的主症状 */
+    LLRecorder.prototype._ensureLoopWatch = function () {
+        var self = this;
+        // devicechange 监听按实例只注册一次：旧写法每次 start 都追加匿名监听，多节课后累积泄漏（CodeReview Major-3）
+        if (!this._deviceChangeBound) {
+            this._deviceChangeBound = true;
+            try {
+                this._deviceChangeHandler = function () {
+                    // 设备枚举变化（插入 USB/蓝牙耳机等）稍后系统默认输出才切过去，延迟重取
+                    if (self.state === 'recording' && self._srcType === 'loopback') {
+                        setTimeout(function () { self.restartLoopAudio('检测到音频设备变化'); }, 1200);
+                    }
+                };
+                navigator.mediaDevices.addEventListener('devicechange', this._deviceChangeHandler);
+            } catch (e) { /* 监听失败不致命：仍有 ended/mute/看门狗三层兜底 */ }
+        }
+        if (this._loopWatchTimer) return;
+        this._loopWatchTimer = setInterval(function () {
+            if (self.state !== 'recording' || self._srcType !== 'loopback' || !self.analyser) { self._silenceTicks = 0; return; }
+            var trk = self._loopTrack;
+            if (trk && trk.readyState === 'ended') { self.restartLoopAudio('音频轨道已断开'); return; }
+            var buf = new Uint8Array(self.analyser.fftSize);
+            self.analyser.getByteTimeDomainData(buf);
+            var peak = 0;
+            for (var i = 0; i < buf.length; i++) { var v = Math.abs(buf[i] - 128); if (v > peak) peak = v; }
+            if (peak <= 2) { self._silenceTicks++; } else { self._silenceTicks = 0; self._recapBudget = 2; }
+            // 24s 连续无声才尝试，且最多 2 次：真·安静课程不会被反复重取
+            if (self._silenceTicks >= 8 && self._recapBudget > 0) {
+                self._recapBudget--; self._silenceTicks = 0;
+                self.restartLoopAudio('长时间未采到声音');
+            }
+        }, 3000);
+    };
+
+    /**
+     * 静默重取屏幕回环流（主进程 handler 已免共享弹窗）。ASR 会话/笔记保存不受影响：
+     * 只换采集管线，不碰 llAsr。返回 Promise<boolean>。
+     * force=true：用户手势重试路径，绕过 4s 去抖（CodeReview Major-4）。
+     */
+    LLRecorder.prototype.restartLoopAudio = async function (reason, force) {
+        if (this.state === 'idle' || this._srcType !== 'loopback') return false;
+        if (this._restartInFlight) return false;   // 串行化屏障：force 旁路去抖后仍可能与 watchdog/mute 路径并发，双份新流会泄漏一份（二轮评审 Major-4 补充）
+        var now = Date.now();
+        if (!force && now - this._lastRecapTs < 4000) return false;   // 多信号源命中同一事件，去抖
+        this._lastRecapTs = now;
+        this._restartInFlight = true;
+        var oldStream = this.mediaStream;
+        try {
+            var stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+            // await 窗口期用户可能已点“完成”：重检状态，否则新流挂上已拆管线变孤儿活流（CodeReview Major-2）
+            if (this.state === 'idle' || this._srcType !== 'loopback') {
+                stream.getTracks().forEach(function (t) { t.stop(); });
+                return false;
+            }
+            var at = stream.getAudioTracks()[0];
+            if (!at) { stream.getTracks().forEach(function (t) { t.stop(); }); throw new Error('无音频轨道'); }
+            // 先拆旧管线再连新流（顺序固定：避免两个 ctx 同时占麦/回环）
+            if (this.procNode) { try { this.procNode.disconnect(); } catch (e) {} this.procNode = null; }
+            if (oldStream) { oldStream.getTracks().forEach(function (t) { t.stop(); }); }
+            if (this.audioCtx) { try { await this.audioCtx.close(); } catch (e) {} this.audioCtx = null; }
+            // audioCtx.close 也是 await 点，连新流前再复检一次（同上竞态窗口）
+            if (this.state === 'idle' || this._srcType !== 'loopback') {
+                stream.getTracks().forEach(function (t) { t.stop(); });
+                return false;
+            }
+            this._connectStream(stream);
+            this._watchLoopTrack(at);
+            this._silenceTicks = 0;
+            this.emit('status', { text: '系统声音已重新接回' + (reason ? '（' + reason + '）' : '') });
+            return true;
+        } catch (err) {
+            // 重取失败时旧流已被拆停：若仍在录音，看门狗/手势路径仍会再拉，不在此处重试
+            var name = (err && err.name) || '';
+            var needGesture = name === 'NotAllowedError' || name === 'InvalidStateError' || name === 'SecurityError';
+            this.emit('recapture', { failed: true, needGesture: needGesture, error: String((err && err.message) || err) });
+            return false;
+        } finally {
+            this._restartInFlight = false;  // 一切实行路径（含各 recheck 提前 return）都释放屏障
+        }
     };
 
     /** 四期新增：麦克风音源（getUserMedia audio + 现有采帧管线复用） */
@@ -411,6 +534,8 @@
     LLRecorder.prototype._teardown = async function () {
         if (this._cycleTimer) { clearInterval(this._cycleTimer); this._cycleTimer = null; }
         if (this._debTimer) { clearTimeout(this._debTimer); this._debTimer = null; }
+        if (this._loopWatchTimer) { clearInterval(this._loopWatchTimer); this._loopWatchTimer = null; }
+        this._loopTrack = null; this._silenceTicks = 0; this._recapBudget = 2; this._srcType = null;
         try { await global.llAsr.stop(); } catch (e) {}
         if (this.offResult) { this.offResult(); this.offResult = null; }
         if (this.procNode) { try { this.procNode.disconnect(); } catch (e) {} this.procNode = null; }

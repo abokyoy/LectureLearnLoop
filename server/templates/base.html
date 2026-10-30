@@ -52,7 +52,7 @@
     })();
 </script>
     <!-- 批1：Tailwind 由 CDN 运行时切换为预编译静态 CSS（构建：frontend/ npm run build） -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/cl.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/cl.css') }}?v={{ cl_css_ver }}">
     <!-- Flask版本：使用API封装替代QWebChannel -->
     <!-- 统一调试日志：必须最先加载，api.js 会用到的 -->
     <script src="{{ url_for('static', filename='js/unified_logger.js') }}"></script>
@@ -343,6 +343,43 @@
         .practice-main-container .flex-grow.flex.flex-col.bg-white {
             max-height: calc(100vh - 300px); /* 限制主内容区域高度 */
             overflow-y: auto; /* 启用滚动 */
+        }
+        
+        /* ===== v0.1.7 用户反馈修正（考卷布局/面板遮挡/通知可见性） ===== */
+        /* Electron 无边框窗口下原生 titleBarOverlay（高 56px，main.js）永远盖在网页内容之上，
+           CSS z-index 无法越过：最大化助手面板顶沿必须从它下方开始，
+           否则面板头部的历史/最大化/关闭按钮被原生窗口控件遮挡无法点击 */
+        html.ll-electron .ai-chat-window.maximized {
+            top: 64px;
+        }
+        
+        /* 考卷模式：题目展示区尽量占满版面（解除旧单题时代 300px 高度帽） */
+        #aiChatWindow.quiz-mode .practice-main-container {
+            max-height: 100%;
+        }
+        #aiChatWindow.quiz-mode .practice-main-container .flex-grow.flex.flex-col.bg-white {
+            max-height: 100%;
+        }
+        #aiChatWindow.quiz-mode .practice-main-container .flex-grow.mb-4.overflow-y-auto {
+            max-height: none;
+        }
+        
+        /* 相关学习内容：展开时向上浮出覆盖题目区（overlay），不占版面；收起时仅保留一条入口栏。
+           用显式 .rc-expanded 类切换（CDP 实证：details[open] 原生联动在面板动态状态下不可靠） */
+        #relatedContentWrap {
+            position: relative;
+        }
+        #relatedContentWrap #relatedContentDisplay.rc-expanded {
+            position: absolute;
+            bottom: calc(100% + 4px);
+            left: 0;
+            right: 0;
+            margin-top: 0;
+            max-height: 45vh;
+            overflow-y: auto;
+            z-index: 30;
+            box-shadow: 0 -6px 20px rgba(0, 0, 0, 0.15);
+            border: 1px solid #d7e8d8;
         }
         
         /* 练习.html中的颜色变量 */
@@ -703,13 +740,7 @@
                             <p class="text-text-medium-brown mb-6">智能生成练习题目，提升学习效果</p>
                         </div>
                         
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-md">
-                            <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomeNewPracticeBtn">
-                                <span class="material-icons-outlined text-3xl text-primary mb-2">add_circle_outline</span>
-                                <span class="font-medium text-text-dark-brown">开始新练习</span>
-                                <span class="text-sm text-text-medium-brown mt-1">生成新的练习题目</span>
-                            </button>
-                            
+                        <div class="grid grid-cols-1 w-full max-w-sm mx-auto">
                             <button class="practice-action-btn flex flex-col items-center p-6 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow border border-gray-100" id="welcomePracticeHistoryBtn">
                                 <span class="material-icons-outlined text-3xl text-blue-500 mb-2">history</span>
                                 <span class="font-medium text-text-dark-brown">练习历史</span>
@@ -718,7 +749,7 @@
                         </div>
                         
                         <div class="mt-8 text-sm text-text-medium-brown">
-                            <p>💡 提示：您可以通过AI对话生成个性化练习题目</p>
+                            <p>💡 提示：在学习页选中文字后右击「开始练习」，配置题型与难度即可生成考卷</p>
                         </div>
                     </div>
                 </div>
@@ -747,20 +778,8 @@
 
         // 绑定练习欢迎界面的事件
         function bindPracticeWelcomeEvents() {
-            const welcomeNewPracticeBtn = document.getElementById('welcomeNewPracticeBtn');
             const welcomePracticeHistoryBtn = document.getElementById('welcomePracticeHistoryBtn');
-            
-            if (welcomeNewPracticeBtn) {
-                welcomeNewPracticeBtn.addEventListener('click', function() {
-                    addDebugLog('点击开始新练习');
-                    // 隐藏欢迎界面，显示消息面板
-                    showPracticeMessages();
-                    // 添加提示消息
-                    if (typeof addPracticeMessage === 'function') {
-                        addPracticeMessage('请通过AI对话描述您想要练习的内容，我将为您生成个性化的练习题目。\\n\\n例如：\\n• "请为我生成5道关于机器学习的选择题"\\n• "帮我出几道Python编程练习题"\\n• "生成一些数学应用题"', 'ai');
-                    }
-                });
-            }
+            // v0.1.7：「开始新练习」按钮已移除（出题唯一入口=学习页右击开始练习→配置弹窗）
             
             if (welcomePracticeHistoryBtn) {
                 welcomePracticeHistoryBtn.addEventListener('click', function() {
@@ -1055,14 +1074,7 @@
                                     <span class="material-icons-outlined mr-1">history</span>
                                     <span>练习历史</span>
                                 </button>
-                                <button class="flex items-center text-text-gray hover:text-primary" id="newPracticeBtn">
-                                    <span class="material-icons-outlined mr-1">add_circle_outline</span>
-                                    <span>新练习</span>
-                                </button>
-                                <button class="flex items-center text-white bg-primary px-4 py-2 rounded-lg shadow hover:bg-green-600" id="startPracticeBtn">
-                                    <span class="material-icons-outlined mr-2">play_arrow</span>
-                                    <span>开始新练习</span>
-                                </button>
+                                <!-- v0.1.7：新练习/开始新练习按钮已移除，出题唯一入口=学习页右击开始练习 -->
                                 <button class="flex items-center text-text-gray hover:text-primary" id="saveResultBtn">
                                     <span class="material-icons-outlined mr-1">save_alt</span>
                                     <span>保存评估结果</span>
@@ -1088,21 +1100,24 @@
                                         <strong>题目：</strong> <span id="questionContent">题目将在这里显示...</span>
                                     </p>
                                 </div>
-                                <h4 class="text-md font-semibold text-text-dark-brown mb-2">用户答案记录：</h4>
+                                <h4 class="text-md font-semibold text-text-dark-brown mb-2" id="answerHistoryTitle">用户答案记录：</h4>
                                 <div class="space-y-3 text-sm text-text-medium-brown" id="answerHistoryArea">
                                     <!-- 答案历史将在这里显示 -->
                                 </div>
                             </div>
                             
-                            <!-- 答题区域 -->
-                            <div class="mb-4">
+                            <!-- 答题区域（v0.1.7 考卷模式下隐藏，改用逐题卡片作答） -->
+                            <div class="mb-4" id="practiceLegacyAnswerArea">
                                 <h3 class="text-lg font-semibold text-text-dark-brown mb-3">答题区域</h3>
                                 <textarea class="w-full h-28 p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary transition duration-200" 
                                           placeholder="请在此输入你的答案..." id="practiceAnswerInput"></textarea>
                                 <p class="text-xs text-text-gray mt-1">💡 提示: 尝试从定义、特性和应用场景三个方面来回答。</p>
                             </div>
                             <!-- 底部按钮区域 - 对应练习.html的157-164行 -->
-                        <div class="mt-6 flex justify-end space-x-4">
+                        <div class="mt-6 flex justify-end space-x-4" id="practiceLegacyActions">
+                            <button class="px-6 py-2 rounded-lg text-white bg-primary hover:bg-green-600 transition shadow" id="quizSubmitBtn" style="display: none;">
+                                提交判卷
+                            </button>
                             <button class="px-6 py-2 rounded-lg text-text-gray bg-gray-200 hover:bg-gray-300 transition" id="submitAnswerBtn">
                                 提交答案
                             </button>
@@ -1110,17 +1125,15 @@
                                 AI评判
                             </button>
                         </div>
-                            <!-- 相关学习内容 -->
-                            <div class="mb-4">
-                                <details class="group">
-                                    <summary class="flex items-center justify-between cursor-pointer p-2 bg-bg-light-blue-gray rounded-lg hover:bg-gray-200">
-                                        <h3 class="text-lg font-semibold text-text-dark-brown">相关学习内容</h3>
-                                        <span class="material-icons-outlined transition-transform duration-300 group-open:rotate-180">expand_more</span>
-                                    </summary>
-                                    <div class="mt-3 p-4 bg-bg-light-green rounded-lg" id="relatedContentDisplay">
-                                        <p class="text-text-dark-brown">选中的学习内容将在这里显示...</p>
-                                    </div>
-                                </details>
+                            <!-- 相关学习内容（v0.1.7：展开时 overlay 向上浮出，不占版面；显式按钮切换） -->
+                            <div class="mb-4" id="relatedContentWrap">
+                                <button type="button" id="relatedContentToggleBtn" class="w-full flex items-center justify-between cursor-pointer p-2 bg-bg-light-blue-gray rounded-lg hover:bg-gray-200">
+                                    <span class="text-lg font-semibold text-text-dark-brown">相关学习内容</span>
+                                    <span class="material-icons-outlined transition-transform duration-300" id="relatedContentArrow">expand_more</span>
+                                </button>
+                                <div class="hidden p-4 bg-bg-light-green rounded-lg" id="relatedContentDisplay">
+                                    <p class="text-text-dark-brown">选中的学习内容将在这里显示...</p>
+                                </div>
                             </div>
                         </div>
                         
@@ -1241,6 +1254,77 @@
         </div>
     </div>
     
+    <!-- v0.1.7 练习配置弹窗：题型勾选 / 数量 / 难度（智能推荐或自定义） -->
+    <div class="ai-history-modal" id="quizConfigModal">
+        <div class="ai-history-content" style="width: 560px; max-width: 92vw;">
+            <div class="ai-history-header">
+                <h3 class="text-lg font-semibold">练习配置</h3>
+                <button id="closeQuizConfigBtn" class="text-gray-500 hover:text-gray-700">
+                    <span class="material-icons-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-5 space-y-6 overflow-y-auto" style="max-height: 70vh;">
+                <div>
+                    <div class="text-sm font-semibold text-text-dark-brown mb-3">题型 <span class="text-xs font-normal text-text-medium-brown">（可多选，默认全勾）</span></div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" class="quiz-type-cb w-4 h-4" value="single" checked>
+                            <span class="text-sm text-text-dark-brown">选择题</span>
+                        </label>
+                        <label class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" class="quiz-type-cb w-4 h-4" value="judge" checked>
+                            <span class="text-sm text-text-dark-brown">判断题</span>
+                        </label>
+                        <label class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" class="quiz-type-cb w-4 h-4" value="fill" checked>
+                            <span class="text-sm text-text-dark-brown">填空题</span>
+                        </label>
+                        <label class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                            <input type="checkbox" class="quiz-type-cb w-4 h-4" value="short" checked>
+                            <span class="text-sm text-text-dark-brown">简答题（支持拍照上传）</span>
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-text-dark-brown mb-3">题目数量</div>
+                    <select id="quizCountSelect" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="3">3 题</option>
+                        <option value="5" selected>5 题</option>
+                        <option value="8">8 题</option>
+                        <option value="10">10 题</option>
+                        <option value="15">15 题</option>
+                        <option value="20">20 题</option>
+                    </select>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-text-dark-brown mb-3">题目难度</div>
+                    <div class="space-y-2">
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="radio" name="quizDiffRadio" value="smart" checked class="mt-0.5">
+                            <span>
+                                <span class="text-sm text-text-dark-brown">智能推荐</span>
+                                <span class="text-xs text-text-medium-brown block">根据你对相关知识点的熟练度自动匹配难度</span>
+                            </span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="radio" name="quizDiffRadio" value="custom" class="mt-0.5">
+                            <span class="text-sm text-text-dark-brown">自定义：</span>
+                            <select id="quizDiffSelect" class="px-2 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" disabled>
+                                <option value="容易">容易</option>
+                                <option value="中等" selected>中等</option>
+                                <option value="困难">困难</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button id="quizConfigCancelBtn" class="px-4 py-2 bg-gray-200 text-text-dark-brown rounded-lg hover:bg-gray-300 text-sm transition">取消</button>
+                    <button id="quizConfigStartBtn" class="px-5 py-2 bg-primary text-white rounded-lg hover:bg-green-600 shadow text-sm transition">开始组卷</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 全局调试面板已删除（产品要求：不得在页面内弹出任何调试 UI，日志仅进 console/后端文件） -->
 
     {% block content %}{% endblock %}
@@ -1307,6 +1391,8 @@
             let isMaximized = false;
             let isWindowOpen = false;
             let currentPracticeData = null;
+            // v0.1.6：最后一次已渲染进练习面板的数据对象（手动切Tab自动补渲染的去重/防递归标识）
+            let lastRenderedPracticeData = null;
             let selectedHistoryId = null;
             
             // Tab切换功能
@@ -1322,8 +1408,6 @@
             // 练习按钮元素
             const backToWelcomeBtn = document.getElementById('backToWelcomeBtn');
             const practiceHistoryBtn = document.getElementById('practiceHistoryBtn');
-            const newPracticeBtn = document.getElementById('newPracticeBtn');
-            const startPracticeBtn = document.getElementById('startPracticeBtn');
             const saveResultBtn = document.getElementById('saveResultBtn');
             const addToErrorsBtn = document.getElementById('addToErrorsBtn');
             const submitAnswerBtn = document.getElementById('submitAnswerBtn');
@@ -1519,6 +1603,12 @@
                     currentPracticeAnswer = '';
                     currentEvaluationResult = null;
                     practiceAnswerHistory = [];
+                    // v0.1.6：同步清理数据对象与已渲染标识，避免返回欢迎页后手动切Tab误自动渲染旧练习
+                    currentPracticeData = null;
+                    lastRenderedPracticeData = null;
+                    // v0.1.7：清空考卷态并恢复默认面板元素（消息按钮改为按 pid 从历史恢复，不受此清理影响）
+                    quizState = null;
+                    if (typeof quizModeChrome === 'function') quizModeChrome(false);
                     
                     // 隐藏练习容器，显示欢迎界面
                     if (practiceContainer) {
@@ -1536,13 +1626,7 @@
                 practiceHistoryBtn.addEventListener('click', showPracticeHistory);
             }
             
-            if (newPracticeBtn) {
-                newPracticeBtn.addEventListener('click', startNewPractice);
-            }
-            
-            if (startPracticeBtn) {
-                startPracticeBtn.addEventListener('click', startNewPractice);
-            }
+            // v0.1.7：newPracticeBtn/startPracticeBtn 已随顶栏按钮移除，出题唯一入口=配置弹窗链路
             
             if (saveResultBtn) {
                 saveResultBtn.addEventListener('click', savePracticeResult);
@@ -2189,8 +2273,8 @@
             };
             
             
-            // 添加消息到聊天窗口
-            function addMessage(content, type, isSummary = false) {
+            // 添加消息到聊天窗口（v0.1.7：新增第4参 quizPid，「点击这里开始练习」按钮携带考卷号可随时恢复）
+            function addMessage(content, type, isSummary = false, quizPid = null) {
                 // 创建消息元素的函数
                 function createMessageElement() {
                     const messageDiv = document.createElement('div');
@@ -2244,7 +2328,7 @@
                         startBtn.innerHTML = '<span class="material-icons-outlined text-xs">play_arrow</span>点击这里开始练习';
                         startBtn.onclick = () => {
                             if (window.startPracticeSession) {
-                                window.startPracticeSession();
+                                window.startPracticeSession(quizPid || undefined);
                             }
                         };
                         
@@ -2796,8 +2880,21 @@
                         
                         // 智能显示欢迎界面或练习内容
                         setTimeout(() => { 
-                            if (currentPracticeId || currentPracticeQuestions) {
-                                // 有练习数据时，隐藏欢迎界面
+                            const readyData = currentPracticeData && (currentPracticeData.questionsArray || currentPracticeData.questions || currentPracticeData.question);
+                            if (readyData) {
+                                if (currentPracticeData !== lastRenderedPracticeData) {
+                                    // v0.1.6 修复白页：本题已就绪但尚未渲染进面板（用户手动切Tab未点消息按钮/新题刚生成）→ 自动渲染
+                                    globalDebugLog('🔧 Tab切换：题目已就绪，自动渲染练习面板');
+                                    showPracticePanel(currentPracticeData);
+                                } else {
+                                    const welcomePanel = document.getElementById('practiceWelcomePanel');
+                                    if (welcomePanel) {
+                                        welcomePanel.style.display = 'none';
+                                        globalDebugLog('✅ Tab切换：隐藏欢迎界面（练习面板已渲染）');
+                                    }
+                                }
+                            } else if (currentPracticeId || currentPracticeQuestions || quizGenerating) {
+                                // 生成中：隐藏欢迎界面，留出消息区（显示生成提示）
                                 const welcomePanel = document.getElementById('practiceWelcomePanel');
                                 if (welcomePanel) {
                                     welcomePanel.style.display = 'none';
@@ -2813,8 +2910,8 @@
                 }
             }
             
-            // 练习消息处理
-            function addPracticeMessage(content, type = 'ai') {
+            // 练习消息处理（v0.1.7：新增第3参 quizPid，与 addMessage 同款带号按钮）
+            function addPracticeMessage(content, type = 'ai', quizPid = null) {
                 if (!aiPracticeMessages) return;
                 
                 showDebug('🏃 addPracticeMessage被调用 - 内容: ' + content.substring(0, 50) + '... 类型: ' + type);
@@ -2834,6 +2931,22 @@
                     showDebug('🏃 练习消息调用Markdown渲染');
                     messageContent.innerHTML = formatMarkdownContent(content);
                     showDebug('🏃 练习消息渲染完成: ' + messageContent.innerHTML.substring(0, 100));
+                    
+                    // v0.1.6（评审S-1）：与 addMessage 同款关键词按钮，最大化模式下练习消息区也能一键开始练习
+                    if (content.includes('练习题目生成完成') || content.includes('生成成功')) {
+                        const btnContainer = document.createElement('div');
+                        btnContainer.className = 'mt-3 flex gap-2';
+                        const startBtn = document.createElement('button');
+                        startBtn.className = 'px-3 py-1 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 transition-colors flex items-center gap-1';
+                        startBtn.innerHTML = '<span class="material-icons-outlined text-xs">play_arrow</span>点击这里开始练习';
+                        startBtn.onclick = () => {
+                            if (window.startPracticeSession) {
+                                window.startPracticeSession(quizPid || undefined);
+                            }
+                        };
+                        btnContainer.appendChild(startBtn);
+                        messageContent.appendChild(btnContainer);
+                    }
                 } else {
                     messageContent.textContent = content;
                 }
@@ -2864,6 +2977,9 @@
                 // 只在最大化模式下显示练习面板
                 if (!isMaximized) return;
                 
+                // v0.1.6：即将真实渲染本数据，先登记标识（重入 switchTab 的延时回调据此不重复渲染，防递归）
+                lastRenderedPracticeData = practiceData;
+                
                 // 切换到练习Tab
                 switchTab('practice');
                 
@@ -2882,9 +2998,13 @@
                 // 显示练习面板
                 if (practiceContainer) {
                     practiceContainer.style.display = 'flex';
-                    
-                    // 加载练习数据
-                    loadNewPracticeData(practiceData);
+                    if (practiceData.questionsArray) {
+                        // v0.1.7 考卷模式：逐题卡片渲染（答题页/判卷结果页由 quizState.mode 决定）
+                        renderQuizPanel();
+                    } else {
+                        quizModeChrome(false);
+                        loadNewPracticeData(practiceData);
+                    }
                 }
                 
                 // 打开AI助手窗口
@@ -2932,22 +3052,7 @@
                 }
             };
             
-            // 开始练习会话 - 从消息中的按钮触发
-            window.startPracticeSession = function() {
-                // 自动最大化AI助手窗口
-                if (!isMaximized) {
-                    toggleMaximizeChat();
-                }
-                
-                // 切换到练习Tab并显示练习面板
-                setTimeout(() => {
-                    switchTab('practice');
-                    // 显示练习面板
-                    if (currentPracticeData) {
-                        showPracticePanel(currentPracticeData);
-                    }
-                }, 300);
-            };
+            // 开始练习会话的旧定义已删除（v0.1.7：统一使用文件后部带 pid 恢复逻辑的版本，避免双重定义覆盖歧义）
             
             // =========================
             // 练习助手功能实现区域
@@ -5504,31 +5609,766 @@
                 globalDebugLog('✅ 练习状态已设置完成');
             };
             
-            window.addAIPracticeMessage = function(content, type = 'ai') {
-                // 在小窗口模式下，练习消息也显示在主聊天区域
+            window.addAIPracticeMessage = function(content, type = 'ai', quizPid = null) {
+                // 在小窗口模式下，练习消息也显示在主聊天区域（v0.1.7：透传考卷号）
                 if (!isMaximized) {
-                    addMessage(content, type);
+                    addMessage(content, type, false, quizPid);
                 } else {
-                    addPracticeMessage(content, type);
+                    addPracticeMessage(content, type, quizPid);
                 }
             };
             
-            // 开始练习按钮点击处理
-            window.startPracticeSession = function() {
+            // 开始练习按钮点击处理（v0.1.7：带考卷号 pid 可从历史恢复考卷，根治「二次点击没反应」）
+            window.startPracticeSession = function(pid) {
                 // 自动最大化AI助手窗口
                 if (!isMaximized) {
                     toggleMaximizeChat();
                 }
                 
-                // 切换到练习Tab
                 setTimeout(() => {
+                    // 1) 内存中的考卷且与 pid 匹配（或未指定 pid）→ 直接恢复答卷
+                    if (quizState && (!pid || quizState.pid === pid)) {
+                        switchTab('practice');
+                        showPracticePanel({ id: quizState.pid, questionsArray: quizState.questions, selectedText: quizState.selectedText });
+                        return;
+                    }
+                    // 2) 有 pid 但内存已清（返回首页后）→ 从练习历史拉回考卷恢复
+                    if (pid && window.bridge && window.bridge.loadPracticeHistory) {
+                        globalDebugLog('🧾 startPracticeSession: 按 pid 恢复考卷 ' + pid);
+                        Promise.resolve(window.bridge.loadPracticeHistory(pid)).then(function(response) {
+                            const r = typeof response === 'string' ? JSON.parse(response) : response;
+                            const p = r && (r.practice || r);
+                            if (!p) return;
+                            if (restoreQuizFromHistory(p)) return;
+                            // 非结构化旧练习数据 → 旧通道渲染
+                            currentPracticeData = p;
+                            switchTab('practice');
+                            showPracticePanel(p);
+                        }).catch(function(e) {
+                            globalDebugError('❌ 恢复考卷失败: ' + e.message);
+                            if (typeof showToast === 'function') showToast('恢复考卷失败: ' + e.message, 'error');
+                        });
+                        return;
+                    }
+                    // 3) 旧通道兜底
                     switchTab('practice');
-                    // 显示练习面板
                     if (currentPracticeData) {
                         showPracticePanel(currentPracticeData);
                     }
                 }, 300);
             };
+            
+            // ============================================================
+            // v0.1.7 考卷通道：配置弹窗 → 结构化组卷 → 逐题作答（含拍照）
+            // → 提交AI判卷 → 错题勾选入库；出题即落库，消息按钮带 pid 可随时恢复
+            // ============================================================
+            var quizState = null;        // {pid, selectedText, cfg, questions, answers, photos, mode, result}
+            var quizGenerating = false;  // 组卷进行中（切Tab时隐藏欢迎页）
+            var quizConfigCallback = null;
+            
+            function quizEscapeHtml(s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+            function quizStripImg(md) {
+                return String(md || '').replace(/!\[[^\]]*\]\([^)]+\)/g, '').trim();
+            }
+            function quizTypeBadge(t) {
+                const map = {
+                    single: ['选择题', 'bg-blue-100 text-blue-700'],
+                    judge: ['判断题', 'bg-purple-100 text-purple-700'],
+                    fill: ['填空题', 'bg-amber-100 text-amber-700'],
+                    short: ['简答题', 'bg-teal-100 text-teal-700'],
+                };
+                const m = map[t] || [quizEscapeHtml(t || ''), 'bg-gray-100 text-gray-600'];
+                return '<span class="text-xs px-2 py-0.5 rounded-full ' + m[1] + '">' + m[0] + '</span>';
+            }
+            
+            // 考卷模式下面板元素切换（隐藏旧单题答题区/旧按钮，显示提交判卷）
+            function quizModeChrome(on) {
+                const legacyAnswer = document.getElementById('practiceLegacyAnswerArea');
+                const oldSubmit = document.getElementById('submitAnswerBtn');
+                const oldEval = document.getElementById('aiEvaluateBtn');
+                const saveBtn = document.getElementById('saveResultBtn');
+                const errBtn = document.getElementById('addToErrorsBtn');
+                const submitBtn = document.getElementById('quizSubmitBtn');
+                // v0.1.7 用户反馈：考卷模式下题目区占满版面（quiz-mode 类解除 300px 高度帽），并隐藏旧模式专用的“用户答案记录”
+                const chatWin = document.getElementById('aiChatWindow');
+                if (chatWin) chatWin.classList.toggle('quiz-mode', !!on);
+                const histTitle = document.getElementById('answerHistoryTitle');
+                const histArea = document.getElementById('answerHistoryArea');
+                if (histTitle) histTitle.style.display = on ? 'none' : '';
+                if (histArea) histArea.style.display = on ? 'none' : '';
+                // 评审采纳：进入考卷时强制收起可能残留的“相关学习内容”展开浮层，防止遮住首题（跨轮状态串扰）
+                if (on) {
+                    const rcDisp = document.getElementById('relatedContentDisplay');
+                    const rcArrow = document.getElementById('relatedContentArrow');
+                    if (rcDisp && rcDisp.classList.contains('rc-expanded')) {
+                        rcDisp.classList.remove('rc-expanded');
+                        rcDisp.classList.add('hidden');
+                        if (rcArrow) rcArrow.style.transform = '';
+                    }
+                }
+                if (on) {
+                    if (legacyAnswer) legacyAnswer.style.display = 'none';
+                    if (oldSubmit) oldSubmit.style.display = 'none';
+                    if (oldEval) oldEval.style.display = 'none';
+                    if (saveBtn) saveBtn.style.display = 'none';
+                    if (errBtn) errBtn.style.display = 'none';
+                    if (submitBtn) submitBtn.style.display = (quizState && quizState.mode === 'answer') ? 'inline-block' : 'none';
+                } else {
+                    if (legacyAnswer) legacyAnswer.style.display = '';
+                    if (oldSubmit) oldSubmit.style.display = '';
+                    if (oldEval) oldEval.style.display = '';
+                    if (saveBtn) saveBtn.style.display = '';
+                    if (errBtn) errBtn.style.display = '';
+                    if (submitBtn) submitBtn.style.display = 'none';
+                }
+                const pidEl = document.getElementById('practiceIdDisplay');
+                if (pidEl) pidEl.textContent = (on && quizState) ? quizState.pid : '—';
+            }
+            
+            // ---------- 配置弹窗 ----------
+            (function bindQuizConfigDialog() {
+                const modal = document.getElementById('quizConfigModal');
+                if (!modal) return;
+                const diffSelect = document.getElementById('quizDiffSelect');
+                modal.querySelectorAll('input[name="quizDiffRadio"]').forEach(function(rb) {
+                    rb.addEventListener('change', function() {
+                        const checked = modal.querySelector('input[name="quizDiffRadio"]:checked');
+                        if (diffSelect) diffSelect.disabled = !(checked && checked.value === 'custom');
+                    });
+                });
+                function closeQuizModal() {
+                    modal.classList.remove('show');
+                    quizConfigCallback = null;
+                }
+                const closeBtn = document.getElementById('closeQuizConfigBtn');
+                const cancelBtn = document.getElementById('quizConfigCancelBtn');
+                if (closeBtn) closeBtn.addEventListener('click', closeQuizModal);
+                if (cancelBtn) cancelBtn.addEventListener('click', closeQuizModal);
+                const startBtn = document.getElementById('quizConfigStartBtn');
+                if (startBtn) startBtn.addEventListener('click', function() {
+                    const types = Array.prototype.slice.call(modal.querySelectorAll('.quiz-type-cb:checked')).map(function(cb) { return cb.value; });
+                    if (!types.length) {
+                        if (typeof showToast === 'function') showToast('请至少勾选一种题型', 'warning');
+                        return;
+                    }
+                    const countSel = document.getElementById('quizCountSelect');
+                    const count = parseInt((countSel && countSel.value) || '5', 10);
+                    const checked = modal.querySelector('input[name="quizDiffRadio"]:checked');
+                    const difficulty = (checked && checked.value === 'custom') ? (diffSelect ? diffSelect.value : '中等') : 'smart';
+                    const cb = quizConfigCallback;
+                    modal.classList.remove('show');
+                    quizConfigCallback = null;
+                    if (typeof cb === 'function') cb({ types: types, count: count, difficulty: difficulty });
+                });
+            })();
+            
+            window.openQuizConfigDialog = function(selectedText, onReady) {
+                const modal = document.getElementById('quizConfigModal');
+                if (typeof onReady !== 'function') return;
+                if (!modal) {
+                    // 弹窗不可用时降级：直接按默认配置组卷
+                    onReady({ types: ['single', 'judge', 'fill', 'short'], count: 5, difficulty: 'smart' });
+                    return;
+                }
+                quizConfigCallback = onReady;
+                modal.querySelectorAll('.quiz-type-cb').forEach(function(cb) { cb.checked = true; });
+                const countSel = document.getElementById('quizCountSelect');
+                if (countSel) countSel.value = '5';
+                const smartRb = modal.querySelector('input[name="quizDiffRadio"][value="smart"]');
+                if (smartRb) smartRb.checked = true;
+                const diffSel = document.getElementById('quizDiffSelect');
+                if (diffSel) { diffSel.disabled = true; diffSel.value = '中等'; }
+                modal.classList.add('show');
+            };
+            
+            // ---------- 组卷主流程 ----------
+            window.startQuizFlow = function(selectedText, cfg) {
+                // v0.1.7 CodeReview W-1：生成中禁止并发重复组卷（避免双扣费/孤儿考卷覆盖 quizState）
+                if (quizGenerating) {
+                    if (typeof showToast === 'function') showToast('上一份考卷正在生成，请稍候…', 'warning');
+                    return;
+                }
+                if (!window.bridge || !window.bridge.generatePracticeQuiz) {
+                    if (typeof showToast === 'function') showToast('练习服务暂不可用，请稍后重试', 'error');
+                    return;
+                }
+                if (!selectedText || !String(selectedText).trim()) {
+                    if (typeof showToast === 'function') showToast('没有可练习的内容，请先选中文本', 'warning');
+                    return;
+                }
+                const payload = {
+                    selected_text: String(selectedText),
+                    types: (cfg && cfg.types && cfg.types.length) ? cfg.types : ['single', 'judge', 'fill', 'short'],
+                    count: (cfg && cfg.count) || 5,
+                    difficulty: (cfg && cfg.difficulty) || 'smart',
+                };
+                quizGenerating = true;
+                quizState = null;
+                window.addAIPracticeMessage('📝 正在生成考卷（' + payload.count + ' 题，' + (payload.difficulty === 'smart' ? '智能推荐难度' : payload.difficulty) + '），请稍候...', 'ai');
+                Promise.resolve(window.bridge.generatePracticeQuiz(JSON.stringify(payload))).then(function(response) {
+                    const r = typeof response === 'string' ? JSON.parse(response) : response;
+                    if (r && r.success && Array.isArray(r.questions) && r.questions.length) {
+                        quizState = {
+                            pid: r.practice_id, selectedText: payload.selected_text, cfg: payload,
+                            questions: r.questions, answers: r.questions.map(function() { return ''; }),
+                            photos: r.questions.map(function() { return []; }),
+                            mode: 'answer', result: null,
+                        };
+                        currentPracticeData = { id: r.practice_id, questionsArray: r.questions, selectedText: payload.selected_text };
+                        const diffNote = r.difficulty_used ? ('难度：' + r.difficulty_used + (r.matched_point ? '（匹配知识点「' + r.matched_point + '」熟练度）' : (payload.difficulty === 'smart' ? '（智能推荐）' : ''))) : '';
+                        window.addAIPracticeMessage('**练习题目生成完成！**（共 ' + r.questions.length + ' 题）' + (diffNote ? '\n' + diffNote : '') + '\n正在进入考卷作答...', 'ai', r.practice_id);
+                        // 生成后直接跳入考卷从头作答
+                        window.startPracticeSession(r.practice_id);
+                    } else {
+                        window.addAIPracticeMessage('考卷生成失败：' + ((r && r.error) || '未知错误') + '，请重试。', 'ai');
+                    }
+                }).catch(function(e) {
+                    globalDebugError('❌ generatePracticeQuiz 异常: ' + e.message);
+                    window.addAIPracticeMessage('考卷生成失败：' + e.message + '，请重试。', 'ai');
+                }).then(function() { quizGenerating = false; });
+            };
+            
+            // ---------- 历史/恢复：结构化则进考卷，否则返回 false 走旧通道 ----------
+            function restoreQuizFromHistory(p) {
+                try {
+                    if (!p || !p.questions) return false;
+                    const arr = typeof p.questions === 'string' ? JSON.parse(p.questions) : p.questions;
+                    if (!Array.isArray(arr) || !arr.length || !arr[0] || !arr[0].type) return false;
+                    let result = null;
+                    const ev = p.evaluation_result;
+                    if (ev) {
+                        try {
+                            const parsed = typeof ev === 'string' ? JSON.parse(ev) : ev;
+                            if (Array.isArray(parsed) && parsed.length && ('is_correct' in parsed[0])) result = parsed;
+                        } catch (e) { /* 摘要对象不视为逐题结果 */ }
+                    }
+                    let answers = arr.map(function() { return ''; });
+                    if (p.user_answers) {
+                        try {
+                            const ua = typeof p.user_answers === 'string' ? JSON.parse(p.user_answers) : p.user_answers;
+                            if (Array.isArray(ua) && ua.length === arr.length) answers = ua.map(function(x) { return String(x == null ? '' : x); });
+                        } catch (e) { /* 忽略旧格式 */ }
+                    }
+                    // 简答/填空已传照片从作答文本中提取引用（缩略图进面板时懒加载水合；v0.1.8 评审 W-1：fill 也纳入，否则恢复后编辑会静默丢图引用）
+                    const photos = arr.map(function(q, i) {
+                        if (q.type !== 'short' && q.type !== 'fill') return [];
+                        const refs = String(answers[i] || '').match(/!\[[^\]]*\]\(([^)]+)\)/g) || [];
+                        return refs.map(function(ref) { return { rel: ref.replace(/^!\[[^\]]*\]\(([^)]+)\)$/, '$1'), dataUrl: '' }; });
+                    });
+                    quizState = {
+                        pid: p.practice_id || p.id || '', selectedText: p.selected_text || p.selectedText || '',
+                        cfg: null, questions: arr, answers: answers, photos: photos,
+                        mode: result ? 'result' : 'answer',
+                        result: result ? {
+                            score: Math.round(100 * result.filter(function(d) { return d.is_correct; }).length / result.length),
+                            correct_count: result.filter(function(d) { return d.is_correct; }).length,
+                            total_count: result.length, detailed_results: result,
+                        } : null,
+                    };
+                    currentPracticeData = { id: quizState.pid, questionsArray: arr, selectedText: quizState.selectedText };
+                    globalDebugLog('🧾 考卷恢复: pid=' + quizState.pid + ' mode=' + quizState.mode);
+                    showPracticePanel(currentPracticeData);
+                    return true;
+                } catch (e) {
+                    globalDebugError('❌ 恢复考卷失败(回落旧通道): ' + e.message);
+                    return false;
+                }
+            }
+            // ---------- v0.1.7 考卷（二）：答题页渲染与拍照上传 ----------
+            // 考卷富文本渲染（用户反馈：题干公式要渲染、围绕图的题要显示图）：
+            // 公式走公共件 MdRender（错题/知识库同管线，缺失时自动降级原文），
+            // 图片 ![说明](vault相对路径) → 占位 <img> → bridge.getImageAsBase64 异步水合（与笔记预览同 /api/vault/image 链路）。
+            var quizRichJobs = [];
+            var QUIZ_IMG_LOADING_PH = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWKoOi9veS4rS4uLjwvdGV4dD48L3N2Zz4=';
+            // v0.1.9 表格渲染（用户反馈：「在表1-1中…」的题要把表显示出来）：
+            // formatMarkdownContent 不认 MD 表格，这里把连续 | 包围行+分隔行解析成单行 HTML 表；
+            // 单元格保留公式原文，交给后续 MdRender 占位保护+KaTeX 回填（表内公式也能渲染）。
+            function quizTableCells(row) {
+                // 评审 Suggestion-2：\| 是合法的字面竖线，先落私用区占位再分列，单元内还原，避免被拆成多列
+                return row.trim().replace(/^\|/, '').replace(/\|$/, '')
+                    .replace(/\\\|/g, '\uE007')
+                    .split('|')
+                    .map(function (c) { return c.replace(/\uE007/g, '|').trim(); });
+            }
+            function quizCellHtml(c) {
+                // 评审 Suggestion-1：单元格内 * 与反引号实体化，防 formatMarkdownContent 的行内正则
+                // 跨单元格配对把 </td><td> 边界吞进捕获组造成串格；$ 定界符不动（单元格公式仍由 MdRender 抽取）
+                return quizEscapeHtml(c).replace(/\*/g, '&#42;').replace(/`/g, '&#96;');
+            }
+            function quizTableHtml(rows) {
+                var h = '<table class="quiz-q-table w-full my-2 border-collapse text-[13px]"><thead><tr>'
+                    + quizTableCells(rows[0]).map(function (c) {
+                        return '<th class="border border-gray-200 bg-gray-50 px-2 py-1 text-left font-semibold">' + quizCellHtml(c) + '</th>';
+                    }).join('') + '</tr></thead><tbody>';
+                rows.slice(1).filter(function (r) { return !/^[ \t]*\|[ \t:|-]+\|[ \t]*$/.test(r); }).forEach(function (r) {
+                    h += '<tr>' + quizTableCells(r).map(function (c) {
+                        return '<td class="border border-gray-200 px-2 py-1">' + quizCellHtml(c) + '</td>';
+                    }).join('') + '</tr>';
+                });
+                return h + '</tbody></table>';
+            }
+            function quizRenderTables(src) {
+                var lines = String(src || '').split('\n'), out = [], i = 0;
+                while (i < lines.length) {
+                    if (/^[ \t]*\|.*\|[ \t]*$/.test(lines[i]) && i + 1 < lines.length
+                        && /^[ \t]*\|[ \t:|-]+\|[ \t]*$/.test(lines[i + 1]) && lines[i + 1].indexOf('-') >= 0) {
+                        var rows = [];
+                        while (i < lines.length && /^[ \t]*\|.*\|[ \t]*$/.test(lines[i])) { rows.push(lines[i]); i++; }
+                        out.push(rows.length >= 2 ? quizTableHtml(rows) : rows.join('\n'));
+                    } else { out.push(lines[i]); i++; }
+                }
+                return out.join('\n');
+            }
+            function quizRichHtml(text) {
+                var src = String(text || '');
+                var imgs = [];
+                // 1) 图片引用先摘成私用区占位（在 formatMarkdownContent 前，防链接正则把 ! 与图链接拆开咬坏）
+                src = src.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, function (m, alt, p) {
+                    imgs.push({ alt: alt || '图', path: p });
+                    return '\uE003' + (imgs.length - 1) + '\uE004';
+                });
+                // 1.5) MD 表格 → 单行 HTML 表（公式定界符不在 quizEscapeHtml 转义集内，单元格公式仍可被下一步抽取）
+                src = quizRenderTables(src);
+                // 2) 公式占位保护（公共件缺失时原样直通，无占位符残留）
+                var slots = [];
+                if (window.MdRender && window.MdRender.extract) {
+                    try { var ex = window.MdRender.extract(src); src = ex.text; slots = ex.slots || []; } catch (e) { slots = []; }
+                }
+                // 3) 既有 MD 渲染管线（手改正则版，不另起灶）
+                var html = formatMarkdownContent(src);
+                // 4) 图片占位回填为可水合的 <img>（路径进 data 属性，HTML 转义）
+                html = html.replace(/\uE003(\d+)\uE004/g, function (m, i) {
+                    var im = imgs[Number(i)] || { alt: '图', path: '' };
+                    return '<img class="quiz-q-img inline-block max-w-full rounded-lg border border-gray-200 my-1" ' +
+                        'data-quiz-img-path="' + quizEscapeHtml(im.path) + '" alt="' + quizEscapeHtml(im.alt) + '" ' +
+                        'title="图片: ' + quizEscapeHtml(im.path) + '" src="' + QUIZ_IMG_LOADING_PH + '">';
+                });
+                return { html: html, slots: slots };
+            }
+            // 拼 HTML 阶段登记渲染任务，area.innerHTML 后统一 finishQuizRich 回填（applyMath 要求节点已挂文档）
+            function quizRichBlock(text, cls) {
+                var o = quizRichHtml(text);
+                quizRichJobs.push(o.slots);
+                return '<div class="' + cls + ' quiz-rich" data-mi="' + (quizRichJobs.length - 1) + '">' + o.html + '</div>';
+            }
+            function quizRichInline(text, cls) {
+                var o = quizRichHtml(text);
+                quizRichJobs.push(o.slots);
+                return '<span class="' + cls + ' quiz-rich" data-mi="' + (quizRichJobs.length - 1) + '">' + o.html + '</span>';
+            }
+            function finishQuizRich(area) {
+                area.querySelectorAll('.quiz-rich').forEach(function (el) {
+                    var slots = quizRichJobs[+el.dataset.mi] || [];
+                    if (slots.length && window.MdRender && window.MdRender.applyMath) {
+                        try { window.MdRender.applyMath(el, slots); } catch (e) { /* 公式回填失败不影响正文 */ }
+                    }
+                });
+                area.querySelectorAll('img.quiz-q-img[data-quiz-img-path]').forEach(function (img) {
+                    var p = img.getAttribute('data-quiz-img-path') || '';
+                    if (!p || img.dataset.hydrated === '1') return;
+                    img.dataset.hydrated = '1';
+                    if (!window.bridge || !window.bridge.getImageAsBase64) { img.alt = '图片服务不可用'; return; }
+                    Promise.resolve(window.bridge.getImageAsBase64(p)).then(function (rs) {
+                        var r = typeof rs === 'string' ? JSON.parse(rs) : rs;
+                        if (!img.isConnected) return; // 面板已重渲染则丢弃
+                        if (r && r.success && r.dataUrl) { img.src = r.dataUrl; }
+                        else { img.alt = '图片加载失败: ' + p; }
+                    }).catch(function () { if (img.isConnected) img.alt = '图片加载失败'; });
+                });
+                quizRichJobs.length = 0;
+            }
+            function renderQuizPanel() {
+                if (!quizState) return;
+                quizModeChrome(true);
+                if (quizState.mode === 'result') {
+                    renderQuizResult();
+                    return;
+                }
+                const area = document.getElementById('questionDisplayArea');
+                if (!area) return;
+                const qs = quizState.questions;
+                if (!Array.isArray(quizState.answers) || quizState.answers.length !== qs.length) {
+                    quizState.answers = qs.map(function() { return ''; });
+                }
+                if (!Array.isArray(quizState.photos) || quizState.photos.length !== qs.length) {
+                    quizState.photos = qs.map(function() { return []; });
+                }
+                let html = '<div class="flex items-center justify-between mb-4">'
+                    + '<h4 class="text-lg font-semibold text-text-dark-brown">考卷 · 共 ' + qs.length + ' 题</h4>'
+                    + '<span class="text-xs text-text-medium-brown">从前到后作答，底部提交后 AI 判卷</span></div>';
+                html += qs.map(function(q, i) { return quizQuestionCard(q, i); }).join('');
+                area.innerHTML = html;
+                finishQuizRich(area); // 公式回填 + 题干图片异步水合
+                bindQuizCardEvents(area);
+                // 历史恢复的已传照片：按相对路径懒加载水合缩略图
+                quizState.photos.forEach(function(list, i) {
+                    list.forEach(function(ph) {
+                        if (!ph.dataUrl && window.bridge && window.bridge.getImageAsBase64) {
+                            Promise.resolve(window.bridge.getImageAsBase64(ph.rel)).then(function(rs) {
+                                const rr = typeof rs === 'string' ? JSON.parse(rs) : rs;
+                                if (rr && rr.success && rr.dataUrl) { ph.dataUrl = rr.dataUrl; renderQuizThumbs(i); }
+                            }).catch(function() { /* 图不可读不阻断作答 */ });
+                        }
+                    });
+                    if (list.length) renderQuizThumbs(i);
+                });
+            }
+            
+            function quizQuestionCard(q, i) {
+                const type = q.type || 'single';
+                const saved = String(quizState.answers[i] || '');
+                let inputHtml = '';
+                if (type === 'single') {
+                    const letters = ['A', 'B', 'C', 'D'];
+                    inputHtml = '<div class="space-y-2 mt-2">' + (Array.isArray(q.options) ? q.options : []).map(function(opt, oi) {
+                        const letter = letters[oi] || String(oi + 1);
+                        return '<label class="flex items-start gap-2 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">'
+                            + '<input type="radio" class="quiz-answer mt-1" name="quiz_q_' + i + '" data-idx="' + i + '" value="' + letter + '"' + (saved === letter ? ' checked' : '') + '>'
+                            + quizRichInline(letter + '. ' + opt, 'text-sm text-text-dark-brown') + '</label>';
+                    }).join('') + '</div>';
+                } else if (type === 'judge') {
+                    inputHtml = '<div class="flex gap-3 mt-2">' + ['正确', '错误'].map(function(v) {
+                        return '<label class="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">'
+                            + '<input type="radio" class="quiz-answer" name="quiz_q_' + i + '" data-idx="' + i + '" value="' + v + '"' + (saved === v ? ' checked' : '') + '>'
+                            + '<span class="text-sm text-text-dark-brown">' + v + '</span></label>';
+                    }).join('') + '</div>';
+                } else if (type === 'fill') {
+                    // v0.1.7 用户反馈：填空答案可能是公式，键盘输不了就拍照上传手写内容（与简答同链路，判卷时含图自动走视觉批改）
+                    inputHtml = '<input type="text" class="quiz-answer w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-primary focus:border-primary" placeholder="输入填空答案；答案是公式等输不了的内容，可用下方拍照上传..." data-idx="' + i + '" value="' + quizEscapeHtml(quizStripImg(saved)) + '">'
+                        + '<div class="flex items-center gap-3 mt-2">'
+                        + '<button type="button" class="quiz-photo-btn text-xs px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1"><span class="material-icons-outlined text-sm">photo_camera</span>拍照上传</button>'
+                        + '<input type="file" accept="image/*" class="quiz-photo-input hidden" data-idx="' + i + '">'
+                        + '<span class="text-xs text-text-gray">拍照内容将随答案一起交 AI 看图判分</span></div>'
+                        + '<div class="quiz-photo-thumbs flex flex-wrap gap-2 mt-2" data-idx="' + i + '"></div>';
+                } else {
+                    inputHtml = '<textarea class="quiz-answer w-full h-24 mt-2 p-3 border border-gray-300 rounded-lg text-sm focus:ring-primary focus:border-primary" placeholder="输入你的答案，或拍照上传手写解答..." data-idx="' + i + '">' + quizEscapeHtml(quizStripImg(saved)) + '</textarea>'
+                        + '<div class="flex items-center gap-3 mt-2">'
+                        + '<button type="button" class="quiz-photo-btn text-xs px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1"><span class="material-icons-outlined text-sm">photo_camera</span>拍照上传</button>'
+                        + '<input type="file" accept="image/*" class="quiz-photo-input hidden" data-idx="' + i + '">'
+                        + '<span class="text-xs text-text-gray">拍照内容将随答案一起交 AI 看图判分</span></div>'
+                        + '<div class="quiz-photo-thumbs flex flex-wrap gap-2 mt-2" data-idx="' + i + '"></div>';
+                }
+                return '<div class="quiz-q-card border border-gray-200 rounded-xl p-4 mb-4 bg-white" data-qid="' + i + '">'
+                    + '<div class="flex items-center gap-2 mb-2">'
+                    + '<span class="text-sm font-semibold text-text-dark-brown">' + (i + 1) + '.</span>'
+                    + quizTypeBadge(type)
+                    + '<span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">' + quizEscapeHtml(q.difficulty || '中等') + '</span>'
+                    + (type === 'single' ? '<span class="text-xs text-text-gray ml-auto">单选</span>' : '')
+                    + '</div>'
+                    + quizRichBlock(String(q.question || ''), 'markdown-content text-text-dark-brown mb-1')
+                    + inputHtml + '</div>';
+            }
+            
+            function bindQuizCardEvents(area) {
+                area.querySelectorAll('input.quiz-answer[type="radio"]').forEach(function(el) {
+                    el.addEventListener('change', function() { quizState.answers[+el.dataset.idx] = el.value; });
+                });
+                area.querySelectorAll('input.quiz-answer[type="text"]').forEach(function(el) {
+                    el.addEventListener('input', function() { syncQuizShortAnswer(+el.dataset.idx); });
+                });
+                area.querySelectorAll('textarea.quiz-answer').forEach(function(el) {
+                    el.addEventListener('input', function() { syncQuizShortAnswer(+el.dataset.idx); });
+                });
+                area.querySelectorAll('.quiz-photo-btn').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        const inp = btn.parentElement.querySelector('.quiz-photo-input');
+                        if (inp) inp.click();
+                    });
+                });
+                area.querySelectorAll('.quiz-photo-input').forEach(function(inp) {
+                    inp.addEventListener('change', function() {
+                        const f = inp.files && inp.files[0];
+                        if (f) handleQuizPhoto(+inp.dataset.idx, f);
+                        inp.value = '';
+                    });
+                });
+            }
+            
+            function handleQuizPhoto(i, file) {
+                if (!window.bridge || !window.bridge.uploadQuizPhoto) {
+                    if (typeof showToast === 'function') showToast('拍照上传服务暂不可用', 'error');
+                    return;
+                }
+                // v0.1.7 CodeReview W-2：拍照入口强校验类型与大小（≤ 8MB），防大图塞爆 vault/判卷 payload
+                if (!file || (file.type && String(file.type).indexOf('image/') !== 0)) {
+                    if (typeof showToast === 'function') showToast('只能上传图片文件', 'warning');
+                    return;
+                }
+                if (file.size && file.size > 8 * 1024 * 1024) {
+                    if (typeof showToast === 'function') showToast('图片过大（超过 8MB），请重新拍摄或压缩后上传', 'warning');
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = function() {
+                    const dataUrl = String(reader.result || '');
+                    if (typeof showToast === 'function') showToast('照片上传中...', 'info');
+                    Promise.resolve(window.bridge.uploadQuizPhoto(dataUrl)).then(function(response) {
+                        const r = typeof response === 'string' ? JSON.parse(response) : response;
+                        if (r && r.success && r.rel) {
+                            quizState.photos[i].push({ rel: r.rel, dataUrl: dataUrl });
+                            syncQuizShortAnswer(i);
+                            renderQuizThumbs(i);
+                            if (typeof showToast === 'function') showToast('照片已上传，判卷时 AI 会看图批改', 'success');
+                        } else {
+                            if (typeof showToast === 'function') showToast('照片上传失败：' + ((r && r.error) || '未知错误'), 'error');
+                        }
+                    }).catch(function(e) {
+                        globalDebugError('❌ uploadQuizPhoto 异常: ' + e.message);
+                        if (typeof showToast === 'function') showToast('照片上传失败：' + e.message, 'error');
+                    });
+                };
+                reader.readAsDataURL(file);
+            }
+            
+            function syncQuizShortAnswer(i) {
+                // v0.1.7：泛化到填空题（input）——文字 + 换行 + 照片 MD 引用拼接为作答，与判卷视觉分流同口径
+                const el = document.querySelector('textarea.quiz-answer[data-idx="' + i + '"]')
+                    || document.querySelector('input.quiz-answer[type="text"][data-idx="' + i + '"]');
+                const text = el ? el.value.trim() : quizStripImg(quizState.answers[i] || '');
+                const imgs = (quizState.photos[i] || []).map(function(ph) { return '![手写解答](' + ph.rel + ')'; }).join('\n\n');
+                quizState.answers[i] = (text ? text + '\n\n' : '') + imgs;
+            }
+            
+            function renderQuizThumbs(i) {
+                const box = document.querySelector('.quiz-photo-thumbs[data-idx="' + i + '"]');
+                if (!box) return;
+                box.innerHTML = (quizState.photos[i] || []).map(function(ph, pi) {
+                    const imgSrc = ph.dataUrl ? '<img src="' + ph.dataUrl + '" class="w-20 h-20 object-cover rounded-lg border border-gray-200">' : '<div class="w-20 h-20 rounded-lg bg-gray-100 flex items-center justify-center text-xs text-gray-400">加载中</div>';
+                    return '<div class="relative">' + imgSrc
+                        + '<button type="button" class="quiz-photo-del absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-xs leading-5 text-center" data-pi="' + pi + '">×</button></div>';
+                }).join('');
+                box.querySelectorAll('.quiz-photo-del').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        quizState.photos[i].splice(+btn.dataset.pi, 1);
+                        syncQuizShortAnswer(i);
+                        renderQuizThumbs(i);
+                    });
+                });
+            }
+            
+            // ---------- 提交判卷 ----------
+            function submitQuiz() {
+                if (!quizState || quizState.mode !== 'answer') return;
+                if (!window.bridge || !window.bridge.submitPracticeQuiz) {
+                    if (typeof showToast === 'function') showToast('判卷服务暂不可用', 'error');
+                    return;
+                }
+                // 简答 textarea 同步最新文本+照片引用
+                document.querySelectorAll('textarea.quiz-answer').forEach(function(ta) { syncQuizShortAnswer(+ta.dataset.idx); });
+                const blank = quizState.answers.filter(function(a) { return !String(a || '').trim(); }).length;
+                if (blank > 0 && !confirm('还有 ' + blank + ' 题未作答，确定提交判卷吗？')) return;
+                const btn = document.getElementById('quizSubmitBtn');
+                if (btn) { btn.disabled = true; btn.textContent = 'AI 判卷中...'; }
+                const payload = {
+                    practice_id: quizState.pid,
+                    selected_text: quizState.selectedText,
+                    questions: quizState.questions,
+                    answers: quizState.answers.map(function(a) { return String(a == null ? '' : a); }),
+                };
+                Promise.resolve(window.bridge.submitPracticeQuiz(JSON.stringify(payload))).then(function(response) {
+                    const r = typeof response === 'string' ? JSON.parse(response) : response;
+                    if (r && r.success && Array.isArray(r.detailed_results)) {
+                        quizState.result = r;
+                        quizState.mode = 'result';
+                        renderQuizResult();
+                        if (typeof showToast === 'function') showToast('判卷完成：' + r.score + ' 分，答对 ' + r.correct_count + '/' + r.total_count, 'success');
+                    } else {
+                        if (typeof showToast === 'function') showToast('判卷失败：' + ((r && r.error) || '未知错误'), 'error');
+                    }
+                }).catch(function(e) {
+                    globalDebugError('❌ submitPracticeQuiz 异常: ' + e.message);
+                    if (typeof showToast === 'function') showToast('判卷失败：' + e.message, 'error');
+                }).then(function() {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = '提交判卷';
+                        btn.style.display = (quizState && quizState.mode === 'answer') ? 'inline-block' : 'none';
+                    }
+                });
+            }
+            // ---------- v0.1.7 考卷（三）：判卷结果页与错题勾选入库 ----------
+            function renderQuizAnswerDisplay(ans) {
+                const imgs = String(ans || '').match(/!\[[^\]]*\]\([^)]+\)/g) || [];
+                const text = quizStripImg(ans);
+                let out = text ? quizEscapeHtml(text).replace(/\n/g, '<br>') : (imgs.length ? '' : '<span class="text-gray-400">（未作答）</span>');
+                if (imgs.length) {
+                    out += ' <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 align-middle"><span class="material-icons-outlined text-xs">photo_camera</span>已传 ' + imgs.length + ' 张照片</span>';
+                }
+                return out;
+            }
+            
+            function renderQuizResult() {
+                if (!quizState || !quizState.result) return;
+                quizModeChrome(true); // mode!=answer → 提交按钮自动隐藏
+                const area = document.getElementById('questionDisplayArea');
+                if (!area) return;
+                const r = quizState.result;
+                const detail = r.detailed_results || [];
+                const wrong = detail.filter(function(d) { return !d.is_correct; });
+                let html = '<div class="rounded-xl p-5 mb-5 bg-gradient-to-r from-blue-50 to-green-50 border border-gray-100">'
+                    + '<div class="flex items-center gap-6 flex-wrap">'
+                    + '<div><div class="text-3xl font-bold text-primary">' + (r.score != null ? r.score : '—') + '</div><div class="text-xs text-text-medium-brown">得分</div></div>'
+                    + '<div class="text-sm text-text-dark-brown">答对 ' + (r.correct_count || 0) + ' / ' + (r.total_count || 0) + ' 题</div>'
+                    + (wrong.length ? '<div class="text-sm text-red-500 ml-auto">错题 ' + wrong.length + ' 题 · 勾选后可加入错题本</div>' : '<div class="text-sm text-green-600 ml-auto">全部正确，太棒了！</div>')
+                    + '</div></div>';
+                html += detail.map(function(d, i) { return quizResultCard(d, i); }).join('');
+                html += '<div class="flex justify-end gap-3 mt-2 mb-4">'
+                    + '<button id="quizRetryBtn" class="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition">同内容再练一次</button>'
+                    + (wrong.length ? '<button id="quizSaveErrorsBtn" class="px-5 py-2 bg-primary text-white rounded-lg text-sm hover:bg-green-600 shadow transition" disabled>入库勾选错题</button>' : '')
+                    + '</div>';
+                area.innerHTML = html;
+                finishQuizRich(area); // 结果页同样接入公式回填与图片水合
+                const retry = document.getElementById('quizRetryBtn');
+                if (retry) retry.addEventListener('click', function() {
+                    const text = quizState.selectedText;
+                    if (text && window.openQuizConfigDialog) {
+                        window.openQuizConfigDialog(text, function(cfg) { window.startQuizFlow(text, cfg); });
+                    }
+                });
+                bindQuizErrorSelection(area);
+            }
+            
+            function quizResultCard(d, i) {
+                const ok = !!d.is_correct;
+                return '<div class="border rounded-xl p-4 mb-4 ' + (ok ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40') + '">'
+                    + '<div class="flex items-center gap-2 mb-2 flex-wrap">'
+                    + '<span class="material-icons-outlined text-xl ' + (ok ? 'text-green-600' : 'text-red-500') + '">' + (ok ? 'check_circle' : 'cancel') + '</span>'
+                    + '<span class="text-sm font-semibold text-text-dark-brown">' + (i + 1) + '.</span>'
+                    + quizTypeBadge(d.type)
+                    + '<span class="text-xs px-2 py-0.5 rounded-full ' + (ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600') + '">' + (ok ? '正确' : '错误') + '</span>'
+                    + (!ok ? '<label class="ml-auto flex items-center gap-1 text-xs text-text-medium-brown cursor-pointer"><input type="checkbox" class="quiz-err-cb w-4 h-4" data-idx="' + i + '">加入错题本</label>' : '')
+                    + '</div>'
+                    + quizRichBlock(String(d.question || ''), 'markdown-content text-text-dark-brown mb-2')
+                    + '<div class="text-sm mb-1"><span class="text-text-medium-brown">你的答案：</span>' + renderQuizAnswerDisplay(d.user_answer) + '</div>'
+                    + (!ok ? '<div class="text-sm mb-1"><span class="text-text-medium-brown">正确答案：</span>' + quizRichInline(String(d.correct_answer || ''), 'text-green-700 font-medium') + '</div>' : '')
+                    + (d.comment ? '<div class="text-sm text-blue-700 mb-1">📝 ' + quizRichInline(String(d.comment), '') + '</div>' : '')
+                    + (d.explanation ? '<details class="mt-1"><summary class="text-xs text-blue-500 cursor-pointer">答案解析</summary>' + quizRichBlock(String(d.explanation || ''), 'text-sm text-text-medium-brown mt-1 markdown-content') + '</details>' : '')
+                    + (!ok ? '<div class="quiz-err-kp mt-2 hidden" data-idx="' + i + '"><div class="text-xs text-text-medium-brown mb-1">目标知识点：</div><select class="quiz-err-kp-select w-full max-w-xs px-2 py-1.5 border border-gray-300 rounded-lg text-sm" data-idx="' + i + '"><option value="">正在匹配知识点...</option></select></div>' : '')
+                    + '</div>';
+            }
+            
+            function bindQuizErrorSelection(area) {
+                const saveBtn = document.getElementById('quizSaveErrorsBtn');
+                function refreshSaveBtn() {
+                    if (saveBtn) saveBtn.disabled = area.querySelectorAll('.quiz-err-cb:checked').length === 0;
+                }
+                area.querySelectorAll('.quiz-err-cb').forEach(function(cb) {
+                    cb.addEventListener('change', function() {
+                        const i = +cb.dataset.idx;
+                        const kpBox = area.querySelector('.quiz-err-kp[data-idx="' + i + '"]');
+                        if (cb.checked) {
+                            if (kpBox) kpBox.classList.remove('hidden');
+                            loadQuizKpCandidates(i, area);
+                        } else if (kpBox) {
+                            kpBox.classList.add('hidden');
+                        }
+                        refreshSaveBtn();
+                    });
+                });
+                if (saveBtn) {
+                    saveBtn.addEventListener('click', function() { saveQuizErrors(area); });
+                    refreshSaveBtn();
+                }
+            }
+            
+            function loadQuizKpCandidates(i, area) {
+                const sel = area.querySelector('.quiz-err-kp-select[data-idx="' + i + '"]');
+                if (!sel || sel.dataset.loaded === '1') return;
+                const d = (quizState.result.detailed_results || [])[i] || {};
+                if (!window.bridge || !window.bridge.matchQuizErrorPoints) {
+                    sel.innerHTML = '<option value="">匹配服务不可用</option>';
+                    return;
+                }
+                Promise.resolve(window.bridge.matchQuizErrorPoints(String(d.question || '') + '\n' + String(d.correct_answer || ''))).then(function(response) {
+                    const r = typeof response === 'string' ? JSON.parse(response) : response;
+                    const cands = (r && r.success && r.candidates) || [];
+                    sel.innerHTML = '';
+                    if (!cands.length) {
+                        sel.innerHTML = '<option value="">暂无可匹配的知识点</option>';
+                        return;
+                    }
+                    cands.forEach(function(c, ci) {
+                        const op = document.createElement('option');
+                        op.value = String(c.id);
+                        op.textContent = c.point_name + (c.subject ? '（' + c.subject + '）' : '') + (ci === 0 ? ' ← 最匹配' : '');
+                        op.dataset.subject = c.subject || '';
+                        sel.appendChild(op);
+                    });
+                    sel.dataset.loaded = '1';
+                }).catch(function(e) {
+                    sel.innerHTML = '<option value="">匹配失败，请重试</option>';
+                    sel.dataset.loaded = '';
+                });
+            }
+            
+            function saveQuizErrors(area) {
+                const errs = [];
+                let missing = false;
+                area.querySelectorAll('.quiz-err-cb:checked').forEach(function(cb) {
+                    const i = +cb.dataset.idx;
+                    const d = (quizState.result.detailed_results || [])[i] || {};
+                    const sel = area.querySelector('.quiz-err-kp-select[data-idx="' + i + '"]');
+                    const opt = sel && sel.selectedOptions && sel.selectedOptions[0];
+                    if (!opt || !opt.value) { missing = true; return; }
+                    errs.push({
+                        selected_knowledge_point: { id: parseInt(opt.value, 10), subject: opt.dataset.subject || '' },
+                        question_content: String(d.question || ''),
+                        user_answer: String(d.user_answer || ''),
+                        correct_answer: String(d.correct_answer || ''),
+                        explanation: String(d.explanation || ''),
+                    });
+                });
+                if (missing) {
+                    if (typeof showToast === 'function') showToast('请为每道勾选错题选择目标知识点（或等待匹配完成）', 'warning');
+                    return;
+                }
+                if (!errs.length || !window.bridge || !window.bridge.saveErrorsToKnowledgeBase) return;
+                const btn = document.getElementById('quizSaveErrorsBtn');
+                if (btn) { btn.disabled = true; btn.textContent = '入库中...'; }
+                Promise.resolve(window.bridge.saveErrorsToKnowledgeBase(JSON.stringify({ selected_errors: errs }))).then(function(response) {
+                    const r = typeof response === 'string' ? JSON.parse(response) : response;
+                    if (r && r.success) {
+                        if (typeof showToast === 'function') showToast(r.message || ('已保存 ' + errs.length + ' 道错题'), 'success');
+                        area.querySelectorAll('.quiz-err-cb:checked').forEach(function(cb) {
+                            cb.checked = false;
+                            cb.disabled = true;
+                            const kp = area.querySelector('.quiz-err-kp[data-idx="' + cb.dataset.idx + '"]');
+                            if (kp) kp.classList.add('hidden');
+                        });
+                        if (btn) { btn.textContent = '入库勾选错题'; btn.disabled = false; }
+                    } else {
+                        if (typeof showToast === 'function') showToast('入库失败：' + ((r && r.error) || '未知错误'), 'error');
+                        if (btn) { btn.textContent = '入库勾选错题'; btn.disabled = false; }
+                    }
+                }).catch(function(e) {
+                    if (typeof showToast === 'function') showToast('入库失败：' + e.message, 'error');
+                    if (btn) { btn.textContent = '入库勾选错题'; btn.disabled = false; }
+                });
+            }
+            
+            // 考卷提交按钮绑定（面板内静态元素，初始化时挂一次）
+            (function bindQuizSubmitBtn() {
+                const btn = document.getElementById('quizSubmitBtn');
+                if (btn) btn.addEventListener('click', submitQuiz);
+            })();
+            
+            // v0.1.7 用户反馈：相关学习内容展开/收起改显式切换（overlay 浮层，不占版面）
+            (function bindRelatedContentToggle() {
+                const btn = document.getElementById('relatedContentToggleBtn');
+                const disp = document.getElementById('relatedContentDisplay');
+                const arrow = document.getElementById('relatedContentArrow');
+                if (!btn || !disp) return;
+                btn.addEventListener('click', function() {
+                    const open = disp.classList.contains('hidden'); // 点击前收起 → 点击后展开
+                    disp.classList.toggle('hidden', !open);
+                    disp.classList.toggle('rc-expanded', open);
+                    if (arrow) arrow.style.transform = open ? 'rotate(180deg)' : '';
+                });
+            })();
             
             // 加载选中的历史对话
             function loadSelectedHistory() {
@@ -5658,6 +6498,13 @@
             
             // 按照正确版本：覆盖简单版本，使用复杂版本的loadPracticeData
             function loadPracticeData(practiceData) {
+                // v0.1.7：结构化考卷历史 → 恢复考卷直接进答题/判卷复看页；非结构化继续旧通道
+                if (restoreQuizFromHistory(practiceData)) {
+                    return;
+                }
+                // CodeReview W-4：回落旧通道前复位考卷态，防止旧面板继承隐藏按钮/答题区等考卷 UI 串态
+                quizState = null;
+                if (typeof quizModeChrome === 'function') quizModeChrome(false);
                 globalDebugLog('📊 开始加载练习数据: ' + JSON.stringify(practiceData).substring(0, 200));
                 
                 try {
@@ -5934,7 +6781,12 @@ ${cleanContent}
             function showToast(message, type = 'info') {
                 // 创建提示元素
                 const toast = document.createElement('div');
-                toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
+                toast.className = `fixed top-16 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
+                // v0.1.7 用户反馈：toast 默认 z-50 会被助手面板（z 9998/9999）盖住看不见；
+                // 提到面板之上。Electron 原生 titleBarOverlay（高 56px）无法被 CSS 越过，
+                // 故 top-16（64px）保证其上沿在窗口功能区下沿之下；pointer-events:none 避免 3 秒内挡住面板按钮
+                toast.style.zIndex = '10050';
+                toast.style.pointerEvents = 'none';
                 
                 // 根据类型设置颜色
                 switch (type) {
@@ -5969,6 +6821,8 @@ ${cleanContent}
                     }, 300);
                 }, 3000);
             }
+            // v0.1.7：全局接管——页面各角落（含片段脚本/CDP 自证）调用 window.showToast 必须命中同一实现（带 z-index/功能区避让修复）
+            window.showToast = showToast;
             
             globalDebugLog('AI助手浮窗初始化完成');
 

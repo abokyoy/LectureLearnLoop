@@ -159,16 +159,25 @@
 
             if (oldScript.src) {
                 // 外部脚本：等加载完成再执行下一个
-                newScript.onload = () => {
-                    console.log(`[SPA] 外部脚本加载完成(${idx+1}/${scripts.length}):`, oldScript.src);
+                // u11 白屏修复：加看门狗超时——外网 CDN 挂起（代理不畅）时 8s 后止损续链，
+                // 避免整条脚本链永久卡在 onload 上、页面停在空白骨架；前端均有缺失回退逻辑。
+                let stepped = false;
+                let watchdog = null; // 评审 m-3：成功/失败路径取消定时器，避免快速切页时闭包驻留 8s
+                const next = (tag) => {
+                    if (stepped) return;
+                    stepped = true;
+                    if (watchdog) { clearTimeout(watchdog); watchdog = null; }
+                    console.log(`[SPA] 外部脚本${tag}(${idx + 1}/${scripts.length}):`, oldScript.src);
                     execScript(idx + 1);
                 };
+                newScript.onload = () => next('加载完成');
                 newScript.onerror = (e) => {
                     console.error(`[SPA] 外部脚本加载失败:`, oldScript.src, e);
-                    execScript(idx + 1); // 失败不阻断后续脚本
+                    next('加载失败，跳过');
                 };
                 newScript.src = oldScript.src;
                 oldScript.parentNode.replaceChild(newScript, oldScript);
+                watchdog = setTimeout(() => next('超时，看门狗续链'), 8000);
             } else {
                 // 内联脚本：直接复制文本以触发执行（同步），随后继续链
                 newScript.text = oldScript.textContent || '';

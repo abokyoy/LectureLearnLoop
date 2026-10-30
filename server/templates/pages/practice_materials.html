@@ -47,7 +47,7 @@
             var b = document.createElement('button');
             b.id = 'll-back-btn';
             b.textContent = '⌂ 返回工作台';
-            b.style.cssText = 'position:fixed;top:10px;left:12px;z-index:9999;padding:8px 16px;border:0;border-radius:10px;background:#4c6ef5;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(30,41,99,.3);font-family:"Segoe UI","Microsoft YaHei",sans-serif;';
+            b.style.cssText = 'position:fixed;bottom:16px;left:12px;z-index:9999;padding:8px 16px;border:0;border-radius:10px;background:#4c6ef5;color:#fff;font-size:13px;font-weight:600;cursor:pointer;box-shadow:0 4px 14px rgba(30,41,99,.3);font-family:"Segoe UI","Microsoft YaHei",sans-serif;';
             b.onclick = function () { try { parent.location.href = '/'; } catch (e) { location.href = '/'; } };
             document.body.appendChild(b);
         }
@@ -68,9 +68,9 @@
 </head>
 <body class="bg-gray-100">
 
-<!-- 学科选择页面 -->
+<!-- 学科选择页面（u11 自适应：放宽限宽，卡片随窗口铺开） -->
 <div id="subjectSelectionPage" class="min-h-screen p-8">
-    <div class="max-w-4xl mx-auto">
+    <div class="w-full max-w-6xl mx-auto">
         <!-- 标题和管理按钮 -->
         <div class="flex items-center justify-between mb-8">
             <div class="text-center flex-1">
@@ -159,9 +159,9 @@
     </div>
 </div>
 
-<!-- 知识脑图页面 -->
+<!-- 知识脑图页面（u11 自适应：去掉 max-w-7xl 限宽，画布随窗口宽度填满） -->
 <div id="mindmapPage" class="min-h-screen p-8 hidden">
-    <div class="max-w-7xl mx-auto">
+    <div class="w-full">
         <!-- 头部 -->
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center space-x-4">
@@ -178,8 +178,8 @@
                     <span class="material-icons-outlined text-sm">refresh</span>
                     <span>刷新</span>
                 </button>
-                <!-- 梳理知识点按钮 -->
-                <button id="generateLearningPathBtn" onclick="generateLearningPath()" 
+                <!-- u12 梳理知识点 = 重新生成脑图+线性路径+技能树三视图 -->
+                <button id="generateLearningPathBtn" onclick="regenerateAllViews()" 
                         class="bg-green-500 text-white px-3 py-2 rounded-lg hover:bg-green-600 transition-colors flex items-center space-x-1">
                     <span class="material-icons-outlined text-sm">account_tree</span>
                     <span>梳理知识点</span>
@@ -193,36 +193,44 @@
             </div>
         </div>
 
-        <!-- 脑图容器 -->
-        <div id="mindmapContainer" class="bg-white rounded-lg shadow-lg p-4 relative" style="min-height: 700px;">
+        <!-- 脑图容器（u11：高度改为随窗口自适应 calc，不再固定 700px 留出大片空白） -->
+        <div id="mindmapContainer" class="bg-white rounded-lg shadow-lg p-4 relative" style="min-height: 480px;">
             <!-- 脑图工具栏 -->
             <div class="flex items-center justify-between mb-4 pb-2 border-b">
                 <div class="flex items-center space-x-4">
-                    <!-- 学习路径视图模式 Tab（仅梳理知识点视图显示，线性/技能树两图共用同一批节点） -->
-                    <div id="lpViewTabs" class="hidden items-center bg-gray-100 rounded-lg p-1">
-                        <button id="lpTabLinear" onclick="switchLpViewMode('linear')"
-                                class="px-3 py-1 rounded-md text-sm font-medium">线性路径</button>
-                        <button id="lpTabTree" onclick="switchLpViewMode('tree')"
-                                class="px-3 py-1 rounded-md text-sm font-medium">技能树</button>
-                        <div class="w-px h-5 bg-gray-300 mx-1"></div>
-                        <!-- 显示模式切换：全图适配看结构 / 实际大小 1:1 看字（配合拖拽平移） -->
-                        <button id="lpSizeToggle" onclick="toggleLpActualSize()"
-                                class="px-3 py-1 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700">实际大小</button>
+                    <!-- u12 三视图 Tab：知识脑图(默认)/线性路径/技能树 合并到同一页面，脑图不再是独立视图 -->
+                    <div id="lpViewTabs" class="flex items-center bg-gray-100 rounded-lg p-1">
+                        <button id="lpTabMindmap" onclick="switchMainView('mindmap')"
+                                class="px-3 py-1 rounded-md text-sm font-medium whitespace-nowrap bg-white text-gray-800 shadow">知识脑图</button>
+                        <button id="lpTabLinear" onclick="switchMainView('linear')"
+                                class="px-3 py-1 rounded-md text-sm font-medium whitespace-nowrap text-gray-500 hover:text-gray-700">线性路径</button>
+                        <button id="lpTabTree" onclick="switchMainView('tree')"
+                                class="px-3 py-1 rounded-md text-sm font-medium whitespace-nowrap text-gray-500 hover:text-gray-700">技能树</button>
+                        <!-- 线性/技能树专属工具（默认脑图视图下隐藏） -->
+                        <div id="lpToolsZone" class="hidden items-center">
+                            <div class="w-px h-5 bg-gray-300 mx-1"></div>
+                            <!-- 显示模式切换：全图适配看结构 / 实际大小 1:1 看字（配合拖拽平移） -->
+                            <button id="lpSizeToggle" onclick="toggleLpActualSize()"
+                                    class="px-3 py-1 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700">实际大小</button>
+                        </div>
                     </div>
-                    <input type="text" id="searchInput" placeholder="搜索知识点..." 
-                           class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                           onkeypress="if(event.key==='Enter') searchNodes()">
-                    <button onclick="searchNodes()" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">搜索</button>
-                    <button id="clearSearchBtn" onclick="clearSearch()" 
-                            class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 hidden">
-                        清除搜索
-                    </button>
-                    <div class="text-xs text-gray-500 flex items-center space-x-1">
-                        <span>💡</span>
-                        <span>点击</span>
-                        <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
-                        <div class="w-3 h-3 bg-green-500 rounded-full"></div>
-                        <span>筛选子节点</span>
+                    <!-- 脑图视图专属：搜索/筛选（学习路径 Tab 下隐藏） -->
+                    <div id="mmSearchZone" class="flex items-center space-x-4">
+                        <input type="text" id="searchInput" placeholder="搜索知识点..." 
+                               class="px-3 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               onkeypress="if(event.key==='Enter') searchNodes()">
+                        <button onclick="searchNodes()" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600 whitespace-nowrap">搜索</button>
+                        <button id="clearSearchBtn" onclick="clearSearch()" 
+                                class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600 hidden">
+                            清除搜索
+                        </button>
+                        <div class="text-xs text-gray-500 flex items-center space-x-1">
+                            <span>💡</span>
+                            <span>点击</span>
+                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                            <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                            <span>筛选子节点</span>
+                        </div>
                     </div>
                 </div>
                 <div class="flex items-center space-x-2">
@@ -230,9 +238,9 @@
                             class="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600 hidden">
                         清除筛选
                     </button>
-                    <button onclick="zoomIn()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">放大</button>
-                    <button onclick="zoomOut()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">缩小</button>
-                    <button onclick="resetView()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm">重置</button>
+                    <button onclick="zoomIn()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm whitespace-nowrap">放大</button>
+                    <button onclick="zoomOut()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm whitespace-nowrap">缩小</button>
+                    <button onclick="resetView()" class="bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-sm whitespace-nowrap">重置</button>
                     <!-- 全屏模式下的退出按钮 -->
                     <button id="exitFullscreenBtn" onclick="exitFullscreen()" 
                             class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 hidden">
@@ -248,8 +256,8 @@
                 </div>
             </div>
             
-            <!-- 脑图SVG -->
-            <div id="mindmapSvgContainer" class="w-full" style="height: 700px; overflow: auto;">
+            <!-- 脑图SVG（u11：高度随窗口自适应；viewBox 另由 fitMindmapView 按内容边界贴合填满） -->
+            <div id="mindmapSvgContainer" class="w-full" style="height: calc(100vh - 250px); min-height: 480px; overflow: auto;">
                 <svg id="mindmapSvg" width="100%" height="100%" viewBox="0 0 3200 700"></svg>
             </div>
             
@@ -293,10 +301,6 @@
 
 .fullscreen-mode #mindmapSvgContainer {
     height: calc(100vh - 140px) !important;
-}
-
-.fullscreen-mode .max-w-7xl {
-    max-width: none !important;
 }
 
 /* 关系文字样式 */
@@ -762,7 +766,9 @@ async function loadSubjects() {
         log('🎨 开始渲染科目卡片...');
         renderSubjects(subjects);
         log('✅ 科目卡片渲染完成');
-        
+        // u11 返回脑图：从知识点页点「返回脑图」回到本页时，消费恢复旗标自动进入对应科目的脑图视图，
+        // 而不是停在科目列表（旗标由 goKnowledgePointLanding 写入，30 分钟内有效，读取即消费）
+        tryMaybeRestoreMindmap(subjects);
     } catch (error) {
         log(`❌ 加载科目列表失败: ${error.message}`);
         log(`📊 错误详情: ${error.stack || error}`);
@@ -884,6 +890,28 @@ document.addEventListener('DOMContentLoaded', function() {
     tryLoadSubjects();
 });
 
+// u11 返回脑图恢复：仅当存在来自知识点页的近期旗标（30 分钟 TTL，读取即消费）时自动进入对应科目脑图
+function tryMaybeRestoreMindmap(subjects) {
+    let flag = null;
+    try {
+        const raw = localStorage.getItem('pm_mindmap_return');
+        if (!raw) return;
+        localStorage.removeItem('pm_mindmap_return'); // 读取即消费，后续刷新不再重复触发
+        flag = JSON.parse(raw);
+    } catch (e) { return; }
+    if (!flag || !flag.subject || !flag.ts || (Date.now() - flag.ts) > 30 * 60 * 1000) {
+        log('🔙 返回脑图旗标已过期或无效，停在科目列表');
+        return;
+    }
+    const picked = (subjects || []).find(s => s.name === flag.subject);
+    if (!picked || (picked.knowledge_count || 0) <= 0) {
+        log(`🔙 返回脑图旗标科目「${flag.subject}」已无知识点，停在科目列表`);
+        return;
+    }
+    log(`🔙 从知识点页返回：自动恢复科目「${flag.subject}」的脑图视图`);
+    selectSubject(flag.subject);
+}
+
 // 选择学科
 function selectSubject(subjectName) {
     log(`🎯 点击了学科: ${subjectName}`);
@@ -952,13 +980,18 @@ function selectSubject(subjectName) {
     currentSubjectName = subjectName;
     window.currentSubjectName = subjectName; // 确保全局可访问
     
-    // 切换学科时重置学习路径数据与视图模式，避免沿用上学科的路径/升级标记
+    // 切换学科时重置学习路径数据与视图状态，避免沿用上学科的路径/升级标记
     currentLearningPathData = null;
     currentLpViewMode = 'linear';
     _lpTreeUpgradeTried = false;
-    // 评审修复：同步收起上一学科遗留的 Tab / 图例卡（不点"返回脑图"直接切学科的路径）
-    const lpTabsEl = document.getElementById('lpViewTabs');
-    if (lpTabsEl) { lpTabsEl.classList.add('hidden'); lpTabsEl.classList.remove('flex'); }
+    // u12：新学科一律从「知识脑图」Tab 进入；上一学科遗留的图例/尺寸模式/生成态全部复位
+    currentMainView = 'mindmap';
+    lpGenState = 'idle';
+    updateLpTabStyles();
+    const searchZoneEl = document.getElementById('mmSearchZone');
+    if (searchZoneEl) searchZoneEl.classList.remove('hidden');
+    const lpToolsEl = document.getElementById('lpToolsZone');
+    if (lpToolsEl) { lpToolsEl.classList.add('hidden'); lpToolsEl.classList.remove('flex'); }
     const legendCardEl = document.getElementById('learningLegendCard');
     if (legendCardEl) legendCardEl.classList.add('hidden');
     lpActualSize = false;
@@ -990,6 +1023,9 @@ function selectSubject(subjectName) {
     // 调用后端API生成脑图
     log(`🔍 selectSubject即将调用generateMindmap: ${subjectName}`);
     generateMindmap(subjectName);
+    // u12：脑图/线性路径/技能树同时后台生成（线性与技能树共用同一份学习路径数据），
+    // 用户无需再点「梳理知识点」；首次未生成时各 Tab 自带载入态
+    startLpBackgroundGen();
 }
 
 // 返回学科选择
@@ -1001,6 +1037,8 @@ function backToSubjects() {
         if (typeof(Storage) !== "undefined" && window.localStorage) {
             localStorage.removeItem('lastViewedSubject');
             localStorage.removeItem('lastViewedKnowledgePoint');
+            // u11：用户明确回科目列表，同时清除返回脑图恢复旗标，避免下次进入又自动跳回脑图
+            localStorage.removeItem('pm_mindmap_return');
             log('🗑️ 已清除保存的状态');
         }
     } catch (error) {
@@ -1020,6 +1058,10 @@ let g = null;
 let zoom = null;
 let simulation = null;
 let isGeneratingMindmap = false; // 防重复调用标志
+// u12 三视图统一 Tab 状态：'mindmap' | 'linear' | 'tree'（默认脑图）；
+// lpGenState 为学习路径数据后台生成状态：idle | loading | ready | error
+let currentMainView = 'mindmap';
+let lpGenState = 'idle';
 
 // 生成脑图
 async function generateMindmap(subjectName, forceRefresh = false) {
@@ -1326,6 +1368,12 @@ function renderMindmap() {
         log('❌ 脑图数据无效');
         return;
     }
+    // u12 竞态防护：脑图后台生成完成时用户可能已切到线性/技能树 Tab（或后台路径先到），
+    // 此时不得抢占当前画面；数据已就绪，切回脑图 Tab 时由 switchMainView 补渲染
+    if (currentMainView !== 'mindmap') {
+        log('⏸ 脑图数据就绪但用户在其他 Tab，延迟渲染至切回脑图');
+        return;
+    }
     
     // 强制停止之前的simulation
     if (simulation) {
@@ -1334,10 +1382,12 @@ function renderMindmap() {
         log('🛑 强制停止之前的simulation');
     }
     
-    // 重置筛选和搜索状态
+    // 重置筛选和搜索状态（u12：同步清除两个筛选类按钮的残影，防切 Tab 后悬空可点）
     filteredNodeId = null;
     searchResults.clear();
     isSearchActive = false;
+    const _cfb = document.getElementById('clearFilterBtn');
+    if (_cfb) _cfb.classList.add('hidden');
     
     log(`📊 开始渲染脑图，节点数: ${currentMindmapData.nodes.length}`);
     
@@ -1348,7 +1398,10 @@ function renderMindmap() {
     }
     
     const nodes = currentMindmapData.nodes.map(d => ({...d}));
-    const edges = currentMindmapData.edges || [];
+    // u12 脑图碎掉 bug 根治：forceLink 会就地把 edge 的 source/target 从字符串 id 改成节点对象引用，
+    // 原代码直接引用 currentMindmapData.edges，重渲染（切 Tab/梳理后回脑图）时新节点的坐标在动、
+    // 连线端点却钉在上一轮旧对象坐标上 → 箭头与节点分离。与学习路径视图同款修法：拷贝边
+    const edges = (currentMindmapData.edges || []).map(e => ({ ...e }));
     
     // 清空之前的内容（SVG已在initSvg中清理）
     // g.selectAll('*').remove(); // 不需要，因为g是新创建的
@@ -1360,14 +1413,9 @@ function renderMindmap() {
         .force('charge', d3.forceManyBody().strength(-500))
         .force('center', d3.forceCenter(400, 250))
         .force('collision', d3.forceCollide().radius(d => {
-            const textLength = d.name.length;
-            if (d.type === 'center') {
-                return Math.max(50, textLength * 4) + 10; // 额外10px间距
-            }
-            if (d.type === 'category') {
-                return Math.max(40, textLength * 3.5) + 8;
-            }
-            return Math.max(35, textLength * 3) + 6;
+            // 评审 m-2：半径单一源 mindmapNodeRadius，此处只加间距偏移
+            const extra = d.type === 'center' ? 10 : d.type === 'category' ? 8 : 6;
+            return mindmapNodeRadius(d) + extra;
         }));
     
     // 定义箭头标记
@@ -1423,16 +1471,7 @@ function renderMindmap() {
     
     // 节点圆圈 - 根据文字长度动态调整大小
     nodeGroups.append('circle')
-        .attr('r', d => {
-            const textLength = d.name.length;
-            if (d.type === 'center') {
-                return Math.max(50, textLength * 4); // 最小50，每字符4px
-            }
-            if (d.type === 'category') {
-                return Math.max(40, textLength * 3.5); // 最小40，每字符3.5px
-            }
-            return Math.max(35, textLength * 3); // 知识点：最小35，每字符3px
-        })
+        .attr('r', d => mindmapNodeRadius(d)) // 评审 m-2：与碰撞/贴合共用单一源
         .attr('fill', d => {
             if (d.type === 'center') return '#3B82F6';
             if (d.type === 'category') return '#10B981';
@@ -1562,17 +1601,8 @@ function renderMindmap() {
             // 避免除零错误
             if (distance === 0) return;
             
-            // 计算节点半径（使用动态半径）
-            const getNodeRadius = (node) => {
-                const textLength = node.name.length;
-                if (node.type === 'center') {
-                    return Math.max(50, textLength * 4);
-                }
-                if (node.type === 'category') {
-                    return Math.max(40, textLength * 3.5);
-                }
-                return Math.max(35, textLength * 3);
-            };
+            // 计算节点半径（u11：改用公共函数 mindmapNodeRadius，与渲染/贴合保持同一算法）
+            const getNodeRadius = mindmapNodeRadius;
             
             const sourceRadius = getNodeRadius(d.source);
             const targetRadius = getNodeRadius(d.target);
@@ -1598,8 +1628,38 @@ function renderMindmap() {
         nodeGroups
             .attr('transform', d => `translate(${d.x},${d.y})`);
     });
-    
+
+    // u11 自适应：力导向布局收敛后，把 viewBox 贴合内容边界，脑图随容器填满显示，
+    // 不再因固定 3200x700 画布而四周留大片空白（学习路径/技能树视图各自管理 viewBox，不受影响）
+    simulation.on('end', () => fitMindmapView(nodes));
+
     log('✅ 脑图渲染完成');
+}
+
+// 节点基础半径（渲染/碰撞/贴合共用，单一定义源）
+function mindmapNodeRadius(node) {
+    const textLength = (node.name || '').length;
+    if (node.type === 'center') return Math.max(50, textLength * 4);
+    if (node.type === 'category') return Math.max(40, textLength * 3.5);
+    return Math.max(35, textLength * 3);
+}
+
+// u11：按节点实际分布边界重设 viewBox（含边距），SVG 默认 preserveAspectRatio 会将内容缩放居中到容器
+function fitMindmapView(fitNodes) {
+    if (!svg || !fitNodes || !fitNodes.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    fitNodes.forEach(d => {
+        const r = mindmapNodeRadius(d);
+        if (d.x - r < minX) minX = d.x - r;
+        if (d.x + r > maxX) maxX = d.x + r;
+        if (d.y - r < minY) minY = d.y - r;
+        if (d.y + r > maxY) maxY = d.y + r;
+    });
+    const pad = 40;
+    const w = Math.max(200, maxX - minX + pad * 2);
+    const h = Math.max(150, maxY - minY + pad * 2);
+    svg.attr('viewBox', `${minX - pad} ${minY - pad} ${w} ${h}`);
+    log(`📐 脑图 viewBox 已贴合内容: ${Math.round(w)}x${Math.round(h)}`);
 }
 
 // 初始化SVG
@@ -1672,6 +1732,11 @@ function goKnowledgePointLanding(nodeId, name) {
     if (!realId) { log('❌ 缺少知识点ID，无法跳转落地页'); return; }
     try {
         localStorage.setItem('pm_pending_point', JSON.stringify({ id: realId, name: String(name || ''), ts: Date.now() }));
+        // u11 返回脑图：额外记录当前科目，知识点页点「返回脑图」后重建本页时自动恢复到脑图视图
+        //（消费端 loadSubjects；30 分钟内有效，backToSubjects/消费后删除，不会误恢复）
+        if (currentSubjectName) {
+            localStorage.setItem('pm_mindmap_return', JSON.stringify({ subject: currentSubjectName, ts: Date.now() }));
+        }
     } catch (e) { /* 存储不可用时仍尝试导航 */ }
     try {
         if (window.parent && window.parent !== window && typeof window.parent.handleMenuClick === 'function') {
@@ -1689,7 +1754,13 @@ function showLoading() {
 }
 
 function hideLoading() {
-    document.getElementById('loadingState').classList.add('hidden');
+    const loading = document.getElementById('loadingState');
+    if (!loading) return;
+    // u12：脑图与学习路径后台生成共用此遮罩——当前视图仍在等路径数据时不许收起，防误闪
+    // u12评审C2：error 态的失败提示遮罩同样不许被脑图完成等无关 hideLoading 抹掉
+    if (currentMainView !== 'mindmap' && !currentLearningPathData &&
+        (lpGenState === 'loading' || lpGenState === 'error')) return;
+    loading.classList.add('hidden');
 }
 
 function zoomIn() {
@@ -1709,8 +1780,8 @@ function zoomOut() {
 function resetView() {
     if (svg && zoom) {
         // 学习路径视图下重置必须走 applyLpFitView：否则实际大小模式的 viewBox 配 identity transform 会静默丢失取景
-        const tabs = document.getElementById('lpViewTabs');
-        if (tabs && !tabs.classList.contains('hidden')) {
+        // u12：判定改为 Tab 状态源 currentMainView（Tab 已常驻，不能再靠 hidden 判断）
+        if (currentMainView !== 'mindmap') {
             applyLpFitView();
             log('🔍 重置学习路径视图取景');
         } else {
@@ -1721,6 +1792,8 @@ function resetView() {
 }
 
 function searchNodes() {
+    // u12：搜索为脑图视图专属功能（LP 视图下入口已隐藏，此处防 Enter 键残路径误触）
+    if (currentMainView !== 'mindmap') return;
     const query = document.getElementById('searchInput').value.trim();
     if (!query) {
         log('⚠️ 请输入搜索关键词');
@@ -2149,6 +2222,10 @@ document.addEventListener('click', function(e) {
 // 学习路径图相关功能
 let currentLearningPathData = null;
 let isGeneratingLearningPath = false;
+// u12评审M1：记录在飞生成任务归属的学科——切学科后旧任务不得挡回新学科的生成
+let lpGenSubject = null;
+// 二轮评审Minor2：任务序号令牌——A→B→A 连点时学科名不足以区分新旧同科任务，以最新序号为唯一持有者
+let lpGenSeq = 0;
 // 学习路径视图模式：'linear' 线性图 | 'tree' 技能树（两图共用同一批节点，Tab 切换）
 let currentLpViewMode = 'linear';
 // 老缓存缺前序依赖时的自动升级只允许尝试一次，防止反复重生成烧积分
@@ -2160,123 +2237,185 @@ let _lpContentSize = { w: 3200, h: 700 };
 // 实际大小模式的取景中心（学习路径起点），null=内容几何居中
 let _lpContentFocus = null;
 
-// 生成学习路径图
-async function generateLearningPath() {
-    if (isGeneratingLearningPath) {
-        log('⚠️ 学习路径正在生成中，跳过重复调用');
-        return;
+// ==================== u12 三视图统一 Tab + 学习路径数据管理 ====================
+
+// 学习路径数据生成（单一入口；线性/技能树共用同一份数据，生成一次两图通吃）
+// force=true：先清缓存强制 LLM 重新生成（梳理知识点全量重生成 / 技能树依赖升级用）
+async function loadLearningPathData(force) {
+    // M1：互斥只挡"同学科在飞"；其他学科的在飞任务放行重发，旧任务返回时靠 subj 检查自动作废
+    if (isGeneratingLearningPath && lpGenSubject === currentSubjectName) {
+        log('⚠️ 该学科学习路径正在生成中，跳过重复调用');
+        return false;
     }
-    
     if (!currentSubjectName) {
         log('❌ 没有选择学科，无法生成学习路径');
-        return;
+        return false;
     }
-    
     isGeneratingLearningPath = true;
-    log(`🌳 开始生成 ${currentSubjectName} 的学习路径图`);
-    
-    // 更新按钮状态
-    const btn = document.getElementById('generateLearningPathBtn');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="material-icons-outlined text-sm animate-spin">refresh</span><span>生成中...</span>';
-    btn.disabled = true;
-    
+    lpGenSubject = currentSubjectName;
+    const mySeq = ++lpGenSeq;
+    lpGenState = 'loading';
+    const subj = currentSubjectName;
+    log(`🌳 开始生成 ${subj} 学习路径数据 (强制: ${!!force})`);
     try {
-        // 检查WebChannel连接
-        log(`🔍 检查WebChannel连接状态:`);
-        log(`  - window.pybridge 存在: ${!!window.pybridge}`);
-        log(`  - getOrGenerateLearningPath 方法存在: ${!!(window.pybridge && window.pybridge.getOrGenerateLearningPath)}`);
-        
         if (!window.pybridge || !window.pybridge.getOrGenerateLearningPath) {
             throw new Error('WebChannel连接不可用或方法不存在');
         }
-        
-        log(`📡 调用后端API生成学习路径...`);
-        log(`📤 请求参数: 学科="${currentSubjectName}"`);
-        
-        const response = await window.pybridge.getOrGenerateLearningPath(currentSubjectName);
-        log(`📡 API响应长度: ${response ? response.length : 0}`);
-        log(`📡 API响应预览: ${response ? response.substring(0, 200) + '...' : 'null'}`);
-        
+        if (force && window.pybridge.clearLearningPathCache) {
+            const clearResp = await window.pybridge.clearLearningPathCache(subj);
+            log(`🧹 清理旧学习路径缓存: ${clearResp && clearResp.success ? 'ok' : (clearResp && clearResp.error)}`);
+        }
+        const response = await window.pybridge.getOrGenerateLearningPath(subj);
         const result = JSON.parse(response);
-        
-        if (result.success && result.learningPath && result.learningPath.data) {
-            log(`✅ 学习路径生成成功`);
-            currentLearningPathData = result.learningPath.data;
-            
-            // 切换到学习路径视图
-            switchToLearningPathView();
-            renderCurrentLpView();
-        } else {
+        if (!(result.success && result.learningPath && result.learningPath.data)) {
             throw new Error(result.error || '学习路径生成失败');
         }
-        
+        // 等待期间用户已切走学科/或已被更新任务取代（二轮评审Minor2）：丢弃迟到数据，不污染新状态
+        if (subj !== currentSubjectName || lpGenSeq !== mySeq) {
+            if (lpGenSeq === mySeq) lpGenState = 'idle';
+            return false;
+        }
+        currentLearningPathData = result.learningPath.data;
+        lpGenState = 'ready';
+        log('✅ 学习路径数据就绪（线性/技能树共用）');
+        // 用户正停在线性/技能树 Tab 等待：数据到达即渲染当前 Tab
+        if (currentMainView !== 'mindmap') {
+            renderLpViewWithUpgrade();
+            hideLoading();
+        }
+        return true;
     } catch (error) {
-        log(`❌ 生成学习路径失败: ${error.message}`);
-        alert(`生成学习路径失败: ${error.message}`);
+        log(`❌ 学习路径生成失败: ${error.message}`);
+        // 二轮评审Minor2：已被更新任务取代的旧任务失败，不得触碰生成态/弹错误遮罩
+        if (lpGenSeq === mySeq) {
+            if (subj === currentSubjectName) {
+                lpGenState = 'error';
+                if (currentMainView !== 'mindmap') showLpGenError(error.message);
+            } else {
+                lpGenState = 'idle';
+            }
+        }
+        return false;
     } finally {
-        // 恢复按钮状态
+        // M1+二轮评审Minor2：只有最新任务才释放互斥标记，防止同科旧任务误释新任务持有
+        if (lpGenSeq === mySeq) {
+            isGeneratingLearningPath = false;
+            lpGenSubject = null;
+        }
+    }
+}
+
+// 后台自动生成发起：进脑图页即顺带生成线性路径/技能树数据，不阻塞界面、不自动切 Tab
+function startLpBackgroundGen() {
+    if (currentLearningPathData || lpGenState === 'loading') return;
+    loadLearningPathData(false);
+}
+
+// 线性/技能树 Tab 上无数据且生成失败时的提示层（再点一次 Tab 即重试）
+function showLpGenError(msg) {
+    const loading = document.getElementById('loadingState');
+    const txt = loading ? loading.querySelector('p') : null;
+    if (!loading) return;
+    if (txt) txt.textContent = `学习路径生成失败：${msg || '未知原因'}，可再次点击该 Tab 重试，或点右上「梳理知识点」`;
+    loading.classList.remove('hidden');
+}
+
+// 点击线性/技能树 Tab 的数据就绪路径：有数据直接画；没数据则边生成边显示载入框
+function ensureLpDataThen(renderFn) {
+    // M2+二轮评审Major：数据就绪时收起遗留遮罩，但脑图仍在生成时共用遮罩归脑图所有，不得越界抹掉
+    if (currentLearningPathData) {
+        if (!isGeneratingMindmap) hideLoading();
+        renderFn();
+        return;
+    }
+    const loading = document.getElementById('loadingState');
+    const txt = loading ? loading.querySelector('p') : null;
+    if (txt) txt.textContent = '正在生成学习路径（首次需要 AI 分析），请稍候...';
+    if (loading) loading.classList.remove('hidden');
+    if (lpGenState === 'loading') return; // 后台生成已在跑，完成后自动渲染到当前 Tab
+    loadLearningPathData(false);          // idle/error：发起生成（error 再点 Tab 即重试）
+}
+
+// 标题跟随当前主视图（Tab 切换与升级失败回退线性共用，防止回退后标题停留在技能树）
+function applyViewTitle() {
+    const titleMap = { mindmap: '知识脑图', linear: '线性路径', tree: '技能树' };
+    document.getElementById('mindmapTitle').textContent =
+        `${currentSubjectName || ''}${currentSubjectName ? ' - ' : ''}${titleMap[currentMainView]}`;
+}
+
+// 三主视图切换（知识脑图/线性路径/技能树），共用同一 SVG 画布
+function switchMainView(view) {
+    if (view === currentMainView) {
+        // 重复点当前 Tab：脑图不动作；LP Tab 有数据不动作，无数据（如刚失败）放行重试
+        if (view === 'mindmap' || currentLearningPathData) return;
+    }
+    hideLpTooltip();
+    currentMainView = view;
+    currentLpViewMode = view === 'tree' ? 'tree' : 'linear';
+    updateLpTabStyles();
+
+    const isLp = view !== 'mindmap';
+    // 工具区显隐：搜索/筛选为脑图专属；实际大小为路径视图专属
+    const searchZone = document.getElementById('mmSearchZone');
+    if (searchZone) searchZone.classList.toggle('hidden', isLp);
+    const lpTools = document.getElementById('lpToolsZone');
+    if (lpTools) { lpTools.classList.toggle('hidden', !isLp); lpTools.classList.toggle('flex', isLp); }
+    const filterBtn = document.getElementById('clearFilterBtn');
+    if (filterBtn && isLp) filterBtn.classList.add('hidden');
+    if (!isLp) hideLearningLegend();
+
+    applyViewTitle();
+
+    if (!isLp) {
+        // 回到脑图 Tab = 新一轮用户意图开始（保持 u11 评审口径）：复位一次性升级标记
+        _lpTreeUpgradeTried = false;
+        lpActualSize = false;
+        const sizeBtn = document.getElementById('lpSizeToggle');
+        if (sizeBtn) sizeBtn.textContent = '实际大小';
+        if (currentMindmapData) {
+            renderMindmap();
+            // C1：切回脑图必须收起路径视图遗留的载入/错误遮罩，否则会永久卡在脑图上
+            hideLoading();
+        }
+    } else {
+        // 停掉脑图力引擎：否则 LP 视图占用 SVG 后旧 simulation 仍在空转（tick 操作已销毁的 DOM）
+        if (simulation) { simulation.stop(); simulation = null; }
+        ensureLpDataThen(renderLpViewWithUpgrade);
+    }
+}
+
+// 「梳理知识点」（u12 语义）：重新生成全部三个视图——脑图 + 线性路径 + 技能树
+// （线性/技能树共用同一份学习路径数据，重生成一次即两图都新）
+async function regenerateAllViews() {
+    if (!currentSubjectName) {
+        alert('请先选择学科');
+        return;
+    }
+    // 二轮评审Minor1：互斥谓词与 M1 对齐——其他学科的在飞后台任务不挡当前学科的梳理
+    if ((isGeneratingLearningPath && lpGenSubject === currentSubjectName) || isGeneratingMindmap) {
+        log('⚠️ 当前学科已有生成任务在跑，稍后再试');
+        return;
+    }
+    const btn = document.getElementById('generateLearningPathBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="material-icons-outlined text-sm animate-spin">refresh</span><span>梳理中...</span>';
+    btn.disabled = true;
+    try {
+        // 1) 脑图：清缓存重生成
+        try {
+            if (window.pybridge && window.pybridge.clearMindmapCache) {
+                await window.pybridge.clearMindmapCache(currentSubjectName);
+            }
+            await generateMindmap(currentSubjectName, true);
+        } catch (e) {
+            log(`⚠️ 脑图重生成失败（继续尝试梳理路径）: ${e.message}`);
+        }
+        // 2) 学习路径（线性/技能树共用数据）：清缓存重生成
+        await loadLearningPathData(true);
+        log('✅ 梳理完成：脑图/线性路径/技能树均已重新生成');
+    } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
-        isGeneratingLearningPath = false;
-    }
-}
-
-// 切换到学习路径视图
-function switchToLearningPathView() {
-    log('🔄 切换到学习路径视图');
-    hideLpTooltip();  // 兜底：同上，防旧悬停态残留
-        
-    // 更新标题
-    document.getElementById('mindmapTitle').textContent = `${currentSubjectName} - 学习路径图`;
-    
-    // 显示线性/技能树 Tab
-    const tabs = document.getElementById('lpViewTabs');
-    if (tabs) { tabs.classList.remove('hidden'); tabs.classList.add('flex'); }
-    updateLpTabStyles();
-    
-    // 添加返回按钮
-    const titleDiv = document.querySelector('#mindmapPage .flex.items-center.justify-between');
-    if (!document.getElementById('backToMindmapBtn')) {
-        const backBtn = document.createElement('button');
-        backBtn.id = 'backToMindmapBtn';
-        backBtn.onclick = switchToMindmapView;
-        backBtn.className = 'bg-gray-500 text-white px-3 py-1 rounded-lg hover:bg-gray-600 transition-colors flex items-center space-x-1';
-        backBtn.innerHTML = '<span class="material-icons-outlined text-sm">arrow_back</span><span>返回脑图</span>';
-        titleDiv.querySelector('div:first-child').appendChild(backBtn);
-    }
-}
-
-// 切换回知识脑图视图
-function switchToMindmapView() {
-    log('🔄 切换回知识脑图视图');
-    
-    // 评审修复：返回脑图即视为新一轮用户意图，复位一次性标记，
-    // 允许升级失败后再次点"梳理知识点→技能树"重试（防循环靠同一视图内一次性标记 + 生成中互斥）
-    _lpTreeUpgradeTried = false;
-    // 复位显示模式与悬停提示（下次进入学习路径从"全图适配"开始）
-    lpActualSize = false;
-    const sizeBtn = document.getElementById('lpSizeToggle');
-    if (sizeBtn) sizeBtn.textContent = '实际大小';
-    hideLpTooltip();
-    
-    // 更新标题
-    document.getElementById('mindmapTitle').textContent = `${currentSubjectName} - 知识脑图`;
-    
-    // 隐藏学习路径专属控件（Tab / 图例卡片）
-    const tabs = document.getElementById('lpViewTabs');
-    if (tabs) { tabs.classList.add('hidden'); tabs.classList.remove('flex'); }
-    hideLearningLegend();
-    
-    // 移除返回按钮
-    const backBtn = document.getElementById('backToMindmapBtn');
-    if (backBtn) {
-        backBtn.remove();
-    }
-    
-    // 重新渲染知识脑图
-    if (currentMindmapData) {
-        renderMindmap();
     }
 }
 
@@ -2584,64 +2723,60 @@ function renderCurrentLpView() {
     }
 }
 
-// Tab 切换
-function switchLpViewMode(mode) {
-    log(`🔀 切换学习路径视图模式: ${mode}`);
-    hideLpTooltip();  // 兜底：重绘移除旧 DOM 时 mouseout 不一定触发，防 tooltip 残留
-    currentLpViewMode = mode;
-    updateLpTabStyles();
-    
-    // A 方案：老缓存缺依赖数据时，首次切到技能树自动触发一次重新生成（消耗一次 LLM 调用，之后两图共用新缓存）
-    if (mode === 'tree' && currentLearningPathData && !hasLearningPathPrerequisites()) {
+// LP 视图渲染入口：老缓存缺依赖数据时进入技能树触发一次性升级（u11 A 方案口径，由 switchLpViewMode 迁入）
+function renderLpViewWithUpgrade() {
+    if (currentMainView === 'tree' && currentLearningPathData && !hasLearningPathPrerequisites()) {
         if (!_lpTreeUpgradeTried) {
             _lpTreeUpgradeTried = true;
             regenerateForTreeMode();
             return;
         }
-        // 升级已尝试过仍无依赖数据（LLM 漏输出）：树视图会退化为按阶段串联，不再反复重生成
+        // 升级已尝试过仍无依赖数据（LLM 漏输出）：树视图退化为按阶段串联，不再反复重生成
     }
     renderCurrentLpView();
 }
 
 function updateLpTabStyles() {
-    const linearBtn = document.getElementById('lpTabLinear');
-    const treeBtn = document.getElementById('lpTabTree');
-    if (!linearBtn || !treeBtn) return;
+    // u12：三视图 Tab 高亮态（新增知识脑图 Tab），状态源 currentMainView
+    const defs = [['lpTabMindmap', 'mindmap'], ['lpTabLinear', 'linear'], ['lpTabTree', 'tree']];
     const active = 'bg-white text-gray-800 shadow';
     const inactive = 'text-gray-500 hover:text-gray-700';
-    linearBtn.className = `px-3 py-1 rounded-md text-sm font-medium ${currentLpViewMode === 'linear' ? active : inactive}`;
-    treeBtn.className = `px-3 py-1 rounded-md text-sm font-medium ${currentLpViewMode === 'tree' ? active : inactive}`;
+    defs.forEach(([id, v]) => {
+        const b = document.getElementById(id);
+        if (b) b.className = `px-3 py-1 rounded-md text-sm font-medium whitespace-nowrap ${currentMainView === v ? active : inactive}`;
+    });
 }
 
-// 首次升级：清旧缓存 → 重新生成（带依赖）→ 按当前模式（tree）渲染
+// 首次升级：清旧缓存 → 重新生成（带依赖）→ 按当前 Tab（技能树）渲染
 async function regenerateForTreeMode() {
-    if (isGeneratingLearningPath) return;
+    // 二轮评审Minor1：只挡同学科在飞，异科后台任务不阻塞升级
+    if (isGeneratingLearningPath && lpGenSubject === currentSubjectName) return;
     const loading = document.getElementById('loadingState');
     const loadingText = loading ? loading.querySelector('p') : null;
     const originalLoadingText = loadingText ? loadingText.textContent : '';
     if (loadingText) loadingText.textContent = '正在生成技能树依赖关系（首次需要一次 AI 分析）...';
     if (loading) loading.classList.remove('hidden');
     try {
-        if (window.pybridge && window.pybridge.clearLearningPathCache) {
-            const clearResp = await window.pybridge.clearLearningPathCache(currentSubjectName);
-            log(`🧹 清理旧学习路径缓存: ${clearResp && clearResp.success ? 'ok' : clearResp && clearResp.error}`);
-        }
-        // generateLearningPath 内部会走 renderCurrentLpView → 技能树
-        await generateLearningPath();
+        // force=true：loadLearningPathData 内部先清缓存再重生成；
+        // 成功时其内部已按当前 Tab（tree）渲染，这里只管失败回退
+        const ok = await loadLearningPathData(true);
         // 评审修复：升级未成功（生成失败/LLM 漏输出依赖/缓存未清掉命中旧数据）时，
         // Tab 回退线性并重绘，避免"技能树高亮但画布仍是旧图"的状态不一致
-        if (!hasLearningPathPrerequisites()) {
+        if (ok && !hasLearningPathPrerequisites()) {
             log('⚠️ 技能树升级未成功（无依赖数据），回退到线性视图');
+            currentMainView = 'linear';
             currentLpViewMode = 'linear';
             updateLpTabStyles();
+            applyViewTitle();
             renderCurrentLpView();
         }
     } catch (e) {
         log(`❌ 技能树依赖升级失败: ${e.message}`);
         alert(`技能树依赖生成失败: ${e.message}`);
     } finally {
-        if (loadingText) loadingText.textContent = originalLoadingText;
-        if (loading) loading.classList.add('hidden');
+        // C3：error 态遮罩正显示失败提示（showLpGenError 已写入文案），不得无条件收掉/覆文案
+        if (loadingText && lpGenState !== 'error') loadingText.textContent = originalLoadingText;
+        if (lpGenState !== 'error') hideLoading();
     }
 }
 
@@ -2786,8 +2921,11 @@ function renderLearningPathTree() {
         .filter(n => n.type === 'existing_kp' || n.type === 'supplement_kp');
     if (kpNodesRaw.length === 0) {
         log('⚠️ 技能树：无知识点节点，回退线性视图');
+        // u12：回退必须同步顶层 Tab 状态源，否则高亮停在技能树而画的是线性图
+        currentMainView = 'linear';
         currentLpViewMode = 'linear';
         updateLpTabStyles();
+        applyViewTitle();
         renderLearningPath();
         return;
     }

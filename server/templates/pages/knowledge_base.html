@@ -3,7 +3,8 @@
    数据源：/api/subjects/stats + /api/knowledge/points?subject= + /api/kb/errors?subject=（错题行含 source 标记）
    + POST /api/kb/errors（手动新增，影子练习记录）+ PUT/DELETE /api/kb/errors/<eid> + POST .../unbind
    + POST /api/knowledge/point-new + PUT /api/knowledge/points/<pid>/description + DELETE /api/knowledge/points/<pid>
-   + POST /api/vault/screenshot（图片落盘）+ POST/GET /api/kb/error-ocr（异步识别任务）。 #}
+   + POST /api/vault/screenshot（图片落盘）+ POST/GET /api/kb/error-ocr（异步识别任务）
+   + POST/GET /api/kb/error-batch（批量新增错题：多图全屏框选 → 逐框裁剪走智能分析管线）。 #}
 <link rel="stylesheet" href="/static/vendor/vditor/dist/index.css">
 <script src="/static/vendor/vditor/dist/index.min.js"></script>
 <script src="/static/js/note_vditor.js"></script>
@@ -104,6 +105,30 @@
         </div>
     </div>
 
+    <!-- 批量新增错题·全屏框选层（z-[92]：盖住弹窗 z-[90]、不盖轻提示 z-[95]） -->
+    <div id="kbo" class="hidden fixed inset-0 z-[92] flex-col bg-cl-bg">
+        <div class="flex items-center gap-2 px-4 py-2 border-b border-cl-border bg-cl-surface flex-wrap shrink-0">
+            <span id="kbo-info" class="text-sm font-medium text-cl-text"></span>
+            <button type="button" id="kbo-draw" class="cl-btn-ghost !h-8 text-xs">☝ 框选选题</button>
+            <button type="button" id="kbo-zout" class="cl-btn-ghost !h-8 text-xs" title="缩小（或滚动滚轮）">−</button>
+            <span id="kbo-zpct" class="text-xs text-cl-text-2">100%</span>
+            <button type="button" id="kbo-zin" class="cl-btn-ghost !h-8 text-xs" title="放大（或滚动滚轮）">＋</button>
+            <button type="button" id="kbo-zfit" class="cl-btn-ghost !h-8 text-xs" title="适应窗口">适应</button>
+            <span id="kbo-hint" class="text-xs text-cl-text-3 hidden sm:inline">在图上拖拽画矩形，一题一框；关闭「框选选题」后可拖拽平移；滚轮缩放；框右上角为编号，点 × 删除（编号不重排）</span>
+            <div class="ml-auto flex gap-2 shrink-0">
+                <button type="button" id="kbo-prev" class="cl-btn-ghost !h-8 text-xs">← 上一张</button>
+                <button type="button" id="kbo-next" class="cl-btn-ghost !h-8 text-xs">下一张 →</button>
+                <button type="button" id="kbo-done" class="cl-btn-primary !h-8 text-xs">完成</button>
+                <button type="button" id="kbo-back" class="cl-btn-ghost !h-8 text-xs">返回列表</button>
+            </div>
+        </div>
+        <div id="kbo-stage" class="flex-1 overflow-auto p-6">
+            <div id="kbo-canvas" class="relative block select-none mx-auto">
+                <img id="kbo-img" class="block h-auto" alt="题目图片">
+            </div>
+        </div>
+    </div>
+
     <!-- 轻提示 -->
     <div id="kb-toast" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 z-[95] max-w-[80vw] rounded-clbtn px-4 py-2 text-xs shadow-lg"></div>
 </div>
@@ -132,6 +157,7 @@
     // 页面状态：选中学科 + 当前页签 + 该科知识点缓存（错题行知识点名/新增下拉用）
     var state = { subject: null, tab: 'points', points: [] };
     var modalCtx = null; // 当前弹窗上下文 {type, ed, point, err, onClose}
+    var B = null; // 批量新增错题上下文（打开新增错题弹窗时创建，关闭即销毁；见「批量错题录入」区块）
     // 渲染令牌（CodeReview 批5 M-1/M-2）：旧响应到达时若令牌非最新则丢弃，
     // 防 init 尾部 kbShowRecent 覆盖用户主动选中学科、及连点两学科的乱序覆盖
     var renderToken = 0;
@@ -361,6 +387,7 @@
 
     // —— 弹窗基建 ——
     function openModal(title, bodyHtml, onOk, okLabel) {
+        modalOk.classList.remove('hidden'); // 防上一次批量页签遗留的隐藏态传染后续弹窗（CodeReview Critical-1）
         modalTitle.textContent = title;
         modalBody.innerHTML = bodyHtml;
         modalOk.textContent = okLabel || '保存';
@@ -380,6 +407,15 @@
         };
     }
     function closeModal() {
+        // 批量识别进行中关窗需二次确认（结果丢弃提示）；确认后停全部在飞轮询
+        if (B && B.alive && (B.stage === 'running' || B.__saving)
+            && !confirm(B.__saving ? '入库正在进行，关闭将中断剩余题目，确定关闭？'
+                : '识别正在进行，关闭弹窗将放弃本批结果，确定关闭？')) return;
+        // 上传/结果阶段已有图片同样防误点遮罩丢弃（用户反馈：点面板外一下全部重来）
+        if (B && B.alive && (B.imgs.length || B.results.length)
+            && !confirm('批量录入尚未完成，关闭将丢弃本批图片与识别结果，确定关闭？')) return;
+        if (B) { B.alive = false; B = null; }
+        hideOverlay();
         modal.classList.add('hidden');
         if (modalCtx && modalCtx.ed) {
             modalCtx.ed.__alive = false; // 断开在飞的 OCR 轮询链（CodeReview Major-3）
@@ -563,7 +599,7 @@
         var kpOpts = '<option value="">独立（不归属知识点）</option>' + state.points.map(function (p) {
             return '<option value="' + esc(String(p.id)) + '">' + esc(p.point_name || p.name) + '</option>';
         }).join('');
-        var body = '<label class="block text-xs text-cl-text-2">题目内容（支持 Markdown；截图可点下方按钮上传或编辑器内 Ctrl+V 粘贴，自动识别文字）</label>'
+        var singleBody = '<label class="block text-xs text-cl-text-2">题目内容（支持 Markdown；截图可点下方按钮上传或编辑器内 Ctrl+V 粘贴，自动识别文字）</label>'
             + pointEditorMount()
             + '<div class="flex items-center gap-2">'
             + '<button type="button" id="kbm-upload" class="cl-btn-ghost !h-8 text-xs">拍照 / 上传图片</button>'
@@ -571,21 +607,18 @@
             + '<button type="button" id="kbm-analyze" class="cl-btn-ghost !h-8 text-xs" title="把图片+文字交给大模型，自动整理成规范题目、答案与解析">🧠 智能分析</button>'
             + '<input type="file" id="kbm-file" accept="image/*" class="hidden">'
             + '<span class="text-[11px] text-cl-text-3">上传后自动调用 OCR 识别题目文字</span></div>'
-            + '<div id="kbm-photo-zone" class="hidden mt-2 rounded-clbtn border border-cl-border bg-cl-bg p-3">'
-            + '<div class="flex gap-3 items-start">'
-            + '<div id="kbm-qr" class="shrink-0"></div>'
-            + '<div class="min-w-0 flex-1 text-xs text-cl-text-2 leading-relaxed">'
-            + '<div>用手机相机扫码 → 拍照或选相册图 → 传回后自动插入并识别</div>'
-            + '<select id="kbm-qr-addr" class="mt-1 h-7 w-full rounded border border-cl-border bg-cl-bg px-1 text-xs text-cl-text"></select>'
-            + '<div id="kbm-qr-url" class="mt-1 break-all select-all text-[11px] text-cl-text-3"></div>'
-            + '<div id="kbm-qr-tip" class="text-[11px] text-cl-text-3">扫不到？手机需与电脑同 Wi-Fi，或已配置公网地址</div>'
-            + '</div></div></div>'
+            + qrZoneHtml('kbm')
             + '<label class="block text-xs text-cl-text-2 mt-2">正确答案（可选）</label>'
             + '<textarea id="kbm-answer" rows="2" class="w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 py-2 text-sm text-cl-text" placeholder="如：B 或 2x+1"></textarea>'
             + '<label class="block text-xs text-cl-text-2 mt-2">解析（可选）</label>'
             + '<textarea id="kbm-explain" rows="2" class="w-full rounded-clbtn border border-cl-border bg-cl-bg px-3 py-2 text-sm text-cl-text"></textarea>'
             + (isEdit ? '' : ('<label class="block text-xs text-cl-text-2 mt-2">知识点归属（可选）</label>'
                 + '<select id="kbm-kp" class="h-9 w-full rounded-clbtn border border-cl-border bg-cl-bg px-2 text-sm text-cl-text">' + kpOpts + '</select>'));
+        // 新增时双页签：单题（现有内容）| 批量新增错题；编辑错题不分页签
+        var body = isEdit ? singleBody
+            : (errTabsHtml()
+                + '<div id="kbm-single">' + singleBody + '</div>'
+                + '<div id="kbm-batch" class="hidden space-y-3"></div>');
         openModal(isEdit ? '编辑错题' : '新增错题', body, function () {
             var q = String(modalCtx.ed.getValue() || '').trim();
             if (!q) throw new Error('题目内容不能为空');
@@ -638,19 +671,38 @@
                 startOcr(rel, localEd);
             });
         });
-        // 手机拍照：二维码 + 轮询新图，同一 insertMD+OCR 管线
+        // 手机拍照：二维码 + 轮询新图，同一 insertMD+OCR 管线（会话基建与批量页共用）
         document.getElementById('kbm-photo').addEventListener('click', function () {
-            startPhotoDrop(modalCtx && modalCtx.ed);
+            var localEd = modalCtx && modalCtx.ed; // 闭包捕获：建会话期间关窗后 modalCtx 已置 null（CodeReview Minor-7 同口径）
+            startPhotoSession('kbm', function (rels) {
+                if (!localEd) return;
+                rels.forEach(function (rel) {
+                    try { localEd.insertMD('![手机拍照](' + rel + ')'); } catch (e) { /* noop */ }
+                    startOcr(rel, localEd);
+                });
+            });
         });
         // 智能分析：当前编辑器内容（含图）整体交后端管线，done 后 confirm 回填
         document.getElementById('kbm-analyze').addEventListener('click', function () {
             startAnalyze(modalCtx && modalCtx.ed);
         });
+        if (!isEdit) initErrorTabs();
     }
 
-    // —— 手机拍照传图（photo-session：建会话→二维码→轮询→插图文→OCR）——
-    function startPhotoDrop(ed) {
-        if (!ed) return;
+    // —— 手机拍照传图共用件（单题/批量同一会话实现，仅收图回调不同；2026-10-14 收敛）——
+    // 二维码面板 html（前缀 p 隔离两套页签 DOM；id 口径：p-photo-zone / p-qr / p-qr-addr / p-qr-url，与既有测试兼容）
+    function qrZoneHtml(p) {
+        return '<div id="' + p + '-photo-zone" class="hidden mt-2 rounded-clbtn border border-cl-border bg-cl-bg p-3">'
+            + '<div class="flex gap-3 items-start">'
+            + '<div id="' + p + '-qr" class="shrink-0"></div>'
+            + '<div class="min-w-0 flex-1 text-xs text-cl-text-2 leading-relaxed">'
+            + '<div>用手机相机扫码 → 拍照或选相册图 → 上传后自动到达列表</div>'
+            + '<select id="' + p + '-qr-addr" class="mt-1 h-7 w-full rounded border border-cl-border bg-cl-bg px-1 text-xs text-cl-text"></select>'
+            + '<div id="' + p + '-qr-url" class="mt-1 break-all select-all text-[11px] text-cl-text-3"></div>'
+            + '<div id="' + p + '-qr-tip" class="text-[11px] text-cl-text-3">扫不到？手机需与电脑同 Wi-Fi，或已配置公网地址</div>'
+            + '</div></div></div>';
+    }
+    function startPhotoSession(p, onImages) {
         if (modalCtx && modalCtx.photo) { setModalStatus('手机传图已在进行中'); return; }
         postJSON('/api/kb/photo-session', { subject: state.subject }).then(function (d) {
             d = (d && d.data) || d;
@@ -659,23 +711,35 @@
             (d.lan_ips || []).forEach(function (ip) { urls.push({ label: '同 Wi-Fi：' + ip, url: 'http://' + ip + ':' + d.port + d.paths.page }); });
             if (d.public_base) urls.push({ label: '外网（穿透/域名）', url: d.public_base + d.paths.page });
             if (!urls.length) throw new Error('没有可用地址，请检查本机网络');
-            var zone = document.getElementById('kbm-photo-zone');
-            var qrEl = document.getElementById('kbm-qr');
-            var sel = document.getElementById('kbm-qr-addr');
-            var urlEl = document.getElementById('kbm-qr-url');
-            if (!zone) return;
-            zone.classList.remove('hidden');
-            sel.innerHTML = urls.map(function (o, i) { return '<option value="' + i + '">' + esc(o.label) + '</option>'; }).join('');
+            function optionHtml() {
+                return urls.map(function (o, i) { return '<option value="' + i + '">' + esc(o.label) + '</option>'; }).join('');
+            }
             function draw(i) {
+                var zone = document.getElementById(p + '-photo-zone'), qrEl = document.getElementById(p + '-qr');
+                var sel = document.getElementById(p + '-qr-addr'), urlEl = document.getElementById(p + '-qr-url');
+                if (!zone || !qrEl || !sel || !urlEl) return;
+                zone.classList.remove('hidden');
+                if (sel.options.length !== urls.length) sel.innerHTML = optionHtml();
                 var u = urls[i] && urls[i].url || '';
                 urlEl.textContent = u;
                 qrEl.innerHTML = '';
                 if (window.QRCode) { try { new QRCode(qrEl, { text: u, width: 128, height: 128, correctLevel: QRCode.CorrectLevel.M }); } catch (e) { /* noop */ } }
                 else { urlEl.textContent = '二维码组件未加载，请手机浏览器手输：' + u; }
             }
-            sel.onchange = function () { draw(Number(sel.value) || 0); };
+            var sel0 = document.getElementById(p + '-qr-addr');
+            if (sel0) sel0.onchange = function () { draw(Number(sel0.value) || 0); };
             draw(0);
-            modalCtx.photo = { token: d.token, alive: true, since: 0, tries: 0, ed: ed };
+            modalCtx.photo = {
+                token: d.token, alive: true, since: 0, tries: 0, onImages: onImages,
+                redraw: function () { // 批量页签重渲染后恢复二维码面板（会话未断，传图继续收）
+                    var zone = document.getElementById(p + '-photo-zone'), sel = document.getElementById(p + '-qr-addr');
+                    if (!zone || !sel) return;
+                    zone.classList.remove('hidden');
+                    sel.innerHTML = optionHtml();
+                    sel.onchange = function () { draw(Number(sel.value) || 0); };
+                    draw(Number(sel.value) || 0);
+                }
+            };
             setModalStatus('等待手机扫码传图…');
             pollPhotos();
         }).catch(function (e) {
@@ -685,20 +749,18 @@
     function pollPhotos() {
         var ph = modalCtx && modalCtx.photo;
         if (!ph || !ph.alive) return;
-        // 上限 900×2s=30min，与服务端 SESSION_TTL_S 对齐；新图逐张走既有 插入+OCR 管线
+        // 上限 900×2s=30min，与服务端 SESSION_TTL_S 对齐；新图逐张交给发起方回调（单题插入+OCR / 批量进列表）
         if (++ph.tries > 900) { ph.alive = false; setModalStatus('手机传图已超时失效，可重新点「手机拍照」'); return; }
         setTimeout(function () {
             if (!modalCtx || modalCtx.photo !== ph || !ph.alive) return;
             getJSON('/api/kb/photo-session/' + encodeURIComponent(ph.token) + '?since=' + ph.since).then(function (r) {
-                if (!modalCtx || modalCtx.photo !== ph || !ph.alive) return; // 在途关窗：与 catch 对称，不再往已销毁编辑器插图/发 OCR（CodeReview M-3）
+                if (!modalCtx || modalCtx.photo !== ph || !ph.alive) return; // 在途关窗：与 catch 对称（CodeReview M-3）
                 r = (r && r.data) || r;
                 var imgs = (r && r.images) || [];
-                imgs.forEach(function (rel) {
-                    try { ph.ed.insertMD('![手机拍照](' + rel + ')'); } catch (e) { /* noop */ }
-                    startOcr(rel, ph.ed);
-                });
-                ph.since = Number(r && r.total) || ph.since;
-                if (imgs.length) toast('已收到手机传图 ×' + imgs.length);
+                if (imgs.length) { try { ph.onImages(imgs); } catch (e) { /* 回调异常不毁轮询链 */ }
+                    ph.since = Number(r && r.total) || ph.since;
+                    toast('已收到手机传图 ×' + imgs.length);
+                }
                 pollPhotos();
             }).catch(function () {
                 if (!modalCtx || modalCtx.photo !== ph) return;
@@ -736,6 +798,554 @@
             onNotice: function (m, isErr) { setModalStatus(m, isErr); }
         });
         return ed;
+    }
+
+    // —— 批量错题录入（Tab2，2026-10-14：多图上传 → 全屏框选 → 后端逐题识别 → 勾选入库）——
+    // 上下文 B：{alive, stage: upload|running|result|failed, imgs:[{rel,url,checked,uploading,boxes,seq}],
+    //            task, taskTotal, results, err}；打开新增错题弹窗创建，关闭销毁（closeModal）
+    var OVR = null; // 全屏框选层状态 {list, idx, drawOn, drag, ghost}（list 内元素与 B.imgs 同一对象，框选直接回写）
+    function dbg(m) { try { if (window.globalDebugLog) window.globalDebugLog('[批量错题] ' + m); } catch (e) { /* 留痕静默失败 */ } }
+    function errTabsHtml() {
+        return '<div id="kbm-tabs" class="flex items-center rounded-clbtn bg-cl-bg p-0.5 border border-cl-border">'
+            + '<button type="button" data-etab="single" class="h-8 px-4 rounded-[7px] text-xs font-medium">单题录入</button>'
+            + '<button type="button" data-etab="batch" class="h-8 px-4 rounded-[7px] text-xs font-medium">批量录入</button>'
+            + '</div>';
+    }
+    function initErrorTabs() {
+        B = { alive: true, stage: 'upload', imgs: [], task: null, taskTotal: 0, results: [], err: '' };
+        var host = document.getElementById('kbm-batch');
+        // 委托事件绑在 host 上只绑一次（host 跨阶段存活，内部卡片随 innerHTML 重建）
+        if (host) {
+            host.addEventListener('click', function (ev) {
+                var del = ev.target.closest ? ev.target.closest('[data-brm]') : null;
+                if (del && B) { removeBatchImg(Number(del.getAttribute('data-brm'))); }
+            });
+            host.addEventListener('change', function (ev) {
+                if (!B) return;
+                var t = ev.target;
+                if (t.id === 'kbb-all') {
+                    B.results.forEach(function (r) { if (r.ok) r.checked = t.checked; });
+                    syncResultChecks(); return;
+                }
+                if (t.getAttribute && t.hasAttribute('data-rc')) {
+                    var ri = Number(t.getAttribute('data-rc'));
+                    if (B.results[ri]) B.results[ri].checked = t.checked;
+                    syncResultChecks(); return;
+                }
+                if (t.getAttribute && t.hasAttribute('data-bc')) {
+                    var bi = Number(t.getAttribute('data-bc'));
+                    if (B.imgs[bi]) B.imgs[bi].checked = t.checked;
+                    updateBatchList();
+                }
+            });
+        }
+        var box = document.getElementById('kbm-tabs');
+        box.querySelectorAll('[data-etab]').forEach(function (btn) {
+            btn.addEventListener('click', function () { switchErrorTab(btn.getAttribute('data-etab')); });
+        });
+        switchErrorTab('single');
+    }
+    function switchErrorTab(tab) {
+        if (!B || !B.alive || !modalCtx) return;
+        modalCtx.errTab = tab;
+        syncErrorTabs();
+    }
+    function syncErrorTabs() {
+        var tab = (modalCtx && modalCtx.errTab) || 'single';
+        var single = document.getElementById('kbm-single');
+        var batch = document.getElementById('kbm-batch');
+        var box = document.getElementById('kbm-tabs');
+        if (!single || !batch || !box) return;
+        single.classList.toggle('hidden', tab !== 'single');
+        batch.classList.toggle('hidden', tab !== 'batch');
+        box.querySelectorAll('[data-etab]').forEach(function (btn) {
+            var on = btn.getAttribute('data-etab') === tab;
+            btn.className = 'h-8 px-4 rounded-[7px] text-xs font-medium ' + (on ? 'bg-cl-surface text-cl-primary shadow-sm' : 'text-cl-text-2');
+        });
+        // 批量页签隐藏弹窗「保存」按钮：各阶段动作都在页签内部完成（提取/入库），单题保存逻辑不参与
+        modalOk.classList.toggle('hidden', tab === 'batch');
+        if (tab === 'batch') renderBatch();
+    }
+    // —— 阶段渲染：整阶段 html 只在切换时重渲；列表增量更新保护二维码面板 DOM ——
+    function renderBatch() {
+        if (!B || !modalCtx) return;
+        var host = document.getElementById('kbm-batch');
+        if (!host) return;
+        if (B.stage === 'upload') host.innerHTML = batchUploadHtml();
+        else if (B.stage === 'running') host.innerHTML = batchRunningHtml();
+        else if (B.stage === 'failed') host.innerHTML = batchFailedHtml();
+        else host.innerHTML = batchResultHtml();
+        bindBatchEvents();
+        // 手机传图会话进行中：重渲染后恢复二维码（会话不断，传图继续收）
+        if (modalCtx.photo && modalCtx.photo.alive && modalCtx.photo.redraw) { try { modalCtx.photo.redraw(); } catch (e) { /* noop */ } }
+        if (B.stage === 'upload') updateBatchList();
+        if (B.stage === 'result') renderResultRows();
+    }
+    function batchUploadHtml() {
+        return '<div class="flex items-center gap-2 flex-wrap">'
+            + '<button type="button" id="kbb-upload" class="cl-btn-primary !h-8 text-xs">拍照 / 上传图片</button>'
+            + '<button type="button" id="kbb-photo" class="cl-btn-ghost !h-8 text-xs">📱 手机拍照</button>'
+            + '<input type="file" id="kbb-file" accept="image/*" multiple class="hidden">'
+            + '<span id="kbb-upstat" class="text-[11px] text-cl-text-3"></span></div>'
+            + qrZoneHtml('kbb')
+            + '<div id="kbb-list" class="grid grid-cols-3 sm:grid-cols-4 gap-3"></div>'
+            + '<div class="flex items-center justify-between gap-2 pt-2 border-t border-cl-border">'
+            + '<span id="kbb-sum" class="text-xs text-cl-text-3"></span>'
+            + '<button type="button" id="kbb-extract" class="cl-btn-primary !h-8 text-xs">提取错题</button></div>';
+    }
+    function batchRunningHtml() {
+        return '<div class="py-6 text-center space-y-3">'
+            + '<p class="text-sm text-cl-text">批量识别进行中，请稍候…</p>'
+            + '<p class="text-xs text-cl-text-3">每题走版面分析 + 大模型整理，几何图形保留在题干中</p>'
+            + '<div class="mx-auto h-2.5 w-full max-w-md overflow-hidden rounded-full bg-cl-bg border border-cl-border">'
+            + '<div id="kbp-bar" class="h-full bg-cl-primary" style="width:0%"></div></div>'
+            + '<p id="kbp-text" class="text-xs text-cl-text-2">识别进度 0 / ' + B.taskTotal + '</p></div>';
+    }
+    function batchFailedHtml() {
+        return '<div class="py-6 text-center space-y-3">'
+            + '<p class="text-sm text-cl-danger">批量识别失败</p>'
+            + '<p class="text-xs text-cl-text-2 break-words">' + esc(B.err) + '</p>'
+            + '<button type="button" id="kbb-retry" class="cl-btn-ghost !h-8 text-xs">返回上传列表重试</button></div>';
+    }
+    function batchResultHtml() {
+        var okN = B.results.filter(function (r) { return r.ok; }).length;
+        var failN = B.results.length - okN;
+        return '<div class="flex items-center justify-between gap-2 flex-wrap">'
+            + '<p class="text-sm text-cl-text">识别完成：成功 ' + okN + ' 题' + (failN ? '，失败 ' + failN + ' 题（置灰不可选）' : '') + '</p>'
+            + '<div class="flex gap-2 shrink-0">'
+            + '<button type="button" id="kbb-back" class="cl-btn-ghost !h-8 text-xs">重新框选</button>'
+            + '<button type="button" id="kbb-save" class="cl-btn-primary !h-8 text-xs">入库 <span id="kbb-save-n"></span> 题</button></div></div>'
+            + '<label class="flex items-center gap-2 text-xs text-cl-text-2 cursor-pointer">'
+            + '<input type="checkbox" id="kbb-all" checked class="h-4 w-4 accent-cl-primary">全选/取消（未勾选的题将被丢弃）</label>'
+            + '<div id="kbb-res" class="space-y-2 max-h-[46vh] overflow-y-auto pr-1"></div>';
+    }
+    function bindBatchEvents() {
+        // innerHTML 重建后按钮都是新节点，onclick 直接赋值天然免重复绑定
+        var up = document.getElementById('kbb-upload');
+        if (up) up.onclick = function () { document.getElementById('kbb-file').click(); };
+        var fi = document.getElementById('kbb-file');
+        if (fi) fi.onchange = function (ev) {
+            var fs = Array.prototype.slice.call(ev.target.files || []);
+            ev.target.value = '';
+            fs.forEach(batchAddFile);
+        };
+        var ph = document.getElementById('kbb-photo');
+        if (ph) ph.onclick = function () {
+            var myB = B; // 会话跨弹窗生命周期：关窗/重开后 B 已换，旧会话到图一律丢弃（CodeReview Major-3）
+            startPhotoSession('kbb', function (rels) {
+                if (!myB || myB !== B || !myB.alive || myB.stage !== 'upload') return; // 非上传阶段不再收新图
+                rels.forEach(function (rel) {
+                    if (myB.imgs.length >= 20) { toast('单批最多 20 张图片，超出部分未加入', true); return; }
+                    var item = { rel: String(rel), url: '', checked: true, uploading: true, boxes: [], seq: 0 };
+                    myB.imgs.push(item);
+                    batchImgUrl(item.rel, function (u) {
+                        if (myB !== B) return; // 水合在飞时关窗：不再写已销毁上下文
+                        item.url = u || ''; item.uploading = false;
+                        if (!u) { var at = myB.imgs.indexOf(item); if (at >= 0) myB.imgs.splice(at, 1); toast('手机图片读取失败，已移除', true); }
+                        updateBatchList();
+                    });
+                });
+                updateBatchList();
+            });
+        };
+        var ex = document.getElementById('kbb-extract');
+        if (ex) ex.onclick = startOverlayFromBatch;
+        var rt = document.getElementById('kbb-retry');
+        if (rt) rt.onclick = function () { B.stage = 'upload'; renderBatch(); };
+        var bk = document.getElementById('kbb-back');
+        if (bk) bk.onclick = function () { B.stage = 'upload'; renderBatch(); };
+        var sv = document.getElementById('kbb-save');
+        if (sv) sv.onclick = saveBatchResults;
+    }
+    // —— 图片条目：本地上传（FileReader 即时预览 + vault 落盘）与路径水合 ——
+    function batchAddFile(file) {
+        if (!B || B.stage !== 'upload') return;
+        if (!file || !/^image\//i.test(file.type || '')) { toast('仅支持图片文件', true); return; }
+        if (B.imgs.length >= 20) { toast('单批最多 20 张图片', true); return; }
+        var myB = B; // 弹窗关/重开后 B 换对象，旧条目随旧上下文作废（CodeReview Major-3 同口径）
+        var item = { rel: '', url: '', checked: true, uploading: true, boxes: [], seq: 0 };
+        B.imgs.push(item); updateBatchList();
+        var fr = new FileReader();
+        fr.onload = function () {
+            item.url = String(fr.result);
+            postJSON('/api/vault/screenshot', { image_b64: String(fr.result) }).then(function (d) {
+                if (myB !== B) return;
+                d = (d && d.data) || d;
+                if (!d || !d.success || !d.rel) throw new Error((d && d.error) || '图片保存失败');
+                item.rel = d.rel; item.uploading = false;
+                dbg('上传落盘: ' + d.rel);
+                updateBatchList();
+            }).catch(function (e) {
+                if (myB !== B) return;
+                var at = myB.imgs.indexOf(item);
+                if (at >= 0) myB.imgs.splice(at, 1);
+                toast('图片上传失败：' + e.message, true);
+                updateBatchList();
+            });
+        };
+        fr.onerror = function () {
+            if (myB !== B) return;
+            var at = myB.imgs.indexOf(item);
+            if (at >= 0) myB.imgs.splice(at, 1);
+            toast('读取图片数据失败', true); updateBatchList();
+        };
+        fr.readAsDataURL(file);
+    }
+    function removeBatchImg(idx) {
+        if (!B || B.stage !== 'upload') return;
+        var it = B.imgs[idx]; if (!it) return;
+        if (it.boxes.length && !confirm('该图已框 ' + it.boxes.length + ' 题，移除后框选一并丢弃，确定？')) return;
+        B.imgs.splice(idx, 1); updateBatchList();
+    }
+    function batchImgUrl(rel, cb) {
+        var br = imgBridge();
+        if (br && br.getImageAsBase64) {
+            br.getImageAsBase64(rel, function (result) {
+                try { var resp = JSON.parse(result); cb(resp && resp.success ? (resp.dataUrl || '') : ''); }
+                catch (e) { cb(''); }
+            });
+            return;
+        }
+        fetch('/api/vault/image?path=' + encodeURIComponent(rel), { headers: { 'Authorization': 'Bearer ' + tk() } })
+            .then(function (r) { return r.json(); })
+            .then(function (j) { var d = (j && j.data) || j; cb((d && d.dataUrl) || ''); })
+            .catch(function () { cb(''); });
+    }
+    function batchChecked() {
+        return B ? B.imgs.filter(function (it) { return it.checked && it.rel && !it.uploading; }) : [];
+    }
+    function updateBatchList() {
+        if (!B || B.stage !== 'upload') return;
+        var list = document.getElementById('kbb-list');
+        if (!list) return; // 阶段已切换，等 renderBatch 重渲
+        var upCount = B.imgs.filter(function (it) { return it.uploading; }).length;
+        var ready = B.imgs.filter(function (it) { return it.rel && !it.uploading; }).length;
+        var st = document.getElementById('kbb-upstat');
+        if (st) st.textContent = upCount ? upCount + ' 张图片上传中…' : (B.imgs.length ? '' : '可多选本地图片或用手机拍照，单批最多 20 张');
+        var sum = document.getElementById('kbb-sum');
+        if (sum) sum.textContent = B.imgs.length + ' 张图片 · 就绪 ' + ready + ' · 已勾选 ' + batchChecked().length;
+        list.innerHTML = B.imgs.map(function (it, i) {
+            return '<div class="relative rounded-clbtn border overflow-hidden bg-cl-bg ' + (it.checked ? 'border-cl-primary' : 'border-cl-border') + '">'
+                + (it.url ? '<img src="' + it.url + '" class="block w-full h-24 object-cover" alt="" draggable="false">'
+                    : '<div class="w-full h-24 flex items-center justify-center text-xs text-cl-text-3">图片加载中…</div>')
+                + (it.uploading ? '<div class="absolute inset-0 flex items-center justify-center bg-black/35 text-xs text-white">上传中…</div>' : '')
+                + '<label class="absolute left-1 top-1 z-[2] flex h-6 w-6 items-center justify-center rounded bg-white/85 shadow cursor-pointer">'
+                + '<input type="checkbox" data-bc="' + i + '"' + (it.checked ? ' checked' : '') + ' class="h-4 w-4 accent-cl-primary"></label>'
+                + '<button type="button" data-brm="' + i + '" title="移除该图片" class="absolute right-1 top-1 z-[2] h-6 w-6 rounded bg-white/85 shadow text-sm text-cl-danger leading-none">×</button>'
+                + (it.boxes.length ? '<span class="absolute bottom-1 left-1 z-[2] rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">已框 ' + it.boxes.length + ' 题</span>' : '')
+                + '<span class="absolute bottom-1 right-1 z-[2] rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-white">#' + (i + 1) + '</span>'
+                + '</div>';
+        }).join('');
+    }
+    // —— 全屏框选层：勾选图逐张展示，拖拽画矩形，框右上角编号+删除（编号不重排）——
+    function startOverlayFromBatch() {
+        if (!B || B.stage !== 'upload') return;
+        if (B.imgs.some(function (it) { return it.uploading; })) { toast('还有图片上传中，请稍候再提取', true); return; }
+        var list = batchChecked();
+        if (!list.length) { toast('请先勾选至少一张已上传的图片', true); return; }
+        var pend = list.filter(function (it) { return !it.url; });
+        if (!pend.length) { openOverlay(list); return; }
+        var myB = B, done = 0;
+        pend.forEach(function (it) {
+            batchImgUrl(it.rel, function (u) {
+                if (myB !== B) return; // 水合在飞时关窗/重开：不再弹出框选层（CodeReview Major-3）
+                it.url = u || '';
+                if (++done !== pend.length) return;
+                var usable = list.filter(function (x) { return x.url; });
+                if (!usable.length) { toast('图片预览加载失败，请重试', true); return; }
+                if (usable.length < list.length) toast((list.length - usable.length) + ' 张图片读取失败已跳过', true);
+                openOverlay(usable);
+            });
+        });
+    }
+    function openOverlay(list) {
+        // drawOn 默认开：进层即可直接拖框；关闭后拖拽=平移画布；scale/fitW 支撑缩放
+        OVR = { list: list, idx: 0, drawOn: true, drag: null, ghost: null, scale: 1, fitW: 0 };
+        bindOverlayOnce();
+        var el = document.getElementById('kbo');
+        el.classList.remove('hidden'); el.classList.add('flex');
+        renderOverlay();
+        dbg('开始框选：' + list.length + ' 张图');
+    }
+    function hideOverlay() {
+        var el = document.getElementById('kbo');
+        if (el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+        OVR = null;
+    }
+    function canvasPos(ev) {
+        var rect = document.getElementById('kbo-canvas').getBoundingClientRect();
+        var x = (ev.clientX - rect.left) / (rect.width || 1);
+        var y = (ev.clientY - rect.top) / (rect.height || 1);
+        return [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))];
+    }
+    function bindOverlayOnce() {
+        var el = document.getElementById('kbo');
+        if (el.__kbo_bound) return; // 静态层只绑一次，事件内以 OVR 现取现判
+        el.__kbo_bound = true;
+        document.getElementById('kbo-draw').addEventListener('click', function () {
+            if (!OVR) return; OVR.drawOn = !OVR.drawOn; renderOverlay();
+        });
+        // 缩放：按钮 + 滚轮（任意状态可用，canvasPos 基于实时 rect 归一化，缩放后坐标数学不变）
+        document.getElementById('kbo-zin').addEventListener('click', function () { zoomBy(1.25); });
+        document.getElementById('kbo-zout').addEventListener('click', function () { zoomBy(0.8); });
+        document.getElementById('kbo-zfit').addEventListener('click', function () { if (OVR) { OVR.scale = 1; applyZoom(); } });
+        document.getElementById('kbo-stage').addEventListener('wheel', function (ev) {
+            if (!OVR) return; ev.preventDefault(); zoomBy(ev.deltaY < 0 ? 1.15 : 0.87);
+        }, { passive: false });
+        document.getElementById('kbo-prev').addEventListener('click', function () {
+            if (OVR && OVR.idx > 0) { OVR.idx--; renderOverlay(); }
+        });
+        document.getElementById('kbo-next').addEventListener('click', function () {
+            if (!OVR) return;
+            if (OVR.idx < OVR.list.length - 1) { OVR.idx++; renderOverlay(); }
+            else toast('已是最后一张，框完点「完成」开始识别');
+        });
+        document.getElementById('kbo-done').addEventListener('click', finishOverlay);
+        document.getElementById('kbo-back').addEventListener('click', function () {
+            hideOverlay(); dbg('框选中断返回列表');
+        });
+        var canvas = document.getElementById('kbo-canvas');
+        canvas.addEventListener('dragstart', function (ev) { ev.preventDefault(); });
+        canvas.addEventListener('pointerdown', function (ev) {
+            if (!OVR || ev.button !== 0) return;
+            // 框体本身不拦截绘画（pointer-events:none），仅右上角工具条起笔时不画新框
+            if (ev.target.closest && ev.target.closest('.kbo-tools')) return;
+            if (!OVR.drawOn) { // 框选开关关闭：图上拖拽 = 平移画布（滚动视口实现，坐标无需变化）
+                var st0 = document.getElementById('kbo-stage');
+                var sx0 = st0.scrollLeft, sy0 = st0.scrollTop, px0 = ev.clientX, py0 = ev.clientY;
+                var panMv = function (e2) { st0.scrollLeft = sx0 - (e2.clientX - px0); st0.scrollTop = sy0 - (e2.clientY - py0); };
+                var panUp = function () { canvas.classList.remove('kbo-panning'); document.removeEventListener('pointermove', panMv); document.removeEventListener('pointerup', panUp); };
+                canvas.classList.add('kbo-panning');
+                document.addEventListener('pointermove', panMv); document.addEventListener('pointerup', panUp);
+                ev.preventDefault(); return;
+            }
+            var p = canvasPos(ev);
+            var ghost = document.createElement('div');
+            ghost.className = 'kbo-box kbo-ghost';
+            ghost.style.left = p[0] * 100 + '%'; ghost.style.top = p[1] * 100 + '%';
+            ghost.style.width = '0'; ghost.style.height = '0';
+            canvas.appendChild(ghost);
+            OVR.drag = { x: p[0], y: p[1] }; OVR.ghost = ghost;
+            ev.preventDefault(); // 防选中文字/图片拖拽
+        });
+        document.addEventListener('pointermove', function (ev) {
+            if (!OVR || !OVR.drag || !OVR.ghost) return;
+            var p = canvasPos(ev), d = OVR.drag;
+            OVR.ghost.style.left = Math.min(d.x, p[0]) * 100 + '%';
+            OVR.ghost.style.top = Math.min(d.y, p[1]) * 100 + '%';
+            OVR.ghost.style.width = Math.abs(p[0] - d.x) * 100 + '%';
+            OVR.ghost.style.height = Math.abs(p[1] - d.y) * 100 + '%';
+        });
+        document.addEventListener('pointerup', function (ev) {
+            if (!OVR || !OVR.drag) return;
+            var it = OVR.list[OVR.idx]; if (!it) { OVR.drag = null; return; }
+            var p = canvasPos(ev), d = OVR.drag;
+            var x1 = Math.min(d.x, p[0]), y1 = Math.min(d.y, p[1]);
+            var w = Math.abs(p[0] - d.x), h = Math.abs(p[1] - d.y);
+            if (OVR.ghost) { OVR.ghost.remove(); OVR.ghost = null; }
+            OVR.drag = null;
+            if (w < 0.004 || h < 0.004) return; // 过小视为误点，丢弃
+            if (it.boxes.length >= 10) { toast('单图最多框 10 题', true); renderOverlay(); return; }
+            var nid = (it.seq || 0) + 1; it.seq = nid; // 删除不重排：seq 只增不减
+            it.boxes.push({ id: nid, x: x1, y: y1, w: w, h: h });
+            renderOverlay();
+        });
+    }
+    function applyZoom() {
+        if (!OVR || !OVR.fitW) return;
+        // canvas 显式跟随 img 宽度（block 布局下 auto 宽度会撑满容器，导致 % 定位的框坐标错位）
+        var w = Math.max(40, Math.round(OVR.fitW * OVR.scale)) + 'px';
+        document.getElementById('kbo-img').style.width = w;
+        document.getElementById('kbo-canvas').style.width = w;
+        document.getElementById('kbo-zpct').textContent = Math.round(OVR.scale * 100) + '%';
+    }
+    function applyImgFit() {
+        if (!OVR) return;
+        var img = document.getElementById('kbo-img');
+        var stage = document.getElementById('kbo-stage');
+        if (!img.naturalWidth || !stage.clientWidth) return;
+        OVR.fitW = Math.min(img.naturalWidth, stage.clientWidth - 48);
+        applyZoom();
+    }
+    function zoomBy(f) { if (!OVR) return; OVR.scale = Math.max(0.2, Math.min(6, OVR.scale * f)); applyZoom(); }
+    function renderOverlay() {
+        if (!OVR) return;
+        var it = OVR.list[OVR.idx]; if (!it) return;
+        document.getElementById('kbo-info').textContent = '第 ' + (OVR.idx + 1) + ' / ' + OVR.list.length + ' 张 · 已框 ' + it.boxes.length + ' 题';
+        var img = document.getElementById('kbo-img');
+        img.src = it.url; img.draggable = false;
+        img.onload = applyImgFit;
+        if (img.complete && img.naturalWidth) applyImgFit(); // 同图切回已缓存：onload 不再触发，手动应用
+        var canvas = document.getElementById('kbo-canvas');
+        canvas.querySelectorAll('.kbo-box').forEach(function (n) { n.remove(); });
+        it.boxes.forEach(function (b) {
+            var d = document.createElement('div');
+            d.className = 'kbo-box';
+            d.style.left = b.x * 100 + '%'; d.style.top = b.y * 100 + '%';
+            d.style.width = b.w * 100 + '%'; d.style.height = b.h * 100 + '%';
+            d.innerHTML = '<span class="kbo-tools"><span class="kbo-n">' + b.id + '</span>'
+                + '<button type="button" class="kbo-del" title="删除本框（编号不重排）">×</button></span>';
+            var delBtn = d.querySelector('.kbo-del');
+            delBtn.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+            delBtn.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                it.boxes = it.boxes.filter(function (x) { return x.id !== b.id; });
+                renderOverlay();
+            });
+            canvas.appendChild(d);
+        });
+        var btn = document.getElementById('kbo-draw');
+        btn.className = (OVR.drawOn ? 'cl-btn-primary' : 'cl-btn-ghost') + ' !h-8 text-xs';
+        canvas.classList.toggle('kbo-drawing', !!OVR.drawOn);
+        document.getElementById('kbo-prev').disabled = OVR.idx === 0;
+        document.getElementById('kbo-next').disabled = OVR.idx >= OVR.list.length - 1;
+    }
+    function finishOverlay() {
+        if (!OVR) return;
+        var picked = OVR.list.filter(function (it) { return it.boxes.length; });
+        if (!picked.length) { toast('还没有框选题目：开启「框选选题」后在图上拖拽画矩形', true); return; }
+        var totalQ = picked.reduce(function (n, it) { return n + it.boxes.length; }, 0);
+        if (totalQ > 50) { toast('单批最多 50 题，当前 ' + totalQ + ' 题，请删减', true); return; }
+        if (!confirm('本次将识别 ' + totalQ + ' 道题，预计共消耗约 '
+            + (totalQ * 0.2).toFixed(1) + ' 积分，需要几分钟，请稍候。确认开始？')) return;
+        var items = picked.map(function (it) {
+            return { image: it.rel, boxes: it.boxes.map(function (b) { return { id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }; }) };
+        });
+        hideOverlay();
+        B.stage = 'running'; B.taskTotal = totalQ; B.results = []; B.err = '';
+        renderBatch();
+        dbg('提交批量识别: ' + items.length + ' 图 ' + totalQ + ' 题');
+        postJSON('/api/kb/error-batch', { items: items }).then(function (d) {
+            d = (d && d.data) || d;
+            var tid = d && d.task_id;
+            if (!tid) throw new Error((d && d.error) || '批量任务创建失败');
+            B.task = tid; pollBatchTask();
+        }).catch(function (e) {
+            B.stage = 'failed'; B.err = e.message; renderBatch();
+            dbg('提交失败: ' + e.message);
+        });
+    }
+    // —— 进度轮询：2s 间隔；预算覆盖 20 图×10 框极端排队（单题上限 180s + 批前余量）——
+    function pollBatchTask() {
+        if (!B || !B.alive || B.stage !== 'running' || !B.task) return;
+        var tid = B.task, tries = 0;
+        var budget = Math.ceil((300 + B.taskTotal * 240) / 2);
+        (function tick() {
+            if (!B || !B.alive || B.stage !== 'running' || B.task !== tid) return;
+            if (++tries > budget) { B.stage = 'failed'; B.err = '批量识别超时，请减少题量后重新框选'; renderBatch(); return; }
+            setTimeout(function () {
+                if (!B || !B.alive || B.stage !== 'running' || B.task !== tid) return;
+                getJSON('/api/kb/error-batch/' + encodeURIComponent(tid)).then(function (r) {
+                    if (!B || !B.alive || B.stage !== 'running' || B.task !== tid) return;
+                    r = (r && r.data) || r;
+                    if (r && r.status === 'running') {
+                        B.results = r.results || B.results;
+                        var bar = document.getElementById('kbp-bar');
+                        var txt = document.getElementById('kbp-text');
+                        if (bar) bar.style.width = (B.taskTotal ? Math.round((r.finished || 0) / B.taskTotal * 100) : 0) + '%';
+                        if (txt) txt.textContent = '识别进度 ' + (r.finished || 0) + ' / ' + B.taskTotal;
+                        tick(); return;
+                    }
+                    if (r && r.status === 'done') {
+                        B.results = (r.results || []).map(function (x) { x.checked = !!x.ok; return x; });
+                        B.stage = 'result'; renderBatch();
+                        dbg('批量识别完成: ' + B.results.length + ' 题'); return;
+                    }
+                    // error 终态：已完成题目仍展示可入库，一题没有才算整体失败
+                    B.results = ((r && r.results) || []).map(function (x) { x.checked = !!x.ok; return x; });
+                    if (B.results.length) B.stage = 'result';
+                    else { B.stage = 'failed'; B.err = (r && r.error) || '批量识别失败'; }
+                    renderBatch();
+                    dbg('批量终态 ' + (r && r.status) + ' 已得 ' + B.results.length + ' 题');
+                }).catch(function (e) {
+                    if (!B || !B.alive || B.stage !== 'running' || B.task !== tid) return; // 在飞关窗：与 then 分支对称（CodeReview Major-2）
+                    B.stage = 'failed'; B.err = e.message; renderBatch();
+                    dbg('轮询失败: ' + e.message);
+                });
+            }, 2000);
+        })();
+    }
+    // —— 结果列表：默认全选、失败置灰；入库循环复用单题 POST /api/kb/errors ——
+    function renderResultRows() {
+        var box = document.getElementById('kbb-res');
+        if (!box || !B) return;
+        box.innerHTML = B.results.map(function (r, i) {
+            var name = String(r.image || '').split('/').pop();
+            return '<div class="rounded-clbtn border p-3 space-y-1 ' + (r.ok ? 'border-cl-border bg-cl-bg' : 'border-cl-border opacity-50') + '">'
+                + '<div class="flex items-start gap-2">'
+                + (r.ok ? '<input type="checkbox" data-rc="' + i + '"' + (r.checked ? ' checked' : '') + ' class="mt-1 h-4 w-4 accent-cl-primary shrink-0">'
+                    : '<span class="mt-1 w-4 shrink-0 text-[10px] text-cl-danger leading-4">失败</span>')
+                + '<div class="min-w-0 flex-1">'
+                + '<p class="text-[11px] text-cl-text-3">' + esc(name) + ' · 第 ' + esc(String(r.box_id == null ? '-' : r.box_id)) + ' 题</p>'
+                + (r.ok
+                    ? '<div class="kb-result-md text-sm text-cl-text leading-relaxed break-words" data-rmd="' + i + '"></div>'
+                      + '<p class="text-xs text-cl-text-2 break-words"><span class="font-medium">答案：</span><span class="kb-result-md" data-rans="' + i + '"></span></p>'
+                      + (r.explanation ? '<div class="text-xs text-cl-text-3 break-words max-h-20 overflow-y-auto"><span class="font-medium">解析：</span><div class="kb-result-md" data-rexp="' + i + '"></div></div>' : '')
+                    : '<p class="text-xs text-cl-danger break-words">' + esc(r.error || '识别失败') + '</p>')
+                + '</div></div></div>';
+        }).join('');
+        B.results.forEach(function (r, i) {
+            if (!r.ok) return;
+            var md = box.querySelector('[data-rmd="' + i + '"]');
+            if (md) renderMdInto(md, r.stem_md); // 题干内 截图/ 切片图由 hydrateListImgs 水合，几何图保留
+            var ans = box.querySelector('[data-rans="' + i + '"]');
+            if (ans) renderMdInto(ans, r.correct_answer, true);
+            var exp = box.querySelector('[data-rexp="' + i + '"]');
+            if (exp) renderMdInto(exp, r.explanation);
+        });
+        syncResultChecks();
+    }
+    function syncResultChecks() {
+        var box = document.getElementById('kbb-res');
+        if (!box || !B) return;
+        box.querySelectorAll('[data-rc]').forEach(function (cb) {
+            var r = B.results[Number(cb.getAttribute('data-rc'))];
+            cb.checked = !!(r && r.checked);
+        });
+        var oks = B.results.filter(function (r) { return r.ok; });
+        var all = document.getElementById('kbb-all');
+        if (all) all.checked = oks.length > 0 && oks.every(function (r) { return r.checked; });
+        var n = oks.filter(function (r) { return r.checked; }).length;
+        var sn = document.getElementById('kbb-save-n');
+        if (sn) sn.textContent = '(' + n + ')';
+        var sv = document.getElementById('kbb-save');
+        if (sv && !sv.__saving) sv.disabled = n === 0;
+    }
+    function saveBatchResults() {
+        if (!B || B.stage !== 'result') return;
+        var picked = B.results.filter(function (r) { return r.ok && r.checked; });
+        if (!picked.length) { toast('请勾选至少一道题再入库', true); return; }
+        var btn = document.getElementById('kbb-save');
+        btn.disabled = true; btn.__saving = true;
+        B.__saving = true; // 入库进行中标记：closeModal 据此二次确认（CodeReview Major-2）
+        dbg('开始入库 ' + picked.length + ' 题（学科：' + state.subject + '，独立错题）');
+        var okN = 0, failN = 0;
+        (function next(i) {
+            if (!B || !B.alive) return; // 关窗中断：剩余题目不再静默 POST
+            if (i >= picked.length) {
+                B.__saving = false;
+                setModalStatus('');
+                toast('入库完成：成功 ' + okN + ' 题' + (failN ? '，失败 ' + failN + ' 题' : ''), !!failN);
+                dbg('入库完成 ok=' + okN + ' fail=' + failN);
+                B.stage = 'upload'; B.imgs = []; B.results = []; B.task = null; B.taskTotal = 0;
+                renderBatch();
+                init(); // 刷新错题列表与学科卡计数
+                return;
+            }
+            var r = picked[i];
+            var payload = { subject_name: state.subject, question: r.stem_md };
+            if (r.correct_answer) payload.correct_answer = r.correct_answer;
+            if (r.explanation) payload.explanation = r.explanation;
+            // 用户裁定：批量入库一律当前学科 + 独立错题（不绑知识点），入库后可再编辑
+            postJSON('/api/kb/errors', payload).then(function (d) {
+                d = (d && d.data) || d;
+                if (d && d.success === false) throw new Error(d.error || '保存失败');
+                okN++;
+            }).catch(function () { failN++; }).then(function () {
+                setModalStatus('入库中 ' + (i + 1) + ' / ' + picked.length + '…');
+                next(i + 1);
+            });
+        })(0);
     }
 
     // —— 页签与数据装载 ——
@@ -898,4 +1508,24 @@
 #kb-point-list .kb-error-md td, #kb-point-list .kb-error-md th { border: 1px solid var(--cl-border, #e5e5e5); padding: 2px 8px; }
 #kb-point-list .kb-error-md pre { background: rgba(0,0,0,0.05); border-radius: 8px; padding: 8px; overflow-x: auto; }
 #kb-point-list .kb-error-md code { font-size: 12px; }
+
+/* 批量框选层：画框态光标与选题框（颜色走 cl 变量，与全局主题一致） */
+/* z-index 硬编码兜底：写进模板自有样式，不受客户端旧 cl.css 缓存吞掉 z-[92] 新类影响（客户现场：框选层被弹窗盖住） */
+#kbo { z-index: 92; }
+#kbo-canvas.kbo-drawing { cursor: crosshair; }
+#kbo-canvas { cursor: grab; margin: 0 auto; } /* margin auto：小于窗口居中，放大后溢出可双向滚动（避开 flex 居中死区） */
+#kbo-canvas.kbo-panning { cursor: grabbing; }
+#kbo-canvas.kbo-drawing img { pointer-events: none; user-select: none; }
+#kbo button:disabled { opacity: .45; cursor: not-allowed; }
+.kbo-box { position: absolute; border: 2px solid var(--cl-primary, #3b82f6); background: rgba(59, 130, 246, .12); pointer-events: none; } /* 旧框盖在新框上方时仍可起笔画框（UI 动线发现：框内起笔被吞是缺陷） */
+.kbo-ghost { border-style: dashed; }
+.kbo-tools { position: absolute; top: 2px; right: 2px; display: flex; align-items: center; gap: 3px; pointer-events: auto; }
+.kbo-n { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--cl-primary, #3b82f6); color: #fff; font-size: 11px; line-height: 1; }
+.kbo-del { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 9px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; line-height: 1; cursor: pointer; border: 0; }
+/* 批量结果卡 MD 紧凑化（与错题列表同口径） */
+#kbb-res .kb-result-md > :first-child { margin-top: 0; }
+#kbb-res .kb-result-md > :last-child { margin-bottom: 0; }
+#kbb-res .kb-result-md p { margin: 0.35em 0; }
+#kbb-res .kb-result-md img { max-width: 260px; max-height: 200px; border-radius: 8px; border: 1px solid var(--cl-border, #e5e5e5); }
+#kbb-res .kb-result-md ul, #kbb-res .kb-result-md ol { padding-left: 1.4em; margin: 0.35em 0; }
 </style>

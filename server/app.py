@@ -6,6 +6,7 @@ LectureLearnLoop 服务端入口（Flask 3.x，端口 6001）。
 """
 from __future__ import annotations
 
+import os
 import sys
 
 # Windows GBK 控制台加固：旧模块 print 含 emoji 会崩（UnicodeEncodeError）
@@ -36,6 +37,11 @@ def create_app() -> Flask:
     app.secret_key = config.get_flask_secret_key()  # D3：持久化 SECRET_KEY
     app.config["MAX_CONTENT_LENGTH"] = config.IMPORT_MAX_BYTES  # 文件导入单文件上限 200MB（2026-10-04 大PDF分段）
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # 开发模式：模板修改即时生效
+    # cl.css 缓存版本号：启动时取文件 mtime，Tailwind 重建后随服务重启更新；
+    # 无版本参数时 Electron/浏览器长缓存会吞掉新增类（2026-10-14 批量错题 z-[92] 被旧缓存吞的回归）
+    _clcss = os.path.join(app.static_folder or "", "css", "cl.css")
+    app.jinja_env.globals["cl_css_ver"] = (
+        str(int(os.path.getmtime(_clcss))) if os.path.exists(_clcss) else "0")
     CORS(app)  # Electron 客户端与本机调试页均需跨域
 
     # 单一 DatabaseManager：users 表与业务表同库，避免多库碎片化（D5 收敛方向）

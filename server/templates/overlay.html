@@ -9,8 +9,9 @@
   :root { --bg:#1f2430; --fg:#eef1f7; --accent:#F97316; --accent-press:#B45309; --muted:#8a94a6; --ok:#10B981; --warn:#EF4444; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--fg); overflow:hidden; }
-  #dragbar { height:34px; background:#171b24; display:flex; align-items:center; justify-content:space-between; padding:0 10px; cursor:move; -webkit-user-select:none; user-select:none; }
+  #dragbar { height:34px; background:#171b24; display:flex; align-items:center; justify-content:space-between; padding:0 10px; cursor:move; -webkit-user-select:none; user-select:none; -webkit-app-region:drag; }
   #dragbar .title { font-size:13px; color:var(--muted); }
+  #dragbar .btns { -webkit-app-region:no-drag; }
   #dragbar .btns button { background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:15px; padding:2px 6px; }
   #dragbar .btns button:hover { color:var(--fg); }
   #body { padding:10px 12px; display:flex; flex-direction:column; gap:8px; height:calc(100% - 34px); }
@@ -33,18 +34,36 @@
   #subs { font-size:13px; line-height:1.5; height:96px; overflow-y:auto; white-space:pre-wrap; word-break:break-word; }
   #subs .fin { color:var(--fg); }
   #subs .int { color:var(--muted); font-style:italic; }
-  #sums { font-size:12.5px; line-height:1.55; height:88px; overflow-y:auto; white-space:pre-wrap; }
+  #sums { font-size:12.5px; line-height:1.55; height:88px; overflow-y:auto; }
+  #sums .sumblock { padding:2px 0 6px; border-bottom:1px solid #2b3242; margin-bottom:6px; }
+  #sums .sumblock:last-child { border-bottom:none; }
+  #sums .stime { color:var(--muted); font-size:11px; margin-bottom:2px; }
+  #sums .sbody { color:var(--fg); }
+  #sums .sbody p { margin:2px 0 6px; }
+  #sums .sbody h1, #sums .sbody h2, #sums .sbody h3, #sums .sbody h4 { font-size:12.5px; margin:4px 0; color:var(--accent); font-weight:600; }
+  #sums .sbody ul, #sums .sbody ol { margin:2px 0 6px; padding-left:18px; }
+  #sums .sbody li { margin:1px 0; }
+  #sums .sbody code { background:#232937; padding:1px 4px; border-radius:4px; font-size:11.5px; }
+  #sums .sbody pre { background:#232937; padding:6px; border-radius:6px; overflow-x:auto; }
+  #sums .sbody pre code { background:transparent; padding:0; }
+  #sums .sbody strong { color:#ffd9b8; }
+  #sums .sbody blockquote { margin:4px 0; padding-left:8px; border-left:2px solid #3a4256; color:var(--muted); }
+  #sums .sumblock.err .sbody { color:var(--warn); }
   #status { font-size:11px; color:var(--muted); }
   #toast { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); background:#000c; color:#fff; padding:8px 14px; border-radius:8px; font-size:12px; opacity:0; transition:opacity .25s; pointer-events:none; max-width:90%; }
   #toast.show { opacity:1; }
   .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#555; margin-right:4px; vertical-align:middle; }
   .dot.rec { background:var(--warn); animation:pulse 1s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  #recClock { color:var(--accent); font-size:12.5px; margin-left:6px; font-variant-numeric:tabular-nums; }
+  #sumCd { margin-left:8px; color:var(--accent); font-variant-numeric:tabular-nums; }
+  #resizeGrip { position:fixed; right:0; bottom:0; width:18px; height:18px; cursor:nwse-resize; z-index:30; }
+  #resizeGrip::after { content:''; position:absolute; right:3px; bottom:3px; width:9px; height:9px; border-right:2px solid #3a4256; border-bottom:2px solid #3a4256; border-radius:0 0 3px 0; }
 </style>
 </head>
 <body>
   <div id="dragbar">
-    <span class="title"><span class="dot" id="dot"></span>学习悬浮窗</span>
+    <span class="title"><span class="dot" id="dot"></span>学习悬浮窗<span id="recClock"></span></span>
     <span class="btns"><button id="btnMin" title="收起">▁</button><button id="btnClose" title="关闭">✕</button></span>
   </div>
   <div id="body">
@@ -77,13 +96,21 @@
       <div id="subs"><span class="muted" style="color:var(--muted)">（尚未开始）</span></div>
     </div>
     <div class="panel">
-      <h4>段落总结 <span style="color:var(--muted)">每 <input id="interval" type="number" value="60" min="10" style="width:48px"> 秒</span></h4>
+      <h4>段落总结 <span style="color:var(--muted)">每 <input id="interval" type="number" value="300" min="10" max="3600" step="10" style="width:48px"> 秒<span id="sumCd"></span></span></h4>
       <div id="sums" style="color:var(--muted)">（总结将在此显示，并实时写入笔记）</div>
     </div>
     <div id="status">就绪</div>
   </div>
   <div id="toast"></div>
+  <div id="resizeGrip" title="拖动调整窗口大小"></div>
 
+  <!-- 段落总结 MD 渲染链：本地 vendor（客户机无代理访问不了 CDN，悬浮窗必须离线可用），
+       与主窗页面同一管线：MdRender.extract → marked → DOMPurify → MdRender.applyMath -->
+  <link rel="stylesheet" href="/static/vendor/vditor/dist/js/katex/katex.min.css">
+  <script src="/static/vendor/vditor/dist/js/katex/katex.min.js"></script>
+  <script src="/static/js/vendor/marked.min.js"></script>
+  <script src="/static/js/vendor/purify.min.js"></script>
+  <script src="/static/js/md_render.js"></script>
 <script src="/static/js/recorder.js"></script>
 <script>
 (function () {
@@ -91,7 +118,7 @@
   const TOKEN_KEY = 'll_token';
   const state = {
     notePath: null, noteRel: null, noteName: null,
-    sumTimer: null, rafId: 0,
+    sumTO: null, sumNextAt: 0, rafId: 0,
   };
 
   function token() {
@@ -104,6 +131,25 @@
     clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms || 2600);
   }
   function setStatus(s) { $('status').textContent = s; }
+  /* 系统声音静默重取因缺用户手势失败时：挂一次性 pointerdown，用户点一下悬浮窗即自动重连。
+   * 手势路径 force 绕过去抖（失败后点击常在 4s 内，不绕会被吞掉且再无第二次机会，CodeReview Major-4）；
+   * 若本次仍不成且未结束录音，重挂监听保留重试机会 */
+  function armGestureRecap() {
+    if (armGestureRecap._on) return;
+    armGestureRecap._on = true;
+    const h = () => {
+      document.removeEventListener('pointerdown', h);
+      armGestureRecap._on = false;
+      Promise.resolve(rec.restartLoopAudio('点击恢复采集', true)).then((ok) => {
+        if (!ok && rec.state !== 'idle') armGestureRecap();
+      });
+    };
+    document.addEventListener('pointerdown', h);
+  }
+  function fmtMMSS(sec) {
+    sec = Math.max(0, Math.round(sec));
+    return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  }
   async function api(path, opts) {
     const r = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token() } }, opts || {}));
     return r.json().catch(() => ({ success: false, error: '非JSON响应' }));
@@ -118,13 +164,28 @@
   }
   function escapeHtml(s) { return String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
-  /* ---------- 声波动画 ---------- */
+  /* ---------- 段落总结调度：链式 setTimeout，间隔输入随时可改，下一次总结即按新值 ---------- */
+  // 与 input[min=10 max=3600] 同口径 JS 钳双端（CodeReview Minor-5：超大值会溢出 setTimeout 变立即触发空转）
+  function ivMs() { return Math.min(3600, Math.max(10, parseInt($('interval').value || '300', 10))) * 1000; }
+  function armSummary() {
+    if (state.sumTO) clearTimeout(state.sumTO);
+    const iv = ivMs();
+    try { localStorage.setItem('ll_sum_interval', String(Math.round(iv / 1000))); } catch (e) { /* 存不了不影响本轮 */ }
+    state.sumNextAt = Date.now() + iv;
+    state.sumTO = setTimeout(() => {
+      // catch 防御：即使 runSummary 意外 reject 也要重排下一轮，不能静默打断余下全部总结（CodeReview Major-1）
+      Promise.resolve(runSummary()).catch(() => {}).then(() => { if (rec.state !== 'idle') armSummary(); });
+    }, iv);
+  }
+  function clearSummary() { if (state.sumTO) { clearTimeout(state.sumTO); state.sumTO = null; } state.sumNextAt = 0; }
+  /* ---------- 声波（电平）动画：每帧 setTransform 重置变换。旧版用 ctx.scale 叠加，
+     帧间累积缩放把画面移出画布，叠加未聚焦 RAF 节流，即“电平图一直不显示”的成因组合 ---------- */
   function drawWave() {
     const cv = $('wave'); const dpr = window.devicePixelRatio || 1;
     const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) { if (rec.state !== 'idle') state.rafId = requestAnimationFrame(drawWave); return; }
     if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
-    const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
+    const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#171b24'; ctx.fillRect(0, 0, w, h);
     const bars = 48, gap = 3, bw = (w - gap * (bars - 1)) / bars;
     const an = rec.analyser;
@@ -161,6 +222,11 @@
         else toast('录音 ' + ev.minutes + ' 分钟，消耗 ' + ev.credits + ' 积分 · 余额 ' + ev.balance, 3000);
       }
       else if (ev.type === 'done') { hideBanner(); toast('学习笔记已保存 ✓', 3000); }
+      else if (ev.type === 'recapture') {
+        // 系统声音重取失败（多为 Chromium 要求用户手势）：降级为“点一下悬浮窗即恢复”，不打断录制
+        if (ev.needGesture) { toast('音频输出已切换，点一下悬浮窗任意空白处即可继续采集', 5000); armGestureRecap(); }
+        else toast('系统声音重连失败：' + (ev.error || '未知'), 3500);
+      }
     },
   });
 
@@ -188,6 +254,8 @@
       bp.disabled = true;
       bd.disabled = false;
       $('dot').classList.remove('rec');
+      // 暂停也持续跑波形帧（灰色低电平），与录制态同机制，避免画面冻结在旧帧
+      cancelAnimationFrame(state.rafId); state.rafId = requestAnimationFrame(drawWave);
     }
   }
 
@@ -241,9 +309,8 @@
     if (!ok) return;
     $('subs').innerHTML = '';
     showBanner(pick.name);
-    // 段落总结定时器（引擎内部已有 60s 兜底 autosave，这里是 LLM 总结节奏）
-    const iv = Math.max(10, parseInt($('interval').value || '60', 10)) * 1000;
-    state.sumTimer = setInterval(runSummary, iv);
+    // 段落总结：链式调度（间隔可随时改，下一次总结按新值；引擎内部另有 autosave 兜底）
+    armSummary();
   }
 
   /* ========== 暂停 ========== */
@@ -252,33 +319,70 @@
   /* ========== 完成 ========== */
   async function onDone() {
     if (rec.state === 'idle') return;
-    if (state.sumTimer) { clearInterval(state.sumTimer); state.sumTimer = null; }
-    if ((rec.sinceSummary || '').trim()) await runSummary();  // 末次段落总结
+    clearSummary();
+    // 末次段落总结：失败不阻断收尾保存（CodeReview Major-1：网络抖动曾致完成按钮卡死）
+    if ((rec.sinceSummary || '').trim()) { try { await runSummary(); } catch (e) { /* 不阻断 */ } }
     setBannerSub('正在保存…');
     await rec.done();
     state.notePath = null;
   }
 
-  /* ---------- 60s 段落总结（结果回填引擎会话块，单一写者） ---------- */
+  /* ---------- 总结展示：MD 渲染后呈现（笔记落盘内容不变，仅展示层） ---------- */
+  function appendSummaryView(stamp, mdText, isErr) {
+    const el = $('sums');
+    if (el.dataset.cleared !== '1') { el.innerHTML = ''; el.dataset.cleared = '1'; }
+    const wrap = document.createElement('div');
+    wrap.className = 'sumblock' + (isErr ? ' err' : '');
+    const head = document.createElement('div');
+    head.className = 'stime';
+    head.textContent = stamp;
+    wrap.appendChild(head);
+    const body = document.createElement('div');
+    body.className = 'sbody';
+    // 必须先挂进文档再渲染：MdRender.applyMath 内有 isConnected 防御守卫，分离节点会被整体跳过（占位符残留实测）
+    wrap.appendChild(body);
+    el.appendChild(wrap);
+    const md = String(mdText || '');
+    if (window.marked && window.DOMPurify) {
+      // 与主窗页面同管线：公式先占位保护，渲染后再回填 KaTeX（md_render.js 头注）；管线异常降级纯文本
+      try {
+        const ex = window.MdRender ? window.MdRender.extract(md) : { text: md, slots: [] };
+        body.innerHTML = window.DOMPurify.sanitize(window.marked.parse(ex.text));
+        if (window.MdRender) window.MdRender.applyMath(body, ex.slots);
+      } catch (e) {
+        body.textContent = md;
+      }
+    } else {
+      body.textContent = md;  // 渲染库意外缺失时降级纯文本，不露 MD 源码符号以外的歧义
+    }
+    el.scrollTop = el.scrollHeight;
+  }
+
+  /* ---------- 段落总结（结果回填引擎会话块，单一写者）：自身吞掉网络/解析异常，永不 reject ---------- */
   async function runSummary() {
     const seg = (rec.sinceSummary || '').trim();
     if (!seg) return;
     setStatus('生成段落总结…');
-    const r = await api('/api/llm/summarize-text', { method: 'POST', body: JSON.stringify({ text: seg }) });
-    const el = $('sums');
-    if (r.success && r.data && r.data.success && r.data.summary) {
-      const stamp = new Date().toLocaleTimeString();
-      const block = '### ' + stamp + '\n' + r.data.summary + '\n\n';
-      rec.appendSummary(block);   // 清 sinceSummary + 防抖保存
-      el.style.color = 'var(--fg)';
-      el.innerHTML += escapeHtml(r.data.summary).replace(/\n/g, '<br>') + '<hr style="border:none;border-top:1px solid #3a4256">';
-      el.scrollTop = el.scrollHeight;
-      setStatus('段落总结已写入笔记');
-    } else {
-      rec.sinceSummary = '';  // 失败不重复提交同一段
-      el.style.color = 'var(--warn)';
-      el.textContent = '总结失败: ' + ((r.data && r.data.error) || r.error || '未知');
-      setStatus('总结失败');
+    state.generating = true;  // 心跳改显“生成中…”，不再冻结 0:00（CodeReview Minor-6）
+    let r;
+    try {
+      r = await api('/api/llm/summarize-text', { method: 'POST', body: JSON.stringify({ text: seg }) });
+    } catch (e) {
+      r = { success: false, error: String((e && e.message) || e) };
+    }
+    try {
+      if (r.success && r.data && r.data.success && r.data.summary) {
+        const stamp = new Date().toLocaleTimeString();
+        rec.appendSummary('### ' + stamp + '\n' + r.data.summary + '\n\n');   // 清 sinceSummary + 防抖保存
+        appendSummaryView(stamp, r.data.summary, false);
+        setStatus('段落总结已写入笔记');
+      } else {
+        rec.sinceSummary = '';  // 失败不重复提交同一段
+        appendSummaryView('总结失败', ((r.data && r.data.error) || r.error || '未知'), true);
+        setStatus('总结失败');
+      }
+    } finally {
+      state.generating = false;
     }
   }
 
@@ -337,25 +441,53 @@
   $('btnShotFull').onclick = () => doScreenshot(true);
   $('btnClose').onclick = async () => {
     if (rec.state !== 'idle') {
-      if (state.sumTimer) { clearInterval(state.sumTimer); state.sumTimer = null; }
+      clearSummary();
       await rec.done();
     }
     if (window.overlayClose) { window.overlayClose(); } else { window.close(); }
   };
   $('btnMin').onclick = () => { if (window.overlayMin) window.overlayMin(); };
 
-  // 拖拽移动悬浮窗
-  (function drag() {
-    const bar = $('dragbar'); let sx = 0, sy = 0, dragging = false;
-    bar.addEventListener('mousedown', (e) => { dragging = true; sx = e.screenX; sy = e.screenY; });
-    window.addEventListener('mousemove', (e) => {
-      if (!dragging) return;
-      const dx = e.screenX - sx, dy = e.screenY - sy;
-      sx = e.screenX; sy = e.screenY;
-      if (window.llOverlayDrag) window.llOverlayDrag(dx, dy);
+  // 拖拽：改 CSS app-region 原生拖（#dragbar 样式），不再逐帧 IPC setPosition——
+  // 旧 JS 拖拽在 Windows/DWM 下高频 SetWindowPos 产生“越拖越宽”拖影，已整体移除。
+
+  /* ---------- 右下角把手改窗口尺寸（目标宽高=当前内容尺寸+屏幕拖拽增量） ---------- */
+  (function resize() {
+    const g = $('resizeGrip'); let act = false, sx = 0, sy = 0, sw = 0, sh = 0;
+    g.addEventListener('mousedown', (e) => {
+      act = true; sx = e.screenX; sy = e.screenY;
+      sw = document.documentElement.clientWidth; sh = document.documentElement.clientHeight;
+      e.preventDefault();
     });
-    window.addEventListener('mouseup', () => { dragging = false; });
+    window.addEventListener('mousemove', (e) => {
+      if (!act || !window.llOverlayResize) return;
+      window.llOverlayResize(sw + (e.screenX - sx), sh + (e.screenY - sy));
+    });
+    window.addEventListener('mouseup', () => { act = false; });
   })();
+
+  /* ---------- 总结间隔：默认 300s，恢复上次设置；录制中修改立即重排下一次 ---------- */
+  (function initInterval() {
+    let saved = parseInt(localStorage.getItem('ll_sum_interval') || '', 10);
+    if (!(saved >= 10 && saved <= 3600)) saved = 300;  // 恢复口与 ivMs 同口径双端钳制
+    $('interval').value = String(saved);
+    $('interval').addEventListener('change', () => { if (rec.state !== 'idle') armSummary(); });
+  })();
+
+  /* ---------- 每秒 UI 心跳：录制计时（标题栏）+ 距下次总结倒计时 ---------- */
+  setInterval(function () {
+    const st = rec.state;
+    const clk = $('recClock'); const cd = $('sumCd');
+    if (st === 'idle') { clk.textContent = ''; cd.textContent = ''; return; }
+    clk.textContent = ' · ' + fmtMMSS(rec.seconds()) + (st === 'paused' ? '（已暂停）' : '');
+    if (st === 'recording' && state.generating) {
+      cd.textContent = ' · 生成中…';
+    } else if (st === 'recording' && state.sumNextAt) {
+      cd.textContent = ' · 下次 ' + fmtMMSS(Math.max(0, (state.sumNextAt - Date.now()) / 1000));
+    } else if (st === 'paused') {
+      cd.textContent = '';
+    }
+  }, 1000);
 
   syncUI('idle');
   if (!window.llAsr) setStatus('⚠ 非桌面环境：桥接口不可用（可在 Electron 中打开）');

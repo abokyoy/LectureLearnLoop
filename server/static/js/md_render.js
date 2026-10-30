@@ -6,6 +6,7 @@
  *   var ex = MdRender.extract(mdSrc);              // { text: 含占位符的 MD, slots: [公式] }
  *   el.innerHTML = DOMPurify.sanitize(marked.parse(ex.text));
  *   MdRender.applyMath(el, ex.slots);              // sanitize 之后调用：公式渲染的是 KaTeX 可信产物
+ *   注意：el 必须已挂进文档（isConnected）——内部防御守卫会跳过分离节点，对未 appendChild 的碎片子树调用会静默不生效（悬浮窗实测）。
  * 降级链（核心功能降级兜底规范）：
  *   - window.katex 缺失（vendor 脚本加载失败）→ 公式还原为原文 $…$ 纯文本展示；
  *   - 单条公式语法错误（OCR 误识别）→ KaTeX throwOnError:false 红字显示错误，不中断整段渲染；

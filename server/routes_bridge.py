@@ -366,8 +366,20 @@ def vault_screenshot():
             name = f"截屏_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
         if not name.lower().endswith(".png"):
             name += ".png"
+        # 同名冲突（同一秒并发上传/批量多图）用序号后缀排他创建，禁止静默覆盖
+        stem = name[:-4]
+        for _i in range(1000):
+            cand = name if _i == 0 else f"{stem}_{_i + 1}.png"
+            try:
+                with open(shot_dir / cand, "xb") as f:
+                    f.write(raw)
+                name = cand
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise FileExistsError("截图目录序号冲突过多")
         target = shot_dir / name
-        target.write_bytes(raw)
         rel = f"截图/{name}"
         markdown = f"![截屏]({rel})"
         # 可选：追加到指定笔记
@@ -1373,6 +1385,40 @@ def point_error_practice(pid):
 # ---------------------------------------------------------------- P3 知识点描述编辑（2026-10-09）
 
 DESC_MAX_LEN = 5000  # 手动保存长度上限（防超长脏数据）
+POINT_NAME_MAX_LEN = 200  # 知识点名称上限（「学」页相似知识点编辑，2026-10-12）
+
+
+@bridge_bp.route("/api/knowledge/points/<int:pid>/name", methods=["PUT"])
+@require_auth
+def point_name_update(pid):
+    """知识点改名（「学」页知识点管理面板：合并前用户修正已有知识点标题）。
+
+    注意：point_name 参与 rank_matches 相似匹配与展示，改名后匹配口径随之变化。
+    与 description 端点同式：存在性+user_id 隔离校验后单字段 UPDATE。
+    """
+    body = request.get_json(silent=True) or {}
+    name = body.get("name")
+    if not isinstance(name, str):
+        return _ok({"success": False, "error": "name 需为字符串"})
+    name = name.strip()
+    if not name:
+        return _ok({"success": False, "error": "知识点名称不能为空"})
+    if len(name) > POINT_NAME_MAX_LEN:
+        return _ok({"success": False, "error": f"名称过长（上限 {POINT_NAME_MAX_LEN} 字）"})
+    conn = get_kms().db_manager.get_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM knowledge_points WHERE id = ? AND user_id = ?", (pid, g.user_id)).fetchone()
+        if not row:
+            return _ok({"success": False, "error": "未找到该知识点"})
+        conn.execute(
+            "UPDATE knowledge_points SET point_name = ?, updated_time = CURRENT_TIMESTAMP "
+            "WHERE id = ? AND user_id = ?",
+            (name, pid, g.user_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return _ok({"success": True, "point_name": name})
 
 
 @bridge_bp.route("/api/knowledge/points/<int:pid>/description", methods=["PUT"])
@@ -1429,25 +1475,57 @@ def _point_note_texts(pid, uid, limit_per_note=20000):
     return texts
 
 
-def _extract_keyword_paragraphs(point_name, texts, max_paras=8, max_chars=2000):
-    """P3 方式3：纯字符串匹配从笔记原文摘含知识点关键字的段落（不调 LLM，忠实原文）。
+def _para_is_image_only(p):
+    """段落是否只由图片语法构成（标准 MD ![..](..) 或 Obsidian ![[..]]）；
+    图片语法原样保留，前端 renderMdInto 统一转标准链接并 base64 水合，后端不重复归一化。"""
+    if not p:
+        return False
+    rest = re.sub(r"!\[[^\]]*\]\([^)]*\)|!\[\[[^\]]+\]\]", "", p)
+    return p.strip() != "" and rest.strip() == ""
 
-    关键字 = 知识点名 + 其名切分出的≥ 2 字词段；段落命中任一关键字即摘入，限量防失控。
+
+def _extract_note_sections(point_name, texts, max_paras_per_note=6,
+                           max_chars_per_note=1200, max_total_chars=4500):
+    """P3 方式3（u11 改造）：纯字符串匹配逐笔记分节摘取（不调 LLM，忠实原文）。
+
+    - 扫描全部关联笔记，每篇独立摘取并以「**《标题》**」分节标明出处，不合并成一块；
+    - 限量按篇生效（旧版全局限量会让靠后笔记摘不到）；总量封顶防失控；
+    - 命中段相邻的独立图片块一并纳入（旧版因短段过滤会丢弃纯图片段）；
+      相邻纳入双向对称：连续图片组整组随命中段带走，无论文字在图组上方还是下方。
+
+    关键字 = 知识点名 + 其名切分出的≥ 2 字词段；段落命中任一关键字即摘入。
     """
     kws = [point_name] + [w for w in re.split(r"[\s,，、/()（）\-·]+", point_name or "")
                           if len(w) >= 2 and w != point_name]
-    out, total = [], 0
+    sections, total = [], 0
     for item in texts:
-        for para in re.split(r"\n\s*\n", item["text"]):
-            p = para.strip()
-            if len(p) < 10:
+        paras = [p.strip() for p in re.split(r"\n\s*\n", item["text"])]
+        flags = [False] * len(paras)
+        for i, p in enumerate(paras):
+            if len(p) >= 10 and any(k and k in p for k in kws):
+                flags[i] = True
+        # 相邻（前或后）命中段的纯图片块一并纳入，无关图片块不白取；
+        # 正/反两遍用最新 flags 传播，连续图片组整组带走且与排版方向无关（评审 M-1 对称性）
+        for i in range(len(paras) - 1):
+            if flags[i] and _para_is_image_only(paras[i + 1]):
+                flags[i + 1] = True
+        for i in range(len(paras) - 1, 0, -1):  # 倒序遍历，向前连续传播与正向对称
+            if flags[i] and _para_is_image_only(paras[i - 1]):
+                flags[i - 1] = True
+        picked, n_paras, n_chars = [], 0, 0
+        for i, p in enumerate(paras):
+            if not flags[i]:
                 continue
-            if any(k and k in p for k in kws):
-                out.append(p)
-                total += len(p)
-                if len(out) >= max_paras or total >= max_chars:
-                    return out
-    return out
+            if n_paras >= max_paras_per_note or n_chars >= max_chars_per_note or total >= max_total_chars:
+                break
+            picked.append(p)
+            n_paras += 1
+            n_chars += len(p)
+            total += len(p)
+        if picked:
+            title = item.get("title") or "未命名笔记"
+            sections.append(f"**《{title}》**\n\n" + "\n\n".join(picked))
+    return sections
 
 
 @bridge_bp.route("/api/knowledge/points/<int:pid>/description-assist", methods=["POST"])
@@ -1472,10 +1550,10 @@ def point_description_assist(pid):
         return _ok({"success": False, "error": "未找到该知识点"})
     point_name, cur_desc, subject = row[0], (row[1] or ""), (row[2] or "")
     if action == "extract":
-        paras = _extract_keyword_paragraphs(point_name, _point_note_texts(pid, g.user_id))
-        if not paras:
-            return _ok({"success": False, "error": "关联笔记中未找到包含该知识点关键字的段落，可先确认关联笔记或改用其它方式"})
-        return _ok({"success": True, "text": "\n\n".join(paras), "llm": False})
+        sections = _extract_note_sections(point_name, _point_note_texts(pid, g.user_id))
+        if not sections:
+            return _ok({"success": False, "error": "关联笔记中未找到包含该知识点关键字的内容，可先确认关联笔记或改用其它方式"})
+        return _ok({"success": True, "text": "\n\n".join(sections), "llm": False})
     if action == "generate":
         notes = _point_note_texts(pid, g.user_id, limit_per_note=4000)
         ctx = "\n\n".join(f"【{n['title']}】\n{n['text']}" for n in notes)[:8000]
@@ -2259,6 +2337,273 @@ def practice_new():
         return _ok({"success": False, "error": str(e) or f"未知异常: {type(e).__name__}"})
 
 
+# ---------------------------------------------------------------- v0.1.7（2026-10-12）：练习助手「考卷」结构化通道
+#
+# 学页右击开始练习 → 配置弹窗（题型/数量/难度）→ quiz-generate 结构化组卷（自动落库
+# practice_sessions status='generated'）→ 面板逐题作答（含拍照上传）→ quiz-submit 判卷
+#（复用判分公共函数 _grade_practice_set：客观题本地/简答文字 LLM/照片视觉看图）。
+# 用户裁定：错题不自动入库，结果页勾选后经 match/save 候选选点再走既有 save-errors。
+# 旧纯文本 generate-questions/evaluate-answers 通道保留（存量历史复看不破坏）。
+
+_QUIZ_TYPES = {"single", "judge", "fill", "short"}
+_QUIZ_DIFF_LABELS = ("容易", "中等", "困难")
+
+# v0.1.9 用户反馈（2026-10-12）：出题模型没见过表却问「在表1-1中…」，学生无法作答。
+# 三通道（熟练度评估 / 笔记练习与举一反三 / 练习助手考卷）统一媒体规则，单一文案防口径漂移：
+# 看表/看图作答的题必须把材料里的表/图带进题干；材料中没有的内容禁止引用。
+_MEDIA_RULE_FOR_PROMPT = (
+    "**表格与图片规则：** 若题目需要学生看表作答，题干必须把学习材料中对应的完整 Markdown 表格"
+    "（含表头行与 | 分隔的 --- 分隔行）**原样复制**进去；若题目需要看图作答，题干必须把对应的"
+    "![说明](路径) 图片引用**原样复制**进去；严禁编造、改写或缩写材料中未提供的表格/图片及其名称"
+    "（含「表x-x」「图x-x」等）——材料里没有对应内容时，不得出需要看表/图作答的题目；"
+    "与表格/图片无关的题目不要提及它们。"
+)
+
+
+def _quiz_smart_difficulty(uid, selected_text, kms):
+    """智能难度（用户裁定 2026-10-12）：选中文本→最匹配知识点→按其掌握度定难度档：
+    >=70 困难、>=40 中等、<40 容易；无知识点/匹配不到/无掌握度数据 → '中等'。
+    匹配走 rank_matches 公共函数（embedding 不可用时自动降级启发式，同 match-points）。"""
+    conn = kms.db_manager.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, point_name, core_description, mastery_score "
+            "FROM knowledge_points WHERE user_id = ?", (uid,)).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return "中等", None
+    kps = [{"id": r[0], "point_name": r[1], "core_description": r[2] or "",
+            "mastery_score": r[3]} for r in rows]
+    try:
+        from similarity_matcher import rank_matches
+        ranked = rank_matches(question=selected_text[:2000], knowledge_points=kps,
+                              cfg=load_config(), top_k=1, min_score=0.35)
+    except Exception as e:  # noqa: BLE001
+        log.log_error("bridge", "quiz_smart_match", str(e))
+        return "中等", None
+    if not ranked:
+        return "中等", None
+    top = ranked[0]
+    ms = next((k["mastery_score"] for k in kps if k["id"] == top["id"]), None)
+    if ms is None:
+        return "中等", top.get("point_name")
+    ms = float(ms)
+    label = "困难" if ms >= 70 else ("中等" if ms >= 40 else "容易")
+    return label, top.get("point_name")
+
+
+@bridge_bp.route("/api/practice/quiz-generate", methods=["POST"])
+@require_auth
+def practice_quiz_generate():
+    """考卷结构化出题（v0.1.7）：types 题型勾选 + count 数量 + difficulty
+    （'smart' 智能推荐按知识点熟练度 / 容易 / 中等 / 困难）。成功即自动落库。"""
+    import time
+    body = request.get_json(silent=True) or {}
+    selected_text = (body.get("selected_text") or "").strip()
+    if not selected_text:
+        return _ok({"success": False, "error": "selected_text 为空，无法组卷"})
+    types = body.get("types") or ["single", "judge", "fill", "short"]
+    # CodeReview W-3：先逐项验字符串，防嵌套不可哈希元素使 set() 抛 TypeError 直接 500
+    if (not isinstance(types, list) or not types
+            or not all(isinstance(t, str) for t in types)
+            or not set(types) <= _QUIZ_TYPES):
+        return _ok({"success": False, "error": "types 须为 single/judge/fill/short 的非空子集"})
+    types = list(dict.fromkeys(types))
+    try:
+        n = int(body.get("count", 5))
+    except (TypeError, ValueError):
+        return _ok({"success": False, "error": "count 必须为整数"})
+    n = max(1, min(n, 20))
+    difficulty = (body.get("difficulty") or "smart").strip()
+    if difficulty not in ("smart",) + _QUIZ_DIFF_LABELS:
+        return _ok({"success": False, "error": "difficulty 须为 smart/容易/中等/困难"})
+    kms = get_kms()
+    matched_point = None
+    if difficulty == "smart":
+        diff_label, matched_point = _quiz_smart_difficulty(g.user_id, selected_text, kms)
+    else:
+        diff_label = difficulty
+
+    type_desc = {
+        "single": '- 选择题：type="single"，必须有 options 数组（4 个选项），correct_answer 为 A/B/C/D',
+        "judge": '- 判断题：type="judge"，correct_answer 只能是 "正确" 或 "错误"',
+        "fill": '- 填空题：type="fill"，题干必须包含一个空格 "______"，correct_answer 为答案文本（若可接受多种写法用 | 分隔）',
+        "short": '- 简答题：type="short"，correct_answer 为参考答案要点（3-5 个要点）',
+    }
+    type_lines = "\n".join(type_desc[t] for t in types)
+    type_names = "\u3001".join({"single": "选择题", "judge": "判断题", "fill": "填空题", "short": "简答题"}[t] for t in types)
+    prompt = f"""请基于以下学习内容生成一套 {n} 道练习题（考卷）。
+
+**学习内容：**
+{selected_text[:4000]}
+
+**题型范围（只允许以下题型；题量足够时每种勾选题型至少 1 道）：{type_names}**
+{type_lines}
+
+**难度要求：**全部题目 difficulty 标注为「{diff_label}」，题目设计须与该难度档位相称。
+
+**每题 JSON 字段：** type, question, options（仅选择题）, correct_answer, difficulty（容易/中等/困难）, explanation（答案解析）
+题目须紧密围绕给定学习内容，表述清晰明确。
+
+{_MEDIA_RULE_FOR_PROMPT}
+
+只返回 JSON 数组（元素个数必须恰好为 {n}），不要任何其他文字：
+[
+  {{"type": "single", "question": "...", "options": ["...", "...", "...", "..."], "correct_answer": "A", "difficulty": "{diff_label}", "explanation": "..."}}
+]"""
+    # v0.1.7 用户裁定（A 先行 + B 智能兜底）：选段含可读图片时自动切视觉大模型真“看图出题”，
+    # 图片附进请求（与拍照判分同 call_llm_vision 路由/计费链）；无图或视觉失败降级文本模型。
+    try:
+        gen_imgs = _resolve_vault_images(g.user_id, selected_text)[:4]  # 取前 4 图防超大 payload
+    except Exception as e:  # noqa: BLE001
+        log.log_error("bridge", "quiz_gen_img_resolve", f"uid={g.user_id} err={e}")
+        gen_imgs = []
+    response = None
+    used_vision = False
+    if gen_imgs:
+        try:
+            response = _call_vision(g.user_id, prompt, [pl for _rel, pl in gen_imgs], "练习助手考卷看图出题")
+            used_vision = response is not None
+        except cr.InsufficientCreditsError as e:
+            return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+        except Exception as e:  # noqa: BLE001
+            log.log_error("bridge", "quiz_gen_vision_fallback", f"uid={g.user_id} err={e}")
+            response = None
+    if response is None:
+        try:
+            response = _llm_call(prompt, "练习助手考卷出题")
+        except cr.InsufficientCreditsError as e:
+            return _ok({"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance})
+        except Exception as e:  # noqa: BLE001
+            return _ok({"success": False, "error": f"LLM调用失败: {e}"})
+    if not response:
+        return _ok({"success": False, "error": "LLM调用失败"})
+    try:
+        questions = _validate_practice_questions(_parse_llm_json_array(response), n)
+    except json.JSONDecodeError:
+        log.log_error("bridge", "quiz_generate_badjson", f"uid={g.user_id}")
+        return _ok({"success": False, "error": "题目格式解析失败，请重试"})
+    except ValueError as e:
+        return _ok({"success": False, "error": f"题目格式校验失败: {e}"})
+    practice_id = "quiz_" + str(int(time.time() * 1000))
+    # 出题即落库（历史可见、消息按钮可随时按 pid 恢复考卷）；落库失败不阻断出题
+    try:
+        _practice_service().save_practice_history(g.user_id, {
+            "practice_id": practice_id,
+            "selected_text": selected_text,
+            "questions": json.dumps(questions, ensure_ascii=False),
+            "user_answers": "", "answer_history": "", "evaluation_result": "",
+            "timestamp": F.utcnow().isoformat(),
+        }, status="generated")
+    except Exception as e:  # noqa: BLE001
+        log.log_error("bridge", "quiz_persist_generated", f"pid={practice_id} err={e}")
+    log.log("api", "quiz_generate", "success",
+            {"pid": practice_id, "count": n, "types": types,
+             "difficulty": diff_label, "smart": difficulty == "smart", "vision": used_vision})
+    return _ok({"success": True, "practice_id": practice_id, "questions": questions,
+                "difficulty_used": diff_label, "matched_point": matched_point,
+                **cr.billing_for_response()})
+
+
+@bridge_bp.route("/api/practice/quiz-submit", methods=["POST"])
+@require_auth
+def practice_quiz_submit():
+    """考卷交卷判卷（v0.1.7）：判分原样复用公共函数 _grade_practice_set（与错题判卷同逻辑：
+    客观题本地判分，简答文字 LLM，含拍照作答的走视觉模型看图批改）。
+    错题不自动入库（用户裁定），返回逐题结果+错题清单供结果页勾选。"""
+    body = request.get_json(silent=True) or {}
+    practice_id = (body.get("practice_id") or "").strip()
+    questions = body.get("questions") or []
+    answers = body.get("answers") or []
+    if not isinstance(questions, list) or not questions or len(questions) != len(answers):
+        return _ok({"success": False, "error": "题目和答案数量不匹配"})
+    if len(questions) > 20:
+        return _ok({"success": False, "error": "单次最多提交 20 题"})
+    results, grade_err = _grade_practice_set(g.user_id, questions, answers, "quiz_grade", f"pid={practice_id}")
+    if grade_err is not None:
+        return _ok(grade_err)
+    correct_count = 0
+    detailed = []
+    for i, (q, a) in enumerate(zip(questions, answers)):
+        q = q if isinstance(q, dict) else {}
+        ok = bool(results[i]["is_correct"])
+        if ok:
+            correct_count += 1
+        detailed.append({
+            "question_index": i, "question": str(q.get("question") or ""),
+            "type": q.get("type") or "single",
+            "options": q.get("options") if isinstance(q.get("options"), list) else None,
+            "user_answer": str(a if a is not None else "").strip(),
+            "correct_answer": str(q.get("correct_answer") or ""),
+            "is_correct": ok, "difficulty": q.get("difficulty") or "中等",
+            "explanation": str(q.get("explanation") or ""),
+            "comment": results[i]["comment"],
+        })
+    accuracy = correct_count / len(questions)
+    score = int(round(100 * accuracy))
+    if practice_id:
+        # 交卷落库两步（均既有公共函数）：先评估表留痕（update 会把 evaluation_result 写摘要），
+        # 再用 save_practice_history 以逐题详情覆盖锁定（历史复看靠详情），状态直接 evaluated。
+        try:
+            r_eval = _practice_service().update_practice_evaluation(g.user_id, practice_id, {
+                "evaluation_result": json.dumps({"score": score, "correct": correct_count,
+                                                 "total": len(questions)}, ensure_ascii=False),
+                "answer_history": "", "score": score})
+            r_hist = _practice_service().save_practice_history(g.user_id, {
+                "practice_id": practice_id,
+                "selected_text": body.get("selected_text") or "",
+                "questions": json.dumps(questions, ensure_ascii=False),
+                "user_answers": json.dumps(answers, ensure_ascii=False),
+                "answer_history": "",
+                "evaluation_result": json.dumps(detailed, ensure_ascii=False),
+                "timestamp": F.utcnow().isoformat(),
+            }, status="evaluated")
+            # CodeReview S-6：两服务失败时返回 dict 而非抛异常，需显式检查并打点，避免静默不一致
+            for _fname, _rr in (("update_practice_evaluation", r_eval), ("save_practice_history", r_hist)):
+                if isinstance(_rr, dict) and _rr.get("success") is False:
+                    log.log_error("bridge", "quiz_persist_submit",
+                                  f"pid={practice_id} step={_fname} err={_rr.get('error')}")
+        except Exception as e:  # noqa: BLE001
+            # 判分结果已产生，留痕失败不阻断返回（同 practice_submit m-4 降级思路）
+            log.log_error("bridge", "quiz_persist_submit", f"pid={practice_id} err={e}")
+    log.log("api", "quiz_submit", "success",
+            {"pid": practice_id, "correct": correct_count, "total": len(questions), "score": score})
+    return _ok({"success": True, "practice_id": practice_id, "correct_count": correct_count,
+                "total_count": len(questions), "accuracy": accuracy, "score": score,
+                "detailed_results": detailed, **cr.billing_for_response()})
+
+
+@bridge_bp.route("/api/practice/quiz-error-points", methods=["POST"])
+@require_auth
+def practice_quiz_error_points():
+    """错题→知识点候选排名（v0.1.7 勾选入库前选目标知识点；复用 rank_matches 公共函数）。"""
+    body = request.get_json(silent=True) or {}
+    question_text = (body.get("question_text") or "").strip()
+    if not question_text:
+        return _ok({"success": False, "error": "question_text 为空"})
+    kms = get_kms()
+    conn = kms.db_manager.get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, point_name, core_description, subject_name FROM knowledge_points WHERE user_id = ?",
+            (g.user_id,)).fetchall()
+    finally:
+        conn.close()
+    kps = [{"id": r[0], "point_name": r[1], "core_description": r[2] or "", "subject": r[3] or ""}
+           for r in rows]
+    try:
+        from similarity_matcher import rank_matches
+        ranked = rank_matches(question=question_text, knowledge_points=kps,
+                              cfg=load_config(), top_k=5, min_score=0.0)
+    except Exception as e:  # noqa: BLE001
+        return _ok({"success": False, "error": str(e)})
+    meta = {k["id"]: k for k in kps}
+    out = [{"id": r["id"], "point_name": r["point_name"], "score": round(float(r["score"]), 3),
+            "subject": (meta.get(r["id"]) or {}).get("subject") or ""} for r in ranked]
+    return _ok({"success": True, "candidates": out})
+
+
 def _gen_fallback(selected_text: str) -> str:
     return f"""基于学习内容的练习题目：
 
@@ -2407,19 +2752,28 @@ def knowledge_generate_assessment(pid):
             return _ok({"success": False, "error": "未找到该知识点"})
         point_name, core_description, subject_name = result[0], result[1], result[2]
 
+        # v0.1.9 用户裁定：评估通道注入关联笔记原文作出题材料（与「基于笔记练习」同一
+        # 公共函数口径：最多 5 篇、每篇截 3000 字），模型才有表/图可复制进题干；
+        # 无关联笔记时保持旧行为（仅按描述出题），由媒体规则禁止引用不存在的表/图。
+        ref_notes = _collect_point_notes_text(kms, pid)
+        material_block = (
+            "\n**关联笔记内容（出题严格基于以下原文，不超出范畴）：**\n" + ref_notes + "\n"
+            if ref_notes else "")
+
         prompt = f"""请为以下知识点生成10道选择题，用于评估学生的掌握程度。
 
 知识点信息：
 - 名称：{point_name}
 - 描述：{core_description}
 - 学科：{subject_name}
-
+{material_block}
 要求：
 1. 生成10道选择题，难度从容易到困难递增
 2. 每道题有4个选项（A、B、C、D）
 3. 题目要准确测试对该知识点的理解
 4. 包含不同层次的认知要求：记忆、理解、应用、分析
-5. 返回JSON格式，包含以下字段：
+5. {_MEDIA_RULE_FOR_PROMPT}
+6. 返回JSON格式，包含以下字段：
    - question: 题目内容
    - options: 选项数组（4个选项）
    - correct_answer: 正确答案（A/B/C/D）
@@ -2680,6 +3034,7 @@ def point_generate_practice(pid):
 
 **每题 JSON 字段：** type, question, options（仅选择题）, correct_answer, difficulty（容易/中等/困难）, explanation（答案解析）
 {extra}
+{_MEDIA_RULE_FOR_PROMPT}
 
 只返回 JSON 数组（元素个数必须恰好为 {n}），不要任何其他文字：
 [
@@ -2740,7 +3095,7 @@ def _resolve_vault_images(uid, *md_texts):
     return out
 
 
-def _grade_short_vision(uid, q, ua, imgs):
+def _grade_short_vision(uid, q, ua, imgs, scene_hint="简答题"):
     """单题拍照判分（视觉模型看图批改手写过程）：题干/作答内图片附进请求，
     返回 {is_correct, comment}；失败抛异常由调用方整批失败处理（与文本通道同口径，
     判分不成功不落库）。imgs 为 _resolve_vault_images 已解析的 [(rel, payload)]
@@ -2762,7 +3117,7 @@ def _grade_short_vision(uid, q, ua, imgs):
 {expl_line}学生文字作答: {ans}
 请结合照片内容与文字作答，判断学生答案是否答对（结论与参考答案要点一致即判对，措辞可不同；过程严重不完整或答非所问判错）。
 只返回 JSON 数组，例如: [{{"index": 0, "is_correct": true, "comment": "一句中文点评"}}]，不要其他文字："""
-    resp = _call_vision(uid, prompt, images, "简答题拍照判分")
+    resp = _call_vision(uid, prompt, images, f"{scene_hint}拍照判分")
     graded = _parse_llm_json_array(resp)
     graded_list = [x for x in graded if isinstance(x, dict)] if isinstance(graded, list) else []
     if not graded_list:
@@ -2792,6 +3147,14 @@ def _grade_practice_set(uid, questions, answers, log_tag, ident):
             ok = _judge_norm(user_ans) is not None and _judge_norm(user_ans) == _judge_norm(correct_raw)
             results.append({"is_correct": ok, "comment": ""})
         elif t == "fill":
+            # v0.1.7 用户反馈：填空答案可能是手写公式——含照片引用时与简答同链路走视觉看图批改；
+            # 纯文字作答保持本地精确匹配不变。图全部不可读时回落文字口径（按未作答/不匹配判错，留痕在上游）。
+            if re.search(r"!\[[^\]]*\]\([^)]+\)", user_ans):
+                imgs = _resolve_vault_images(uid, user_ans, str(q.get("question") or ""))
+                if imgs:
+                    vision_items.append((i, q, user_ans, imgs))
+                    results.append({"is_correct": False, "comment": ""})  # 占位，视觉批改覆盖
+                    continue
             un = _fill_norm(user_ans)
             ok = bool(un) and any(un == _fill_norm(v) for v in correct_raw.replace("｜", "|").split("|") if v.strip())
             results.append({"is_correct": ok, "comment": ""})
@@ -2810,7 +3173,9 @@ def _grade_practice_set(uid, questions, answers, log_tag, ident):
     # 视觉先失败则整批未进文字通道，与「整批失败不落库」语义一致。
     for idx, q, ua, imgs in vision_items:
         try:
-            results[idx] = _grade_short_vision(uid, q, ua, imgs)
+            # 评审 S-1：场景名随题型，日志/计费流水可区分填空与简答拍照判分
+            results[idx] = _grade_short_vision(
+                uid, q, ua, imgs, "填空题" if q.get("type") == "fill" else "简答题")
         except cr.InsufficientCreditsError as e:
             return None, {"success": False, "error": str(e), "credits_insufficient": True, "credit_balance": e.balance}
         except Exception as e:  # noqa: BLE001

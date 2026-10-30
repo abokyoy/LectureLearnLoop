@@ -657,6 +657,74 @@ def error_analyze_result(task_id):
     return _ok(res)
 
 
+# ---------------------------------------------------------------- 错题批量识别（多图框选，2026-10-14）
+@kb_bp.route("/api/kb/error-batch", methods=["POST"])
+@require_auth
+def error_batch_start():
+    """提交批量识别（异步）：body {items:[{image, boxes:[{id,x,y,w,h}]}]}，
+    坐标为相对原图宽高的 0~1 比例（前端全屏框选上报）；图片已由
+    /api/vault/screenshot 或手机拍照传图落盘 vault。逐框裁剪后走智能分析管线。"""
+    from services import error_batch, error_ocr
+    body = request.get_json(silent=True) or {}
+    raw_items = body.get("items") or []
+    if not isinstance(raw_items, list) or not raw_items:
+        return _err("items 不能为空", 400)
+    if len(raw_items) > error_batch.MAX_IMAGES:
+        return _err(f"单批最多 {error_batch.MAX_IMAGES} 张图片", 400)
+    items = []
+    total_boxes = 0
+    for it in raw_items:
+        it = it or {}
+        rel = str(it.get("image") or "").strip()
+        target = _safe_vault_path(g.user_id, rel)
+        if target is None or not target.is_file():
+            return _err(f"图片不存在或路径非法：{rel}", 400)
+        if not error_ocr.is_image(rel):
+            return _err(f"仅支持图片文件：{rel}", 400)
+        boxes = it.get("boxes") or []
+        if not isinstance(boxes, list) or not boxes:
+            return _err("每张图至少一个框选题目", 400)
+        if len(boxes) > error_batch.MAX_BOXES_PER_IMAGE:
+            return _err(f"单图最多框选 {error_batch.MAX_BOXES_PER_IMAGE} 道题", 400)
+        ids = set()
+        clean_boxes = []
+        for b in boxes:
+            b = b or {}
+            try:
+                bid = int(b.get("id"))
+                x, y, w, h = (float(b.get(k)) for k in ("x", "y", "w", "h"))
+            except (TypeError, ValueError):
+                return _err("框选坐标格式错误", 400)
+            if bid < 1:
+                return _err("框选编号非法", 400)
+            if bid in ids:
+                return _err("框选编号重复", 400)
+            ids.add(bid)
+            if w <= 0 or h <= 0 or x < -0.01 or y < -0.01 or x + w > 1.01 or y + h > 1.01:
+                return _err("框选坐标超出范围（应为相对原图 0~1 比例）", 400)
+            clean_boxes.append({"id": bid,
+                                "x": max(0.0, x), "y": max(0.0, y),
+                                "w": min(w, 1.0 - max(0.0, x)), "h": min(h, 1.0 - max(0.0, y))})
+        total_boxes += len(clean_boxes)
+        items.append({"image": rel, "abs": str(target), "boxes": clean_boxes})
+    if total_boxes > error_batch.MAX_BOXES_TOTAL:
+        return _err(f"单批最多框选 {error_batch.MAX_BOXES_TOTAL} 道题", 400)
+    task_id = error_batch.start_batch(items, user_id=g.user_id)
+    log.log("api", "error_batch_start", "success", {"task": task_id, "imgs": len(items), "boxes": total_boxes})
+    return _ok({"task_id": task_id, "total": total_boxes})
+
+
+@kb_bp.route("/api/kb/error-batch/<task_id>", methods=["GET"])
+@require_auth
+def error_batch_result(task_id):
+    """轮询批量识别进度/结果：{status, total, finished, results:[…]}；done 后 TTL 内可重复读。"""
+    from services import error_batch
+    res = error_batch.get_result(task_id, user_id=g.user_id)
+    if res is None:
+        return _err("批量识别任务不存在或已过期，请重新提交", 404)
+    return _ok(res)
+
+
 # ---------------------------------------------------------------- 手机拍照传图（错题录入，2026-10-13）
 @kb_bp.route("/api/kb/photo-session", methods=["POST"])
 @require_auth

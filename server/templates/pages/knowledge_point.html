@@ -1,7 +1,7 @@
 <!-- u10 知识点详情独立直达页：从练/记总览、选知识点页点「去练习/巩固」直接进入本页（不再先跳脑图）。
      面包屑按 window.__pmTrail 导航轨迹如实反映用户点进来的路径；渲染器 bootKnowledgePoint 在 pm_pages.js。
      数据源：/api/knowledge/points/<id>/detail + generate-assessment/assessment/questions/notes 桥端点。 -->
-<div class="cl-page space-y-5" data-pm-page="knowledge_point">
+<div class="cl-page cl-page-wide space-y-5" data-pm-page="knowledge_point">
 
     <!-- 动态面包屑（轨迹驱动，逐级可点回退） -->
     <nav id="kp-crumb" class="flex items-center gap-1 text-[13px] text-cl-text-2 flex-wrap" aria-label="面包屑"></nav>
@@ -11,10 +11,10 @@
         <p class="text-sm text-cl-text-3 py-6">加载中…</p>
     </div>
 </div>
-<!-- P4 笔记完整 MD 预览：marked 走 CDN（与 practice_materials 同源同策略）；加载失败时前端回退纯文本渲染 -->
-<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
-<!-- P4 评审 m-2 纵深防御：DOMPurify 清洗 marked 产物（缺失时前端退回直出） -->
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+<!-- P4 笔记完整 MD 预览：marked 改本地 vendor 副本（u11 白屏修复：jsdelivr CDN 在代理不畅时会挂起 SPA 串行脚本链，导致整页白屏；本地与 CDN 同版 v9.1.6）；加载失败时前端回退纯文本渲染 -->
+<script src="/static/js/vendor/marked.min.js"></script>
+<!-- P4 评审 m-2 纵深防御：DOMPurify 清洗 marked 产物（缺失时前端退回直出）；同改本地 vendor 同版 3.0.6 -->
+<script src="/static/js/vendor/purify.min.js"></script>
 <script src="/static/js/widgets.js"></script>
 <!-- 描述编辑器 Vditor（本地 vendor 副本，参照 DAG 引擎先例保 exe 离线可用）：
      运行时懒加载 {cdn}/dist/js/lute 等资源，cdn 选项传 /static/vendor/vditor；脚本缺失时前端回退纯 textarea -->

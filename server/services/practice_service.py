@@ -308,12 +308,15 @@ class PracticeService:
                 "error": str(e)
             }
 
-    def save_practice_history(self, user_id: str, practice_data: Dict[str, Any]) -> Dict[str, Any]:
+    def save_practice_history(self, user_id: str, practice_data: Dict[str, Any],
+                              status: str = 'submitted') -> Dict[str, Any]:
         """保存练习历史（用户提交答案时调用）
 
         Args:
             user_id: 用户ID（隔离键）
             practice_data: 练习数据，包含practice_id, questions, selected_text等
+            status: 会话状态，默认 submitted（既有调用行为不变）；v0.1.7 考卷通道
+                    出题即落库时传 'generated'（已出题未作答）
         Returns:
             Dict: 包含success状态和相关信息
         """
@@ -334,7 +337,7 @@ class PracticeService:
                     UPDATE practice_sessions 
                     SET selected_text = ?, questions = ?, user_answers = ?, 
                         answer_history = ?, evaluation_result = ?,
-                        status = 'submitted', updated_at = CURRENT_TIMESTAMP
+                        status = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE practice_id = ? AND user_id = ?
                 ''', (
                     practice_data.get('selected_text', ''),
@@ -342,6 +345,7 @@ class PracticeService:
                     practice_data.get('user_answers', ''),
                     practice_data.get('answer_history', ''),
                     practice_data.get('evaluation_result', ''),
+                    status,
                     practice_data.get('practice_id'),
                     user_id
                 ))
@@ -351,7 +355,7 @@ class PracticeService:
                 cursor.execute('''
                     INSERT INTO practice_sessions 
                     (practice_id, user_id, timestamp, selected_text, questions, user_answers, answer_history, evaluation_result, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     practice_data.get('practice_id'),
                     user_id,
@@ -361,6 +365,7 @@ class PracticeService:
                     practice_data.get('user_answers', ''),
                     practice_data.get('answer_history', ''),
                     practice_data.get('evaluation_result', ''),
+                    status,
                 ))
                 self.logger.info(f"✅ 保存新练习历史: {practice_data.get('practice_id')}")
 

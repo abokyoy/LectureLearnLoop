@@ -1623,7 +1623,8 @@
                 h += '</div>';
                 return h;
             }
-            main.innerHTML = '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' + subs.map(subjectCard).join('') + '</div>';
+            // u11：页面已全宽，超宽屏下三列铺开，避免卡片拉得过宽
+            main.innerHTML = '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">' + subs.map(subjectCard).join('') + '</div>';
             bindGoLinks(root); // 含 data-gopoint 直达按钮（u10 已改落点：直达 knowledge_point 详情页）
         }).catch(function (err) {
             main.innerHTML = '<p class="text-sm text-cl-danger py-6">统计加载失败：' + esc(err.message) + '</p>';
@@ -1752,6 +1753,11 @@
                 h += '<button class="hover:text-cl-primary cursor-pointer transition-colors" data-crumb="' + esc(c) + '">' + esc(crumbName(c)) + '</button>';
             });
             if (pointName) h += sep + '<span class="text-cl-text font-semibold">' + esc(pointName) + '</span>';
+            // u11 返回脑图：从知识脑图节点进入本页时，面包屑行尾给显式「返回脑图」按钮；
+            // 目标页 loadSubjects 消费 pm_mindmap_return 旗标自动恢复到脑图视图（非科目列表）
+            if (path[path.length - 1] === 'practice_materials') {
+                h += '<button class="ml-3 inline-flex items-center gap-1 rounded-clbtn border border-cl-border bg-cl-surface px-2.5 py-1 text-[11px] font-medium text-cl-text-2 hover:text-cl-primary hover:border-cl-primary transition-colors" data-back-mindmap="1">' + icon('chevron-left', 'w-3.5 h-3.5') + ' 返回脑图</button>';
+            }
             crumb.innerHTML = h;
             crumb.querySelectorAll('[data-crumb]').forEach(function (b) {
                 b.addEventListener('click', function () {
@@ -1760,6 +1766,14 @@
                     var idx = t.lastIndexOf(b.getAttribute('data-crumb'));
                     if (idx >= 0) global.__pmTrail = t.slice(0, idx + 1);
                     goMenu(b.getAttribute('data-crumb'));
+                });
+            });
+            crumb.querySelectorAll('[data-back-mindmap]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var t = global.__pmTrail || [];
+                    var idx = t.lastIndexOf('practice_materials');
+                    if (idx >= 0) global.__pmTrail = t.slice(0, idx + 1);
+                    goMenu('practice_materials');
                 });
             });
             // 窄栏高亮归组：按来源页所属模块点亮（学/练/记）
@@ -1810,12 +1824,19 @@
             h += '<div class="flex items-start justify-between gap-3 mt-4">';
             h += '<div data-role="desc-text" class="desc-md text-sm text-cl-text-2 leading-relaxed min-w-0 break-words flex-1"></div>';
             h += '<button class="cl-btn-ghost !h-7 text-[11px] shrink-0" data-role="desc-edit-btn">' + icon('sparkles', 'w-3.5 h-3.5') + ' 编辑描述</button></div>';
+            // u11 描述编辑面板对齐「学」页 MD 体验：右上「预览|编辑」分段 Tab 互切，
+            // 底部工具条（保存/大模型生成/摘取/整理/收起）常显不再随预览隐藏（原本面板内再无独立预览按钮）
             h += '<div data-role="desc-edit-panel" class="hidden mt-3 rounded-clbtn bg-cl-bg px-4 py-3">'
+                + '<div class="flex items-center justify-between gap-3 mb-2">'
+                + '<span class="text-xs font-semibold text-cl-text-2">编辑描述</span>'
+                + '<div class="flex items-center bg-cl-surface rounded-clbtn p-1 shrink-0">'
+                + '<button class="px-3 py-1.5 text-xs rounded-clbtn text-cl-text-2 hover:bg-cl-surface" data-desc-mode="preview">预览</button>'
+                + '<button class="px-3 py-1.5 text-xs rounded-clbtn bg-cl-primary text-white font-semibold" data-desc-mode="edit">编辑</button>'
+                + '</div></div>'
                 + '<div data-role="desc-editor"></div>'
                 + '<div data-role="desc-preview" class="desc-md hidden bg-white rounded-clbtn border border-cl-border px-3 py-2 min-h-[160px] text-sm"></div>'
                 + '<div class="flex items-center gap-2 mt-2 flex-wrap">'
                 + '<button class="cl-btn-primary !h-8 text-xs" data-desc="save">保存</button>'
-                + '<button class="cl-btn-ghost !h-8 text-xs" data-desc="preview">预览</button>'
                 + '<button class="cl-btn-ghost !h-8 text-xs" data-desc="generate">' + icon('sparkles', 'w-3.5 h-3.5') + ' 大模型生成</button>'
                 + '<button class="cl-btn-ghost !h-8 text-xs" data-desc="extract">' + icon('file-text', 'w-3.5 h-3.5') + ' 从关联笔记摘取</button>'
                 + '<button class="cl-btn-ghost !h-8 text-xs" data-desc="polish">' + icon('lightbulb', 'w-3.5 h-3.5') + ' 整理描述</button>'
@@ -1852,12 +1873,15 @@
             h += '<div class="cl-card p-5"><div class="cl-section-title mb-3">' + icon('book-open', 'w-4 h-4 text-cl-primary') + ' 关联笔记'
                 + '<span class="ml-2 text-[11px] font-normal text-cl-text-3">共 <span data-role="notes-count">-</span> 篇</span></div>';
             h += '<div data-role="notes-list" class="text-xs text-cl-text-3">正在加载关联笔记…</div></div>';
+            // u11 布局修复：题目列表必须是卡片直接子级（先前误写在头部 flex 容器内，
+            // 导致题目少时与标题/按钮并排成左右结构、随列表长度布局摇摆）
             h += '<div class="cl-card p-5"><div class="flex items-center justify-between gap-3 flex-wrap mb-3">';
             h += '<div class="cl-section-title">' + icon('target', 'w-4 h-4 text-cl-primary') + ' 关联题目'
                 + '<span class="ml-2 text-[11px] font-normal text-cl-text-3">共 <span data-role="questions-count">-</span> 题</span></div>';
             h += '<div class="flex items-center gap-2 shrink-0">'
                 + '<button class="cl-btn-ghost !h-9 text-xs" data-act="errprac">' + icon('dumbbell', 'w-4 h-4') + ' 错题练习</button>'
                 + '<button class="cl-btn-ghost !h-9 text-xs" data-act="analogy">' + icon('lightbulb', 'w-4 h-4') + ' 举一反三练习</button></div>';
+            h += '</div>';
             h += '<div data-role="questions-list" class="text-xs text-cl-text-3">正在加载关联题目…</div></div>';
             main.innerHTML = h;
             main.querySelectorAll('[data-act]').forEach(function (b) {
@@ -1891,7 +1915,12 @@
                 if (!descEd) descEdCreate(panel.querySelector('[data-role="desc-editor"]'), (state.det && state.det.description) || '');
                 // 再次打开：编辑器仍空则回填当前描述（与旧 textarea 口径一致）
                 else if (!descEdGetValue()) descEdSetValue((state.det && state.det.description) || '');
+                setDescMode('edit'); // u11：打开默认编辑态，右上分段 Tab 同步点亮
                 descEdFocus();
+            });
+            // u11：右上「预览|编辑」分段 Tab 互切（与「学」页 MD 展示一致）
+            panel.querySelectorAll('[data-desc-mode]').forEach(function (t) {
+                t.addEventListener('click', function () { setDescMode(t.getAttribute('data-desc-mode')); });
             });
             panel.querySelectorAll('[data-desc]').forEach(function (b) {
                 b.addEventListener('click', function () {
@@ -1902,27 +1931,32 @@
                         panel.classList.add('hidden'); descHint(''); return;
                     }
                     if (act === 'save') { saveDesc(b); return; }
-                    if (act === 'preview') { toggleDescPreview(b, panel); return; }
                     descAssist(act, b);
                 });
             });
         }
-        var descPreviewOn = false; // 面板内「预览/编辑」切换态（用户验收 2026-10-08）
-        function toggleDescPreview(b, panel) {
+        var descPreviewOn = false; // 面板内「预览/编辑」切换态（u11 改为右上分段 Tab 驱动）
+        // 模式切换：预览=渲染 descEd 当前值（含图片水合）；编辑=显示编辑器；底部工具条两种模式下均常显
+        function setDescMode(mode) {
+            var panel = main.querySelector('[data-role="desc-edit-panel"]');
+            if (!panel) return;
             var mount = panel.querySelector('[data-role="desc-editor"]');
             var pv = panel.querySelector('[data-role="desc-preview"]');
-            if (!pv || !mount) return;
-            if (!descEd || descEd.mode === 'vditor' && !descEd.ready) { descHint('编辑器加载中，请稍候再预览'); return; }
-            descPreviewOn = !descPreviewOn;
-            if (descPreviewOn) {
-                pv.classList.add('desc-md');
+            if (!mount || !pv) return;
+            if (mode === 'preview') {
+                if (!descEd || descEd.mode === 'vditor' && !descEd.ready) { descHint('编辑器加载中，请稍候再预览'); return; }
                 renderMdInto(pv, descEdGetValue(), null);
-                mount.classList.add('hidden'); pv.classList.remove('hidden');
-                b.textContent = '返回编辑';
+                descPreviewOn = true;
             } else {
-                pv.classList.add('hidden'); mount.classList.remove('hidden');
-                b.textContent = '预览';
+                descPreviewOn = false;
             }
+            if (descPreviewOn) { mount.classList.add('hidden'); pv.classList.remove('hidden'); }
+            else { pv.classList.add('hidden'); mount.classList.remove('hidden'); }
+            panel.querySelectorAll('[data-desc-mode]').forEach(function (t) {
+                var on = t.getAttribute('data-desc-mode') === (descPreviewOn ? 'preview' : 'edit');
+                t.className = 'px-3 py-1.5 text-xs rounded-clbtn transition-colors '
+                    + (on ? 'bg-cl-primary text-white font-semibold' : 'text-cl-text-2 hover:bg-cl-surface');
+            });
         }
         function saveDesc(btn) {
             btn.disabled = true; descHint('正在保存…');
@@ -1965,7 +1999,8 @@
                         // 摘取忠实原文：追加到编辑器，不覆盖已有内容
                         var curVal = descEdGetValue().trim();
                         truncated = setTa((curVal ? curVal + '\n\n' : '') + d.text);
-                        descHint(truncated ? '摘取内容超长已截断至 5000 字，请审阅后保存' : '已从笔记摘取相关段落并追加，请审阅后保存');
+                        descHint(truncated ? '摘取内容超长已截断至 5000 字，请审阅后保存' : '已从笔记摘取相关内容并追加，请审阅后保存');
+                        if (descPreviewOn) setDescMode('edit'); // u11：预览态下追加结果写进隐藏编辑器，切回编辑态让用户可见
                     } else {
                         var curVal2 = descEdGetValue().trim();
                         if (curVal2 && !window.confirm('用' + (action === 'generate' ? '生成' : '整理后') + '的描述替换编辑器当前内容？选择取消则追加到末尾。')) {
@@ -1975,6 +2010,7 @@
                             truncated = setTa(d.text);
                             descHint((action === 'generate' ? '生成完成' : '整理完成') + (truncated ? '（超长已截断至 5000 字）' : '，请审阅后保存'));
                         }
+                        if (descPreviewOn) setDescMode('edit'); // u11：预览态下回写后切回编辑态可见
                         descEdFocus();
                     }
                 }).catch(function (e) { if (guard(main) && descGen === myGen) descHint(e.message, true); })

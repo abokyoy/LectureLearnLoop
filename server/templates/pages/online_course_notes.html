@@ -4,12 +4,14 @@
 
 <!-- Markdown增强功能的CSS和JS库 -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<!-- v0.1.4：KaTeX/marked 本地化 vendor（客户机 CDN 不可达 → 公式从不渲染）；
+     md_render.js 为错题/知识库/悬浮窗同一条管线：marked 前占位抽取 → innerHTML 后 KaTeX 回填 -->
+<link rel="stylesheet" href="/static/vendor/vditor/dist/js/katex/katex.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+<script src="/static/vendor/vditor/dist/js/katex/katex.min.js"></script>
+<script src="/static/js/vendor/marked.min.js"></script>
+<script src="/static/js/md_render.js"></script>
 <script src="/static/js/vendor/mermaid.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
 
 <!-- 二期：共享录音引擎（与悬浮窗同源，LLRecorder） -->
 <script src="/static/js/recorder.js"></script>
@@ -65,12 +67,7 @@ window.jsTreeLoaded = false;
 window.jsTreeLoading = false;
 </script>
 
-<!-- 其他库保持CDN加载（可选优化） -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
-<script src="/static/js/vendor/mermaid.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/marked@9.1.6/marked.min.js"></script>
+<!-- v0.1.4：删重复 CDN 加载块（katex/auto-render/marked 已本地化于页头，highlight/mermaid 亦重复） -->
 
 <style>
     /* 侧边栏收缩样式 */
@@ -1952,6 +1949,14 @@ window.handleRenameKeydown = function(event, input) {
 (function() {
     'use strict';
     
+    // HTML 转义（v0.1.5：知识点标题/描述自本次起变为用户可直接编辑入库，
+    // 本页所有 innerHTML 插值点统一走此函数防存储型 XSS，2026-10-12）
+    function escHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+    }
+    
     let currentFilePath = null;
     let currentFileName = null;
     let isEditMode = false;
@@ -2494,7 +2499,7 @@ window.handleRenameKeydown = function(event, input) {
         
         // 创建消息提示元素
         const messageDiv = document.createElement('div');
-        messageDiv.className = `fixed top-4 right-4 p-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform`;
+        messageDiv.className = `fixed top-16 right-4 p-3 rounded-lg shadow-lg z-50 transition-all duration-300 transform`;
         
         // 根据类型设置样式
         switch (type) {
@@ -4892,6 +4897,8 @@ window.handleRenameKeydown = function(event, input) {
         if (dir === currentFilePath) return src;
         return dir + sep + src.replace(/[\\/]/g, sep);
     }
+    // v0.1.8：暴露给右键菜单片段（选段 MD 化 llSelectionMarkdown 需同一解析口径）
+    window.resolveNoteImgSrc = resolveNoteImgSrc;
 
     function _impResolveTarget() {
         try {
@@ -5273,23 +5280,18 @@ window.handleRenameKeydown = function(event, input) {
                                 });
                             }
                             
-                            // 渲染数学公式
-                            if (typeof renderMathInElement !== 'undefined') {
-                                renderMathInElement(previewContent, {
-                                    delimiters: [
-                                        {left: '$$', right: '$$', display: true},
-                                        {left: '$', right: '$', display: false}
-                                    ]
-                                });
-                            }
+                            // 渲染数学公式（MdRender 回填，与 renderMarkdownContent 的占位抽取配对）
+                            renderMathFormulas(previewContent);
                             // renderMarkdownContent 会把 ```mermaid``` 转成 <div class="mermaid">DSL</div>，
                             // 必须再调 renderMermaidDiagrams 出图（与 loadFileContent 保持一致）。
                             if (typeof renderMermaidDiagrams === 'function') {
                                 try { renderMermaidDiagrams(previewContent); } catch (e) {}
                             }
                         } else if (typeof marked !== 'undefined') {
-                            const htmlContent = marked.parse(content);
-                            previewContent.innerHTML = htmlContent;
+                            // 同主链路：公式先占位保护再 marked，innerHTML 后回填 KaTeX
+                            var ex2 = (window.MdRender && window.MdRender.extract)
+                                ? window.MdRender.extract(content) : { text: content, slots: [] };
+                            previewContent.innerHTML = marked.parse(ex2.text);
                             
                             // 应用语法高亮
                             if (typeof hljs !== 'undefined') {
@@ -5297,15 +5299,8 @@ window.handleRenameKeydown = function(event, input) {
                                     hljs.highlightElement(block);
                                 });
                             }
-                            
-                            // 渲染数学公式
-                            if (typeof renderMathInElement !== 'undefined') {
-                                renderMathInElement(previewContent, {
-                                    delimiters: [
-                                        {left: '$$', right: '$$', display: true},
-                                        {left: '$', right: '$', display: false}
-                                    ]
-                                });
+                            if (window.MdRender && window.MdRender.applyMath) {
+                                try { window.MdRender.applyMath(previewContent, ex2.slots); } catch (e) { /* 公式件异常不阻断图文 */ }
                             }
                         } else {
                             // 如果 marked 不可用，显示纯文本
@@ -6017,15 +6012,15 @@ window.handleRenameKeydown = function(event, input) {
         existingPoints.forEach((point, index) => {
             html += `
                 <div class="knowledge-point-item existing-point bg-bg-light-green p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow"
-                     data-point-name="${point.name}" 
-                     data-point-description="${point.description}"
+                     data-point-name="${escHtml(point.name)}" 
+                     data-point-description="${escHtml(point.description)}"
                      data-point-type="existing"
                      data-point-id="${point.id}">
                     <div class="flex items-start gap-2">
                         <input type="checkbox" class="point-check mt-1 h-4 w-4 accent-green-600 cursor-pointer" checked>
                         <div class="flex-1">
-                            <h3 class="font-semibold text-primary">${point.name}</h3>
-                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                            <h3 class="font-semibold text-primary">${escHtml(point.name)}</h3>
+                            <p class="text-sm text-text-medium-brown mt-1">${escHtml(point.description)}</p>
                         </div>
                     </div>
                 </div>
@@ -6544,7 +6539,7 @@ window.handleRenameKeydown = function(event, input) {
     // 显示保存成功消息
     function showSaveSuccessMessage() {
         const message = document.createElement('div');
-        message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        message.className = 'fixed top-16 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
         message.innerHTML = `
             <div class="flex items-center">
                 <span class="material-icons-outlined text-sm mr-2">check_circle</span>
@@ -7180,7 +7175,7 @@ window.handleRenameKeydown = function(event, input) {
     // 文件操作状态反馈
     function showFileOperationFeedback(message, type = 'info') {
         const feedbackDiv = document.createElement('div');
-        feedbackDiv.className = `fixed top-4 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
+        feedbackDiv.className = `fixed top-16 right-4 px-4 py-2 rounded-lg shadow-lg z-50 ${
             type === 'success' ? 'bg-green-500 text-white' :
             type === 'error' ? 'bg-red-500 text-white' :
             'bg-blue-500 text-white'
@@ -7414,7 +7409,7 @@ window.handleRenameKeydown = function(event, input) {
         // 显示验证开始提示
         const loadingDiv = document.createElement('div');
         loadingDiv.id = 'validation-loading';
-        loadingDiv.className = 'fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
+        loadingDiv.className = 'fixed top-16 right-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg z-50';
         loadingDiv.innerHTML = `
             <div class="flex items-center">
                 <div class="animate-spin mr-2">
@@ -7440,7 +7435,7 @@ window.handleRenameKeydown = function(event, input) {
                 
                 // 显示验证结果
                 const resultDiv = document.createElement('div');
-                resultDiv.className = 'fixed top-4 right-4 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-w-md p-4';
+                resultDiv.className = 'fixed top-16 right-4 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-w-md p-4';
                 resultDiv.innerHTML = `
                     <div class="flex justify-between items-start mb-2">
                         <h3 class="font-semibold text-gray-800">后端功能验证结果</h3>
@@ -7753,15 +7748,15 @@ window.handleRenameKeydown = function(event, input) {
                 
                 html += `
                     <div class="knowledge-point-item ${bgClass} p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group flex items-start gap-2" 
-                         data-point-name="${point.name.replace(/"/g, '&quot;')}" 
-                         data-point-description="${point.description.replace(/"/g, '&quot;')}"
+                         data-point-name="${escHtml(point.name)}" 
+                         data-point-description="${escHtml(point.description)}"
                          data-point-type="extracted"
                          data-point-index="${index}">
                         <input type="checkbox" class="point-check mt-1 h-4 w-4 shrink-0 accent-green-600 cursor-pointer" checked
                                data-index="${index}" title="勾选后将参与保存与脑图">
                         <div class="flex-1 min-w-0">
-                            <h3 class="font-semibold ${titleClass}">${point.name}</h3>
-                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                            <h3 class="font-semibold ${titleClass}">${escHtml(point.name)}</h3>
+                            <p class="text-sm text-text-medium-brown mt-1">${escHtml(point.description)}</p>
                         </div>
                         
                         <!-- 悬停时显示的操作按钮 -->
@@ -8452,14 +8447,14 @@ window.handleRenameKeydown = function(event, input) {
         // 创建新知识点HTML
         const newPointHtml = `
             <div class="knowledge-point-item bg-bg-light-gray p-3 rounded-lg cursor-pointer hover:shadow-md transition-shadow relative group flex items-start gap-2" 
-                 data-point-name="${name.replace(/"/g, '&quot;')}" 
-                 data-point-description="${description.replace(/"/g, '&quot;')}"
+                 data-point-name="${escHtml(name)}" 
+                 data-point-description="${escHtml(description)}"
                  data-point-index="${newIndex}">
                 <input type="checkbox" class="point-check mt-1 h-4 w-4 shrink-0 accent-green-600 cursor-pointer" checked
                        data-index="${newIndex}" title="勾选后将参与保存与脑图">
                 <div class="flex-1 min-w-0">
-                    <h3 class="font-semibold text-text-dark-brown">${name}</h3>
-                    <p class="text-sm text-text-medium-brown mt-1">${description}</p>
+                    <h3 class="font-semibold text-text-dark-brown">${escHtml(name)}</h3>
+                    <p class="text-sm text-text-medium-brown mt-1">${escHtml(description)}</p>
                 </div>
                 
                 <!-- 悬停时显示的操作按钮 -->
@@ -8682,8 +8677,9 @@ window.handleRenameKeydown = function(event, input) {
                                 <h4 class="font-semibold mb-2">操作说明：</h4>
                                 <ul class="space-y-1 text-xs">
                                     <li>• 点击左侧知识点查看相似匹配</li>
-                                    <li>• 选择相似知识点后可进行合并</li>
-                                    <li>• 如无相似知识点可新增到知识库</li>
+                                    <li>• 只选左侧知识点 → 可新增到知识库</li>
+                                    <li>• 再选中右侧相似知识点 → 可合并（此时不可新增，防误操作）</li>
+                                    <li>• 选中后点标题/描述可直接编辑，编辑完自动保存</li>
                                     <li>• 合并后的知识点将自动保存</li>
                                 </ul>
                                 <div class="mt-3 pt-3 border-t border-blue-200">
@@ -8772,8 +8768,8 @@ window.handleRenameKeydown = function(event, input) {
                      data-point-id="${point.id}" data-processed="${point.processed}">
                     <div class="flex items-center justify-between">
                         <div class="flex-1">
-                            <h4 class="font-semibold text-text-dark-brown">${point.name}</h4>
-                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                            <h4 class="font-semibold text-text-dark-brown">${escHtml(point.name)}</h4>
+                            <p class="text-sm text-text-medium-brown mt-1">${escHtml(point.description)}</p>
                         </div>
                         ${processedIcon}
                     </div>
@@ -8836,11 +8832,8 @@ window.handleRenameKeydown = function(event, input) {
                     `;
                 }
                 
-                // 禁用操作按钮
-                const mergeBtn = document.getElementById('merge-knowledge-btn');
-                const createBtn = document.getElementById('create-new-knowledge-btn');
-                if (mergeBtn) mergeBtn.disabled = true;
-                if (createBtn) createBtn.disabled = true;
+                // 按钮交还统一状态机（若左侧仍有选中项 → 新增可用、合并禁用）
+                updateKnowledgeActionStates();
             });
         }
         
@@ -8875,11 +8868,8 @@ window.handleRenameKeydown = function(event, input) {
                 const selectedSubject = subjectSelect ? subjectSelect.value : '';
                 findSimilarKnowledgePoints(point, selectedSubject);
                 
-                // 启用操作按钮
-                const mergeBtn = document.getElementById('merge-knowledge-btn');
-                const createBtn = document.getElementById('create-new-knowledge-btn');
-                if (mergeBtn) mergeBtn.disabled = false;
-                if (createBtn) createBtn.disabled = false;
+                // 启用操作按钮（统一状态机：刚点左项时右侧旧选中已随相似列表刷新消失）
+                updateKnowledgeActionStates();
             });
         }
         
@@ -8984,8 +8974,8 @@ window.handleRenameKeydown = function(event, input) {
                      data-knowledge-id="${point.id}">
                     <div class="flex items-center justify-between">
                         <div class="flex-1">
-                            <h5 class="font-medium text-text-dark-brown text-sm">${point.name}</h5>
-                            <p class="text-xs text-text-medium-brown mt-1">${point.description}</p>
+                            <h5 class="font-medium text-text-dark-brown text-sm">${escHtml(point.name)}</h5>
+                            <p class="text-xs text-text-medium-brown mt-1">${escHtml(point.description)}</p>
                         </div>
                         <div class="text-xs text-text-gray">
                             来源: ${point.sources ? point.sources.length : 0} 篇笔记
@@ -9036,6 +9026,25 @@ window.handleRenameKeydown = function(event, input) {
         });
     }
     
+    // 按钮互斥状态机（防误操作，2026-10-12 用户需求）：
+    // 仅选中左侧当前知识点 → 合并禁用 / 新增可用；左右都选中 → 合并可用 / 新增禁用；
+    // 左未选 → 全禁用。所有选中/列表刷新/科目切换/处理完成处统一走此函数。
+    let kpEditSavePending = 0;  // 行内编辑自动保存进行中的请求数（计数防重叠提交被先返回者清零）
+    function updateKnowledgeActionStates() {
+        const mergeBtn = document.getElementById('merge-knowledge-btn');
+        const createBtn = document.getElementById('create-new-knowledge-btn');
+        // 保存请求未落定时统一禁用，防合并/新增抢跑在编辑提交结果之前
+        if (kpEditSavePending > 0) {
+            if (mergeBtn) mergeBtn.disabled = true;
+            if (createBtn) createBtn.disabled = true;
+            return;
+        }
+        const selCur = document.querySelector('.current-knowledge-item.ring-primary');
+        const selSim = document.querySelector('.similar-knowledge-item.ring-blue-500');
+        if (mergeBtn) mergeBtn.disabled = !(selCur && selSim);
+        if (createBtn) createBtn.disabled = !(selCur && !selSim);
+    }
+    
     // 显示相似知识点加载状态
     function showSimilarKnowledgeLoading() {
         const listContainer = document.getElementById('similar-knowledge-list');
@@ -9047,6 +9056,8 @@ window.handleRenameKeydown = function(event, input) {
                 <p>正在匹配相似知识点...</p>
             </div>
         `;
+        // 旧右侧选中项随 loading 列表销毁，统一走状态机（复审问题3）
+        updateKnowledgeActionStates();
     }
     
     // 显示相似知识点错误
@@ -9060,6 +9071,7 @@ window.handleRenameKeydown = function(event, input) {
                 <p>${message}</p>
             </div>
         `;
+        updateKnowledgeActionStates();
     }
     
     // 渲染相似知识点列表
@@ -9074,6 +9086,8 @@ window.handleRenameKeydown = function(event, input) {
                     <p>未找到相似知识点</p>
                 </div>
             `;
+            // 旧右侧选中项随列表销毁，同样须重评按钮（CodeReview Minor-6）
+            updateKnowledgeActionStates();
             return;
         }
         
@@ -9085,11 +9099,11 @@ window.handleRenameKeydown = function(event, input) {
             
             html += `
                 <div class="similar-knowledge-item p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 hover:ring-2 hover:ring-blue-300" 
-                     data-knowledge-id="${point.id}" data-similarity="${point.similarity}">
+                     data-knowledge-id="${point.id}" data-similarity="${point.similarity}" data-name="${escHtml(point.name)}" data-desc="${escHtml(point.description)}">
                     <div class="flex items-start justify-between">
                         <div class="flex-1">
-                            <h4 class="font-semibold text-text-dark-brown">${point.name}</h4>
-                            <p class="text-sm text-text-medium-brown mt-1">${point.description}</p>
+                            <h4 class="font-semibold text-text-dark-brown" data-edit-field="name">${escHtml(point.name)}</h4>
+                            <p class="text-sm text-text-medium-brown mt-1" data-edit-field="desc">${point.description ? escHtml(point.description) : '（点击添加描述）'}</p>
                             <div class="flex items-center mt-2 text-xs text-text-gray">
                                 <span>来源: ${point.sources ? point.sources.length : 0} 篇笔记</span>
                             </div>
@@ -9108,23 +9122,115 @@ window.handleRenameKeydown = function(event, input) {
         
         // 绑定点击事件
         bindSimilarKnowledgeEvents();
+        // 新列表无选中 → 回状态机重评按钮
+        updateKnowledgeActionStates();
     }
     
-    // 绑定相似知识点事件
+    // 绑定相似知识点事件：未选中卡片点击=选中；已选中卡片点击标题/描述=进入编辑（失焦自动保存）
     function bindSimilarKnowledgeEvents() {
         const similarItems = document.querySelectorAll('.similar-knowledge-item');
         similarItems.forEach(item => {
-            item.addEventListener('click', function() {
-                // 清除其他选中状态
+            item.addEventListener('click', function(e) {
+                // 编辑控件内部的点击不改变选中/选择逻辑（input 自身在编辑中）
+                if (item.classList.contains('kp-editing')) return;
+                
+                const fieldEl = e.target.closest('[data-edit-field]');
+                if (fieldEl && this.classList.contains('ring-blue-500')) {
+                    startSimilarPointEdit(this, fieldEl);
+                    return;
+                }
+                
+                // 设置当前选中（清其他选中状态与编辑提示）
                 similarItems.forEach(el => {
+                    if (el === this) return;
                     el.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
+                    const oldHint = el.querySelector('.kp-edit-hint');
+                    if (oldHint) oldHint.remove();
                 });
-                
-                // 设置当前选中
                 this.classList.add('ring-2', 'ring-blue-500', 'bg-blue-50');
+                if (!this.querySelector('.kp-edit-hint')) {
+                    this.insertAdjacentHTML('beforeend',
+                        '<div class="kp-edit-hint text-xs text-blue-500 mt-2">点击标题/描述可编辑，编辑完自动保存</div>');
+                }
                 
-                // 启用合并按钮
-                document.getElementById('merge-knowledge-btn').disabled = false;
+                // 按钮交统一状态机（左右都选中 → 合并可点、新增禁用）
+                updateKnowledgeActionStates();
+            });
+        });
+    }
+    
+    // 选中相似知识点行内编辑：标题 input / 描述 textarea；失焦或 Enter 落库，Esc 放弃
+    function startSimilarPointEdit(itemEl, fieldEl) {
+        const isName = fieldEl.getAttribute('data-edit-field') === 'name';
+        // 原值只取 dataset 缓存（禁止回退 textContent：空描述占位文案会被误当原值写库）
+        const original = isName ? (itemEl.dataset.name || '') : (itemEl.dataset.desc || '');
+        const pid = itemEl.dataset.knowledgeId;
+        
+        const input = document.createElement(isName ? 'input' : 'textarea');
+        input.className = 'w-full border border-blue-300 rounded px-2 py-1 text-sm bg-white';
+        if (!isName) { input.rows = 3; }
+        input.maxLength = isName ? 200 : 5000;  // 与后端 POINT_NAME_MAX_LEN/DESC_MAX_LEN 对齐，超长前端即拦截
+        input.value = original;
+        fieldEl.textContent = '';
+        fieldEl.appendChild(input);
+        itemEl.classList.add('kp-editing');
+        input.focus();
+        if (input.select) { input.select(); }
+        
+        // 编辑期间阻断卡片选中切换；失焦时先提交
+        input.addEventListener('click', function (e) { e.stopPropagation(); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && (isName || e.ctrlKey || e.metaKey)) { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { input.value = original; input.blur(); }
+        });
+        
+        let settled = false;
+        input.addEventListener('blur', function () {
+            if (settled) return;
+            settled = true;
+            itemEl.classList.remove('kp-editing');
+            const val = input.value.trim();
+            const restore = function (text) {
+                // 描述置空时渲染占位文案保底可点（空 <p> 零高度点不中，CodeReview Major-1）
+                if (!isName && (text === '' || text == null)) { fieldEl.textContent = '（点击添加描述）'; }
+                else { fieldEl.textContent = text == null ? '' : text; }
+            };
+            if (val === original.trim()) { restore(original); return; }
+            if (isName && !val) {
+                showToast('知识点名称不能为空，已还原', 'warning');
+                restore(original);
+                return;
+            }
+            const fn = isName ? (window.pybridge && window.pybridge.updateKnowledgePointName)
+                              : (window.pybridge && window.pybridge.updateKnowledgePointDescription);
+            if (!fn) {
+                showToast('编辑保存功能不可用', 'error');
+                restore(original);
+                return;
+            }
+            kpEditSavePending++;
+            updateKnowledgeActionStates();
+            fn(pid, val, function (result) {
+                kpEditSavePending = Math.max(0, kpEditSavePending - 1);
+                try {
+                    const r = JSON.parse(result);
+                    if (r && r.success) {
+                        // 同步卡片缓存 data-*，下次编辑取最新值
+                        if (isName) { itemEl.dataset.name = val; restore(val); }
+                        else { itemEl.dataset.desc = val; restore(val); }
+                        showToast(isName ? '知识点标题已保存' : '知识点描述已保存', 'success');
+                        // 底部科目知识点列表同步刷新（同一数据源）
+                        const subjectSel = document.getElementById('subject-select');
+                        if (subjectSel && subjectSel.value) { loadSubjectKnowledgeList(subjectSel.value); }
+                    } else {
+                        showToast('保存失败：' + ((r && r.error) || '未知错误'), 'error');
+                        restore(original);
+                    }
+                } catch (err) {
+                    showToast('保存失败', 'error');
+                    restore(original);
+                }
+                updateKnowledgeActionStates();
             });
         });
     }
@@ -9186,10 +9292,6 @@ window.handleRenameKeydown = function(event, input) {
                         selectedCurrentItem.classList.remove('ring-2', 'ring-primary');
                         selectedSimilarItem.classList.remove('ring-2', 'ring-blue-500', 'bg-blue-50');
                         
-                        // 禁用操作按钮
-                        document.getElementById('merge-knowledge-btn').disabled = true;
-                        document.getElementById('create-new-knowledge-btn').disabled = true;
-                        
                         // 清空相似知识点列表
                         document.getElementById('similar-knowledge-list').innerHTML = `
                             <div class="text-center text-text-gray py-8">
@@ -9197,6 +9299,9 @@ window.handleRenameKeydown = function(event, input) {
                                 <p>请选择左侧知识点查看相似匹配</p>
                             </div>
                         `;
+                        
+                        // 按钮交统一状态机（已处理项无选中 → 全禁用）
+                        updateKnowledgeActionStates();
                         
                         // 刷新科目知识点列表
                         const subject = document.getElementById('subject-select').value;
@@ -9277,10 +9382,6 @@ window.handleRenameKeydown = function(event, input) {
                         iconContainer.insertAdjacentHTML('beforeend', processedIcon);
                     }
                     
-                    // 禁用操作按钮
-                    document.getElementById('merge-knowledge-btn').disabled = true;
-                    document.getElementById('create-new-knowledge-btn').disabled = true;
-                    
                     // 清空相似知识点显示
                     const similarKnowledgeList = document.getElementById('similar-knowledge-list');
                     if (similarKnowledgeList) {
@@ -9291,6 +9392,9 @@ window.handleRenameKeydown = function(event, input) {
                             </div>
                         `;
                     }
+                    
+                    // 按钮交统一状态机（已处理项无选中 → 全禁用）
+                    updateKnowledgeActionStates();
                     
                     // 刷新底部科目知识点列表
                     if (subject) {
@@ -9602,45 +9706,7 @@ window.handleRenameKeydown = function(event, input) {
         return true;
     };
     
-    // 显示提示消息
-    function showToast(message, type = 'info') {
-        // 创建提示元素
-        const toast = document.createElement('div');
-        toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white text-sm z-50 transition-all duration-300 transform translate-x-full`;
-        
-        // 根据类型设置颜色
-        switch (type) {
-            case 'success':
-                toast.className += ' bg-green-500';
-                break;
-            case 'warning':
-                toast.className += ' bg-yellow-500';
-                break;
-            case 'error':
-                toast.className += ' bg-red-500';
-                break;
-            default:
-                toast.className += ' bg-blue-500';
-        }
-        
-        toast.textContent = message;
-        document.body.appendChild(toast);
-        
-        // 显示动画
-        setTimeout(() => {
-            toast.classList.remove('translate-x-full');
-        }, 100);
-        
-        // 自动隐藏
-        setTimeout(() => {
-            toast.classList.add('translate-x-full');
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
-        }, 3000);
-    }
+    // v0.1.7：重复的 showToast 副本已删除，统一由 base.html 全局实现接管（含 z-index/功能区避让修复）
 
     // 智能插入文本到编辑器
     function insertTextToEditor(editor, content) {
@@ -9825,15 +9891,7 @@ window.handleRenameKeydown = function(event, input) {
             evaluateBtn.onclick = evaluatePracticeAnswer;
         }
         
-        // 开始新练习按钮
-        const startBtn = document.getElementById('startPracticeBtn');
-        if (startBtn) {
-            startBtn.onclick = () => {
-                if (currentPracticeData.selectedText) {
-                    generatePracticeQuestions(currentPracticeData.selectedText);
-                }
-            };
-        }
+        // v0.1.7：开始新练习按钮已随死面板入口移除，此处死绑定同步删除
         
         // 点击面板外部关闭
         const practicePanel = document.getElementById('practicePanel');
@@ -10414,6 +10472,14 @@ window.handleRenameKeydown = function(event, input) {
             console.log('✅ [renderMarkdownContent] marked库可用，使用主渲染器');
             console.log('📊 [renderMarkdownContent] 主渲染器处理内容长度:', content.length);
             
+            // 公式占位保护（md_render.js 公共件，与错题/知识库/悬浮窗同管线）：
+            // marked 不识别公式会把 $_ 咬成斜体、反斜杠当转义丢弃，必须 marked 前抽取、innerHTML 后回填。
+            // slots 存 window._mdMathSlots，由同页 renderMathFormulas(各调用点) 在 innerHTML 后回填。
+            var _mdSrc = content;
+            var _ex = (window.MdRender && window.MdRender.extract) ? window.MdRender.extract(content) : { text: content, slots: [] };
+            window._mdMathSlots = _ex.slots;
+            content = _ex.text;
+            
             // 预处理：支持任务列表
             content = content.replace(/^\s*- \[([ x])\] /gm, function(match, checked) {
                 const isChecked = checked === 'x' ? 'checked' : '';
@@ -10470,8 +10536,8 @@ window.handleRenameKeydown = function(event, input) {
                     // 创建一个唯一的ID用于异步更新
                     const imageId = 'img_' + Math.random().toString(36).substr(2, 9);
                     
-                    // 先返回占位符图片
-                    const placeholderImg = `<img${beforeSrc}id="${imageId}" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWKoOi9veS4rS4uLjwvdGV4dD48L3N2Zz4=" alt="加载中..." style="max-width: 100%; height: auto;"${afterSrc}>`;
+                    // 先返回占位符图片（v0.1.7：data-ll-src 携带未解析原路径，供「开始练习」选段 MD 化提取图片引用，与 pm 侧 data-nb-src 同思路）
+                    const placeholderImg = `<img${beforeSrc}id="${imageId}" data-ll-src="${encodeURIComponent(src)}" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjBmMGYwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPuWKoOi9veS4rS4uLjwvdGV4dD48L3N2Zz4=" alt="加载中..." style="max-width: 100%; height: auto;"${afterSrc}>`;
                     
                     // 异步获取真实图片数据
                     setTimeout(() => {
@@ -10523,23 +10589,17 @@ window.handleRenameKeydown = function(event, input) {
             return html;
         } catch (error) {
             console.error('Markdown渲染错误:', error);
-            return content.replace(/\n/g, '<br>');
+            // 异常回退用抽取前原文：避免占位符字符泄漏成豆腐块（降级纯文本展示公式源码）
+            return (_mdSrc || content).replace(/\n/g, '<br>');
         }
     }
     
     // 渲染数学公式
     function renderMathFormulas(element) {
-        if (typeof renderMathInElement !== 'undefined') {
-            try {
-                renderMathInElement(element, {
-                    delimiters: [
-                        {left: '$$', right: '$$', display: true},
-                        {left: '$', right: '$', display: false},
-                        {left: '\\[', right: '\\]', display: true},
-                        {left: '\\(', right: '\\)', display: false}
-                    ]
-                });
-            } catch (error) {
+        // v0.1.4：改走公共件 MdRender 回填（原依赖 CDN auto-render，客户机 CDN 不可达时整体失效）；
+        // 公式已在 renderMarkdownContent 前被抽取为占位符，这里按最近一次 slots 回填 KaTeX。
+        if (window.MdRender && window.MdRender.applyMath) {
+            try { window.MdRender.applyMath(element, window._mdMathSlots || []); } catch (error) {
                 console.error('数学公式渲染错误:', error);
             }
         }
@@ -11183,14 +11243,7 @@ window.handleRenameKeydown = function(event, input) {
                         <span class="material-icons-outlined mr-1">history</span>
                         <span>练习历史</span>
                     </button>
-                    <button id="newPracticeBtn" class="flex items-center text-text-gray hover:text-primary">
-                        <span class="material-icons-outlined mr-1">add_circle_outline</span>
-                        <span>新练习</span>
-                    </button>
-                    <button id="startPracticeBtn" class="flex items-center text-white bg-primary px-4 py-2 rounded-lg shadow hover:bg-green-600">
-                        <span class="material-icons-outlined mr-2">play_arrow</span>
-                        <span>开始新练习</span>
-                    </button>
+                    <!-- v0.1.7：旧死面板中的「新练习/开始新练习」重复入口按钮已移除（出题唯一入口=右击→配置弹窗→考卷） -->
                     <button id="savePracticeBtn" class="flex items-center text-text-gray hover:text-primary">
                         <span class="material-icons-outlined mr-1">save_alt</span>
                         <span>保存评估结果</span>
@@ -11434,6 +11487,20 @@ function handlePractice(e, forcedText) {
     // 隐藏统一菜单
     llHideAllMenus();
     
+    // v0.1.7：出题前先弹练习配置窗（题型/数量/难度），走考卷结构化组卷链路；旧通道仅作降级保留
+    if (window.openQuizConfigDialog && window.startQuizFlow) {
+        const textToPractice = textForPractice;
+        window.openQuizConfigDialog(textToPractice, function(cfg) {
+            window.startQuizFlow(textToPractice, cfg);
+            // 清除快照状态（单一变量）与页面选区
+            window.llMenuText = '';
+            if (window.getSelection) {
+                window.getSelection().removeAllRanges();
+            }
+        });
+        return;
+    }
+    
     // 首先确保AI聊天窗口打开
     if (window.openAIChatWindow) {
         window.openAIChatWindow();
@@ -11501,7 +11568,8 @@ function generatePracticeQuestionsForAI(selectedText, practiceId) {
 
         if (actualQuestions && String(actualQuestions).trim()) {
             if (window.addAIPracticeMessage) {
-                window.addAIPracticeMessage('**练习题目生成完成！**\n\n' + actualQuestions, 'ai');
+                // v0.1.6：题面全文不进聊天消息（base.html addMessage 匹配关键词后自动附加「点击这里开始练习」按钮）
+                window.addAIPracticeMessage('**练习题目生成完成！**请点击下方「点击这里开始练习」按钮，进入 AI 练习助手答题。', 'ai');
             }
             if (window.showAIPracticePanel) {
                 window.showAIPracticePanel({
@@ -11540,26 +11608,7 @@ function generatePracticeQuestionsForAI(selectedText, practiceId) {
 
 // 重复的函数定义已删除，使用上面的全局函数定义
 
-// 显示提示消息
-function showToast(message, type = 'info') {
-    // 创建提示元素
-    const toast = document.createElement('div');
-    toast.className = `fixed top-4 right-4 px-4 py-2 rounded-lg text-white z-50 ${
-        type === 'success' ? 'bg-green-500' : 
-        type === 'warning' ? 'bg-yellow-500' : 
-        type === 'error' ? 'bg-red-500' : 'bg-blue-500'
-    }`;
-    toast.textContent = message;
-    
-    document.body.appendChild(toast);
-    
-    // 3秒后自动移除
-    setTimeout(() => {
-        if (toast.parentNode) {
-            toast.parentNode.removeChild(toast);
-        }
-    }, 3000);
-}
+// v0.1.7：重复的 showToast 副本已删除，统一由 base.html 全局实现接管（本处曾是最后定义者，覆盖过 base 版）
 
 // ===== 四期D组：统一右键菜单基础设施（旧 textContextMenu / enhanced-context-menu / 测试菜单系统已下线）=====
 
@@ -11572,6 +11621,47 @@ function llCurrentMenuTargetText() {
         if (live) return live;
     } catch (e) {}
     return window.llMenuText || '';
+}
+
+// v0.1.7 用户裁定：选段中图片以标准 MD 引用 ![名](vault相对路径) 一并发送，
+// 使“围绕图的题目”能把图带进题干（后端含图自动切视觉模型看图出题）。
+// 仅当选区含笔记图片时才 MD 化；无图/异常回退纯文本，其它菜单项行为零影响。
+function llSelectionMarkdown() {
+    try {
+        var sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return '';
+        var frag = sel.getRangeAt(0).cloneContents();
+        var box = document.createElement('div');
+        box.appendChild(frag);
+        var imgs = box.querySelectorAll('img');
+        if (!imgs.length) return String(sel).trim();
+        imgs.forEach(function (img) {
+            var raw = img.getAttribute('data-ll-src') || '';
+            if (raw) { try { raw = decodeURIComponent(raw); } catch (e) { /* 保留原串 */ } }
+            if (!raw && img.src && !/^data:/i.test(img.src)) raw = img.src;
+            if (!raw) { img.remove(); return; } // 水合失败的占位 svg/表情图：无路径可还原，丢弃
+            var resolved = raw;
+            try { resolved = (typeof resolveNoteImgSrc === 'function' && resolveNoteImgSrc(raw)) || raw; } catch (e) { /* 单图解析失败用原路径，不阻断整体提取 */ }
+            var name = String(raw).split(/[\\/]/).pop() || '图';
+            img.parentNode.replaceChild(document.createTextNode('\n![' + name + '](' + resolved + ')\n'), img);
+        });
+        box.style.cssText = 'position:fixed;left:-9999px;top:0;white-space:pre-wrap;';
+        document.body.appendChild(box);
+        var md = (box.innerText || box.textContent || '').trim();
+        document.body.removeChild(box);
+        return md || String(sel).trim();
+    } catch (e) {
+        try { return String(window.getSelection() || '').trim(); } catch (e2) { return window.llMenuText || ''; }
+    }
+}
+
+// 笔记全文 MD 源码的 Obsidian 图链接 ![[名]] 归一化为标准 ![名](attachments/名)（与主渲染器同口径），
+// 保证后端 md_image_paths 可提取、考卷题干图引用可水合
+function llNormalizeNoteImgWiki(md) {
+    return String(md || '').replace(/!\[\[([^\]]+)\]\]/g, function (m, filename) {
+        var pure = String(filename).split('/').pop().split('\\').pop();
+        return '![' + pure + '](attachments/' + pure + ')';
+    });
 }
 
 function llHideAllMenus() {
@@ -11603,9 +11693,10 @@ function llRunOnMenuText(kind, path, type, name) {
             showToast('未选中文字，已基于笔记《' + (name || '') + '》全文操作', 'info');
         }
         if (kind === 'deep') handleDeepLearning(null, t);
-        else handlePractice(null, t);
+        else handlePractice(null, fromNote ? llNormalizeNoteImgWiki(t) : t);
     };
-    var live = llCurrentMenuTargetText();
+    // v0.1.7：练习通道的选区提取改 MD 化（图片引用随选段发送）；深入学习与其它菜单项不变
+    var live = (kind === 'practice') ? (llSelectionMarkdown() || llCurrentMenuTargetText()) : llCurrentMenuTargetText();
     if (live) { run(live, false); return; }
     if (type === 'folder') {
         showToast('请在笔记文件或正文上使用此操作', 'warning');
@@ -11639,6 +11730,8 @@ window.llRunOnMenuText = llRunOnMenuText;
 window.llShowUnifiedMenu = llShowUnifiedMenu;
 window.llHideAllMenus = llHideAllMenus;
 window.llCurrentMenuTargetText = llCurrentMenuTargetText;
+window.llSelectionMarkdown = llSelectionMarkdown;
+window.llNormalizeNoteImgWiki = llNormalizeNoteImgWiki;
 
 // 页面初始化完成
 addDebugLog('🔥 网课笔记页面统一右键菜单系统初始化完成');

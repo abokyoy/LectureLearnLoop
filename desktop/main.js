@@ -39,6 +39,7 @@ if (/^http:\/\//i.test(SERVER_BASE)) {
 
 let mainWindow = null;
 let overlayWindow = null;
+let overlayGeom = null; // 会话内记住悬浮窗 bounds（尺寸/位置），重开不丢
 let captureWindow = null;
 let serverDownRetries = 0;
 let asrSession = null; // {send, close}
@@ -113,11 +114,18 @@ function createOverlayWindow() {
     return;
   }
   const wa = screen.getPrimaryDisplay().workArea;
-  overlayWindow = new BrowserWindow({
-    width: 360,
-    height: 560,   // 二期：新增 暂停/完成 按钮与“正在保存到”横幅，微增高度容纳
+  // 会话内记住尺寸/位置（用户手动 resize 后重开不丢）；首开默认右上角
+  const geom = overlayGeom || {
     x: wa.x + wa.width - 380,
     y: wa.y + 40,
+    width: 360,
+    height: 560,
+  };
+  overlayWindow = new BrowserWindow({
+    width: geom.width,
+    height: geom.height,
+    x: geom.x,
+    y: geom.y,
     frame: false,
     alwaysOnTop: true,
     resizable: false,
@@ -128,10 +136,20 @@ function createOverlayWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      // 电平声波动画靠 requestAnimationFrame：悬浮窗常态是“未聚焦”小窗，
+      // 默认后台节流会把 RAF/定时器压到几乎停走（现象：电平图只在拖拽窗口时才动）。
+      // 与主窗口同口径显式关闭（本窗业务：计时/倒计时/电平/总结轮询全部需要持续运行）。
+      backgroundThrottling: false,
     },
   });
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
   overlayWindow.loadURL(SERVER_BASE + '/overlay');
+  const rememberGeom = () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayGeom = overlayWindow.getBounds();
+  };
+  // 事件名用 'move'/'resize'（Windows 下 'moved'/'resized' 是 macOS 专属，不会触发）
+  overlayWindow.on('move', rememberGeom);
+  overlayWindow.on('resize', rememberGeom);
   overlayWindow.on('closed', () => { overlayWindow = null; });
 }
 
@@ -148,10 +166,20 @@ ipcMain.handle('overlay:hide', () => {
   overlayWindow = null;
   return true;
 });
-ipcMain.on('overlay:drag', (e, dx, dy) => {
+// 悬浮窗尺寸调整（渲染层右下角把手驱动）：frameless 窗口系统无可见边框，
+// 由页面自绘把手发目标宽高，主进程钳范后 setContentSize。
+// 旧 'overlay:drag'（逐 mousemove setPosition）已删：拖拽改走 CSS app-region 原生拖，
+// 高频 IPC+SetWindowPos 在 Windows/DWM 下会产生被拉宽的拖影（用户报“越拖越宽”）。
+const OVERLAY_SIZE_MIN = { w: 320, h: 420 };
+const OVERLAY_SIZE_MAX = { w: 960, h: 1280 };
+ipcMain.on('overlay:resize', (e, w, h) => {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
-  const [x, y] = overlayWindow.getPosition();
-  overlayWindow.setPosition(Math.round(x + dx), Math.round(y + dy));
+  // 只接受数字入参（渲染层可信但仍防御 NaN/字符串）
+  const cw = Math.round(Number(w)), chh = Math.round(Number(h));
+  if (!Number.isFinite(cw) || !Number.isFinite(chh)) return;
+  const clampedW = Math.min(OVERLAY_SIZE_MAX.w, Math.max(OVERLAY_SIZE_MIN.w, cw));
+  const clampedH = Math.min(OVERLAY_SIZE_MAX.h, Math.max(OVERLAY_SIZE_MIN.h, chh));
+  overlayWindow.setContentSize(clampedW, clampedH);
 });
 
 /* ------------------------------------------------------- ASR 会话（P4） */
@@ -296,11 +324,16 @@ ipcMain.on('notepicker:choose', (e, sel) => {
 app.whenReady().then(() => {
   // 产品要求：去掉原生菜单，窗口外观不暴露 Windows/macOS 原生风格
   Menu.setApplicationMenu(null);
-  // 屏幕捕获免弹框，视频=第一个屏幕，音频=系统声音 loopback（豆包同原理）
+  // 屏幕捕获免弹框，视频=第一个屏幕，音频=系统声音 loopback（豆包同原理）。
+  // 防御回退：某些会话（如无头/断开远控）下 WGC 屏幕级枚举会返回空 screen 源，而窗口级仍可用；
+  // 业务只消费 loopback 音频轨，视频轨仅为 getDisplayMedia 权限载体，回退到窗口源不改变语义（本机实测取证）。
   session.defaultSession.setDisplayMediaRequestHandler(
     (request, callback) => {
-      desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 320, height: 180 } })
-        .then((sources) => callback({ video: sources[0], audio: 'loopback' }))
+      desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } })
+        .then((sources) => {
+          const vid = sources.find((s) => String(s.id).startsWith('screen:')) || sources.find((s) => String(s.id).startsWith('window:'));
+          callback(vid ? { video: vid, audio: 'loopback' } : {});
+        })
         .catch(() => callback({}));
     },
     { useSystemPicker: false }

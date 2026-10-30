@@ -421,6 +421,15 @@
         return req('POST', '/api/knowledge/point-new', parseArg(createDataJson, {}));
     }, { as: 'json', name: 'createNewKnowledgePoint' });
 
+    // 「学」页知识点管理：选中相似知识点后可直接编辑已有知识点的标题/描述（失焦自动保存）
+    bridge.updateKnowledgePointName = bridgeFn(function (pid, name) {
+        return req('PUT', '/api/knowledge/points/' + encodeURIComponent(pid) + '/name', { name: name });
+    }, { as: 'json', name: 'updateKnowledgePointName' });
+
+    bridge.updateKnowledgePointDescription = bridgeFn(function (pid, description) {
+        return req('PUT', '/api/knowledge/points/' + encodeURIComponent(pid) + '/description', { description: description });
+    }, { as: 'json', name: 'updateKnowledgePointDescription' });
+
     bridge.batchSaveKnowledgePoints = bridgeFn(function (batchDataJson) {
         return req('POST', '/api/knowledge/batch-save', parseArg(batchDataJson, {}));
     }, { as: 'json', name: 'batchSaveKnowledgePoints' });
@@ -665,6 +674,28 @@
     bridge.generateNewPractice = bridgeFn(function () {
         return req('POST', '/api/practice/new', {});
     }, { as: 'json', name: 'generateNewPractice' });
+
+    // ---------- 八·B、v0.1.7 考卷通道（quiz-generate / quiz-submit / 错题候选 / 拍照上传） ----------
+    bridge.generatePracticeQuiz = bridgeFn(function (cfgJson) {
+        return req('POST', '/api/practice/quiz-generate', parseArg(cfgJson, {}));
+    }, { as: 'json', name: 'generatePracticeQuiz' });
+
+    bridge.submitPracticeQuiz = bridgeFn(function (submitDataJson) {
+        return req('POST', '/api/practice/quiz-submit', parseArg(submitDataJson, {}));
+    }, { as: 'json', name: 'submitPracticeQuiz' });
+
+    bridge.matchQuizErrorPoints = bridgeFn(function (questionText) {
+        return req('POST', '/api/practice/quiz-error-points', { question_text: questionText || '' });
+    }, { as: 'json', name: 'matchQuizErrorPoints' });
+
+    bridge.uploadQuizPhoto = bridgeFn(async function (dataUrl) {
+        // 拍照上传：存 vault 截图/ 目录，返回 {success, path}（供简答作答引用 MD 图片）
+        const d = await req('POST', '/api/vault/screenshot', { image_b64: dataUrl || '' });
+        const inner = (d && d.data) ? d.data : d; // _ok 双层壳时剥一层
+        // CodeReview S-5：透传服务端真实错误原因，便于排查
+        if (!inner || !inner.path) return { success: false, error: (inner && inner.error) || '截图保存失败' };
+        return { success: true, path: inner.path, rel: inner.rel, markdown: inner.markdown };
+    }, { as: 'json', name: 'uploadQuizPhoto' });
 
     bridge.importPracticeErrors = bridgeFn(function (errorDataJson) {
         // D 类：Qt 版实际不入库，只回传数据让前端打开入库对话框

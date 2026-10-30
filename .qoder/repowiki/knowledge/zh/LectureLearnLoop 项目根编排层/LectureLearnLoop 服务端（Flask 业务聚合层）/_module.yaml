@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: server_backend
+title: LectureLearnLoop 服务端（Flask 业务聚合层）
+scope:
+    - server/
+source_files: []
+depends_on: []
+related_to: []

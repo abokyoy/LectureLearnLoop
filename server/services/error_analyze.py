@@ -180,21 +180,56 @@ def _image_payload_items(path: str, mime: str) -> dict:
     return {"mime": mime, "b64": base64.b64encode(raw).decode("ascii")}
 
 
-_PROMPT_HEADER = """你是"错题整理器"。用户提供了一道错题的草稿（可能含图片：题目照片/手写解答）。你将收到：
-① 草稿原始 Markdown 文本；② PaddleOCR 版面分析结果（文字块 bbox+识别内容、图形块 bbox 及已裁剪好的图形切片文件路径）；③ 附图（每张原图与各图形切片，编号与清单对应）。
-任务：把这道题重新整理成规范错题，只输出一个 JSON 对象（不带任何围栏或额外文字）。
-
-硬性规则：
+# 硬性规则 1~7：单题 _PROMPT_HEADER 与多题 _GROUP_PROMPT_HEADER 共用（架构收敛：
+# 分组识别只是「同样的题规约 × N 道题 + 数组输出」，规则文本禁止两份各写各的漂移）
+_HARD_RULES = """硬性规则：
 1. 题干文字必须逐字取自"版面分析文字块内容"与用户手输文字，禁止改写、补全、翻译、自行润色；若你从附图中看到明显与 OCR 不一致之处，以图中实际内容为准并在题干中修正（OCR 与视觉互为防错校对）。
 2. 题目中的图形一律用给定的“切片路径”引用（切片清单里列出的 _figN 文件），格式 ![图形](切片相对路径)；禁止引用原始图片文件路径（原图仅供你通读全貌），禁止用文字描述代替图形，禁止虚构路径。用户手写解答中的图不属于题干。
 3. user_solution_md：如实转录学生的解题过程（含错误步骤、涂改后的最终写法），不得修正或简化；图中没有学生解答则返回空字符串。
 4. error_analysis：指出错在哪一步、为什么错、大概率是哪个知识点薄弱。
 5. correct_answer：简洁的最终答案；explanation：完整的正确推导过程。若图中本身印有标准答案/解析，逐字转录到对应字段。
 6. 版面分析失败的图片，依据附图自行判断，其余规则不变。
-7. 所有字段里的数学公式必须用定界符包裹：行内用 $…$，独立成行的算式用 $$…$$；公式内容本身仍逐字如实，不得增删改；纯中文叙述文字不包裹。禁止输出没有定界符的裸 LaTeX。本规则只加定界、不改任何内容文字，与规则 1/3 的“逐字如实转录”不冲突。
+7. 所有字段里的数学公式必须用定界符包裹：行内用 $…$，独立成行的算式用 $$…$$；公式内容本身仍逐字如实，不得增删改；纯中文叙述文字不包裹。禁止输出没有定界符的裸 LaTeX。本规则只加定界、不改任何内容文字，与规则 1/3 的“逐字如实转录”不冲突。"""
+
+_PROMPT_HEADER = """你是"错题整理器"。用户提供了一道错题的草稿（可能含图片：题目照片/手写解答）。你将收到：
+① 草稿原始 Markdown 文本；② PaddleOCR 版面分析结果（文字块 bbox+识别内容、图形块 bbox 及已裁剪好的图形切片文件路径）；③ 附图（每张原图与各图形切片，编号与清单对应）。
+任务：把这道题重新整理成规范错题，只输出一个 JSON 对象（不带任何围栏或额外文字）。
+
+""" + _HARD_RULES + """
 
 输出 JSON 结构：
 {"stem_md": "题干Markdown（含图形切片引用）", "user_solution_md": "学生解答转录", "error_analysis": "错因分析", "correct_answer": "正确答案", "explanation": "解析"}"""
+
+_GROUP_PROMPT_HEADER = """你是"错题批量整理器"。用户依次提供了 {n} 道题的裁剪图（每题一张完整题目的裁片），每道题附有：
+① 该题裁剪图的 PaddleOCR 版面分析结果（文字块 bbox+识别内容、图形块 bbox 及已裁剪好的图形切片文件路径）；② 附图（该题裁片与各图形切片，附图编号与清单对应）。
+任务：把每道题分别整理成规范错题，只输出一个 JSON 数组（不带任何围栏或额外文字）。数组必须恰好包含 {n} 个元素，每个元素带 "q" 字段（题号，从 1 起，与题目顺序一致），结构：
+{{"q": 1, "stem_md": "题干Markdown（含图形切片引用）", "user_solution_md": "学生解答转录", "error_analysis": "错因分析", "correct_answer": "正确答案", "explanation": "解析"}}
+
+""" + _HARD_RULES
+
+
+def _build_group_vl_request(per_image: list, rel_to_abs: dict) -> tuple:
+    """多题组 → (prompt 文本, images)：2026-10-15 用户裁定「切片图一次全给大模型，返回一组题」。
+    per_image 按题序（每题一项=该题裁剪图；版面失败项带 error，降级仅发裁片）。"""
+    n = len(per_image)
+    lines = [_GROUP_PROMPT_HEADER.format(n=n), ""]
+    images = []
+    for i, pi in enumerate(per_image, 1):
+        rel = pi["image"]
+        if pi.get("error"):
+            lines.append(f"【第{i}题】附图编号 {len(images) + 1} 为裁剪图 {rel}；该题版面分析失败（{pi['error']}），请仅凭附图整理。")
+            images.append(_image_payload_items(rel_to_abs[rel], _mime_of(rel)))
+            continue
+        figures_desc = [{"bbox": f["bbox"], "切片路径": f.get("crop_rel")} for f in pi["figures"]]
+        lines.append(f"【第{i}题】附图编号 {len(images) + 1} 为裁剪图 {rel}，page_size={pi['page_size']}")
+        images.append(_image_payload_items(rel_to_abs[rel], _mime_of(rel)))
+        lines.append("  文字块：" + json.dumps(pi["texts"], ensure_ascii=False))
+        lines.append("  图形块：" + json.dumps(figures_desc, ensure_ascii=False))
+        for f in pi["figures"]:
+            if f.get("crop_rel"):
+                lines.append(f"  切片附图编号 {len(images) + 1}：{f['crop_rel']}")
+                images.append(_image_payload_items(rel_to_abs[f["crop_rel"]], _mime_of(f["crop_rel"])))
+    return "\n".join(lines), images
 
 
 def _build_vl_request(md_text: str, per_image: list, rel_to_abs: dict) -> tuple:
@@ -246,6 +281,34 @@ def _as_object(obj):
     if isinstance(obj, dict):
         return obj
     raise ValueError("返回不是 JSON 对象")
+
+
+def _as_array(obj):
+    if isinstance(obj, list) and all(isinstance(x, dict) for x in obj):
+        return obj
+    raise ValueError("返回不是 JSON 对象数组")
+
+
+def extract_json_array(text: str) -> list:
+    """从模型返回提取首个 JSON 数组（分组调用契约）；围栏/尾逗号本地修复同 extract_json，
+    失败抛错绝不重发请求（防已扣费重呼双扣）。"""
+    t = (text or "").strip()
+    m = _JSON_FENCE_RE.search(t)
+    if m:
+        t = m.group(1).strip()
+    try:
+        return _as_array(json.loads(t))
+    except ValueError:
+        pass
+    s, e = t.find("["), t.rfind("]")
+    if s >= 0 and e > s:
+        cand = t[s:e + 1]
+        for variant in (cand, _TRAILING_COMMA_RE.sub(r"\1", cand)):
+            try:
+                return _as_array(json.loads(variant))
+            except ValueError:
+                continue
+    raise ValueError("无法从模型返回中解析 JSON 数组")
 
 
 def assemble_result(contract: dict) -> dict:
@@ -419,38 +482,121 @@ def _run(task_id: str, uid: str, md_text: str, items: list, key: str = "") -> No
                     _inflight.pop(key, None)
 
 
+def run_pipeline(uid: str, md_text: str, items: list, deadline: float, scene: str = "错题智能分析") -> dict:
+    """核心管线（公共函数，单题弹窗与批量录入 error_batch 共用）：
+    逐图 Paddle 版面切片 → 原图+切片交 VL 整理 → 契约结果 {stem_md, correct_answer, explanation}。
+    失败抛异常（含“题干为空”），由调用方落各自任务表的 error 态；不重发 VL（防双扣积分）。"""
+    rel_to_abs = {rel: abs_p for rel, abs_p in items}
+    per_image = []
+    for rel, abs_path in items:
+        try:
+            info = _analyze_one_image(rel, abs_path, deadline)
+            per_image.append(info)
+            log.log("analyze", "paddle_layout_done", "success",
+                    {"image": rel, "texts": len(info["texts"]),
+                     "figures": len(info["figures"])})
+            for f in info["figures"]:
+                if f.get("crop_rel"):  # 切片与同目录兄弟文件同样受路由校验保护（仅新文件）
+                    rel_to_abs[f["crop_rel"]] = os.path.join(
+                        os.path.dirname(abs_path), os.path.basename(f["crop_rel"]))
+        except Exception as e:  # noqa: BLE001 单图版面失败不拖垮整任务（降级：仅原图发 VL）
+            log.log("analyze", "paddle_layout_failed", "warn",
+                    {"image": rel, "err": str(e)[:120]})
+            per_image.append({"image": rel, "error": str(e)[:120]})
+    prompt, images = _build_vl_request(md_text, per_image, rel_to_abs)
+    from llm_provider_factory import call_llm_vision  # 延迟导入避免启动环
+    raw = call_llm_vision(uid, prompt, images, scene=scene)
+    contract = extract_json(raw)
+    result = assemble_result(contract)
+    result["stem_md"] = _strip_remote_images(_normalize_stem_images(result["stem_md"], per_image))
+    if not result["stem_md"]:
+        raise ValueError("模型返回的题干为空")
+    log.log("analyze", "pipeline_done", "success",
+            {"chars": len(result["stem_md"]), "images": len(images), "scene": scene})
+    return result
+
+
+def recognize_group(uid: str, items: list, deadline: float, scene: str = "批量识别错题") -> list:
+    """多裁剪图一次 VL 调用分组识别（2026-10-15 用户裁定：切片图一次全给大模型，返回一组题）。
+    items: [(rel, abs)] 按题序（每题一张裁剪图）。返回与 items 等长的逐题列表：
+      {"ok": True, "stem_md":..., "correct_answer":..., "explanation":...}
+      或 {"ok": False, "error": str}（单题内容失败不在这里重试，由调用方 error_batch 逐题回退）。
+    整组失败（调用异常/数组不可解析）抛异常。
+    计费口径：全组 tokens 一次扣分；部分题需回退时单题调用另扣（调用方权衡，正常路径一次调用）。"""
+    rel_to_abs = {rel: abs_p for rel, abs_p in items}
+    per_image = []
+    for rel, abs_path in items:
+        try:
+            info = _analyze_one_image(rel, abs_path, deadline)
+            per_image.append(info)
+            for f in info["figures"]:
+                if f.get("crop_rel"):  # 切片路径注册（同 run_pipeline：后续交 VL 与引用替换要用）
+                    rel_to_abs[f["crop_rel"]] = os.path.join(
+                        os.path.dirname(abs_path), os.path.basename(f["crop_rel"]))
+        except Exception as e:  # noqa: BLE001 单图版面失败不拖垮整组（降级：仅裁片发 VL）
+            log.log("analyze", "paddle_layout_failed", "warn",
+                    {"image": rel, "err": str(e)[:120], "group": len(items)})
+            per_image.append({"image": rel, "error": str(e)[:120]})
+    prompt, images = _build_group_vl_request(per_image, rel_to_abs)
+    from llm_provider_factory import call_llm_vision  # 延迟导入避免启动环（同 run_pipeline）
+    raw = call_llm_vision(uid, prompt, images, scene=scene)
+    arr = extract_json_array(raw)
+    # 题↔元素绑定（CodeReview Major-1/Minor-2）：仅当 q 号恰构成 {1..n} 无重复全集才采信
+    # q（乱序可归位）；否则一律按位置序（截断总掉尾部、前段元素即在位）——对「合法但整体
+    # 错位」的 q 不盲信，宁缺题走回退、不静默串题（与单题管线防错哲学一致）
+    qs = [o.get("q") for o in arr]
+    use_q = (len(arr) == len(items)
+             and all(isinstance(q, int) and not isinstance(q, bool) for q in qs)
+             and sorted(qs) == list(range(1, len(items) + 1)))
+    by_pos = {}
+    if use_q:
+        for obj, q in zip(arr, qs):
+            by_pos[q - 1] = obj
+    else:
+        if len(arr) != len(items):
+            log.log("analyze", "group_len_mismatch", "warn", {"got": len(arr), "expect": len(items)})
+        else:
+            log.log("analyze", "group_q_distrust", "warn", {"qs": str(qs)[:80], "n": len(items)})
+        # 残缺/异形数组（CodeReview Major-1）：带合法 q 的元素按 q 落位；重复声明的 q 直接
+        # 丢弃（不能把「自称第1题」的内容塞进第2题槽）；无合法 q 的元素按位置 i 填空槽
+        # （截断总掉尾部、前段元素即在位）；落不满的题自然落「缺题」走回退，不静默串题
+        for i, obj in enumerate(arr):
+            q = qs[i]
+            if isinstance(q, int) and not isinstance(q, bool) and 1 <= q <= len(items):
+                if (q - 1) not in by_pos:
+                    by_pos[q - 1] = obj
+                continue
+            if i < len(items) and i not in by_pos:
+                by_pos[i] = obj
+    outs = []
+    for i, pi in enumerate(per_image):
+        obj = by_pos.get(i)
+        if obj is None:
+            outs.append({"ok": False, "error": "模型输出缺少对应题目"})
+            continue
+        try:
+            result = assemble_result(obj)
+            result["stem_md"] = _strip_remote_images(_normalize_stem_images(result["stem_md"], [pi]))
+            if not result["stem_md"]:
+                raise ValueError("模型返回的题干为空")
+            outs.append({"ok": True, **result})
+        except Exception as e:  # noqa: BLE001 单题装配/校验失败隔离，不级伤其它题
+            outs.append({"ok": False, "error": str(e)[:200]})
+    log.log("analyze", "group_pipeline_done", "success",
+            {"questions": len(items), "images": len(images),
+             "ok": sum(1 for o in outs if o["ok"]), "scene": scene})
+    return outs
+
+
 def _run_inner(task_id: str, uid: str, md_text: str, items: list) -> None:
     with _SEM:
         deadline = time.time() + BASE_WAIT_S + PER_EXTRA_IMAGE_S * max(0, len(items) - 1)
         try:
-            rel_to_abs = {rel: abs_p for rel, abs_p in items}
-            per_image = []
-            for rel, abs_path in items:
-                try:
-                    info = _analyze_one_image(rel, abs_path, deadline)
-                    per_image.append(info)
-                    log.log("analyze", "paddle_layout_done", "success",
-                            {"image": rel, "texts": len(info["texts"]),
-                             "figures": len(info["figures"])})
-                    for f in info["figures"]:
-                        if f.get("crop_rel"):  # 切片与同目录兄弟文件同样受路由校验保护（仅新文件）
-                            rel_to_abs[f["crop_rel"]] = os.path.join(
-                                os.path.dirname(abs_path), os.path.basename(f["crop_rel"]))
-                except Exception as e:  # noqa: BLE001 单图版面失败不拖垮整任务（降级：仅原图发 VL）
-                    log.log("analyze", "paddle_layout_failed", "warn",
-                            {"image": rel, "err": str(e)[:120]})
-                    per_image.append({"image": rel, "error": str(e)[:120]})
-            prompt, images = _build_vl_request(md_text, per_image, rel_to_abs)
-            from llm_provider_factory import call_llm_vision  # 延迟导入避免启动环
-            raw = call_llm_vision(uid, prompt, images, scene="错题智能分析")
-            contract = extract_json(raw)
-            result = assemble_result(contract)
-            result["stem_md"] = _strip_remote_images(_normalize_stem_images(result["stem_md"], per_image))
-            if not result["stem_md"]:
-                raise ValueError("模型返回的题干为空")
+            result = run_pipeline(uid, md_text, items, deadline)
             _registry.finish(task_id, "done", **result)
+            # 沿用抽取前既有事件名，保住日志观测口径（CodeReview Major-4 回归防护）
             log.log("analyze", "error_analyze_done", "success",
-                    {"chars": len(result["stem_md"]), "images": len(images)})
+                    {"chars": len(result["stem_md"]), "images": len(items)})
         except Exception as e:  # noqa: BLE001 兜底：任何异常转 error，前端降级手填
             _registry.finish(task_id, "error", error=str(e)[:200])
             log.log_error("analyze", "error_analyze_failed", e)
