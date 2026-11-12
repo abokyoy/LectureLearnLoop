@@ -117,6 +117,7 @@ def test_01_md_prompt_mermaid_rules():
     assert "图文结合要求" in p
     assert "```mermaid" in p and "graph TD" in p
     assert "写图纪律" in p and "12 个节点" in p          # 与黑板闸门同源的防渲染失败纪律
+    assert 'subgraph sg1["标题"]' in p                    # 裸标题带括号 Lexical error 实弹轮（2026-11-12）追加
     assert "不要写进 mermaid 块" in p                     # 公式与图块互不侵犯
     assert cs.MD_MAX == 12000
 

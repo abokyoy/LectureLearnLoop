@@ -502,6 +502,22 @@
         } catch (e) { }
         cgMmInit = true;
     }
+    // subgraph 裸标题纠偏（追问 mermaid 实弹轮 2026-11-12：LLM 爱写 `subgraph 凸损失面（MSE 就是这种）`，
+    // 裸标题带空格/全角括号 → mermaid Lexical error 整图降级回显源码；本机 vendor 10.6.1 变体实测
+    // 括号式 id["title"] 可正常出图）：对这一类可自动纠的写法做确定性改写，其余源码不动
+    function cgMmSanitize(src) {
+        var n = 0;
+        return src.split("\n").map(function (ln) {
+            var m = ln.match(/^(\s*)subgraph\s+(\S[\s\S]*)$/);
+            if (!m) return ln;
+            var rest = m[2];
+            if (rest.indexOf('[') >= 0) return ln;               // 已是 id[title] 括号式，不动
+            if (/^[A-Za-z0-9_]+$/.test(rest)) return ln;         // 纯标识符，不动
+            n += 1;
+            var safe = rest.replace(/"/g, "'").trim();           // 标题内双引号转单引号（防破坏外层引号）
+            return m[1] + 'subgraph sgU' + n + '["' + safe + '"]';
+        }).join("\n");
+    }
     function cgMermaid(scope) {
         if (!window.mermaid || !scope || !scope.querySelectorAll) return;
         cgMmEnsure();
@@ -515,7 +531,7 @@
                 pre.setAttribute('data-mm-fail', '1');
                 return;
             }
-            jobs.push([pre, src]);
+            jobs.push([pre, cgMmSanitize(src)]);
         });
         // 串行渲染链：mermaid v10 render 改全局解析态，并发双发会互踩出空 svg（CDP 探针实测）
         var chain = Promise.resolve();
@@ -1419,6 +1435,9 @@
     global.renderQuiz = renderQuiz;
     global.openModuleExam = openModuleExam;
     global.cgOpenExt = cgOpenExt;
+    // mermaid 纠偏链暴露（CDP 断言 N14 用：本脚本在 SPA 作域内，裸函数不上 window）
+    global.cgMmSanitize = cgMmSanitize;
+    global.cgMmEnsure = cgMmEnsure;
     global.cgSelectGoal = selectGoal;
     $('cgMapHolder').addEventListener('click', function (ev) {
         // 考试只认「模块考」按钮（旧版点整块模块头即开考，误触代价高，改掉）

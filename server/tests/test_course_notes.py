@@ -368,6 +368,7 @@ class TestFollowupPromptDiscipline:
         scene, prompt = [c for c in FOLLOW["capture"] if c[0] == "课文追问讲解"][-1]
         assert "学习率决定每步步长" in prompt          # 锚点原文交模型
         assert "图文并茂" in prompt and "mermaid" in prompt and "$" in prompt
+        assert 'subgraph sg1["标题"]' in prompt      # 写图纪律与课文同源（裸标题括号实弹轮 2026-11-12）
         assert "为什么？" in prompt
 
     def test_31_parent_ctx_max_3_layers(self, client, au, llm):

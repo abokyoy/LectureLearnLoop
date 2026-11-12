@@ -244,6 +244,21 @@ function chk(name, ok, info) {
     const escClosed2 = await waitFor(`document.getElementById('cgLessonDrawer').classList.contains('hidden')`, 5);
     chk('N13d 弹层关掉后 Esc 恢复退出', escClosed2 === true, { escClosed2 });
 
+    // N14 mermaid sanitizer（本轮实弹：用户真图 subgraph 裸标题带全角括号 → Lexical error 降级回显源码）：
+    // 原始源码应渲染失败；cgMmSanitize 改写后能出图；存量笔记免重生成直接可看
+    const mmFix = await evalJs(`(function(){
+        if (typeof cgMmSanitize !== 'function' || typeof cgMmEnsure !== 'function') return { missing: true };
+        var raw = 'graph LR\\n    subgraph 凸损失面（MSE 就是这种）\\n    B1["只有一个全局碗底"]\\n    end';
+        var s = cgMmSanitize(raw);
+        var changed = s !== raw && s.indexOf('subgraph sgU1["凸损失面（MSE 就是这种）"]') >= 0;
+        cgMmEnsure();
+        return Promise.all([
+            mermaid.render('cdn14bad' + Date.now(), raw).then(function(){ return true; }).catch(function(){ return false; }),
+            mermaid.render('cdn14ok' + Date.now(), s).then(function(o){ return !!(o && o.svg && o.svg.length > 100); }).catch(function(){ return false; })
+        ]).then(function(rs){ return { changed: changed, rawOk: rs[0], sanOk: rs[1] }; });
+    })()`);
+    chk('N14 sanitizer：裸标题括号图纠偏后可出图', mmFix && mmFix.changed === true && mmFix.rawOk === false && mmFix.sanOk === true, mmFix);
+
     ws.close();
 
     execFileSync('python', [path.join(DIR, '_cg_notes_clean.py'), String(S.uid)], { encoding: 'utf8' });

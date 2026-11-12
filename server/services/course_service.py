@@ -315,6 +315,7 @@ def _build_md_prompt(subject, title, description, mode, wrong_points) -> str:
   （```mermaid 开头、``` 结尾），紧跟所配段落之后；纯定义/纯计算段落可不配。
 - 写图纪律（违反会导致前端渲染失败）：围栏首行必须是图型声明（graph TD / graph LR /
   sequenceDiagram 为主）；节点文字用简短中文；块内禁止出现 $、<、>、click、%%{{init%%}}；
+  subgraph 标题带空格或括号时必须用括号式 subgraph sg1["标题"]，禁止裸标题；
   每张图不超过 12 个节点。
 
 数学公式用 $...$ 标注（只用于正文，不要写进 mermaid 块）；只输出 Markdown 正文本身，不要解释、不要在首尾包整篇围栏。"""
@@ -487,6 +488,9 @@ def generate_followup_chat(subject: str, title: str, content_md: str, anchor_tex
 1. 紧扣框选原文与课文内容回答，优先引用课文中的概念与例子；
 2. **尽可能图文并茂**：适合用结构表达的内容用 ```mermaid 围栏画思路图/流程/对照关系，
    多项比较用 Markdown 表格，数学式子用 $...$ 标注；图宁少勿滥，画了就要对应讲清；
+   写图纪律（违反会导致前端渲染失败）：围栏首行必须是图型声明（graph TD / graph LR /
+   sequenceDiagram 为主）；节点文字用简短中文；块内禁止出现 $、<、>、click、%%{{init%%}}；
+   subgraph 标题带空格或括号时必须用括号式 subgraph sg1["标题"]，禁止裸标题；每张图不超过 12 个节点。
 3. 用中文回答，直接输出回答本身（Markdown）。"""
     raw = _llm(prompt, scene="课文追问讲解")
     ans = str(raw or "").strip()
