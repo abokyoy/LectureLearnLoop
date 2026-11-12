@@ -101,7 +101,10 @@
     <div id="cgDrawerPanel" class="absolute inset-y-0 right-0 w-[860px] max-w-[95vw] bg-cl-surface border-l border-cl-border shadow-xl flex flex-col">
         <div class="flex items-center justify-between px-4 py-3 border-b border-cl-border">
             <h3 id="cgDrawerTitle" class="text-[15px] font-semibold text-cl-text truncate"></h3>
-            <button id="cgDrawerClose" class="w-8 h-8 rounded-clbtn text-cl-muted hover:bg-cl-surface-2 text-[16px]" title="关闭">×</button>
+            <div class="flex items-center gap-1 shrink-0">
+                <button id="cgReadExit" class="hidden px-2.5 py-1 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:bg-cl-surface-2" title="退出全屏阅读，返回课程（快捷键 Esc）">← 退出阅读</button>
+                <button id="cgDrawerClose" class="w-8 h-8 rounded-clbtn text-cl-muted hover:bg-cl-surface-2 text-[16px]" title="关闭">×</button>
+            </div>
         </div>
         <div id="cgSteps" class="flex items-center gap-1 px-4 py-2 border-b border-cl-border text-[12px] bg-cl-surface"></div>
         <div id="cgDrawerBody" class="flex-1 overflow-y-auto px-4 py-3"></div>
@@ -772,6 +775,9 @@
     // 阅读步全屏沉浸开关；非阅读步（前测/后练/模块考/完成）复位为 860px 抽屉
     function setReadMode(on) {
         $('cgLessonDrawer').classList.toggle('cg-read-mode', !!on);
+        // 全屏阅读无遮罩可点、右上角只有小×易被忽略（用户反馈「没有退出的地方」），
+        // 阅读步显式给「退出阅读」按钮，Esc 同效（见底部键位接线）
+        var ex = $('cgReadExit'); if (ex) ex.classList.toggle('hidden', !on);
         if (!on) hideSelMenu();
     }
     var _prevSetStep = setStep;
@@ -1430,6 +1436,17 @@
         if (row) global.openLesson(Number(row.getAttribute('data-lid')));
     });
     $('cgDrawerClose').addEventListener('click', closeDrawer);
+    $('cgReadExit').addEventListener('click', closeDrawer);
+    // Esc 退出阅读/抽屉（2026-11-12 用户反馈全屏阅读没有出口）；弹层开着时不抢事件
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Escape') return;
+        var dr = $('cgLessonDrawer');
+        if (!dr || dr.classList.contains('hidden')) return;
+        var blocked = false;
+        document.querySelectorAll('.z-50').forEach(function (m) { if (!m.classList.contains('hidden')) blocked = true; });
+        if (blocked) return;
+        closeDrawer();
+    });
     $('cgDrawerMask').addEventListener('click', closeDrawer);
     // 扩展课程：入口按钮 + 弹窗内 radio 切换 + 提交
     $('cgExtBtn').addEventListener('click', cgOpenExt);

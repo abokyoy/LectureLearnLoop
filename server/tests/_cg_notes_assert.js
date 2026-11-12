@@ -222,6 +222,28 @@ function chk(name, ok, info) {
     const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: 75 });
     fs.writeFileSync('e:/LLM/LectureLearnLoop/design/walkthrough/course_notes_tree.jpg', Buffer.from(shot.data, 'base64'));
     console.log('SHOT: design/walkthrough/course_notes_tree.jpg user=' + U);
+
+    // N13 全屏阅读退出入口（用户反馈「没有退出的地方」轮 2026-11-12）：
+    // 阅读步显式「← 退出阅读」按钮可见；Esc 退出；弹层（z-50）开着时 Esc 不抢抽屉退出
+    const exitVisible = await evalJs(`(function(){ var b = document.getElementById('cgReadExit'), d = document.getElementById('cgLessonDrawer');
+        return !!(b && !b.classList.contains('hidden') && d.classList.contains('cg-read-mode') && b.offsetWidth > 0); })()`);
+    chk('N13a 阅读步退出按钮可见', exitVisible === true, { exitVisible });
+    await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); 'ok'`, false);
+    const escClosed = await waitFor(`document.getElementById('cgLessonDrawer').classList.contains('hidden')`, 5);
+    chk('N13b Esc 退出全屏阅读', escClosed === true, { escClosed });
+    await evalJs(`window.openLesson(${S.lid}); 'ok'`, false);
+    const reOk = await waitFor(`!!document.querySelector('#cgMdBody .cg-anchor')`, 30);
+    await evalJs(`var d = document.createElement('div'); d.id = 'cgEscFakeModal'; d.className = 'fixed inset-0 z-50 flex';
+        document.body.appendChild(d); document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); 'ok'`, false);
+    await sleep(400);
+    const modalBlocks = await evalJs(`(function(){ var dr = document.getElementById('cgLessonDrawer');
+        var kept = !dr.classList.contains('hidden') && dr.classList.contains('cg-read-mode');
+        var fm = document.getElementById('cgEscFakeModal'); if (fm) fm.remove(); return kept; })()`);
+    chk('N13c 弹层开着时 Esc 不退出抽屉（重进后验）', reOk === true && modalBlocks === true, { reOk, modalBlocks });
+    await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true})); 'ok'`, false);
+    const escClosed2 = await waitFor(`document.getElementById('cgLessonDrawer').classList.contains('hidden')`, 5);
+    chk('N13d 弹层关掉后 Esc 恢复退出', escClosed2 === true, { escClosed2 });
+
     ws.close();
 
     execFileSync('python', [path.join(DIR, '_cg_notes_clean.py'), String(S.uid)], { encoding: 'utf8' });
