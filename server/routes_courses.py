@@ -467,13 +467,20 @@ def _lesson_out(ctx):
 
 
 def _gen_guard(fn):
-    """LLM 生成调用统一异常口径：402 积分 / 502 生成失败（与 create_goal 同式）。"""
+    """LLM 生成调用统一异常口径：402 积分 / 502 生成失败（与 create_goal 同式）。
+
+    末路兼作兜底：provider 外呼失败常抛裸 Exception（如 DeepSeek HTTP 530），不在
+    CourseError 继承链上；不兜则 Flask 回 HTML 500 错误页，前端 r.json() 炸
+    「Unexpected token '<'」——任意非受控异常一律 JSON 502 带真实原因。"""
     try:
         return fn(), None
     except cr.InsufficientCreditsError as e:
         return None, (jsonify({"success": False, "error": str(e), "credits_insufficient": True,
                                "credit_balance": e.balance}), 402)
     except cs.CourseError as e:
+        log.log_error("course", "gen_fail", e)
+        return None, _err(f"生成失败: {e}", 502)
+    except Exception as e:  # noqa: BLE001
         log.log_error("course", "gen_fail", e)
         return None, _err(f"生成失败: {e}", 502)
 
