@@ -1,0 +1,1017 @@
+{# learn_goals —— 目标导向学习（2026-11-11 Task 8 骨架）。
+   左：学习目标列表（新建/切换/删除）；右：所选目标工作台（课程地图/大纲/成绩历史 Tab）。
+   后端契约：/api/course/goals 系列（routes_courses.py，响应 {success, data|error}）。
+   样式：Tailwind cl- 设计系统（与"练/记"总览页同基调）；脚本走片段注入执行链 + onPageMounted。 #}
+<!-- 课文 MD 渲染链（与悬浮窗/知识库同一离线管线）：MdRender.extract → marked → DOMPurify → applyMath -->
+<link rel="stylesheet" href="/static/vendor/vditor/dist/js/katex/katex.min.css">
+<script src="/static/vendor/vditor/dist/js/katex/katex.min.js"></script>
+<script src="/static/js/vendor/marked.min.js"></script>
+<script src="/static/js/vendor/purify.min.js"></script>
+<script src="/static/js/md_render.js"></script>
+<!-- 课文图文结合轮（2026-11-12 A 方案）：正文思路图用 vendor mermaid 10.6.1（与黑板同库同纪律） -->
+<script src="/static/js/vendor/mermaid.min.js"></script>
+<div id="cgRoot" class="flex gap-4 h-full min-h-[560px] p-4">
+    <!-- 左：目标列表 240px -->
+    <div class="w-[240px] shrink-0 flex flex-col gap-2">
+        <button id="cgNewGoalBtn"
+                class="flex items-center justify-center gap-1.5 px-3 py-2 rounded-clbtn bg-cl-primary text-white text-[13px] font-medium hover:opacity-90 transition-opacity">
+            <svg class="w-4 h-4" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-plus"/></svg>
+            新建学习目标
+        </button>
+        <div id="cgGoalList" class="flex-1 overflow-y-auto flex flex-col gap-1.5"></div>
+    </div>
+    <!-- 右：工作台 -->
+    <div id="cgWorkbench" class="flex-1 min-w-0 flex flex-col gap-3">
+        <div class="flex items-center gap-1 border-b border-cl-border">
+            <button id="cgTabMap" class="cg-tab px-3 py-2 text-[13px] font-medium text-cl-primary border-b-2 border-cl-primary" data-tab="map">课程地图</button>
+            <button id="cgTabOutline" class="cg-tab px-3 py-2 text-[13px] text-cl-muted hover:text-cl-text" data-tab="outline">大纲</button>
+            <button id="cgTabHistory" class="cg-tab px-3 py-2 text-[13px] text-cl-muted hover:text-cl-text" data-tab="history">成绩历史</button>
+            <button id="cgExtBtn" class="ml-auto mr-1 mb-1 px-2.5 py-1 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary hover:border-cl-primary transition-colors" title="AI 追加模块或课文，不改动已有内容">＋ 扩展课程</button>
+        </div>
+        <div id="cgEmptyState" class="flex-1 flex flex-col items-center justify-center text-cl-muted gap-2">
+            <svg class="w-10 h-10 opacity-40" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-graduation-cap"/></svg>
+            <p class="text-sm">输入学习目标开始，AI 将为你生成体系化课程</p>
+        </div>
+        <div id="cgTreeBox" class="flex-1 overflow-auto hidden relative">
+            <div id="cgMapHolder" class="w-full"></div>
+            <!-- 图例悬浮卡：课文状态色（spec §7，与技能树图例语义对齐） -->
+            <div id="cgLegend" class="absolute right-3 top-3 rounded-cl border border-cl-border bg-cl-surface/95 px-3 py-2 text-[11px] shadow-sm">
+                <div class="cg-leg-item flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-gray-300"></span>未开始</div>
+                <div class="cg-leg-item flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-yellow-400"></span>前测完成待学</div>
+                <div class="cg-leg-item flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-green-500"></span>已学</div>
+                <div class="cg-leg-item flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-blue-400"></span>模块考完成</div>
+            </div>
+        </div>
+        <div id="cgOutlineBox" class="flex-1 overflow-y-auto hidden"></div>
+        <div id="cgHistoryBox" class="flex-1 overflow-y-auto hidden"></div>
+    </div>
+</div>
+
+<!-- 新建目标弹窗：目标描述 + 学科（下拉可新建，复用 /api/subjects） -->
+<div id="cgModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-[420px] rounded-cl border border-cl-border bg-cl-surface p-5 shadow-lg">
+        <h3 class="text-[15px] font-semibold text-cl-text mb-4">新建学习目标</h3>
+        <label class="block text-[13px] text-cl-muted mb-1">学习目标（至少 4 个字）</label>
+        <textarea id="cgGoalText" rows="3" placeholder="例如：系统掌握机器学习的基础理论与常见模型"
+                  class="w-full px-3 py-2 rounded-clbtn border border-cl-border text-[13px] focus:outline-none focus:ring-2 focus:ring-cl-primary/30 mb-3"></textarea>
+        <label class="block text-[13px] text-cl-muted mb-1">归属学科</label>
+        <select id="cgSubjectSel" class="w-full px-3 py-2 rounded-clbtn border border-cl-border text-[13px] mb-2"></select>
+        <div id="cgNewSubjectRow" class="hidden mb-2">
+            <input id="cgNewSubjectInput" placeholder="新学科名称"
+                   class="w-full px-3 py-2 rounded-clbtn border border-cl-border text-[13px]"/>
+        </div>
+        <label class="flex items-center gap-2 text-[13px] text-cl-muted mb-4 cursor-pointer">
+            <input id="cgCreateSubjectChk" type="checkbox"/> 新建学科
+        </label>
+        <p id="cgModalErr" class="text-[12px] text-red-600 mb-2 hidden"></p>
+        <div class="flex justify-end gap-2">
+            <button id="cgModalCancel" class="px-3 py-1.5 rounded-clbtn text-[13px] text-cl-muted hover:bg-cl-surface-2 border border-cl-border">取消</button>
+            <button id="cgModalOk" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">生成课程</button>
+        </div>
+        <p id="cgGenNote" class="text-[11px] text-cl-muted mt-3">课程结构由 AI 生成，将按现有规则消耗积分</p>
+    </div>
+</div>
+
+<!-- 扩展课程弹窗（Task 11）：追加模块 / 追加课文二选一，AI 生成后追加落库 -->
+<div id="cgExtModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40">
+    <div class="w-[400px] rounded-cl border border-cl-border bg-cl-surface p-5 shadow-lg">
+        <h3 class="text-[15px] font-semibold text-cl-text mb-4">扩展课程</h3>
+        <label class="flex items-center gap-2 text-[13px] text-cl-text mb-2 cursor-pointer">
+            <input type="radio" name="cgExtAction" value="add_module" checked/> 新增模块（AI 生成配套课文）</label>
+        <label class="flex items-center gap-2 text-[13px] text-cl-text mb-2 cursor-pointer">
+            <input type="radio" name="cgExtAction" value="add_lesson"/> 向已有模块追加课文</label>
+        <div id="cgExtModRow" class="hidden mb-3">
+            <select id="cgExtModSel" class="w-full px-3 py-2 rounded-clbtn border border-cl-border text-[13px]"></select>
+        </div>
+        <p id="cgExtErr" class="text-[12px] text-red-600 mb-2 hidden"></p>
+        <div class="flex justify-end gap-2">
+            <button id="cgExtCancel" class="px-3 py-1.5 rounded-clbtn text-[13px] text-cl-muted hover:bg-cl-surface-2 border border-cl-border">取消</button>
+            <button id="cgExtOk" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">AI 扩展</button>
+        </div>
+        <p class="text-[11px] text-cl-muted mt-3">扩展内容由 AI 生成并消耗积分；已有课文不受影响、不会重生成</p>
+    </div>
+</div>
+
+<!-- 课文工作台抽屉（页内覆盖层，不跳路由）：步骤条 前测→生成中→阅读→后练→完成 -->
+<div id="cgLessonDrawer" class="fixed inset-0 z-40 hidden">
+    <div id="cgDrawerMask" class="absolute inset-0 bg-black/30"></div>
+    <div class="absolute inset-y-0 right-0 w-[860px] max-w-[95vw] bg-cl-surface border-l border-cl-border shadow-xl flex flex-col">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-cl-border">
+            <h3 id="cgDrawerTitle" class="text-[15px] font-semibold text-cl-text truncate"></h3>
+            <button id="cgDrawerClose" class="w-8 h-8 rounded-clbtn text-cl-muted hover:bg-cl-surface-2 text-[16px]" title="关闭">×</button>
+        </div>
+        <div id="cgSteps" class="flex items-center gap-1 px-4 py-2 border-b border-cl-border text-[12px] bg-cl-surface"></div>
+        <div id="cgDrawerBody" class="flex-1 overflow-y-auto px-4 py-3"></div>
+    </div>
+</div>
+
+<script>
+(function (global) {
+    'use strict';
+    // ---------------- 请求函数（pm_pages.js 同口径双层契约解包） ----------------
+    function cgTk() { return (global.llGetToken ? global.llGetToken() : (localStorage.getItem('ll_token') || sessionStorage.getItem('ll_token') || '')); }
+    function cgEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+    function cgUnwrap(r) {
+        return r.json().then(function (j) {
+            if (!j || !j.success) { var e = new Error((j && j.error) || '请求失败'); e.body = j; e.status = r.status; throw e; }
+            return j.data;
+        });
+    }
+    function _httpGet(url) {
+        return fetch(url, { headers: { 'Authorization': 'Bearer ' + cgTk() } }).then(cgUnwrap);
+    }
+    function _httpPost(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + cgTk(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {})
+        }).then(cgUnwrap);
+    }
+    function _httpDelete(url) {
+        return fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + cgTk() } }).then(cgUnwrap);
+    }
+    // 全页请求单一通道：内部一律走 global.cgGet/cgPost/cgDelete 动态查找（默认真实 fetch，
+    // CDP 断言覆盖同名即可全前端 mock），避免双轨请求漏拦
+    global.cgGet = _httpGet; global.cgPost = _httpPost; global.cgDelete = _httpDelete;
+    function cgGet(url) { return global.cgGet(url); }
+    function cgPost(url, body) { return global.cgPost(url, body); }
+    function cgDelete(url) { return global.cgDelete(url); }
+    global.renderCourseTree = renderCourseTree; global.renderCourseOutline = renderCourseOutline; global.switchCgView = switchCgView;
+
+    var goals = [], curGoal = null;
+
+    function $(id) { return document.getElementById(id); }
+
+    // ---------------- 目标列表 ----------------
+    function renderGoals() {
+        var box = $('cgGoalList');
+        if (!goals.length) {
+            box.innerHTML = '<div class="text-[12px] text-cl-muted px-2 py-4 text-center">暂无学习目标<br>点上方按钮新建</div>';
+            return;
+        }
+        box.innerHTML = goals.map(function (g) {
+            var on = curGoal && curGoal.id === g.id;
+            return '<div class="rounded-cl border px-3 py-2 text-[13px] cursor-pointer group '
+                + (on ? 'border-cl-primary bg-cl-primary-soft' : 'border-cl-border hover:bg-cl-primary-soft/50')
+                + '" data-gid="' + g.id + '">'
+                + '<div class="font-medium text-cl-text truncate">' + cgEsc(g.goal_text) + '</div>'
+                + '<div class="flex items-center justify-between mt-1">'
+                + '<span class="text-[11px] text-cl-muted">' + cgEsc(g.subject_name) + ' · ' + cgEsc(g.status) + '</span>'
+                + '<button class="cg-del hidden text-[11px] text-red-500 group-hover:inline" data-gid="' + g.id + '">删除</button>'
+                + '</div></div>';
+        }).join('');
+    }
+
+    function loadGoals() {
+        cgGet('/api/course/goals').then(function (d) {
+            goals = d.goals || [];
+            if (!curGoal && goals.length) selectGoal(goals[0].id);
+            renderGoals();
+        }).catch(function (e) {
+            $('cgGoalList').innerHTML = '<div class="text-[12px] text-red-500 px-2">加载失败: ' + cgEsc(e.message) + '</div>';
+        });
+    }
+
+    // ---------------- 工作台：课程地图（A-Learn 栏目流）/ 大纲 / 成绩历史 ----------------
+    var curTree = null, curView = 'map';
+    function selectGoal(gid) {
+        cgGet('/api/course/goals/' + gid + '/tree').then(function (d) {
+            curGoal = d.goal; curTree = d;
+            renderGoals();
+            $('cgEmptyState').classList.add('hidden');
+            switchCgView(curView);
+        }).catch(function (e) { alert('课程树加载失败: ' + e.message); });
+    }
+    // 课文状态色（spec §7）：灰=未开始、黄=前测完成待学、绿=已学、蓝=模块考完成
+    function statusDot(st) {
+        return { 'new': 'bg-gray-300', 'pretested': 'bg-yellow-400', 'content_ready': 'bg-yellow-400',
+                 'learned': 'bg-green-500', 'done': 'bg-blue-400' }[st] || 'bg-gray-300';
+    }
+    // 卡片状态文案（与图例同口径，避免直接暴露英文状态码）
+    var CG_STATUS_CN = { 'new': '未开始', 'pretested': '前测完成', 'content_ready': '课文就绪', 'learned': '已学', 'done': '已完成' };
+
+    // ---------------- 新建目标弹窗 ----------------
+    function openModal() {
+        $('cgModal').classList.remove('hidden'); $('cgModal').classList.add('flex');
+        $('cgModalErr').classList.add('hidden');
+        $('cgGoalText').value = '';
+        cgGet('/api/subjects').then(function (list) {
+            var arr = Array.isArray(list) ? list : (list && list.subjects) || [];
+            var sel = $('cgSubjectSel');
+            sel.innerHTML = arr.map(function (s) {
+                var name = typeof s === 'string' ? s : (s.subject_name || s.name || '');
+                return '<option value="' + cgEsc(name) + '">' + cgEsc(name) + '</option>';
+            }).join('') || '<option value="">（暂无学科，请勾选新建）</option>';
+        }).catch(function () { /* 学科拉取失败不挡新建学科路径 */ });
+    }
+    function closeModal() { $('cgModal').classList.add('hidden'); $('cgModal').classList.remove('flex'); }
+
+    function submitGoal() {
+        var chk = $('cgCreateSubjectChk').checked;
+        var subject = chk ? ($('cgNewSubjectInput').value || '').trim() : $('cgSubjectSel').value;
+        var goalText = ($('cgGoalText').value || '').trim();
+        var errBox = $('cgModalErr');
+        errBox.classList.add('hidden');
+        if (goalText.length < 4) { errBox.textContent = '学习目标至少 4 个字'; errBox.classList.remove('hidden'); return; }
+        if (!subject) { errBox.textContent = '请选择或填写归属学科'; errBox.classList.remove('hidden'); return; }
+        var okBtn = $('cgModalOk');
+        okBtn.disabled = true; okBtn.textContent = '生成中…（AI 编排课程结构）';
+        cgPost('/api/course/goals', { subject_name: subject, goal_text: goalText }).then(function (d) {
+            closeModal();
+            goals.unshift(d.goal); curGoal = d.goal;
+            curTree = { goal: d.goal, modules: d.modules, progress: d.progress };
+            renderGoals();
+            $('cgEmptyState').classList.add('hidden');
+            switchCgView('map');
+        }).catch(function (e) {
+            var msg = e.status === 402 ? '积分不足：' + e.message : e.message;
+            errBox.textContent = msg; errBox.classList.remove('hidden');
+        }).finally(function () {
+            okBtn.disabled = false; okBtn.textContent = '生成课程';
+        });
+    }
+
+    // 课程地图：A-Learn 式栏目流——模块从左到右成列，列内课文从上到下堆叠，列自动伸展铺满整页；
+    // 数据契约与大纲视图同一棵树（curTree），仅展示形态不同
+    function renderCourseTree(tree) {
+        var holder = $('cgMapHolder');
+        if (!holder || !tree) return;
+        curTree = tree;
+        var p = tree.progress || { done: 0, total: 0 };
+        var html = ['<div class="px-1 py-1">'];
+        html.push('<div class="flex items-baseline gap-3 mb-3 flex-wrap">'
+            + '<span class="text-[15px] font-semibold text-cl-text">' + cgEsc((tree.goal && tree.goal.goal_text) || '学习目标') + '</span>'
+            + '<span class="text-[12px] text-cl-muted">' + cgEsc((tree.goal && tree.goal.subject_name) || '') + '</span>'
+            + '<span class="text-[12px] text-cl-primary font-medium">进度 ' + p.done + '/' + p.total + '</span></div>');
+        html.push('<div id="cgMapCols" class="flex gap-3 items-start overflow-x-auto pb-2">');
+        (tree.modules || []).forEach(function (m, i) {
+            var ls = m.lessons || [];
+            var dn = ls.filter(function (l) { return l.status === 'done'; }).length;
+            html.push('<div class="cg-map-col flex-1 min-w-[230px] max-w-[380px] flex flex-col gap-2">');
+            // 评审B3：模块头上不挂 data-mid——考试只认「模块考」按钮，避免遗留锚点误导
+            html.push('<div class="cg-module rounded-cl border border-cl-border bg-cl-primary-soft px-3 py-2.5">'
+                + '<div class="flex items-center gap-2">'
+                + '<span class="shrink-0 w-5 h-5 rounded-full bg-cl-primary text-white text-[11px] flex items-center justify-center">' + (i + 1) + '</span>'
+                + '<span class="text-[13px] font-semibold text-cl-text truncate">' + cgEsc(m.title) + '</span></div>'
+                + (m.description ? '<div class="text-[11px] text-cl-muted mt-1 truncate">' + cgEsc(m.description) + '</div>' : '')
+                + '<div class="flex items-center justify-between mt-1.5">'
+                + '<span class="text-[11px] text-cl-muted">' + dn + '/' + ls.length + ' 已完成</span>'
+                + '<button class="cg-map-exam px-2 py-0.5 rounded-clbtn text-[11px] border border-cl-border bg-cl-surface text-cl-muted hover:text-cl-primary hover:border-cl-primary" data-mid="' + m.id + '">模块考</button>'
+                + '</div></div>');
+            ls.forEach(function (l) {
+                html.push('<div class="cg-lesson w-full rounded-cl border border-cl-border bg-cl-surface px-3 py-2 hover:border-cl-primary cursor-pointer" data-lid="' + l.id + '" data-status="' + cgEsc(l.status) + '">'
+                    + '<div class="flex items-start gap-2">'
+                    + '<span class="w-2 h-2 rounded-full shrink-0 mt-1.5 ' + statusDot(l.status) + '"></span>'
+                    + '<div class="min-w-0 flex-1">'
+                    + '<div class="text-[13px] text-cl-text leading-snug">' + cgEsc(l.title) + '</div>'
+                    + '<div class="flex items-center justify-between mt-1">'
+                    + '<span class="text-[11px] text-cl-muted">' + cgEsc(CG_STATUS_CN[l.status] || l.status) + '</span>'
+                    + '<span class="text-[11px] text-cl-muted shrink-0">' + (Number(l.est_minutes) || 30) + ' 分钟</span>'
+                    + '</div></div></div></div>');
+            });
+            html.push('</div>');
+        });
+        // 评审B2：空模块兜底，与大纲视图「暂无课程」行为对齐
+        if (!(tree.modules && tree.modules.length)) {
+            html.push('<div class="text-[12px] text-cl-muted px-4 py-8">课程尚未生成，请先完成目标训练或点「扩展课程」</div>');
+        }
+        html.push('</div></div>');
+        holder.innerHTML = html.join('');
+    }
+    // 大纲视图：A-Learn 式折叠列表（模块头「完成数/总数」+ 课文行状态点）
+    function renderCourseOutline(tree) {
+        var box = $('cgOutlineBox');
+        if (!box || !tree) return;
+        var html = '';
+        (tree.modules || []).forEach(function (m, i) {
+            var ls = m.lessons || [];
+            var dn = ls.filter(function (l) { return l.status === 'done'; }).length;
+            html += '<div class="cg-ol-mod flex items-center justify-between px-3 py-2 rounded-clbtn hover:bg-cl-primary-soft/50 cursor-pointer text-[13px] font-medium text-cl-text" data-mid="' + m.id + '">'
+                + '<span>模块' + (i + 1) + ' · ' + cgEsc(m.title) + '</span>'
+                + '<span class="flex items-center gap-2">'
+                + '<button class="cg-exam-btn px-2 py-0.5 rounded-clbtn text-[11px] border border-cl-border text-cl-muted hover:text-cl-primary" data-mid="' + m.id + '">模块考</button>'
+                + '<span class="text-[11px] text-cl-muted">' + dn + '/' + ls.length + ' ▾</span></span></div>'
+                + '<div class="cg-ol-body ml-2 mb-1">' + ls.map(function (l) {
+                    return '<div class="cg-ol-lesson flex items-center gap-2 px-3 py-1.5 rounded-clbtn hover:bg-cl-primary-soft/60 cursor-pointer text-[13px]" data-lid="' + l.id + '">'
+                        + '<span class="w-2 h-2 rounded-full shrink-0 ' + statusDot(l.status) + '"></span>'
+                        + '<span class="flex-1 truncate">' + cgEsc(l.title) + '</span>'
+                        + '<span class="text-[11px] text-cl-muted">' + cgEsc(l.status) + '</span></div>';
+                }).join('') + '</div>';
+        });
+        box.innerHTML = html || '<div class="text-[12px] text-cl-muted p-4 text-center">暂无课程</div>';
+    }
+    // 视图切换统一入口：Tab 高亮 + 三内容区显隐复位（两视图同数据 curTree）
+    function applyTabUi(tab) {
+        document.querySelectorAll('.cg-tab').forEach(function (b) {
+            var on = b.getAttribute('data-tab') === tab;
+            b.classList.toggle('text-cl-primary', on); b.classList.toggle('border-b-2', on);
+            b.classList.toggle('border-cl-primary', on); b.classList.toggle('font-medium', on);
+            b.classList.toggle('text-cl-muted', !on);
+        });
+    }
+    function switchCgView(mode) {
+        curView = mode; applyTabUi(mode);
+        $('cgTreeBox').classList.toggle('hidden', mode !== 'map');
+        $('cgOutlineBox').classList.toggle('hidden', mode !== 'outline');
+        $('cgHistoryBox').classList.toggle('hidden', mode !== 'history');
+        if (mode === 'map' && curTree) renderCourseTree(curTree);
+        if (mode === 'outline' && curTree) renderCourseOutline(curTree);
+        if (mode === 'history') loadHistory();
+    }
+    var histRows = [];
+    var CG_KIND = { pretest: '前测', postquiz: '后练', moduleexam: '模块考' };
+    function loadHistory() {
+        if (!curGoal) { $('cgHistoryBox').innerHTML = '<div class="text-[12px] text-cl-muted p-4 text-center">请先选择学习目标</div>'; return; }
+        cgGet('/api/course/goals/' + curGoal.id + '/attempts').then(function (d) {
+            histRows = (d && d.attempts) || [];
+            $('cgHistoryBox').innerHTML = histRows.length
+                ? histRows.map(function (a, i) {
+                    return '<div class="cg-hist-row flex items-center gap-3 px-3 py-2 border-b border-cl-border text-[13px] cursor-pointer hover:bg-cl-primary-soft/40" data-hidx="' + i + '">'
+                        + '<span class="text-cl-muted text-[11px] w-16">' + cgEsc(CG_KIND[a.kind] || a.kind) + '</span>'
+                        + '<span class="flex-1 truncate">' + cgEsc(a.lesson_title) + '</span>'
+                        + '<span class="font-medium">' + Math.round((a.score || 0) * 100) + '%</span>'
+                        + '<span class="text-[11px] text-cl-muted">' + cgEsc(a.created_time) + '</span>'
+                        + '<span class="text-[10px] text-cl-muted">▾</span></div>'
+                        + '<div class="cg-hist-slot" data-slot="' + i + '"></div>';
+                }).join('')
+                : '<div class="text-[12px] text-cl-muted p-4 text-center">暂无成绩记录</div>';
+        }).catch(function (e) { $('cgHistoryBox').innerHTML = '<div class="p-3 text-red-500 text-[12px]">' + cgEsc(e.message) + '</div>'; });
+    }
+    // 行展开/收起成绩明细（detail.per_question 错题清单；无明细降级提示）
+    $('cgHistoryBox').addEventListener('click', function (ev) {
+        var row = ev.target.closest('.cg-hist-row');
+        if (!row) return;
+        var slot = this.querySelector('.cg-hist-slot[data-slot="' + row.getAttribute('data-hidx') + '"]');
+        if (!slot) return;
+        if (slot.firstChild) { slot.innerHTML = ''; return; }
+        var a = histRows[Number(row.getAttribute('data-hidx'))] || {};
+        var wrong = ((a.detail && a.detail.per_question) || []).filter(function (q) { return q.is_correct === false; });
+        var html;
+        if (!a.detail) html = '<div class="text-[11px] text-cl-muted px-3 py-1.5">无明细</div>';
+        else if (!wrong.length) html = '<div class="text-[11px] text-green-600 px-3 py-1.5">全部答对</div>';
+        else html = wrong.map(function (q) {
+            return '<div class="text-[12px] text-cl-text px-3 py-1 border-b border-cl-border">✗ ' + cgMdSpan(q.stem) + '</div>';
+        }).join('');
+        slot.innerHTML = '<div class="cg-hist-detail bg-cl-surface-2/60">' + html + '</div>';
+        cgHydrateMath(slot);
+    });
+
+    // ---------------- 课文工作台（五步流程：前测→生成中→阅读→后练→完成） ----------------
+    // 流程内请求一律走 global.cgGet/cgPost（动态查找，CDP 断言可 mock 后端）
+    var CG_STEPS = [['pretest', '前测'], ['generating', '生成中'], ['read', '阅读'], ['postquiz', '后练'], ['done', '完成']];
+    var flow = null;
+    function apiGet(u) { return global.cgGet(u); }
+    function apiPost(u, b) { return global.cgPost(u, b); }
+    function showErr(e) {
+        var msg = e && e.status === 402 ? '积分不足：' + e.message : ((e && e.message) || '请求失败');
+        $('cgDrawerBody').innerHTML = '<div class="p-4 text-[13px] text-red-600">' + cgEsc(msg) + '</div>';
+    }
+    function renderSteps() {
+        var names = CG_STEPS.map(function (s) { return s[0]; });
+        var ai = names.indexOf(flow.step);
+        $('cgSteps').innerHTML = CG_STEPS.map(function (s, i) {
+            var cls = i < ai ? 'text-green-600' : (i === ai ? 'active text-cl-primary font-semibold' : 'text-cl-muted');
+            return '<span class="cg-step px-2 py-1 ' + cls + '" data-step="' + s[0] + '">' + (i < ai ? '✓ ' : '') + (i + 1) + ' ' + s[1] + '</span>'
+                + (i < CG_STEPS.length - 1 ? '<span class="text-cl-muted">›</span>' : '');
+        }).join('');
+    }
+    function setStep(name) { flow.step = name; renderSteps(); }
+    // 公式渲染件：与练链 mdqHtml/hydrateMdSlots（pm_pages.js）同契约——
+    // 先落占位 span（data-src），挂载后再 extract→marked→sanitize→KaTeX 回填；
+    // KaTeX 必须在已入文档的节点上渲染（md_render.js 守卫会跳过分离碎片）
+    function cgMdSpan(text) {
+        return '<span data-cgmd="1" data-src="' + cgEsc(text == null ? '' : String(text)) + '"></span>';
+    }
+    function cgHydrateMath(scope) {
+        if (!scope || !scope.querySelectorAll) return;
+        scope.querySelectorAll('[data-cgmd]').forEach(function (el) {
+            if (el.getAttribute('data-done')) return;
+            el.setAttribute('data-done', '1');
+            var src = el.getAttribute('data-src') || '';
+            if (window.MdRender && window.MdRender.extract) {
+                var ex = window.MdRender.extract(src);
+                if (window.marked && window.DOMPurify) {
+                    try {
+                        var safe = String(window.DOMPurify.sanitize(window.marked.parse(ex.text))).trim();
+                        var mp = /^<p>([\s\S]+)<\/p>$/.exec(safe); // 行内展示位剥外层 <p> 壳
+                        if (mp && mp[1].indexOf('</p>') < 0) safe = mp[1];
+                        el.innerHTML = safe;
+                    } catch (e) { el.textContent = ex.text; }
+                    try { window.MdRender.applyMath(el, ex.slots); } catch (e) {}
+                    return;
+                }
+                el.textContent = ex.text; // marked 缺失：正文诚实展示，公式仍走占位保护+KaTeX 回填（练链 Critical-1 口径）
+                el.classList.add('whitespace-pre-wrap');
+                try { window.MdRender.applyMath(el, ex.slots); } catch (e) {}
+                return;
+            }
+            el.textContent = src; // 公式件也缺失：原文兑底（vendor 本地加载，正常不发生）
+        });
+    }
+    // 通用单选题渲染组件（前测/后练/模块考共用，DRY；pack={questions:[{stem,options[4]}]}）
+    function renderQuiz(host, pack, onSubmit) {
+        var qs = (pack && pack.questions) || [];
+        host.innerHTML = '<div class="flex flex-col gap-3">' + qs.map(function (q, qi) {
+            return '<div class="cg-quiz-q rounded-cl border border-cl-border bg-cl-surface p-3">'
+                + '<div class="text-[13px] font-medium text-cl-text mb-2">' + (qi + 1) + '. ' + cgMdSpan(q.stem) + '</div>'
+                + (q.options || []).map(function (o, oi) {
+                    return '<label class="flex items-center gap-2 px-1.5 py-1 text-[13px] cursor-pointer hover:bg-cl-primary-soft/50 rounded-clbtn">'
+                        + '<input type="radio" name="cgq' + qi + '" value="' + oi + '"/>'
+                        + '<span class="font-medium text-cl-muted">' + 'ABCD'.charAt(oi) + ')</span><span class="text-cl-text">' + cgMdSpan(o) + '</span></label>';
+                }).join('') + '</div>';
+        }).join('') + '</div>'
+        + '<div class="flex items-center gap-3 mt-3">'
+        + '<button id="cgQuizSubmitBtn" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">交卷判分</button>'
+        + '<span class="cg-quiz-hint text-[12px] text-cl-muted">共 ' + qs.length + ' 题，需全部作答</span></div>';
+        cgHydrateMath(host); // 挂载后回填题干/选项公式（与课文同一管线）
+        var btn = host.querySelector('#cgQuizSubmitBtn');
+        btn.addEventListener('click', function () {
+            var answers = [];
+            for (var i = 0; i < qs.length; i++) {
+                var sel = host.querySelector('input[name=cgq' + i + ']:checked');
+                if (!sel) { host.querySelector('.cg-quiz-hint').textContent = '第 ' + (i + 1) + ' 题还未作答'; return; }
+                answers.push(Number(sel.value));
+            }
+            btn.disabled = true; btn.textContent = '判分中…';
+            onSubmit(answers);
+        });
+    }
+    // MD 渲染：离线管线（extract→marked→DOMPurify→applyMath）+ 基础样式后处理（preflight 剥标题样式）
+    function styleMd(el) {
+        el.querySelectorAll('h1, h2, h3').forEach(function (h) { h.className = 'text-[15px] font-semibold text-cl-text mt-4 mb-2'; });
+        el.querySelectorAll('p').forEach(function (p) { p.className = 'my-2'; });
+        el.querySelectorAll('pre').forEach(function (p) { p.className = 'bg-cl-surface-2 rounded-cl p-3 overflow-x-auto my-2 text-[12px]'; });
+        el.querySelectorAll('ul, ol').forEach(function (p) { p.className = 'list-disc pl-6 my-2'; });
+        el.querySelectorAll('table').forEach(function (p) { p.className = 'w-full border border-cl-border my-2 text-[13px]'; });
+        // mermaid 围栏交给 cgMermaid 出图，hljs 跳过（防高亮改坏块内文本，图文结合轮）
+        if (typeof hljs !== 'undefined') el.querySelectorAll('pre code').forEach(function (b) { if ((b.className || '').indexOf('language-mermaid') >= 0) return; try { hljs.highlightElement(b); } catch (e) {} });
+    }
+    function renderLessonMd(el, md) {
+        var src = String(md || '');
+        if (window.marked && window.DOMPurify) {
+            try {
+                var ex = window.MdRender ? window.MdRender.extract(src) : { text: src, slots: [] };
+                el.innerHTML = window.DOMPurify.sanitize(window.marked.parse(ex.text));
+                if (window.MdRender) window.MdRender.applyMath(el, ex.slots);
+            } catch (e) { el.textContent = src; }
+        } else { el.textContent = src; }
+        styleMd(el);
+    }
+    // ---------------- 图文结合（2026-11-12 A 方案）：正文思路图 mermaid 渲染 ----------------
+    // 与黑板页同方法论：vendor 10.6.1 UMD，strict + htmlLabels:false → 纯 SVG 无脚本；
+    // 单图失败降级保留原代码块（与公式渲染防破坏同纪律：坏图不炸整篇课文）。
+    var cgMmInit = false, cgMmSeq = 0;
+    function cgMmEnsure() {
+        if (cgMmInit || !window.mermaid) return;
+        try {
+            mermaid.initialize({
+                startOnLoad: false, securityLevel: 'strict', theme: 'neutral',
+                flowchart: { htmlLabels: false }
+            });
+        } catch (e) { }
+        cgMmInit = true;
+    }
+    function cgMermaid(scope) {
+        if (!window.mermaid || !scope || !scope.querySelectorAll) return;
+        cgMmEnsure();
+        var jobs = [];
+        scope.querySelectorAll('pre > code.language-mermaid').forEach(function (code) {
+            var pre = code.parentNode;
+            if (!pre || !pre.matches || !pre.matches('pre') || pre.getAttribute('data-mm-fail')) return;
+            var src = String(code.textContent || '').trim();
+            // 首行图型声明预检（生成提示词写图纪律第一条）：不合规则直接降级，不让引擎猜图型
+            if (!/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|journey|gantt|erDiagram|pie)\b/.test(src)) {
+                pre.setAttribute('data-mm-fail', '1');
+                return;
+            }
+            jobs.push([pre, src]);
+        });
+        // 串行渲染链：mermaid v10 render 改全局解析态，并发双发会互踩出空 svg（CDP 探针实测）
+        var chain = Promise.resolve();
+        jobs.forEach(function (jb) {
+            chain = chain.then(function () {
+                var pre = jb[0];
+                if (!pre.isConnected || !pre.parentNode) return;
+                cgMmSeq += 1;
+                var id = 'cgmm' + Date.now() + '_' + cgMmSeq;
+                var r = null;
+                try { r = mermaid.render(id, jb[1]); } catch (e) { r = null; }
+                // v10 返回 Promise<{svg}>；旧构建同步返回 {svg}（黑板 mmRender 双兼容口径）
+                var p = r && typeof r.then === 'function' ? r
+                    : (r && r.svg ? Promise.resolve(r) : Promise.reject(new Error('mm-api')));
+                return p.then(function (o) {
+                    var svg = String((o && o.svg) || '');
+                    if (!svg.trim() || !pre.isConnected || !pre.parentNode) throw new Error('mm-empty');
+                    var box = document.createElement('div');
+                    box.className = 'cg-mm my-3 p-2 rounded-cl bg-cl-surface-2 overflow-x-auto text-center';
+                    box.innerHTML = svg; // 本地引擎产出的 SVG 直挂不进 sanitize 面（黑板同口径）
+                    pre.parentNode.replaceChild(box, pre);
+                }).catch(function () {
+                    if (pre.isConnected) pre.setAttribute('data-mm-fail', '1'); // 降级：原代码块文本保留
+                }).then(function () {
+                    // v10 渲染残留容器清掉：只删 body 直属的 temp div（id 带 d 前缀）；
+                    // 绝不删 getElementById(id)——那正是插入后 box 里的 svg 根节点，删了图就空（CDP 实捕）
+                    var ghost = document.getElementById('d' + id);
+                    if (ghost && ghost.parentElement === document.body) { try { ghost.remove(); } catch (e) { } }
+                });
+            });
+        });
+    }
+    // ---------------- 图文结合：课级两展示位（原理图/交互实验，routes_courses /visual 链） ----------------
+    // 同课文已有产物直接内嵌直显（零成本）；没有才点击现生成（一次 LLM，之后永久复用）；
+    // 作业表与黑板同张，轮询复用 GET /api/board/explain/<job_id>；iframe 沙箱口径同黑板原理图弹窗。
+    var VIS_KINDS = ['principle', 'lab'];
+    var VIS_META = {
+        principle: { label: '原理图', btn: '生成原理图' },
+        lab: { label: '交互实验', btn: '生成实验' }
+    };
+    var visState = {}, visHasContent = true, visTimer = null;
+    function visReset() {
+        visState = {}; visHasContent = true;
+        VIS_KINDS.forEach(function (k) { visState[k] = { state: 'none', opened: false, jobId: null, view: null, error: '', startedAt: 0 }; });
+        if (visTimer) { clearTimeout(visTimer); visTimer = null; }
+    }
+    function loadVisuals() {
+        var bar = $('cgVisualBar');
+        if (!bar || !flow) return;
+        visReset(); paintVis(); // 先画收起占位，查库回来后刷新（查库失败不拖课文）
+        apiGet('/api/course/lessons/' + flow.lid + '/visual').then(function (d) {
+            if (!flow || !document.getElementById('cgVisualBar')) return;
+            visHasContent = d.has_content !== false;
+            VIS_KINDS.forEach(function (k) {
+                var v = (d.visual || {})[k];
+                if (v && v.state === 'done') { visState[k].state = 'done'; visState[k].view = v; visState[k].opened = true; }
+            });
+            paintVis();
+        }).catch(function () { /* 状态查询失败：保持可点生成，静默降级 */ });
+    }
+    function visIframe(kind) {
+        var f = document.createElement('iframe');
+        f.setAttribute('sandbox', 'allow-scripts');
+        f.setAttribute('referrerpolicy', 'no-referrer');
+        f.title = VIS_META[kind].label;
+        f.className = 'w-full border border-cl-border rounded-cl bg-white';
+        f.style.height = '520px'; // 展示位内嵌高度固定约一屏内（计划裁定：全屏大看图暂不做）
+        f.srcdoc = String((visState[kind].view || {}).html || '');
+        return f;
+    }
+    function paintVis() {
+        var bar = $('cgVisualBar');
+        if (!bar) return;
+        var pendHtml = '<span class="text-[11px] text-cl-muted animate-pulse">生成中…（通常 1~3 分钟，可先继续读课文）</span>';
+        bar.innerHTML = VIS_KINDS.map(function (k) {
+            var s = visState[k], m = VIS_META[k];
+            var badge = s.state === 'done' ? '<span class="text-[11px] font-normal text-green-600">✓ 已生成' + ((s.view && s.view.seq) ? ' · v' + s.view.seq : '') + '</span>'
+                : s.state === 'generating' ? pendHtml
+                : s.state === 'failed' ? '<span class="text-[11px] font-normal text-red-500">' + cgEsc(s.error || '生成失败') + '</span>'
+                : '<span class="text-[11px] font-normal text-cl-muted">尚未生成</span>';
+            var acts = '';
+            if (s.state === 'none' || s.state === 'failed') {
+                acts = visHasContent
+                    ? '<button class="cg-vis-go px-2.5 py-1 rounded-clbtn text-[12px] bg-cl-primary text-white hover:opacity-90" data-kind="' + k + '">' + m.btn + '（生成一次按量计费，之后永久复用）</button>'
+                    : '<span class="text-[11px] text-cl-muted">课文正文生成后即可配图</span>';
+            } else if (s.state === 'done') {
+                acts = '<button class="cg-vis-toggle px-2 py-1 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary" data-kind="' + k + '">' + (s.opened ? '收起' : '展开') + '</button>'
+                    + '<button class="cg-vis-refresh px-2 py-1 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary" data-kind="' + k + '" title="开深度思考重画一版（再消耗一次生成，新版本替换当前）">深度重画</button>';
+            }
+            var warn = (s.state === 'done' && s.view && s.view.warning) ? '<div class="mx-3 mb-1 text-[11px] text-amber-600">⚠ ' + cgEsc(s.view.warning) + '</div>' : '';
+            return '<div class="cg-vis-card rounded-cl border border-cl-border bg-cl-surface">'
+                + '<div class="flex items-center gap-2 px-3 py-2 text-[13px] font-medium text-cl-text">'
+                + '<svg class="w-4 h-4 opacity-60" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-' + (k === 'lab' ? 'flask-conical' : 'lightbulb') + '"/></svg>'
+                + m.label + badge + '<span class="ml-auto flex gap-1.5">' + acts + '</span></div>' + warn
+                + '<div class="cg-vis-slot' + (s.opened ? '' : ' hidden') + ' px-3 pb-3"></div></div>';
+        }).join('');
+        VIS_KINDS.forEach(function (k, i) {
+            var s = visState[k];
+            if (s.state !== 'done' || !s.opened) return;
+            var slot = bar.querySelectorAll('.cg-vis-slot')[i];
+            if (slot) slot.appendChild(visIframe(k));
+        });
+        bar.querySelectorAll('.cg-vis-go').forEach(function (b) { b.addEventListener('click', function () { visStart(this.getAttribute('data-kind'), false); }); });
+        bar.querySelectorAll('.cg-vis-refresh').forEach(function (b) { b.addEventListener('click', function () { visStart(this.getAttribute('data-kind'), true); }); });
+        bar.querySelectorAll('.cg-vis-toggle').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var k = this.getAttribute('data-kind');
+                visState[k].opened = !visState[k].opened; paintVis();
+            });
+        });
+    }
+    function visStart(kind, refresh) {
+        if (!flow) return;
+        var lid = flow.lid;
+        apiPost('/api/course/lessons/' + lid + '/visual/' + kind, { refresh: !!refresh }).then(function (d) {
+            if (!flow || flow.lid !== lid) return;
+            var j = (d && d.job) || {}, s = visState[kind];
+            if (j.state === 'done') { s.state = 'done'; s.view = j; s.opened = true; s.jobId = null; s.error = ''; } // 库命中秒回（reused="cache"）
+            else if (j.state === 'failed') { s.state = 'failed'; s.error = j.error || '暂时开不了工'; s.jobId = null; }
+            else { s.state = 'generating'; s.jobId = j.job_id; s.startedAt = Date.now(); s.error = ''; }
+            paintVis();
+            if (s.state === 'generating' && !visTimer) visTimer = setTimeout(visTick, 4000);
+        }).catch(function (e) {
+            var s = visState[kind];
+            s.error = (e && e.message) || '暂时开不了工，稍后再试';
+            if (s.state !== 'done') s.state = 'failed'; // 拒收/扣分失败：已完成的旧图不受影响
+            paintVis();
+        });
+    }
+    function visTick() {
+        visTimer = null;
+        if (!flow || !document.getElementById('cgVisualBar')) return;
+        var pend = VIS_KINDS.filter(function (k) { return visState[k].state === 'generating' && visState[k].jobId; });
+        if (!pend.length) return;
+        var lid = flow.lid;
+        Promise.all(pend.map(function (k) {
+            return apiGet('/api/board/explain/' + visState[k].jobId)
+                .then(function (d) { return [k, (d && d.job) || {}]; })
+                .catch(function () { return [k, {}]; }); // 作业过期/网络抖动：本轮跳过，下轮再查或到点超时
+        })).then(function (pairs) {
+            if (!flow || flow.lid !== lid) return;
+            pairs.forEach(function (pr) {
+                var s = visState[pr[0]], j = pr[1];
+                if (s.state !== 'generating') return;
+                if (j.state === 'done') { s.state = 'done'; s.view = j; s.opened = true; s.jobId = null; }
+                else if (j.state === 'failed') { s.state = 'failed'; s.error = j.error || '生成失败，请重试'; s.jobId = null; }
+                else if (Date.now() - s.startedAt > 300000) { s.state = 'failed'; s.error = '生成超时，请重试'; s.jobId = null; } // 后端 LLM 超时 240s，留余量
+            });
+            paintVis();
+            if (VIS_KINDS.some(function (k) { return visState[k].state === 'generating'; })) visTimer = setTimeout(visTick, 4000);
+        });
+    }
+    function buildToc(mdEl) {
+        var heads = mdEl.querySelectorAll('h1, h2, h3');
+        var html = '';
+        heads.forEach(function (h, i) {
+            h.id = 'cgH' + i;
+            html += '<a class="block px-1 py-0.5 text-[12px] text-cl-muted hover:text-cl-primary truncate' + (h.tagName === 'H3' ? ' pl-3' : '') + '" data-target="cgH' + i + '">' + cgEsc(h.textContent) + '</a>';
+        });
+        $('cgToc').innerHTML = html || '<span class="text-[12px] text-cl-muted">无目录</span>';
+    }
+    function openLesson(lid) {
+        apiGet('/api/course/lessons/' + lid).then(function (d) {
+            var L = d.lesson;
+            flow = { lid: L.id, lesson: L, step: null, chatHist: [] };
+            $('cgDrawerTitle').textContent = L.title + ' · ' + L.subject_name;
+            $('cgLessonDrawer').classList.remove('hidden');
+            if (L.status === 'new') enterPretest();
+            else if (L.status === 'pretested' && !L.content_md) enterGenerate(); // 判分后生成失败：补生成不重判（Major-1）
+            else enterRead(); // content_ready/learned/done：课文在库，直接阅读，不重复测/生成
+        }).catch(function (e) { alert('课文加载失败: ' + e.message); });
+    }
+    function enterPretest() {
+        setStep('pretest');
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center text-cl-muted">前测题加载中…（首次会消耗出题积分）</div>';
+        apiGet('/api/course/lessons/' + flow.lid + '/pretest').then(function (d) {
+            flow.pretestId = d.test_id;
+            renderQuiz($('cgDrawerBody'), d, submitPretest);
+        }).catch(showErr);
+    }
+    function submitPretest(answers) {
+        setStep('generating');
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center text-cl-muted">判分与详略判定中，正在生成针对性课文…</div>';
+        apiPost('/api/course/lessons/' + flow.lid + '/pretest', { answers: answers }).then(function (d) {
+            if (d.lesson) flow.lesson = d.lesson;
+            renderLessonView(d);
+        }).catch(showErr);
+    }
+    function enterRead() { renderLessonView(null); }
+    // 前测已判分但课文未生成（上次生成失败）：展示现状 + 补生成按钮，走 POST /generate
+    function enterGenerate() {
+        setStep('generating');
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center">'
+            + '<div class="text-[13px] text-cl-text mb-1">前测已完成（得分 '
+            + Math.round((flow.lesson.pretest_score || 0) * 100) + '%），但课文上次生成失败。</div>'
+            + '<div class="text-[12px] text-cl-muted mb-4">重试将基于已判定的详略模式生成课文，不会重复判分。</div>'
+            + '<button id="cgGenRetryBtn" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">重试生成课文</button></div>';
+        $('cgGenRetryBtn').addEventListener('click', function () {
+            var b = this;
+            b.disabled = true; b.textContent = '生成中…（消耗课文生成积分）';
+            cgPost('/api/course/lessons/' + flow.lid + '/generate', {}).then(function (d) {
+                if (d.lesson) flow.lesson = d.lesson;
+                renderLessonView({ score: flow.lesson.pretest_score, mode: flow.lesson.content_mode });
+            }).catch(function (e) {
+                showErr(e);
+            });
+        });
+    }
+    function renderLessonView(pre) {
+        setStep('read');
+        var L = flow.lesson;
+        var learned = L.status === 'learned' || L.status === 'done';
+        var banner = pre
+            ? '<div class="mb-3 px-3 py-2 rounded-clbtn bg-cl-primary-soft text-[13px]">前测得分 ' + Math.round((pre.score || 0) * 100) + '% · '
+              + (pre.mode === 'concise' ? '基础不错，已生成精简版' : '已针对薄弱点生成详解版') + '</div>'
+            : (L.pretest_score != null
+                ? '<div class="mb-3 px-3 py-2 rounded-clbtn bg-cl-primary-soft text-[13px]">前测得分 ' + Math.round(L.pretest_score * 100) + '% · '
+                  + (L.content_mode === 'concise' ? '精简版' : '详解版') + (L.regen_count ? ' · 已重生成 ' + L.regen_count + '/3' : '') + '</div>' : '');
+        $('cgDrawerBody').innerHTML = '<div class="flex gap-4 items-start">'
+            + '<div class="flex-1 min-w-0">' + banner
+            + '<div id="cgVisualBar" class="mb-3 flex flex-col gap-2"></div>'
+            + '<div id="cgMdBody" class="text-[14px] leading-7 text-cl-text"></div>'
+            + '<div class="flex items-center gap-3 mt-5 pb-4">'
+            + '<button id="cgPostquizBtn" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">'
+            + (learned ? '再做课后小练习（题目复用不再出题）' : '开始课后小练习（4 题）') + '</button>'
+            + (L.status === 'done' ? '<span class="text-[12px] text-green-600">✓ 本课已完成</span>' : '')
+            + '<button id="cgRegenBtn" class="px-3 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary disabled:opacity-50 disabled:cursor-not-allowed">'
+            + ((L.regen_count || 0) >= 3 ? '重生成已达上限' : '重生成课文（' + (L.regen_count || 0) + '/3）') + '</button>'
+            + '</div></div>'
+            + '<div class="w-44 shrink-0 max-h-[70vh] overflow-y-auto border-l border-cl-border pl-3">'
+            + '<p class="text-[11px] text-cl-muted mb-1">目录</p><div id="cgToc"></div>'
+            + '<div id="cgChatPanel" class="mt-3 border-t border-cl-border pt-2">'
+            + '<p class="text-[11px] text-cl-muted mb-1">AI 问答</p><div id="cgChatList" class="mb-1.5"></div>'
+            + '<div class="flex gap-1"><input id="cgChatInput" placeholder="对课文提问…" class="flex-1 min-w-0 px-2 py-1 rounded-clbtn border border-cl-border text-[11px] focus:outline-none focus:ring-1 focus:ring-cl-primary/40"/>'
+            + '<button id="cgChatSend" class="px-2 py-1 rounded-clbtn text-[11px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">发送</button></div></div>'
+            + '</div>'
+            + '</div>';
+        renderLessonMd($('cgMdBody'), L.content_md);
+        cgMermaid($('cgMdBody')); // 正文思路图：围栏块 → SVG（失败单图降级，不炸整篇）
+        buildToc($('cgMdBody'));
+        loadVisuals(); // 两展示位：有产物直显，没有展示生成按钮
+        renderChat();
+        $('cgPostquizBtn').addEventListener('click', enterPostquiz);
+        $('cgChatSend').addEventListener('click', sendChat);
+        $('cgChatInput').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') sendChat(); });
+        var regenBtn = $('cgRegenBtn');
+        if ((flow.lesson.regen_count || 0) >= 3) { regenBtn.disabled = true; }
+        regenBtn.addEventListener('click', function () {
+            regenBtn.disabled = true; regenBtn.textContent = '重生成中…';
+            apiPost('/api/course/lessons/' + flow.lid + '/regenerate', {}).then(function (d) {
+                if (d.lesson) flow.lesson = d.lesson;
+                enterRead(); // 重渲阅读步（新正文+计数+问答历史保留在 flow）
+            }).catch(showErr);
+        });
+    }
+    // 课内 AI 问答：历史前端持有整包回传（最近 10 轮，spec §6）
+    function renderChat() {
+        var host = $('cgChatList');
+        if (!host || !flow) return;
+        host.innerHTML = (flow.chatHist || []).map(function (m) {
+            return '<div class="cg-chat-msg cg-chat-q text-[11px] text-cl-primary text-right my-1">' + cgEsc(m.q) + '</div>'
+                + '<div class="cg-chat-msg cg-chat-a text-[11px] bg-cl-surface-2 rounded-cl px-2 py-1 mb-1.5">' + cgMdSpan(m.a) + '</div>';
+        }).join('');
+        cgHydrateMath(host); // AI 回答含公式时走同一 KaTeX 管线（题干/解析同口径）
+        host.scrollTop = host.scrollHeight;
+    }
+    function sendChat() {
+        if (!flow) return;
+        var inp = $('cgChatInput'), btn = $('cgChatSend');
+        var q = (inp.value || '').trim();
+        if (!q) return;
+        btn.disabled = true; btn.textContent = '思考中…';
+        apiPost('/api/course/lessons/' + flow.lid + '/chat', { question: q, history: (flow.chatHist || []).slice(-10) })
+            .then(function (d) {
+                flow.chatHist = (flow.chatHist || []).concat([{ q: q, a: String(d.answer || '') }]);
+                renderChat();
+                var ni = $('cgChatInput'); if (ni) ni.value = '';
+            })
+            .catch(function (e) {
+                var box = $('cgChatList');
+                if (box) box.insertAdjacentHTML('beforeend', '<div class="cg-chat-msg cg-chat-err text-[11px] text-red-500 my-1">' + cgEsc(e.message) + '</div>');
+            })
+            .finally(function () {
+                var nb = $('cgChatSend');
+                if (nb) { nb.disabled = false; nb.textContent = '发送'; }
+            });
+    }
+    // ---------------- 模块考（Task 11）：复用抽屉 + renderQuiz，不走五步状态机 ----------------
+    function openModuleExam(mid) {
+        flow = null; // 模块考独立于课文流程
+        $('cgLessonDrawer').classList.remove('hidden');
+        $('cgDrawerTitle').textContent = '模块考试';
+        $('cgSteps').innerHTML = '<span class="cg-step px-2 py-1 text-cl-primary font-semibold">模块考（综合出题）</span>';
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center text-cl-muted">模块考题加载中…（首次会消耗出题积分）</div>';
+        apiGet('/api/course/modules/' + mid + '/exam').then(function (pack) {
+            renderQuiz($('cgDrawerBody'), pack, function (answers) {
+                apiPost('/api/course/modules/' + mid + '/exam', { answers: answers }).then(renderModuleExamResult).catch(showErr);
+            });
+        }).catch(showErr);
+    }
+    function renderModuleExamResult(res) {
+        var rows = (res.per_question || []).map(function (q) {
+            return '<div class="flex items-start gap-2 py-1.5 border-b border-cl-border text-[12px]">'
+                + '<span class="' + (q.is_correct ? 'text-green-600' : 'text-red-500') + ' font-medium">' + (q.is_correct ? '✓' : '✗') + '</span>'
+                + '<span class="flex-1">' + cgMdSpan(q.stem) + '</span></div>';
+        }).join('');
+        $('cgDrawerBody').innerHTML = '<div class="max-w-[560px] mx-auto py-4">'
+            + '<div class="text-center mb-4"><div class="text-[28px] font-semibold text-cl-primary">' + Math.round((res.score || 0) * 100) + '%</div>'
+            + '<div class="text-[12px] text-cl-muted">模块考得分（错题已入练习记录与错题本）</div></div>' + rows
+            + '<div class="flex justify-center mt-5"><button id="cgExamCloseBtn" class="px-4 py-1.5 rounded-clbtn text-[13px] border border-cl-border text-cl-muted hover:bg-cl-surface-2">关闭</button></div></div>';
+        cgHydrateMath($('cgDrawerBody'));
+        $('cgExamCloseBtn').addEventListener('click', closeDrawer);
+    }
+    // ---------------- 扩展课程（Task 11）：追加不覆盖，成功后刷新当前视图 ----------------
+    function closeExt() { var m = $('cgExtModal'); m.classList.add('hidden'); m.classList.remove('flex'); }
+    function cgOpenExt() {
+        if (!curGoal) { alert('请先选择学习目标'); return; }
+        var m = $('cgExtModal'); m.classList.remove('hidden'); m.classList.add('flex');
+        $('cgExtErr').classList.add('hidden');
+        document.querySelector('input[name=cgExtAction][value=add_module]').checked = true;
+        $('cgExtModRow').classList.add('hidden');
+        $('cgExtModSel').innerHTML = ((curTree && curTree.modules) || []).map(function (x) {
+            return '<option value="' + x.id + '">' + cgEsc(x.title) + '</option>';
+        }).join('');
+    }
+    function showExtErr(msg) { var e = $('cgExtErr'); e.textContent = msg; e.classList.remove('hidden'); }
+    function enterPostquiz() {
+        setStep('postquiz');
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center text-cl-muted">后练题加载中…</div>';
+        apiGet('/api/course/lessons/' + flow.lid + '/postquiz').then(function (d) {
+            renderQuiz($('cgDrawerBody'), d, submitPostquiz);
+        }).catch(showErr);
+    }
+    function submitPostquiz(answers) {
+        apiPost('/api/course/lessons/' + flow.lid + '/postquiz', { answers: answers }).then(function (d) {
+            if (d.lesson_status) flow.lesson.status = d.lesson_status;
+            renderPostquizResult(d);
+        }).catch(showErr);
+    }
+    function renderPostquizResult(d) {
+        setStep('done');
+        var rows = (d.per_question || []).map(function (q) {
+            return '<div class="flex items-start gap-2 py-1.5 border-b border-cl-border text-[12px]">'
+                + '<span class="' + (q.is_correct ? 'text-green-600' : 'text-red-500') + ' font-medium">' + (q.is_correct ? '✓' : '✗') + '</span>'
+                + '<span class="flex-1">' + cgMdSpan(q.stem) + '</span></div>';
+        }).join('');
+        $('cgDrawerBody').innerHTML = '<div class="max-w-[560px] mx-auto py-4">'
+            + '<div class="text-center mb-4"><div class="text-[28px] font-semibold text-cl-primary">' + Math.round((d.score || 0) * 100) + '%</div>'
+            + '<div class="text-[12px] text-cl-muted">课后小练习得分</div></div>' + rows
+            + '<div class="flex justify-center gap-3 mt-5">'
+            + '<button id="cgDoneBtn" class="px-4 py-2 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">标记完成并提取知识点</button>'
+            + '<button id="cgBackReadBtn" class="px-4 py-2 rounded-clbtn text-[13px] border border-cl-border text-cl-muted">返回课文</button></div></div>';
+        cgHydrateMath($('cgDrawerBody'));
+        $('cgDoneBtn').addEventListener('click', function () {
+            // 标记完成 → 提取知识点确认流（Task 12）；占位标记供断言监听
+            global.__cgDone = true;
+            var btn = this;
+            btn.disabled = true; btn.textContent = '提取中…';
+            cgExtractConfirm(flow.lid);
+        });
+        $('cgBackReadBtn').addEventListener('click', function () { enterRead(); });
+    }
+    function closeDrawer() { $('cgLessonDrawer').classList.add('hidden'); flow = null; }
+
+    // ---------------- 提取确认 + 完成（Task 12）：extract → 勾选入库 confirm → complete ----------------
+    function cgExtractConfirm(lid) {
+        $('cgLessonDrawer').classList.remove('hidden');
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center text-cl-muted">正在从课文提取知识点…（消耗提取积分）</div>';
+        cgPost('/api/course/lessons/' + lid + '/extract', {}).then(function (d) {
+            renderKpConfirm(lid, (d && d.points) || []);
+        }).catch(function (e) {
+            var msg = e && e.status === 402 ? '积分不足：' + e.message : ((e && e.message) || '提取失败');
+            $('cgDrawerBody').innerHTML = '<div class="p-4">'
+                + '<div class="text-[13px] text-amber-600 mb-1">未能从课文提取到有效知识点：' + cgEsc(msg) + '</div>'
+                + '<div class="text-[12px] text-cl-muted mb-4">可跳过知识点入库，仅将本课标记为已完成。</div>'
+                + '<div class="flex gap-3"><button id="cgSkipKpBtn" class="px-4 py-2 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">仅标记完成</button>'
+                + '<button id="cgKpBackBtn" class="px-4 py-2 rounded-clbtn text-[13px] border border-cl-border text-cl-muted">返回课文</button></div></div>';
+            $('cgSkipKpBtn').addEventListener('click', function () { finishComplete(lid); });
+            $('cgKpBackBtn').addEventListener('click', function () { if (flow) enterRead(); else closeDrawer(); });
+        });
+    }
+    function renderKpConfirm(lid, points) {
+        // 默认全勾选入；取消勾 = skip 该点（extract 不返回相似点 id，暂不提供 merge，已知限制）
+        var subject = (curGoal && curGoal.subject_name) || (flow && flow.lesson && flow.lesson.subject_name) || '';
+        $('cgDrawerBody').innerHTML = '<div class="p-4">'
+            + '<div class="text-[13px] font-semibold text-cl-text mb-1">确认要存入知识点库的条目</div>'
+            + '<div class="text-[12px] text-cl-muted mb-3">勾选的知识点将以「新知识点」入库；取消勾选即跳过。</div>'
+            + '<div class="flex flex-col gap-2">' + points.map(function (p, i) {
+                var sim = (p.match_status && /已存在相似/.test(p.match_status)) || p.similar_count > 0;
+                return '<label class="cg-kp-item flex items-start gap-2 rounded-cl border border-cl-border bg-cl-surface p-2.5 cursor-pointer hover:bg-cl-primary-soft/50">'
+                    + '<input type="checkbox" class="cg-kp-chk mt-0.5" data-kidx="' + i + '" checked/>'
+                    + '<span class="min-w-0"><span class="text-[13px] font-medium text-cl-text">' + cgEsc(p.name) + '</span>'
+                    + (p.category ? ' <span class="text-[11px] px-1.5 py-0.5 rounded-clbtn bg-cl-surface-2 text-cl-muted">' + cgEsc(p.category) + '</span>' : '')
+                    + (sim ? ' <span class="text-[11px] text-amber-600">已存在相似知识点' + (p.similar_count ? ' · ' + p.similar_count + ' 个相似</span>' : '</span>')
+                           : ' <span class="text-[11px] text-green-600">新知识点</span>')
+                    + '<span class="block text-[12px] text-cl-muted mt-0.5">' + cgEsc(p.description || '') + '</span></span></label>';
+            }).join('') + '</div>'
+            + '<div class="flex gap-3 mt-4"><button id="cgKpOkBtn" class="px-4 py-2 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">确认入库并标记完成</button>'
+            + '<button id="cgKpCancelBtn" class="px-4 py-2 rounded-clbtn text-[13px] border border-cl-border text-cl-muted">返回课文</button></div></div>';
+        $('cgKpOkBtn').addEventListener('click', function () {
+            var conf = [];
+            document.querySelectorAll('.cg-kp-item input.cg-kp-chk').forEach(function (cb) {
+                if (!cb.checked) return;
+                var p = points[Number(cb.getAttribute('data-kidx'))];
+                conf.push({ action: 'new', subject_name: subject,
+                    point_data: { point_name: p.name, core_description: p.description || '', category: p.category || '', importance: p.importance || '' } });
+            });
+            var btn = this;
+            btn.disabled = true; btn.textContent = '处理中…';
+            if (!conf.length) { finishComplete(lid); return; }
+            cgPost('/api/knowledge/confirm', { confirmations: conf }).then(function () {
+                finishComplete(lid);
+            }).catch(function (e) { showErr(e); });
+        });
+        $('cgKpCancelBtn').addEventListener('click', function () { if (flow) enterRead(); else closeDrawer(); });
+    }
+    function finishComplete(lid) {
+        $('cgDrawerBody').innerHTML = '<div class="p-8 text-center text-cl-muted">标记完成中…</div>';
+        cgPost('/api/course/lessons/' + lid + '/complete', {}).then(function (d) {
+            $('cgDrawerBody').innerHTML = '<div class="p-8 text-center">'
+                + '<div class="text-[28px] mb-2">🎉</div>'
+                + '<div class="text-[15px] font-semibold text-cl-text mb-1">✓ 本课已完成</div>'
+                + '<div class="text-[12px] text-cl-muted mb-5">完成时间 ' + cgEsc((d && d.done_time) || '') + '</div>'
+                + '<button id="cgCloseAfterDone" class="px-4 py-2 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">返回课程地图</button></div>';
+            $('cgCloseAfterDone').addEventListener('click', function () {
+                var gid = (curGoal && curGoal.id) || (flow && flow.lesson && flow.lesson.goal_id);
+                closeDrawer();
+                if (gid) selectGoal(gid); else loadGoals();
+            });
+        }).catch(showErr);
+    }
+    global.cgExtractConfirm = cgExtractConfirm;
+
+    // ---------------- 事件绑定 ----------------
+    $('cgNewGoalBtn').addEventListener('click', openModal);
+    $('cgModalCancel').addEventListener('click', closeModal);
+    $('cgModalOk').addEventListener('click', submitGoal);
+    $('cgCreateSubjectChk').addEventListener('change', function () {
+        $('cgNewSubjectRow').classList.toggle('hidden', !this.checked);
+        $('cgSubjectSel').classList.toggle('hidden', this.checked);
+    });
+    $('cgGoalList').addEventListener('click', function (ev) {
+        var del = ev.target.closest('.cg-del');
+        if (del) {
+            ev.stopPropagation();
+            var gid = Number(del.getAttribute('data-gid'));
+            if (!confirm('删除该目标将同时删除其课程/题包/成绩历史（练习与错题记录保留）。确认删除？')) return;
+            cgDelete('/api/course/goals/' + gid).then(function () {
+                goals = goals.filter(function (g) { return g.id !== gid; });
+                if (curGoal && curGoal.id === gid) {
+                    curGoal = null; curTree = null;
+                    $('cgTreeBox').classList.add('hidden');
+                    $('cgMapHolder').innerHTML = '';
+                    $('cgOutlineBox').innerHTML = '';
+                    $('cgEmptyState').classList.remove('hidden');
+                }
+                renderGoals();
+            }).catch(function (e) { alert('删除失败: ' + e.message); });
+            return;
+        }
+        var card = ev.target.closest('[data-gid]');
+        if (card) selectGoal(Number(card.getAttribute('data-gid')));
+    });
+    // Tab 切换统一走 switchCgView（地图/大纲/历史三视图复位）
+    document.querySelectorAll('.cg-tab').forEach(function (btn) {
+        btn.addEventListener('click', function () { switchCgView(btn.getAttribute('data-tab')); });
+    });
+    // 课文点击 → 课文工作台抽屉；模块点击 → 模块考；renderQuiz 供各考复用
+    global.openLesson = openLesson;
+    global.renderQuiz = renderQuiz;
+    global.openModuleExam = openModuleExam;
+    global.cgOpenExt = cgOpenExt;
+    global.cgSelectGoal = selectGoal;
+    $('cgMapHolder').addEventListener('click', function (ev) {
+        // 考试只认「模块考」按钮（旧版点整块模块头即开考，误触代价高，改掉）
+        var eb = ev.target.closest && ev.target.closest('.cg-map-exam');
+        if (eb) { global.openModuleExam(Number(eb.getAttribute('data-mid'))); return; }
+        var n = ev.target.closest && ev.target.closest('.cg-lesson');
+        if (n) { global.openLesson(Number(n.getAttribute('data-lid'))); return; }
+    });
+    $('cgOutlineBox').addEventListener('click', function (ev) {
+        var eb = ev.target.closest('.cg-exam-btn');
+        if (eb) { ev.stopPropagation(); openModuleExam(Number(eb.getAttribute('data-mid'))); return; }
+        var head = ev.target.closest('.cg-ol-mod');
+        if (head) { var body = head.nextElementSibling; if (body) body.classList.toggle('hidden'); return; }
+        var row = ev.target.closest('.cg-ol-lesson');
+        if (row) global.openLesson(Number(row.getAttribute('data-lid')));
+    });
+    $('cgDrawerClose').addEventListener('click', closeDrawer);
+    $('cgDrawerMask').addEventListener('click', closeDrawer);
+    // 扩展课程：入口按钮 + 弹窗内 radio 切换 + 提交
+    $('cgExtBtn').addEventListener('click', cgOpenExt);
+    document.querySelectorAll('input[name=cgExtAction]').forEach(function (r) {
+        r.addEventListener('change', function () {
+            var show = document.querySelector('input[name=cgExtAction]:checked').value === 'add_lesson';
+            $('cgExtModRow').classList.toggle('hidden', !show);
+        });
+    });
+    $('cgExtCancel').addEventListener('click', closeExt);
+    $('cgExtOk').addEventListener('click', function () {
+        if (!curGoal) { closeExt(); return; }
+        var action = document.querySelector('input[name=cgExtAction]:checked').value;
+        var body = { action: action };
+        if (action === 'add_lesson') {
+            if (!$('cgExtModSel').value) { showExtErr('请选择要追加课文的模块'); return; }
+            body.module_id = Number($('cgExtModSel').value);
+        }
+        var okBtn = $('cgExtOk');
+        okBtn.disabled = true; okBtn.textContent = 'AI 扩展中…';
+        cgPost('/api/course/goals/' + curGoal.id + '/extend', body).then(function (d) {
+            closeExt();
+            curTree = { goal: d.goal, modules: d.modules, progress: d.progress };
+            if (curView === 'history') switchCgView('map'); else switchCgView(curView);
+            renderGoals();
+        }).catch(function (e) {
+            showExtErr(e.status === 402 ? '积分不足：' + e.message : e.message);
+        }).finally(function () {
+            okBtn.disabled = false; okBtn.textContent = 'AI 扩展';
+        });
+    });
+    // 课文目录锚点：点条目滚动到对应标题
+    $('cgDrawerBody').addEventListener('click', function (ev) {
+        var a = ev.target.closest('a[data-target]');
+        if (a) { var t = document.getElementById(a.getAttribute('data-target')); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+
+    global.onPageMounted = function () { loadGoals(); };
+    if (document.getElementById('cgRoot')) { try { loadGoals(); } catch (e) { /* 首屏由服务端渲染已挂载 */ } }
+})(window);
+</script>

@@ -22,6 +22,7 @@ import credits_service as cr
 from logger_module import debug_logger as log
 from routes_knowledge import get_kms, _ok, _err
 from services import course_service as cs
+from services import board_explainer as BE
 from services import fsrs_service as F
 
 courses_bp = Blueprint("courses", __name__)
@@ -657,6 +658,48 @@ def lesson_generate_retry(lid):
         conn.close()
     log.log_success("course", "lesson_generate_retry", {"lid": lid, "mode": mode})
     return _ok({"lesson": out, **cr.billing_for_response()})
+
+
+# ---------------------------------------------------------------- 课文图文结合（2026-11-12 用户裁定 A 方案）
+# 两个常驻展示位（原理图/交互实验）：进页查产物直显（纯读库零扣分），
+# 没有才点击开工（一次 LLM，之后同课文永久复用）。作业轮询复用黑板链
+# GET /api/board/explain/<job_id>（同一张作业表，不复制路由）。
+
+@courses_bp.route("/api/course/lessons/<int:lid>/visual", methods=["GET"])
+@require_auth
+def lesson_visual(lid):
+    """两类课级产物当前状态：{principle: done视图|null, lab: 同}；无权限 404。"""
+    conn = _conn()
+    try:
+        ctx = _lesson_ctx(conn, lid, g.user_id)
+    finally:
+        conn.close()
+    if not ctx:
+        return _err("课文不存在", 404)
+    out = {k: BE.lesson_latest(g.user_id, lid, k) for k in BE.LESSON_VIS_KINDS}
+    return _ok({"visual": out, "has_content": bool((ctx["content_md"] or "").strip())})
+
+
+@courses_bp.route("/api/course/lessons/<int:lid>/visual/<kind>", methods=["POST"])
+@require_auth
+def lesson_visual_gen(lid, kind):
+    """开一单课文级原理图/实验（body 可选 {refresh:true} 深度重画）。
+
+    复用口径同黑板：库命中→reused="cache" 秒回零扣分；同槽位在飞→reused=true；
+    正文未生成/kind 非法→拒收（不开工不扣分，200 带 success=false，黑板同纪律）。"""
+    body = request.get_json(silent=True) or {}
+    refresh = bool(body.get("refresh"))
+    conn = _conn()
+    try:
+        ctx = _lesson_ctx(conn, lid, g.user_id)
+    finally:
+        conn.close()
+    if not ctx:
+        return _err("课文不存在", 404)
+    r = BE.start_for_lesson(g.user_id, ctx, kind, refresh=refresh)
+    if not r.get("success"):
+        return jsonify({"success": False, "error": r.get("error") or "暂时开不了工，稍后再试"})
+    return _ok({"job": r["job"], "reused": r.get("reused") or False})
 
 
 @courses_bp.route("/api/course/lessons/<int:lid>/postquiz", methods=["GET"])

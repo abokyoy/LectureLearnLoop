@@ -257,7 +257,7 @@ def generate_test_pack(kind: str, source_text: str, n: int, title: str = "", sub
 
 # ---------------------------------------------------------------- 课文生成 + 状态机（spec §6/§5）
 
-MD_MIN, MD_MAX = 200, 8000
+MD_MIN, MD_MAX = 200, 12000  # 12000：课文图文结合轮（2026-11-12 用户裁定 A 方案）给内嵌 mermaid 图留出字数空间
 
 # 课文状态机（spec §4 course_lessons.status）：只允许按链前进一步或原地幂等
 LESSON_FLOW = {"new": "pretested", "pretested": "content_ready",
@@ -265,7 +265,9 @@ LESSON_FLOW = {"new": "pretested", "pretested": "content_ready",
 
 
 def validate_lesson_md(text) -> str:
-    """课文正文校验：剥 ```markdown 围栏，去首尾空白，长度 200~8000；违规抛 CourseError。"""
+    """课文正文校验：剥 ```markdown 围栏，去首尾空白，长度 200~12000；违规抛 CourseError。
+
+    只剥最外层整篇围栏；正文内部的 ```mermaid 围栏块不受影响（图文结合轮）。"""
     t = str(text or "").strip()
     if t.startswith("```"):
         nl = t.find("\n")
@@ -301,7 +303,14 @@ def _build_md_prompt(subject, title, description, mode, wrong_points) -> str:
 3. 范例：至少一个带步骤的典型例题；
 4. 重点摘要：3~5 条要点回顾。
 
-数学公式用 $...$ 标注；只输出 Markdown 正文本身，不要解释、不要围栏。"""
+**图文结合要求（必须执行）：**
+- 凡有流程、结构、因果、对比、时间线或知识层次的内容，必须配 1~3 个 mermaid 围栏块
+  （```mermaid 开头、``` 结尾），紧跟所配段落之后；纯定义/纯计算段落可不配。
+- 写图纪律（违反会导致前端渲染失败）：围栏首行必须是图型声明（graph TD / graph LR /
+  sequenceDiagram 为主）；节点文字用简短中文；块内禁止出现 $、<、>、click、%%{{init%%}}；
+  每张图不超过 12 个节点。
+
+数学公式用 $...$ 标注（只用于正文，不要写进 mermaid 块）；只输出 Markdown 正文本身，不要解释、不要在首尾包整篇围栏。"""
 
 
 def generate_lesson_md(subject: str, title: str, description: str, mode: str, wrong_points) -> str:
