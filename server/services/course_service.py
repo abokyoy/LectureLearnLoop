@@ -145,14 +145,17 @@ def generate_course_structure(goal_text: str, subject_name: str, kp_overview) ->
 _Q_STEM_MAX = 600
 _Q_OPT_MAX = 200
 _Q_KP_MAX = 60
+_Q_HINT_MAX = 300
 
 
 def validate_questions(data, n_min: int = 4, n_max: int = 10) -> list:
-    """LLM 题包返回 → 规整 [{stem, options[4], answer_index, kp_name, explanation}]。
+    """LLM 题包返回 → 规整 [{stem, options[4], answer_index, kp_name, explanation, hint}]。
 
     接受裸 list 或 {"questions": [...]}；违规一律抛 CourseError（不落脏题包）：
     题数 [n_min, n_max]；stem/kp_name 非空；options 恰 4 个且非空；
-    answer_index 为 0~3 的 int（bool 拒）；explanation 缺省补 ""。"""
+    answer_index 为 0~3 的 int（bool 拒）；explanation 缺省补 ""。
+    hint（查看提示，题包提示轮 2026-11-12）为软字段：缺失/非法一律降为空串不拒收
+    ——模型漏写不该报废整包已合法的重试成本，前端空 hint 静默不渲染提示按钮。"""
     if isinstance(data, dict):
         data = data.get("questions")
     if not isinstance(data, list):
@@ -179,7 +182,8 @@ def validate_questions(data, n_min: int = 4, n_max: int = 10) -> list:
         if not kp or len(kp) > _Q_KP_MAX:
             raise CourseError(f"第{i}题 kp_name 非法（空或超{_Q_KP_MAX}字）")
         out.append({"stem": stem, "options": opts, "answer_index": ai, "kp_name": kp,
-                    "explanation": str(q.get("explanation") or "").strip()})
+                    "explanation": str(q.get("explanation") or "").strip(),
+                    "hint": str(q.get("hint") or "").strip()[:_Q_HINT_MAX]})
     return out
 
 
@@ -199,10 +203,11 @@ _TEST_PROMPTS = {
 **出题要求：**
 1. 考核心概念理解，不考记忆性细节；每题四个选项，只有一个正确答案；
 2. 每题标注 kp_name：该题考察的知识点名（用课文主题内的概念术语，不超过 30 字）；
-3. 每题给 explanation 解析（讲解为什么对、错项错在哪）；数学公式用 $...$ 标注。
+3. 每题给 explanation 解析（讲解为什么对、错项错在哪）；数学公式用 $...$ 标注；
+4. 每题给 hint 提示：解释题干里的关键术语（各一句人话），再提示该从哪个知识点方向思考；**严禁指出或暗示哪个选项正确，严禁写入能推出答案的结论**（提示只帮读懂题目，不替答题）。
 
 只返回一个 JSON 对象，不要任何其他文字：
-{{"questions": [{{"stem": "题干", "options": ["选项A", "选项B", "选项C", "选项D"], "answer_index": 0, "kp_name": "知识点名", "explanation": "解析"}}]}}""",
+{{"questions": [{{"stem": "题干", "options": ["选项A", "选项B", "选项C", "选项D"], "answer_index": 0, "kp_name": "知识点名", "explanation": "解析", "hint": "术语解释与思考提示"}}]}}""",
     "postquiz": """你是命题专家。请基于以下课文全文出 {n} 道课后练习题，检验学习者对课文内容的掌握。
 
 课文全文：
@@ -211,10 +216,11 @@ _TEST_PROMPTS = {
 **出题要求：**
 1. 覆盖课文各核心小节，难度与课文一致；每题四个选项，只有一个正确答案；
 2. 每题标注 kp_name：该题考察的知识点名（优先用课文中出现的小标题/概念术语，不超过 30 字）；
-3. 每题给 explanation 解析（引用课文关键结论帮助巩固）；数学公式用 $...$ 标注。
+3. 每题给 explanation 解析（引用课文关键结论帮助巩固）；数学公式用 $...$ 标注；
+4. 每题给 hint 提示：解释题干里的关键术语（各一句人话），再提示该从课文哪个小节/概念方向思考；**严禁指出或暗示哪个选项正确，严禁写入能推出答案的结论**。
 
 只返回一个 JSON 对象，不要任何其他文字：
-{{"questions": [{{"stem": "题干", "options": ["选项A", "选项B", "选项C", "选项D"], "answer_index": 0, "kp_name": "知识点名", "explanation": "解析"}}]}}""",
+{{"questions": [{{"stem": "题干", "options": ["选项A", "选项B", "选项C", "选项D"], "answer_index": 0, "kp_name": "知识点名", "explanation": "解析", "hint": "术语解释与思考提示"}}]}}""",
     "moduleexam": """你是命题专家。请对以下模块的全部课文出 {n} 道综合考试题，覆盖模块内每篇课文的核心内容。
 
 模块课文清单与概要：
@@ -223,10 +229,11 @@ _TEST_PROMPTS = {
 **出题要求：**
 1. 每篇课文至少 1 题，鼓励跨课文综合题；每题四个选项，只有一个正确答案；
 2. 每题标注 kp_name：该题考察的知识点名（不超过 30 字）；
-3. 每题给 explanation 解析；数学公式用 $...$ 标注。
+3. 每题给 explanation 解析；数学公式用 $...$ 标注；
+4. 每题给 hint 提示：解释题干里的关键术语（各一句人话），再提示该从哪篇课文/哪个概念方向思考；**严禁指出或暗示哪个选项正确，严禁写入能推出答案的结论**。
 
 只返回一个 JSON 对象，不要任何其他文字：
-{{"questions": [{{"stem": "题干", "options": ["选项A", "选项B", "选项C", "选项D"], "answer_index": 0, "kp_name": "知识点名", "explanation": "解析"}}]}}""",
+{{"questions": [{{"stem": "题干", "options": ["选项A", "选项B", "选项C", "选项D"], "answer_index": 0, "kp_name": "知识点名", "explanation": "解析", "hint": "术语解释与思考提示"}}]}}""",
 }
 
 

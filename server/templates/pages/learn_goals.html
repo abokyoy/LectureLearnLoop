@@ -408,7 +408,9 @@
             el.textContent = src; // 公式件也缺失：原文兑底（vendor 本地加载，正常不发生）
         });
     }
-    // 通用单选题渲染组件（前测/后练/模块考共用，DRY；pack={questions:[{stem,options[4]}]}）
+    // 通用单选题渲染组件（前测/后练/模块考共用，DRY；pack={questions:[{stem,options[4],hint?}]}）
+    // 题包提示与我不会轮 2026-11-12：每题末尾加 value=-1「我不会」（选它=放弃作答，后端按错题判）；
+    // q.hint 非空时渲染「查看提示」展开/收起隐藏区（只帮读懂题目不给答案）；旧题包无 hint 静默不渲染按钮。
     function renderQuiz(host, pack, onSubmit) {
         var qs = (pack && pack.questions) || [];
         host.innerHTML = '<div class="flex flex-col gap-3">' + qs.map(function (q, qi) {
@@ -418,19 +420,34 @@
                     return '<label class="flex items-center gap-2 px-1.5 py-1 text-[13px] cursor-pointer hover:bg-cl-primary-soft/50 rounded-clbtn">'
                         + '<input type="radio" name="cgq' + qi + '" value="' + oi + '"/>'
                         + '<span class="font-medium text-cl-muted">' + 'ABCD'.charAt(oi) + ')</span><span class="text-cl-text">' + cgMdSpan(o) + '</span></label>';
-                }).join('') + '</div>';
+                }).join('')
+                + '<label class="cg-dontknow flex items-center gap-2 px-1.5 py-1 mt-1 text-[13px] cursor-pointer hover:bg-cl-primary-soft/50 rounded-clbtn border-t border-dashed border-cl-border">'
+                + '<input type="radio" name="cgq' + qi + '" value="-1"/>'
+                + '<span class="text-cl-muted">我不会（不猜，直接记下）</span></label>'
+                + (q.hint ? '<div class="mt-1.5">'
+                    + '<button type="button" class="cg-hint-toggle inline-flex items-center gap-1 text-[12px] text-cl-primary hover:opacity-80">'
+                    + '<svg class="w-3.5 h-3.5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-eye"/></svg><span>查看提示</span></button>'
+                    + '<div class="cg-hint-body hidden mt-1.5 rounded-clbtn bg-cl-surface-2/70 border border-cl-border px-2.5 py-2 text-[12px] text-cl-muted">' + cgMdSpan(q.hint) + '</div></div>' : '')
+                + '</div>';
         }).join('') + '</div>'
         + '<div class="flex items-center gap-3 mt-3">'
         + '<button id="cgQuizSubmitBtn" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">交卷判分</button>'
         + '<span class="cg-quiz-hint text-[12px] text-cl-muted">共 ' + qs.length + ' 题，需全部作答</span></div>';
-        cgHydrateMath(host); // 挂载后回填题干/选项公式（与课文同一管线）
+        cgHydrateMath(host); // 挂载后回填题干/选项/提示公式（与课文同一管线；隐藏节点仍在文档内可渲染）
+        host.querySelectorAll('.cg-hint-toggle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var body = btn.parentNode.querySelector('.cg-hint-body');
+                var shown = !body.classList.toggle('hidden');
+                btn.querySelector('span').textContent = shown ? '收起提示' : '查看提示';
+            });
+        });
         var btn = host.querySelector('#cgQuizSubmitBtn');
         btn.addEventListener('click', function () {
             var answers = [];
             for (var i = 0; i < qs.length; i++) {
                 var sel = host.querySelector('input[name=cgq' + i + ']:checked');
                 if (!sel) { host.querySelector('.cg-quiz-hint').textContent = '第 ' + (i + 1) + ' 题还未作答'; return; }
-                answers.push(Number(sel.value));
+                answers.push(Number(sel.value)); // -1（我不会）自然计入已答，透传后端判错
             }
             btn.disabled = true; btn.textContent = '判分中…';
             onSubmit(answers);

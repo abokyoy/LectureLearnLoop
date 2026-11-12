@@ -278,11 +278,16 @@ def grade_pack(user_id, subject, pack, answers, kind=None, goal_id=None, test_id
     传 goal_id/test_id/kind 时追加 course_attempts 一行；判分后失效脑图/学习路径缓存。
 
     返回 {score, per_question:[{stem, options, user_answer, correct_answer_index,
-    is_correct, kp_name, explanation}], mode}。answers 非法抛 ValueError（路由层 400）。"""
+    is_correct, kp_name, explanation}], mode}。answers 非法抛 ValueError（路由层 400）。
+
+    答案协议（题包提示与我不会轮 2026-11-12）：0~3 = 选项下标；-1 = 「我不会」——
+    视为放弃作答，按错题走同一链路（FSRS 最低档/入薄弱点/入错题本），不另发明豁免。
+    per_question.user_answer 保持原值（-1 可 JSON 落库回读）。
+    """
     if not isinstance(answers, list) or len(answers) != len(pack):
         raise ValueError("answers 数量与题包不匹配")
     for a in answers:
-        if isinstance(a, bool) or not isinstance(a, int) or not 0 <= a <= 3:
+        if isinstance(a, bool) or not isinstance(a, int) or not (a == -1 or 0 <= a <= 3):
             raise ValueError(f"答案选项非法: {a!r}")
     kms = get_kms()
     now = F.utcnow()  # 同一批共用时钟，保证状态机链式推演一致
@@ -309,8 +314,9 @@ def grade_pack(user_id, subject, pack, answers, kind=None, goal_id=None, test_id
                 memo[kp_name] = kp_id
             rec_id = None
             try:
+                # ans=-1（我不会）不可下标进 opts（Python 负下标静默取末选项），记人话文本
                 rec_id = kms.practice_manager.save_practice_record(
-                    subject, kp_id, q["stem"], opts[ans], ok, str(user_id),
+                    subject, kp_id, q["stem"], opts[ans] if ans >= 0 else "我不会", ok, str(user_id),
                     opts[q["answer_index"]], q.get("explanation", ""),
                     question_type="single", options=list(opts), difficulty_score=None)
             except Exception as e:  # noqa: BLE001 单题流水失败不中断整批（同 bridge 现例）
@@ -392,8 +398,10 @@ def _module_ctx(conn, mid, user_id):
 
 
 def _pub_questions(pack):
-    """对外题包：剩 answer_index/explanation（答案与解析只在判分后回传）。"""
-    return [{"stem": q["stem"], "options": q["options"], "kp_name": q["kp_name"]} for q in pack]
+    """对外题包：剩 answer_index/explanation（答案与解析只在判分后回传）；
+    hint 透传（题包提示轮：只帮读懂题目不含答案，旧题包无键降空串前端静默不渲染）。"""
+    return [{"stem": q["stem"], "options": q["options"], "kp_name": q["kp_name"],
+             "hint": q.get("hint") or ""} for q in pack]
 
 
 def _modexam_weak_points(conn, goal_id, user_id, limit=10):
