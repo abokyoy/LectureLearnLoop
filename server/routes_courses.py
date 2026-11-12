@@ -932,6 +932,164 @@ def lesson_chat(lid):
     return _ok({"answer": answer, **cr.billing_for_response()})
 
 
+# ---------------------------------------------------------------- 课文追问笔记树（追问笔记树轮 2026-11-12）
+# 节点只增/改不删（用户裁定「学习笔记本」定位）；锚定策略=文本内容匹配（anchor_text），
+# 服务端不改 content_md；parent_id 组树在内存链上取父链上下文，嵌套查询不下 SQL。
+
+_NOTE_ANCHOR_MAX = 600
+_NOTE_QUESTION_MAX = 2000
+_NOTE_ANSWER_MAX = 20000
+_NOTE_LESSON_MAX = 500      # 单课节点上限（防失控）
+_NOTE_PARENT_WALK_MAX = 50  # 父链上溯步数硬顶（防脏数据环链死循环）
+
+
+def _note_pub(row):
+    return {"id": row["id"], "lesson_id": row["lesson_id"], "parent_id": row["parent_id"],
+            "anchor_text": row["anchor_text"], "question": row["question"],
+            "answer_md": row["answer_md"], "created_time": row["created_time"]}
+
+
+def _note_get(conn, nid, user_id):
+    """按 id+user_id 双条件取节点行；无则 None（越权同 404 语义）。"""
+    row = conn.execute(
+        "SELECT id, lesson_id, parent_id, anchor_text, question, answer_md, created_time "
+        "FROM lesson_notes WHERE id = ? AND user_id = ?", (nid, str(user_id))).fetchone()
+    return dict(zip(("id", "lesson_id", "parent_id", "anchor_text", "question",
+                     "answer_md", "created_time"), row)) if row else None
+
+
+@courses_bp.route("/api/course/lessons/<int:lid>/notes", methods=["GET"])
+@require_auth
+def lesson_notes_list(lid):
+    """本课笔记平铺列表（前端组树）；纯读库零外呼。"""
+    conn = _conn()
+    try:
+        if not _lesson_ctx(conn, lid, g.user_id):
+            return _err("课文不存在", 404)
+        rows = conn.execute(
+            "SELECT id, lesson_id, parent_id, anchor_text, question, answer_md, created_time "
+            "FROM lesson_notes WHERE lesson_id = ? AND user_id = ? ORDER BY id",
+            (lid, str(g.user_id))).fetchall()
+    finally:
+        conn.close()
+    cols = ("id", "lesson_id", "parent_id", "anchor_text", "question", "answer_md", "created_time")
+    return _ok({"notes": [_note_pub(dict(zip(cols, r))) for r in rows]})
+
+
+@courses_bp.route("/api/course/lessons/<int:lid>/notes", methods=["POST"])
+@require_auth
+def lesson_note_create(lid):
+    """追问：生成回答并落库返回节点。body {parent_id?, anchor_text, question}。
+
+    生成失败（含空回答）不落脏行（LLM 输出不可信原则，同课内问答口径）；
+    parent_id 非法/不属于本课/超上限 → 400，越权同拒。"""
+    body = request.get_json(silent=True) or {}
+    question = str(body.get("question") or "").strip()[:_NOTE_QUESTION_MAX]
+    if not question:
+        return _err("question 不能为空", 400)
+    anchor = str(body.get("anchor_text") or "").strip()
+    if len(anchor) > _NOTE_ANCHOR_MAX:
+        return _err(f"锚定原文超长（≤{_NOTE_ANCHOR_MAX}字）", 400)
+    parent_id = body.get("parent_id")
+    if parent_id is not None and (isinstance(parent_id, bool)
+                                  or not isinstance(parent_id, int) or parent_id < 1):
+        return _err("parent_id 非法", 400)
+    conn = _conn()
+    try:
+        ctx = _lesson_ctx(conn, lid, g.user_id)
+        if not ctx:
+            return _err("课文不存在", 404)
+        if not ctx["content_md"]:
+            return _err("课文生成正文后才能追问", 400)
+        cnt = conn.execute("SELECT COUNT(*) FROM lesson_notes WHERE lesson_id = ? AND user_id = ?",
+                           (lid, str(g.user_id))).fetchone()[0]
+        if cnt >= _NOTE_LESSON_MAX:
+            return _err(f"本课笔记已达上限 {_NOTE_LESSON_MAX} 条", 400)
+        # 父链上下文：沿 parent_id 上溯最多 3 层（硬顶 50 步防环），逐条截断交服务层
+        parent_ctx, walk, seen = [], 0, set()
+        if parent_id is not None:
+            p = _note_get(conn, parent_id, g.user_id)
+            if not p or p["lesson_id"] != lid:
+                return _err("父节点不存在或不属于本课", 400)
+            while p is not None and walk < _NOTE_PARENT_WALK_MAX:
+                if len(parent_ctx) < cs._FOLLOW_PARENT_MAX:
+                    parent_ctx.append({"q": p["question"], "a": p["answer_md"]})
+                walk += 1
+                if p["parent_id"] is None or p["parent_id"] in seen:
+                    break
+                seen.add(p["parent_id"])
+                p = _note_get(conn, p["parent_id"], g.user_id)
+    finally:
+        conn.close()
+    answer, err = _gen_guard(lambda: cs.generate_followup_chat(
+        ctx["subject_name"], ctx["title"], ctx["content_md"], anchor, question, parent_ctx))
+    if err:
+        return err
+    answer = (answer or "")[:_NOTE_ANSWER_MAX]  # 落库前统一截断，与 PUT 编辑口径一致，防超长答案存进去后编辑保存永远 400（CodeReview Warn-3）
+    conn = _conn()
+    try:
+        # 课级 advisory xact lock 串行化「查上限→插入」，防并发双过校验白扣积分（CodeReview Warn-4）
+        conn.execute("SELECT pg_advisory_xact_lock(?)", (lid,))
+        cnt2 = conn.execute("SELECT COUNT(*) FROM lesson_notes WHERE lesson_id = ? AND user_id = ?",
+                            (lid, str(g.user_id))).fetchone()[0]
+        if cnt2 >= _NOTE_LESSON_MAX:
+            conn.rollback()
+            return _err(f"本课笔记已达上限 {_NOTE_LESSON_MAX} 条", 400)
+        cur = conn.execute(
+            "INSERT INTO lesson_notes (user_id, lesson_id, parent_id, anchor_text, question, answer_md) "
+            "VALUES (?,?,?,?,?,?) RETURNING id",
+            (str(g.user_id), lid, parent_id, anchor, question, answer))
+        conn.commit()
+        row = _note_get(conn, cur.fetchone()[0], g.user_id)
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        log.log_error("course", "note_create", e, {"uid": str(g.user_id), "lid": lid})
+        return _err(f"笔记落库失败: {e}", 500)
+    finally:
+        conn.close()
+    log.log_success("course", "note_create",
+                    {"uid": str(g.user_id), "lid": lid, "nid": row["id"], "parent": parent_id})
+    return _ok({"note": _note_pub(row), **cr.billing_for_response()})
+
+
+@courses_bp.route("/api/course/notes/<int:nid>", methods=["PUT"])
+@require_auth
+def lesson_note_update(nid):
+    """编辑节点问答内容（锚跟问题走，anchor_text 不可改）；仅本人节点，越权 404。"""
+    body = request.get_json(silent=True) or {}
+    patch = {}
+    if "question" in body:
+        q = str(body.get("question") or "").strip()
+        if not q or len(q) > _NOTE_QUESTION_MAX:
+            return _err("question 非法（空或超2000字）", 400)
+        patch["question"] = q
+    if "answer_md" in body:
+        a = str(body.get("answer_md") or "").strip()
+        if len(a) > _NOTE_ANSWER_MAX:
+            return _err(f"answer_md 超长（≤{_NOTE_ANSWER_MAX}字）", 400)
+        patch["answer_md"] = a
+    if not patch:
+        return _err("question/answer_md 至少给一个", 400)
+    conn = _conn()
+    try:
+        if not _note_get(conn, nid, g.user_id):
+            return _err("笔记不存在", 404)
+        sets = ", ".join(f"{k} = ?" for k in patch)
+        conn.execute(f"UPDATE lesson_notes SET {sets} WHERE id = ? AND user_id = ?",
+                     (*patch.values(), nid, str(g.user_id)))
+        conn.commit()
+        row = _note_get(conn, nid, g.user_id)
+    except Exception as e:  # noqa: BLE001
+        conn.rollback()
+        log.log_error("course", "note_update", e, {"uid": str(g.user_id), "nid": nid})
+        return _err(f"笔记更新失败: {e}", 500)
+    finally:
+        conn.close()
+    log.log_success("course", "note_update", {"uid": str(g.user_id), "nid": nid,
+                                              "fields": list(patch)})
+    return _ok({"note": _note_pub(row)})
+
+
 # ---------------------------------------------------------------- 提取确认 + 完成（Task 12，R4）
 
 @courses_bp.route("/api/course/lessons/<int:lid>/extract", methods=["POST"])

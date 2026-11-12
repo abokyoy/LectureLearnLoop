@@ -10,6 +10,9 @@
 <script src="/static/js/md_render.js"></script>
 <!-- 课文图文结合轮（2026-11-12 A 方案）：正文思路图用 vendor mermaid 10.6.1（与黑板同库同纪律） -->
 <script src="/static/js/vendor/mermaid.min.js"></script>
+<!-- 追问笔记树轮 2026-11-12：笔记编辑用 Vditor（与知识库描述编辑同件，vendor 本地加载） -->
+<link rel="stylesheet" href="/static/vendor/vditor/dist/index.css">
+<script src="/static/vendor/vditor/dist/index.min.js"></script>
 <div id="cgRoot" class="flex gap-4 h-full min-h-[560px] p-4">
     <!-- 左：目标列表 240px -->
     <div class="w-[240px] shrink-0 flex flex-col gap-2">
@@ -95,7 +98,7 @@
 <!-- 课文工作台抽屉（页内覆盖层，不跳路由）：步骤条 前测→生成中→阅读→后练→完成 -->
 <div id="cgLessonDrawer" class="fixed inset-0 z-40 hidden">
     <div id="cgDrawerMask" class="absolute inset-0 bg-black/30"></div>
-    <div class="absolute inset-y-0 right-0 w-[860px] max-w-[95vw] bg-cl-surface border-l border-cl-border shadow-xl flex flex-col">
+    <div id="cgDrawerPanel" class="absolute inset-y-0 right-0 w-[860px] max-w-[95vw] bg-cl-surface border-l border-cl-border shadow-xl flex flex-col">
         <div class="flex items-center justify-between px-4 py-3 border-b border-cl-border">
             <h3 id="cgDrawerTitle" class="text-[15px] font-semibold text-cl-text truncate"></h3>
             <button id="cgDrawerClose" class="w-8 h-8 rounded-clbtn text-cl-muted hover:bg-cl-surface-2 text-[16px]" title="关闭">×</button>
@@ -130,12 +133,20 @@
     function _httpDelete(url) {
         return fetch(url, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + cgTk() } }).then(cgUnwrap);
     }
-    // 全页请求单一通道：内部一律走 global.cgGet/cgPost/cgDelete 动态查找（默认真实 fetch，
+    function _httpPut(url, body) {
+        return fetch(url, {
+            method: 'PUT',
+            headers: { 'Authorization': 'Bearer ' + cgTk(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {})
+        }).then(cgUnwrap);
+    }
+    // 全页请求单一通道：内部一律走 global.cgGet/cgPost/cgPut/cgDelete 动态查找（默认真实 fetch，
     // CDP 断言覆盖同名即可全前端 mock），避免双轨请求漏拦
-    global.cgGet = _httpGet; global.cgPost = _httpPost; global.cgDelete = _httpDelete;
+    global.cgGet = _httpGet; global.cgPost = _httpPost; global.cgDelete = _httpDelete; global.cgPut = _httpPut;
     function cgGet(url) { return global.cgGet(url); }
     function cgPost(url, body) { return global.cgPost(url, body); }
     function cgDelete(url) { return global.cgDelete(url); }
+    function cgPut(url, body) { return global.cgPut(url, body); }
     global.renderCourseTree = renderCourseTree; global.renderCourseOutline = renderCourseOutline; global.switchCgView = switchCgView;
 
     var goals = [], curGoal = null;
@@ -666,7 +677,7 @@
     function openLesson(lid) {
         apiGet('/api/course/lessons/' + lid).then(function (d) {
             var L = d.lesson;
-            flow = { lid: L.id, lesson: L, step: null, chatHist: [] };
+            flow = { lid: L.id, lesson: L, step: null, notes: [], notesAnchored: false };
             $('cgDrawerTitle').textContent = L.title + ' · ' + L.subject_name;
             $('cgLessonDrawer').classList.remove('hidden');
             if (L.status === 'new') enterPretest();
@@ -711,6 +722,7 @@
         });
     }
     function renderLessonView(pre) {
+        setReadMode(true); // 阅读步全屏沉浸（用户裁定）；离开阅读步由 setStep 复位
         setStep('read');
         var L = flow.lesson;
         var learned = L.status === 'learned' || L.status === 'done';
@@ -720,75 +732,502 @@
             : (L.pretest_score != null
                 ? '<div class="mb-3 px-3 py-2 rounded-clbtn bg-cl-primary-soft text-[13px]">前测得分 ' + Math.round(L.pretest_score * 100) + '% · '
                   + (L.content_mode === 'concise' ? '精简版' : '详解版') + (L.regen_count ? ' · 已重生成 ' + L.regen_count + '/3' : '') + '</div>' : '');
-        $('cgDrawerBody').innerHTML = '<div class="flex gap-4 items-start">'
-            + '<div class="flex-1 min-w-0">' + banner
+        $('cgDrawerBody').innerHTML = '<div class="flex gap-4 items-start h-full">'
+            + '<div class="flex-1 min-w-0 overflow-y-auto">'
+            + '<div class="max-w-[760px] mx-auto">' + banner
             + '<div id="cgVisualBar" class="mb-3 flex flex-col gap-2"></div>'
             + '<div id="cgMdBody" class="text-[14px] leading-7 text-cl-text"></div>'
-            + '<div class="flex items-center gap-3 mt-5 pb-4">'
+            + '<div class="flex items-center gap-3 mt-5 pb-6">'
             + '<button id="cgPostquizBtn" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">'
             + (learned ? '再做课后小练习（题目复用不再出题）' : '开始课后小练习（4 题）') + '</button>'
             + (L.status === 'done' ? '<span class="text-[12px] text-green-600">✓ 本课已完成</span>' : '')
             + '<button id="cgRegenBtn" class="px-3 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary disabled:opacity-50 disabled:cursor-not-allowed">'
             + ((L.regen_count || 0) >= 3 ? '重生成已达上限' : '重生成课文（' + (L.regen_count || 0) + '/3）') + '</button>'
-            + '</div></div>'
-            + '<div class="w-44 shrink-0 max-h-[70vh] overflow-y-auto border-l border-cl-border pl-3">'
+            + '</div></div></div>'
+            + '<div class="w-60 shrink-0 self-stretch overflow-y-auto border-l border-cl-border pl-3">'
             + '<p class="text-[11px] text-cl-muted mb-1">目录</p><div id="cgToc"></div>'
-            + '<div id="cgChatPanel" class="mt-3 border-t border-cl-border pt-2">'
-            + '<p class="text-[11px] text-cl-muted mb-1">AI 问答</p><div id="cgChatList" class="mb-1.5"></div>'
-            + '<div class="flex gap-1"><input id="cgChatInput" placeholder="对课文提问…" class="flex-1 min-w-0 px-2 py-1 rounded-clbtn border border-cl-border text-[11px] focus:outline-none focus:ring-1 focus:ring-cl-primary/40"/>'
-            + '<button id="cgChatSend" class="px-2 py-1 rounded-clbtn text-[11px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">发送</button></div></div>'
+            + '<div id="cgExtractPanel" class="mt-3 border-t border-cl-border pt-2"></div>'
+            + '<div id="cgNotesIndex" class="mt-3 border-t border-cl-border pt-2"></div>'
             + '</div>'
             + '</div>';
         renderLessonMd($('cgMdBody'), L.content_md);
         cgMermaid($('cgMdBody')); // 正文思路图：围栏块 → SVG（失败单图降级，不炸整篇）
         buildToc($('cgMdBody'));
         loadVisuals(); // 两展示位：有产物直显，没有展示生成按钮
-        renderChat();
+        flow.notes = []; flow.notesAnchored = false;
+        loadNotes();  // 追问笔记树：先拉全量再锚定渲染（旧右上角问答输入框已撤，用户裁定）
+        buildExtractPanel();
         $('cgPostquizBtn').addEventListener('click', enterPostquiz);
-        $('cgChatSend').addEventListener('click', sendChat);
-        $('cgChatInput').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') sendChat(); });
         var regenBtn = $('cgRegenBtn');
         if ((flow.lesson.regen_count || 0) >= 3) { regenBtn.disabled = true; }
         regenBtn.addEventListener('click', function () {
             regenBtn.disabled = true; regenBtn.textContent = '重生成中…';
             apiPost('/api/course/lessons/' + flow.lid + '/regenerate', {}).then(function (d) {
                 if (d.lesson) flow.lesson = d.lesson;
-                enterRead(); // 重渲阅读步（新正文+计数+问答历史保留在 flow）
+                enterRead(); // 重渲阅读步（新正文+计数；笔记按 anchor_text 重新锚定，锚失效降级索引）
             }).catch(showErr);
         });
     }
-    // 课内 AI 问答：历史前端持有整包回传（最近 10 轮，spec §6）
-    function renderChat() {
-        var host = $('cgChatList');
-        if (!host || !flow) return;
-        host.innerHTML = (flow.chatHist || []).map(function (m) {
-            return '<div class="cg-chat-msg cg-chat-q text-[11px] text-cl-primary text-right my-1">' + cgEsc(m.q) + '</div>'
-                + '<div class="cg-chat-msg cg-chat-a text-[11px] bg-cl-surface-2 rounded-cl px-2 py-1 mb-1.5">' + cgMdSpan(m.a) + '</div>';
-        }).join('');
-        cgHydrateMath(host); // AI 回答含公式时走同一 KaTeX 管线（题干/解析同口径）
-        host.scrollTop = host.scrollHeight;
+    // ---------------- 追问笔记树（追问笔记树轮 2026-11-12） ----------------
+    // 阅读步全屏沉浸开关；非阅读步（前测/后练/模块考/完成）复位为 860px 抽屉
+    function setReadMode(on) {
+        $('cgLessonDrawer').classList.toggle('cg-read-mode', !!on);
+        if (!on) hideSelMenu();
     }
-    function sendChat() {
+    var _prevSetStep = setStep;
+    setStep = function (name) { _prevSetStep(name); setReadMode(name === 'read'); };
+
+    function noteById(nid) {
+        var ns = (flow && flow.notes) || [];
+        for (var i = 0; i < ns.length; i++) { if (ns[i].id === nid) return ns[i]; }
+        return null;
+    }
+    function loadNotes() {
         if (!flow) return;
-        var inp = $('cgChatInput'), btn = $('cgChatSend');
-        var q = (inp.value || '').trim();
-        if (!q) return;
-        btn.disabled = true; btn.textContent = '思考中…';
-        apiPost('/api/course/lessons/' + flow.lid + '/chat', { question: q, history: (flow.chatHist || []).slice(-10) })
-            .then(function (d) {
-                flow.chatHist = (flow.chatHist || []).concat([{ q: q, a: String(d.answer || '') }]);
-                renderChat();
-                var ni = $('cgChatInput'); if (ni) ni.value = '';
-            })
-            .catch(function (e) {
-                var box = $('cgChatList');
-                if (box) box.insertAdjacentHTML('beforeend', '<div class="cg-chat-msg cg-chat-err text-[11px] text-red-500 my-1">' + cgEsc(e.message) + '</div>');
-            })
-            .finally(function () {
-                var nb = $('cgChatSend');
-                if (nb) { nb.disabled = false; nb.textContent = '发送'; }
-            });
+        var lid = flow.lid, f = flow;
+        apiGet('/api/course/lessons/' + lid + '/notes').then(function (d) {
+            if (flow !== f) return; // 快切课文防旧响应覆盖（同 visTick 口径）
+            f.notes = (d && d.notes) || [];
+            f.notesAnchored = false;
+            anchorNotes();
+            renderNotesIndex();
+        }).catch(function () { /* 笔记拉取失败静默：阅读不受拦 */ });
     }
+    // 文本锚定：把 anchor 相同的顶层笔记分组，在正文里查找原文包成下划线锚；
+    // 跨多文本节点时分段包裹（同 data-nid 多锚点，点击任一都 toggle）；
+    // 找不到（课文重生成/选区跨块）→ 降级右栏「未定位笔记」索引，不静默丢
+    function anchorNotes() {
+        if (!flow) return;
+        flow.notesAnchored = true;
+        var md = $('cgMdBody');
+        if (!md) return;
+        // 重锚前清旧章节组（新追问/编辑/折叠都会重跑 anchorNotes，不清会叠加重复子章节）
+        md.querySelectorAll('.cg-anchor-group').forEach(function (g) { g.remove(); });
+        md.querySelectorAll('.cg-anchor').forEach(function (sp) {
+            var p = sp.parentNode; if (!p) return;
+            p.replaceChild(document.createTextNode(sp.textContent), sp);
+            p.normalize();
+        });
+        var tops = {}, order = [];
+        (flow.notes || []).forEach(function (n) {
+            if (n.parent_id != null) return;
+            var k = String(n.anchor_text || '');
+            if (!tops[k]) { tops[k] = []; order.push(k); }
+            tops[k].push(n);
+        });
+        flow.unAnchored = (flow.notes || []).filter(function (n) {
+            return n.parent_id == null && String(n.anchor_text || '') && order.indexOf(String(n.anchor_text)) < 0;
+        });
+        order.forEach(function (k) {
+            if (!k) { appendNoteSection(md, null, tops[k], ''); return; }
+            var gid = 'cgA' + order.indexOf(k);
+            var marks = wrapAnchorText(md, k, gid);
+            if (!marks.length) { flow.unAnchored.push.apply(flow.unAnchored, tops[k]); return; }
+            var first = marks[0];
+            var block = closestBlock(first, md);
+            var holder = first.parentNode;
+            while (holder && holder !== md && holder !== block) holder = holder.parentNode;
+            appendNoteSection(md, holder || block, tops[k], gid);
+        });
+        (flow.notes || []).forEach(function (n) { /* 子节点在各自父章节内递归渲染，无需额外动作 */ });
+        bindNoteEvents(md);
+    }
+    function wrapAnchorText(root, text, nid) {
+        if (!root || !text) return [];
+        var nodes = [], full = '';
+        var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+        var nnode;
+        while ((nnode = tw.nextNode())) {
+            if (nnode.closest && nnode.closest('script, style')) continue;
+            if (!nnode.nodeValue) continue;
+            nodes.push({ node: nnode, start: full.length });
+            full += nnode.nodeValue;
+        }
+        var pos = full.indexOf(text);
+        if (pos < 0) return [];
+        var end = pos + text.length, marks = [];
+        for (var i = 0; i < nodes.length; i++) {
+            var it = nodes[i], s = it.start, e = it.start + it.node.nodeValue.length;
+            if (e <= pos || s >= end) continue;
+            var a = Math.max(pos, s) - s, b = Math.min(end, e) - s;
+            var target = it.node;
+            if (a > 0) { target = it.node.splitText(a); }
+            var keep = null;
+            if (b - a < target.nodeValue.length) { keep = target.splitText(b - a); }
+            var mark = document.createElement('span');
+            mark.className = 'cg-anchor';
+            mark.setAttribute('data-nid', nid);
+            target.parentNode.insertBefore(mark, target);
+            mark.appendChild(target);
+            marks.push(mark);
+            if (keep) { nodes[i + 1] = { node: keep, start: it.start + b }; } // keep 真实起点含左偏移 a，漏算会把匹配段外的尾巴错包成锚（CodeReview Critical-1）
+        }
+        return marks;
+    }
+    function closestBlock(el, root) {
+        var n = el;
+        while (n && n.parentNode && n !== root && n.parentNode !== root) n = n.parentNode;
+        return n && n !== root ? n : null;
+    }
+    function noteSectionHtml(list) {
+        return list.map(function (n) { return renderNoteNode(n); }).join('');
+    }
+    // 递归渲染一个笔记节点（虚线淡黄子章节）：引用 + 问 + 答（MD+公式+思路图同管线）
+    // + 子节点（追问的追问，无限嵌套）+ 编辑/折叠；默认展开，折叠态存内存
+    function renderNoteNode(n) {
+        var collapsed = !!(flow.collapsed || {})[n.id];
+        var kids = (flow.notes || []).filter(function (c) { return c.parent_id === n.id; });
+        var inner = '<div class="flex items-start justify-between gap-2 mb-1">'
+            + '<span class="cg-note-tag text-[10px] font-medium text-amber-700 shrink-0 mt-0.5">追问笔记</span>'
+            + '<span class="flex items-center gap-1 shrink-0">'
+            + '<button class="cg-note-collapse px-1.5 py-0.5 rounded-clbtn text-[10px] border border-amber-300 text-amber-700 hover:bg-amber-50" data-nid="' + n.id + '">' + (collapsed ? '展开' : '收起') + '</button>'
+            + '<button class="cg-note-edit px-1.5 py-0.5 rounded-clbtn text-[10px] border border-amber-300 text-amber-700 hover:bg-amber-50" data-nid="' + n.id + '">编辑</button></span></div>';
+        if (n.anchor_text) {
+            inner += '<div class="cg-note-quote text-[11px] text-cl-muted px-2 py-1 mb-1.5 rounded-clbtn">' + cgMdSpan(n.anchor_text) + '</div>';
+        }
+        inner += '<div class="cg-note-q text-[12px] font-medium text-cl-text mb-1">问：' + cgMdSpan(n.question) + '</div>';
+        if (!collapsed) inner += '<div class="cg-note-a text-[12px] leading-6 text-cl-text"></div>'; // 折叠态只显摘要（引用+问），回答不渲染
+        if (!collapsed && kids.length) inner += '<div class="cg-note-kids mt-2 flex flex-col gap-2">' + kids.map(function (k) { return renderNoteNode(k); }).join('') + '</div>';
+        return '<div class="cg-read-note cg-note rounded-cl p-2.5 my-2" data-note-id="' + n.id + '" data-collapsed="' + (collapsed ? 1 : 0) + '">' + inner + '</div>';
+    }
+    function appendNoteSection(mdEl, anchorEl, list, gkey) {
+        var wrap = document.createElement('div');
+        wrap.className = 'cg-anchor-group';
+        if (gkey) wrap.setAttribute('data-anchor-group', gkey);
+        wrap.innerHTML = noteSectionHtml(list);
+        // 组键回填到顶层章节：点锚文本按组 toggle、折叠按钮按单节 toggle 都靠它寻址
+        if (gkey) {
+            wrap.querySelectorAll(':scope > .cg-note').forEach(function (sec) { sec.setAttribute('data-anchor-group', gkey); });
+        }
+        if (anchorEl && anchorEl.parentNode) {
+            var ref = anchorEl.nextElementSibling;
+            while (ref && (ref.classList.contains('cg-read-note') || ref.classList.contains('cg-note-answer') || ref.classList.contains('cg-anchor-group'))) { ref = ref.nextElementSibling; }
+            if (ref) { anchorEl.parentNode.insertBefore(wrap, ref); }
+            else { anchorEl.parentNode.appendChild(wrap); }
+        } else { mdEl.appendChild(wrap); }
+        // 回答区（含嵌套子节）：入文档后就地渲染，走课文同一 MD/公式/mermaid 管线（图文并貌 prompt 的产物能出图）
+        Array.prototype.forEach.call(wrap.querySelectorAll('.cg-note'), function (sec) {
+            var n = noteById(Number(sec.getAttribute('data-note-id')));
+            if (!n) return;
+            var aEl = sec.querySelector('.cg-note-a');
+            if (!aEl) return; // 折叠态无回答区（展开时重建再渲）
+            renderLessonMd(aEl, n.answer_md);
+            cgMermaid(aEl);
+        });
+        cgHydrateMath(wrap); // 引用/问题占位 span 回填（KaTeX 必须在已入文档节点上渲）
+    }
+    function renderNotesIndex() {
+        var box = $('cgNotesIndex');
+        if (!box || !flow) return;
+        var total = (flow.notes || []).length;
+        var un = flow.unAnchored || [];
+        var html = '<p class="text-[11px] text-cl-muted mb-1">追问笔记 · ' + total + ' 条</p>';
+        if (!total) html += '<p class="text-[11px] text-cl-muted mb-1">拖选课文文字即可追问或请老师讲课</p>';
+        if (un.length) {
+            html += '<p class="text-[11px] text-amber-700 mb-1">未定位（' + un.length + '）：课文变更后锚点失效，内容仍在</p>'
+                + un.map(function (n) {
+                    return '<div class="cg-note-unbound rounded-cl border border-dashed border-amber-300 bg-amber-50/60 px-2 py-1.5 mb-1.5 text-[11px] cursor-pointer" data-open-nid="' + n.id + '">'
+                        + '<div class="font-medium text-cl-text">' + cgEsc((n.question || '').slice(0, 40)) + '</div>'
+                        + '<div class="text-cl-muted mt-0.5">点击查看 · 编辑</div></div>';
+                }).join('');
+        }
+        box.innerHTML = html;
+    }
+    // ---------------- 知识点提取右栏（追问笔记树轮）：提取→勾选→入库，阅读中随时可提 ----------------
+    function buildExtractPanel() {
+        var box = $('cgExtractPanel');
+        if (!box || !flow) return;
+        box.innerHTML = '<p class="text-[11px] text-cl-muted mb-1">知识点提取</p>'
+            + '<button id="cgExtractGoBtn" class="w-full px-2 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary hover:border-cl-primary transition-colors">从课文提取知识点</button>'
+            + '<div id="cgExtractOut" class="mt-2"></div>';
+        $('cgExtractGoBtn').addEventListener('click', function () {
+            var btn = this, out = $('cgExtractOut');
+            btn.disabled = true; btn.textContent = '提取中…（消耗提取积分）';
+            out.innerHTML = '';
+            cgPost('/api/course/lessons/' + flow.lid + '/extract', {}).then(function (d) {
+                btn.disabled = false; btn.textContent = '从课文提取知识点';
+                renderExtractCandidates(out, (d && d.points) || []);
+            }).catch(function (e) {
+                btn.disabled = false; btn.textContent = '从课文提取知识点';
+                out.innerHTML = '<div class="text-[11px] text-red-600">' + cgEsc(e && e.status === 402 ? '积分不足：' + e.message : ((e && e.message) || '提取失败')) + '</div>';
+            });
+        });
+    }
+    function renderExtractCandidates(out, points) {
+        if (!out) return;
+        if (!points.length) { out.innerHTML = '<div class="text-[11px] text-cl-muted">课文中没有识别到可提取的知识点</div>'; return; }
+        out.innerHTML = points.map(function (p, i) {
+            var sim = (p.match_status && /已存在相似/.test(p.match_status)) || p.similar_count > 0;
+            return '<label class="cg-ext-item flex items-start gap-1.5 mb-1.5 text-[11px] cursor-pointer">'
+                + '<input type="checkbox" class="cg-ext-chk mt-0.5" data-eidx="' + i + '" checked/>'
+                + '<span class="min-w-0"><span class="font-medium text-cl-text">' + cgEsc(p.name) + '</span>'
+                + (sim ? ' <span class="text-amber-600">已存在相似</span>' : ' <span class="text-green-600">新知识点</span>')
+                + '</span></label>';
+        }).join('')
+            + '<button id="cgExtractSaveBtn" class="w-full mt-1 px-2 py-1.5 rounded-clbtn text-[12px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">加入知识点库</button>'
+            + '<div id="cgExtractMsg" class="text-[11px] mt-1"></div>';
+        $('cgExtractSaveBtn').addEventListener('click', function () {
+            var subject = (curGoal && curGoal.subject_name) || (flow && flow.lesson && flow.lesson.subject_name) || '';
+            var conf = [];
+            out.querySelectorAll('.cg-ext-chk').forEach(function (cb) {
+                if (!cb.checked) return;
+                var p = points[Number(cb.getAttribute('data-eidx'))];
+                conf.push({ action: 'new', subject_name: subject,
+                    point_data: { point_name: p.name, core_description: p.description || '', category: p.category || '', importance: p.importance || '' } });
+            });
+            var btn = this, msg = $('cgExtractMsg');
+            if (!conf.length) { msg.innerHTML = '<span class="text-cl-muted">请先勾选知识点</span>'; return; }
+            btn.disabled = true; btn.textContent = '入库中…';
+            msg.innerHTML = '';
+            cgPost('/api/knowledge/confirm', { confirmations: conf }).then(function () {
+                msg.innerHTML = '<span class="text-green-600">✓ 已加入知识点库</span>';
+                window.__cgExtractSaved = true; // CDP 断言哨兵
+            }).catch(function (e) {
+                btn.disabled = false; btn.textContent = '加入知识点库';
+                msg.innerHTML = '<span class="text-red-600">' + cgEsc(e && e.status === 402 ? '积分不足：' + e.message : ((e && e.message) || '入库失败')) + '</span>';
+            });
+        });
+        window.__cgExtractReady = true; // CDP 断言哨兵
+    }
+    function openAskPop(rect, text, parentId) {
+        hideSelMenu();
+        var old = $('cgAskPop'); if (old) old.remove();
+        var pop = document.createElement('div');
+        pop.id = 'cgAskPop';
+        pop.className = 'rounded-cl border border-cl-border bg-cl-surface shadow-lg p-3';
+        pop.style.left = '0px'; pop.style.top = '0px'; pop.style.width = '340px';
+        pop.innerHTML = '<div class="cg-note-quote text-[11px] text-cl-muted px-2 py-1 mb-2 rounded-clbtn">' + cgEsc(text) + '</div>'
+            + '<textarea id="cgAskInput" rows="3" placeholder="针对这段内容提问…（消耗问答积分）" class="w-full px-2 py-1.5 rounded-clbtn border border-cl-border text-[12px] focus:outline-none focus:ring-1 focus:ring-cl-primary/40 mb-2"></textarea>'
+            + '<div id="cgAskErr" class="text-[11px] text-red-600 mb-1 hidden"></div>'
+            + '<div class="flex justify-end gap-2"><button id="cgAskCancel" class="px-2.5 py-1 rounded-clbtn text-[12px] border border-cl-border text-cl-muted">取消</button>'
+            + '<button id="cgAskSend" class="px-3 py-1 rounded-clbtn text-[12px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">发送</button></div>';
+        $('cgDrawerBody').appendChild(pop);
+        pop.style.left = Math.max(8, Math.min(rect.left - 8, $('cgDrawerBody').clientWidth - 356)) + 'px';
+        pop.style.top = (rect.bottom + 6) + 'px';
+        $('cgAskCancel').addEventListener('click', function () { pop.remove(); });
+        $('cgAskSend').addEventListener('click', function () {
+            var q = ($('cgAskInput').value || '').trim();
+            var eb = $('cgAskErr');
+            if (!q) { eb.textContent = '请输入问题'; eb.classList.remove('hidden'); return; }
+            if (!flow) { pop.remove(); return; }
+            var btn = this;
+            btn.disabled = true; btn.textContent = '思考中…';
+            eb.classList.add('hidden');
+            var body = { question: q, anchor_text: text || '' };
+            if (parentId) body.parent_id = parentId;
+            var f = flow; // 快照校验同 loadNotes 口径：思考期间切课文则旧响应丢弃，不串他课 notes（CodeReview Warn-2）
+            apiPost('/api/course/lessons/' + flow.lid + '/notes', body).then(function (d) {
+                pop.remove();
+                if (flow !== f || !d || !d.note) return;
+                f.notes.push(d.note);
+                anchorNotes(); // 全量重锚（已锚过的正文不变，新节点落位）
+                renderNotesIndex();
+                window.__cgNoteAdded = d.note.id; // CDP 断言哨兵
+            }).catch(function (e) {
+                eb.textContent = (e && e.message) || '追问失败'; eb.classList.remove('hidden');
+            }).finally(function () { btn.disabled = false; btn.textContent = '发送'; });
+        });
+        setTimeout(function () { try { $('cgAskInput').focus(); } catch (e) { } }, 0);
+    }
+    function hideSelMenu() { var m = $('cgSelMenu'); if (m) m.remove(); }
+    function showSelMenu(rect, text, parentId) {
+        hideSelMenu();
+        var old = $('cgAskPop'); if (old) old.remove();
+        var menu = document.createElement('div');
+        menu.id = 'cgSelMenu';
+        menu.className = 'flex rounded-cl border border-cl-border bg-cl-surface shadow-lg overflow-hidden text-[12px]';
+        menu.innerHTML = '<button id="cgMenuAsk" class="px-3 py-1.5 hover:bg-cl-primary-soft text-cl-text">追问</button>'
+            + '<button id="cgMenuTeach" class="px-3 py-1.5 hover:bg-cl-primary-soft text-cl-text border-l border-cl-border">请老师讲课</button>';
+        $('cgDrawerBody').appendChild(menu);
+        menu.style.left = Math.max(8, Math.min(rect.left, $('cgDrawerBody').clientWidth - 220)) + 'px';
+        menu.style.top = Math.max(8, rect.top - 40) + 'px';
+        $('cgMenuAsk').addEventListener('click', function () { openAskPop(rect, text, parentId); });
+        $('cgMenuTeach').addEventListener('click', function () {
+            hideSelMenu();
+            apiPost('/api/board/assign', { kind: 'text', text: text }).then(function () {
+                if (global.goMenu) { global.goMenu('teacher_board'); }
+                else { location.href = '/teacher_board'; }
+            }).catch(function (e) { alert('打开 AI 老师黑板失败：' + ((e && e.message) || e)); });
+        });
+    }
+    // 拖选出菜单：阅读步内正文与笔记回答区都可框选（笔记内选中→新节点挂该笔记下，无限嵌套）
+    $('cgDrawerBody').addEventListener('mouseup', function (ev) {
+        if (!flow || !flow.notes || !($('cgLessonDrawer').classList.contains('cg-read-mode'))) return;
+        var selEl = ev.target.closest && ev.target.closest('#cgMdBody');
+        if (!selEl) return;
+        var m = $('cgSelMenu'); if (m) { m.remove(); m = null; }
+        var sel = window.getSelection();
+        var text = sel ? String(sel.toString() || '').trim() : '';
+        if (!text || text.length > 600) return;
+        var rect = (sel.getRangeAt(0) || {}).getBoundingClientRect ? sel.getRangeAt(0).getBoundingClientRect() : null;
+        if (!rect || !rect.width) return;
+        var host = sel.anchorNode;
+        var sec = host && host.parentElement ? host.parentElement.closest('.cg-note') : null;
+        showSelMenu({ left: rect.left, top: rect.top, bottom: rect.bottom }, text, sec ? Number(sec.getAttribute('data-note-id')) : null);
+    });
+    document.addEventListener('mousedown', function (ev) {
+        var m = $('cgSelMenu');
+        if (m && !m.contains(ev.target)) m.remove();
+        var p = $('cgAskPop');
+        if (p && !p.contains(ev.target) && !(ev.target.closest && ev.target.closest('#cgMdBody'))) p.remove();
+    });
+    // 锚点点击 toggle / 章节折叠 / 编辑；笔记区内拖选新追问挂对应节点（事件委托，重锚不丢绑定）
+    function bindNoteEvents(md) { /* 委托绑定只装一次，见下方 cgDrawerBody 监听 */ }
+    var _noteEventsBound = false;
+    function ensureNoteEvents() {
+        if (_noteEventsBound) return;
+        _noteEventsBound = true;
+        var body = $('cgDrawerBody');
+        body.addEventListener('click', function (ev) {
+            if (!flow) return;
+            var a = ev.target.closest && ev.target.closest('.cg-anchor');
+            if (a) { // 点锚文本：整组子章节一起展开/隐藏（用户裁定）
+                var gid = a.getAttribute('data-nid');
+                var grp = body.querySelector('.cg-anchor-group[data-anchor-group="' + gid + '"]');
+                if (grp) toggleNoteGroup(grp);
+                return;
+            }
+            var c = ev.target.closest && ev.target.closest('.cg-note-collapse');
+            if (c) { var s1 = c.closest('.cg-note'); if (s1) toggleNoteSection(s1); return; }
+            var ed = ev.target.closest && ev.target.closest('.cg-note-edit');
+            if (ed) { openNoteEditor(Number(ed.getAttribute('data-nid'))); return; }
+            var ub = ev.target.closest && ev.target.closest('[data-open-nid]');
+            if (ub) { openNoteView(Number(ub.getAttribute('data-open-nid'))); return; }
+        });
+        body.addEventListener('mousedown', function (ev) {
+            if (!flow) return;
+            var sec = ev.target.closest && ev.target.closest('#cgMdBody, .cg-read-note');
+            if (!sec) return;
+            var m = $('cgSelMenu'); if (m) m.remove(); // 准备重新框选：先收旧菜单（mouseup 重弹）
+        });
+    }
+    function toggleNoteGroup(grp) { // 点锚文本：同锚整组顶层章节一起收起/展开
+        flow.collapsed = flow.collapsed || {};
+        grp.querySelectorAll(':scope > .cg-note').forEach(function (sec) {
+            var id = Number(sec.getAttribute('data-note-id'));
+            if (flow.collapsed[id]) delete flow.collapsed[id]; else flow.collapsed[id] = 1;
+        });
+        rerenderAnchorGroup(grp);
+    }
+    function toggleNoteSection(sec) { // 章节内「收起/展开」按钮：只动这一节
+        var id = Number(sec.getAttribute('data-note-id'));
+        flow.collapsed = flow.collapsed || {};
+        if (flow.collapsed[id]) delete flow.collapsed[id]; else flow.collapsed[id] = 1;
+        rerenderAnchorGroup(sec.closest('.cg-anchor-group') || sec.parentNode);
+    }
+    function rerenderAnchorGroup(grp) {
+        if (!grp) return;
+        // 按组内现有顶层章节 id 集重建（锚文本可含特殊字符，不做选择器反查）
+        var ids = [];
+        grp.querySelectorAll(':scope > .cg-note').forEach(function (s) { ids.push(Number(s.getAttribute('data-note-id'))); });
+        var list = (flow.notes || []).filter(function (n) { return ids.indexOf(n.id) >= 0; });
+        var tmp = document.createElement('div');
+        tmp.className = grp.className;
+        var gkey = grp.getAttribute('data-anchor-group');
+        if (gkey) tmp.setAttribute('data-anchor-group', gkey);
+        tmp.innerHTML = noteSectionHtml(list);
+        if (gkey) {
+            tmp.querySelectorAll(':scope > .cg-note').forEach(function (s) { s.setAttribute('data-anchor-group', gkey); });
+        }
+        if (grp.parentNode) grp.parentNode.replaceChild(tmp, grp);
+        // 入文档后再渲回答与回填占位（KaTeX/mermaid 对分离碎片不渲染）
+        Array.prototype.forEach.call(tmp.querySelectorAll('.cg-note'), function (sec) {
+            var n = noteById(Number(sec.getAttribute('data-note-id')));
+            if (!n) return;
+            var aEl = sec.querySelector('.cg-note-a');
+            if (!aEl) return; // 折叠节无回答区，展开时再渲染
+            renderLessonMd(aEl, n.answer_md);
+            cgMermaid(aEl);
+        });
+        cgHydrateMath(tmp);
+        window.__cgNoteToggled = true; // CDP 断言哨兵
+    }
+    // 未定位笔记查看/编辑弹层（内容不丢，可继续编辑）
+    function openNoteView(nid) {
+        var n = noteById(nid);
+        if (!n) return;
+        var old = $('cgNoteViewModal'); if (old) old.remove();
+        var mask = document.createElement('div');
+        mask.id = 'cgNoteViewModal';
+        mask.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40';
+        mask.innerHTML = '<div class="w-[520px] max-h-[80vh] overflow-y-auto rounded-cl border border-cl-border bg-cl-surface p-4 shadow-lg">'
+            + '<div class="flex items-center justify-between mb-2"><h4 class="text-[14px] font-semibold text-cl-text">未定位的追问笔记</h4>'
+            + '<button id="cgNvClose" class="px-2 py-1 rounded-clbtn text-[13px] text-cl-muted hover:bg-cl-surface-2">关闭</button></div>'
+            + (n.anchor_text ? '<div class="cg-note-quote text-[11px] text-cl-muted px-2 py-1 mb-2 rounded-clbtn">' + cgEsc(n.anchor_text) + '</div>' : '')
+            + '<div class="text-[12px] font-medium text-cl-text mb-1">问：' + cgEsc(n.question) + '</div>'
+            + '<div id="cgNvAns" class="text-[12px] leading-6 text-cl-text mb-3"></div>'
+            + '<div class="flex justify-end"><button id="cgNvEdit" class="px-3 py-1.5 rounded-clbtn text-[12px] bg-cl-primary text-white hover:opacity-90" data-nid="' + n.id + '">编辑</button></div></div>';
+        document.body.appendChild(mask);
+        renderLessonMd($('cgNvAns'), n.answer_md);
+        cgMermaid($('cgNvAns'));
+        $('cgNvClose').addEventListener('click', function () { mask.remove(); });
+        $('cgNvEdit').addEventListener('click', function () { mask.remove(); openNoteEditor(nid); });
+        mask.addEventListener('click', function (ev) { if (ev.target === mask) mask.remove(); });
+    }
+    // Vditor 编辑弹层：问题/回答两个 MD 编辑器（知识库描述编辑同件，lang zh_CN 下划线口径）
+    function openNoteEditor(nid) {
+        var n = noteById(nid);
+        if (!n) return;
+        var old = $('cgNoteEditModal'); if (old) old.remove();
+        var mask = document.createElement('div');
+        mask.id = 'cgNoteEditModal';
+        mask.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40';
+        mask.innerHTML = '<div class="w-[640px] max-h-[88vh] overflow-y-auto rounded-cl border border-cl-border bg-cl-surface p-4 shadow-lg">'
+            + '<div class="flex items-center justify-between mb-2"><h4 class="text-[14px] font-semibold text-cl-text">编辑追问</h4>'
+            + '<span class="text-[11px] text-cl-muted">锚定原文不可改（锚跟问题走）</span></div>'
+            + '<label class="text-[11px] text-cl-muted">问题</label>'
+            + '<div id="cgEdQ" class="mb-2"></div>'
+            + '<label class="text-[11px] text-cl-muted">回答（Markdown，mermaid 围栏可出图）</label>'
+            + '<div id="cgEdA" class="mb-2"></div>'
+            + '<p id="cgEdErr" class="text-[12px] text-red-600 mb-1 hidden"></p>'
+            + '<div class="flex justify-end gap-2 mt-2"><button id="cgEdCancel" class="px-3 py-1.5 rounded-clbtn text-[13px] border border-cl-border text-cl-muted">取消</button>'
+            + '<button id="cgEdSave" class="px-4 py-1.5 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90 disabled:opacity-50">保存</button></div></div>';
+        document.body.appendChild(mask);
+        var edQ = null, edA = null;
+        var mkEd = function (elId, value) {
+            if (!window.Vditor) return null;
+            try {
+                // 选项口径与 note_vditor.js/pm_pages 现例一致：mode ir + icon material + value 直接传入
+                //（icon:false 与非法工具栏项会在构造函数抛错；lang 必须下划线 zh_CN）
+                var vd = new window.Vditor($(elId), {
+                    cdn: '/static/vendor/vditor', mode: 'ir',
+                    lang: 'zh_CN', icon: 'material',
+                    height: elId === 'cgEdA' ? 260 : 120,
+                    value: value || '', placeholder: '编辑…',
+                    cache: { enable: false }
+                });
+                return vd;
+            } catch (e) { return null; }
+        };
+        edQ = mkEd('cgEdQ', n.question);
+        edA = mkEd('cgEdA', n.answer_md);
+        var getVal = function (vd, fb) {
+            if (vd && vd.getValue) { try { return String(vd.getValue() || ''); } catch (e) { } }
+            return fb;
+        };
+        $('cgEdCancel').addEventListener('click', function () { mask.remove(); });
+        $('cgEdSave').addEventListener('click', function () {
+            var q = getVal(edQ, n.question).trim(), a = getVal(edA, n.answer_md).trim();
+            var eb = $('cgEdErr');
+            eb.classList.add('hidden');
+            if (!q) { eb.textContent = '问题不能为空'; eb.classList.remove('hidden'); return; }
+            var btn = this;
+            btn.disabled = true; btn.textContent = '保存中…';
+            cgPut('/api/course/notes/' + nid, { question: q, answer_md: a }).then(function (d) {
+                mask.remove();
+                if (!flow || !d || !d.note) return;
+                for (var i = 0; i < flow.notes.length; i++) { if (flow.notes[i].id === nid) { flow.notes[i] = d.note; break; } }
+                anchorNotes();
+                renderNotesIndex();
+                window.__cgNoteSaved = nid; // CDP 断言哨兵
+            }).catch(function (e) {
+                eb.textContent = (e && e.message) || '保存失败'; eb.classList.remove('hidden');
+                btn.disabled = false; btn.textContent = '保存';
+            });
+        });
+        mask.addEventListener('click', function (ev) { if (ev.target === mask) mask.remove(); });
+    }
+    ensureNoteEvents();
     // ---------------- 模块考（Task 11）：复用抽屉 + renderQuiz，不走五步状态机 ----------------
     function openModuleExam(mid) {
         flow = null; // 模块考独立于课文流程
@@ -852,15 +1291,15 @@
             + '<div class="text-center mb-4"><div class="text-[28px] font-semibold text-cl-primary">' + Math.round((d.score || 0) * 100) + '%</div>'
             + '<div class="text-[12px] text-cl-muted">课后小练习得分</div></div>' + rows
             + '<div class="flex justify-center gap-3 mt-5">'
-            + '<button id="cgDoneBtn" class="px-4 py-2 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">标记完成并提取知识点</button>'
+            + '<button id="cgDoneBtn" class="px-4 py-2 rounded-clbtn text-[13px] bg-cl-primary text-white hover:opacity-90">标记完成（知识点可在课文页右栏随时提取）</button>'
             + '<button id="cgBackReadBtn" class="px-4 py-2 rounded-clbtn text-[13px] border border-cl-border text-cl-muted">返回课文</button></div></div>';
         cgHydrateMath($('cgDrawerBody'));
         $('cgDoneBtn').addEventListener('click', function () {
-            // 标记完成 → 提取知识点确认流（Task 12）；占位标记供断言监听
+            // 追问笔记树轮裁定：提取入口移入阅读右栏，完成步只标记完成；占位标记供断言监听
             global.__cgDone = true;
             var btn = this;
-            btn.disabled = true; btn.textContent = '提取中…';
-            cgExtractConfirm(flow.lid);
+            btn.disabled = true; btn.textContent = '标记中…';
+            finishComplete(flow.lid);
         });
         $('cgBackReadBtn').addEventListener('click', function () { enterRead(); });
     }
@@ -1032,3 +1471,15 @@
     if (document.getElementById('cgRoot')) { try { loadGoals(); } catch (e) { /* 首屏由服务端渲染已挂载 */ } }
 })(window);
 </script>
+<style>
+/* 追问笔记树轮 2026-11-12：阅读步全屏沉浸（仅 .cg-read-mode 时抽屉面板铺满视口，
+   前测/后练/模块考仍用原 860px 抽屉）；笔记子章节虚线淡黄框；锚文本下划线可点 */
+#cgLessonDrawer .cg-read-note { border: 1px dashed #d6b656; background: rgba(254,243,199,.45); }
+#cgLessonDrawer .cg-note-quote { border-left: 3px solid #eab308; background: rgba(253,224,71,.10); }
+#cgLessonDrawer .cg-anchor { text-decoration: underline; cursor: pointer; text-underline-offset: 3px; }
+#cgLessonDrawer .cg-anchor:hover { background: rgba(253,224,71,.35); }
+#cgLessonDrawer.cg-read-mode #cgDrawerPanel { left: 0; width: 100%; max-width: none; border-left: 0; }
+#cgLessonDrawer.cg-read-mode #cgDrawerMask { display: none; }
+#cgSelMenu { position: absolute; z-index: 10; }
+#cgAskPop, #cgNoteEditor { position: absolute; z-index: 20; }
+</style>

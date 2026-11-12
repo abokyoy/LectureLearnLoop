@@ -451,6 +451,50 @@ def generate_lesson_chat(subject: str, title: str, content_md: str, history, que
     return ans
 
 
+# ---------------------------------------------------------------- 课文追问笔记树生成（追问笔记树轮 2026-11-12）
+
+_FOLLOW_PARENT_MAX = 3     # 父链上下文最多几层（追问的追问往上追）
+_FOLLOW_PARENT_TXT_MAX = 800  # 父链单条问答截断（防上下文膨胀）
+
+
+def generate_followup_chat(subject: str, title: str, content_md: str, anchor_text: str,
+                           question: str, parent_ctx=None) -> str:
+    """针对框选原文的追问回答（scene=课文追问讲解，同课内问答自动计费单缝）。
+
+    parent_ctx：由近及远的父链问答 [{q, a}]，最多取 _FOLLOW_PARENT_MAX 层、各截断。
+    prompt 纪律：尽可能图文并茂（用户裁定）——mermaid 围栏思路图/流程、表格对照、$公式$。
+    空回答视为失败直接抛 CourseError（不重试，防已扣费双扣，同 generate_lesson_chat 口径）。"""
+    lines = []
+    for c in (parent_ctx or [])[:_FOLLOW_PARENT_MAX]:
+        if isinstance(c, dict):
+            lines.append(f"问：{str(c.get('q') or '').strip()[:_FOLLOW_PARENT_TXT_MAX]}\n"
+                         f"答：{str(c.get('a') or '').strip()[:_FOLLOW_PARENT_TXT_MAX]}")
+    ctx_line = "\n".join(lines) or "（无上级追问）"
+    prompt = f"""你是学科「{subject}」的课文辅导老师。学习者正在学习课文《{title}》，对课文中框选的一段内容发起了追问。
+
+课文全文：
+{str(content_md or '')[:6000]}
+
+学习者框选的原文：
+「{str(anchor_text or '').strip()[:600]}」
+
+这条追问的上级问答链（由近及远，可能没有）：
+{ctx_line}
+
+学习者当前追问：{question}
+
+要求：
+1. 紧扣框选原文与课文内容回答，优先引用课文中的概念与例子；
+2. **尽可能图文并茂**：适合用结构表达的内容用 ```mermaid 围栏画思路图/流程/对照关系，
+   多项比较用 Markdown 表格，数学式子用 $...$ 标注；图宁少勿滥，画了就要对应讲清；
+3. 用中文回答，直接输出回答本身（Markdown）。"""
+    raw = _llm(prompt, scene="课文追问讲解")
+    ans = str(raw or "").strip()
+    if not ans:
+        raise CourseError("追问回答为空")
+    return ans
+
+
 def advance_lesson(conn, lesson_id, user_id, to_status: str) -> str:
     """课文状态机前进一步（或原地幂等返回），返回推进后状态。
 
