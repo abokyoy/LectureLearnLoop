@@ -2,11 +2,12 @@
 """课文追问笔记树 E2E 断言 seed（仅测试用户数据，用后即删，零 LLM）。
 
 argv: username out_json
-建 goal→module→lesson（content_ready 正文在库 → openLesson 直进阅读步），灌 3 条 lesson_notes：
+建 goal→module→lesson（content_ready 正文在库 → openLesson 直进阅读步），灌 4 条 lesson_notes：
 n1 顶层（锚文本在正文中，可锚定；回答含 mermaid 思路图与哨兵 ANSWER1）、
-n2 追问的追问（parent=n1，无限嵌套断言用）、
+n2 追问的追问（parent=n1，锚=父回答里的「步长」段 → 九追断言：落在该段之后）、
+n2b 追问的追问（parent=n1，锚在父回答中不存在 → 降级落节末 kids 容器，内容不丢）、
 n3 顶层锚文本不存在（降级右栏「未定位笔记」索引断言用）。
-输出 {uid,gid,mid,lid,n1,n2,n3} 供 node 断言与清理。"""
+输出 {uid,gid,mid,lid,n1,n2,n2b,n3} 供 node 断言与清理。"""
 import json
 import sys
 
@@ -61,10 +62,11 @@ def _note(parent, anchor, q, a):
 
 n1 = _note(None, "梯度下降通过沿负梯度方向迭代更新参数", "Q1SENTINEL 为什么方向取负？", ANS1)
 n2 = _note(n1, "步长", "Q2SENTINEL 那步长取多大合适？", "ANSWER2SENTINEL 经验值 0.01~0.1，配学习率衰减。")
+n2b = _note(n1, "ZZZ父回答里不存在的锚", "Q2BSENTINEL 降级用例", "ANSWER2BSENTINEL 锚不中落节末不丢内容。")
 n3 = _note(None, "ZZZ正文里根本不存在的锚点片段", "Q3SENTINEL 这条会降级到索引", "ANSWER3SENTINEL 内容不丢可编辑。")
 conn.commit()
 
-res = {"uid": uid, "gid": gid, "mid": mid, "lid": lid, "n1": n1, "n2": n2, "n3": n3}
+res = {"uid": uid, "gid": gid, "mid": mid, "lid": lid, "n1": n1, "n2": n2, "n2b": n2b, "n3": n3}
 with open(out_path, "w", encoding="utf-8") as f:
     json.dump(res, f, ensure_ascii=False)
 print("SEEDED", res)

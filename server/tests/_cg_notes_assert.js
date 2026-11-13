@@ -119,10 +119,23 @@ function chk(name, ok, info) {
         return !!(sib && sib.classList.contains('cg-anchor-group') && sib.querySelector('.cg-read-note')); })()`);
     chk('N4b 笔记紧跟带锚列表项（非整表末尾）', n4b === true, { n4b });
 
-    // N5 无限嵌套：追问的追问渲染在父章节 .cg-note-kids 内
-    const n5 = await evalJs(`(function(){ var k = document.querySelector('.cg-read-note[data-note-id="${S.n1}"] .cg-note-kids .cg-note[data-note-id="${S.n2}"]');
-        return !!k && k.innerText.indexOf('Q2SENTINEL') >= 0 && k.innerText.indexOf('ANSWER2SENTINEL') >= 0; })()`);
-    chk('N5 嵌套子章节（追问的追问）渲染', n5 === true, { n5 });
+    // N5 追问的追问落位（九追 2026-11-13）：n2 锚「步长」必须落在父回答该段之后（非节末堆叠）
+    const n5 = await evalJs(`(function(){ var sec = document.querySelector('.cg-read-note[data-note-id="${S.n1}"]');
+        if (!sec) return null; var aEl = sec.querySelector(':scope > .cg-note-a');
+        var kidsSec = sec.querySelector(':scope > .cg-note-kids');
+        var inKids = !!(kidsSec && kidsSec.querySelector('.cg-note[data-note-id="${S.n2}"]'));
+        var m = aEl.querySelector('.cg-anchor'); if (!m) return { mark: false, inKids: inKids };
+        var ln = m; while (ln && ln.parentNode !== aEl) ln = ln.parentNode; // 锚所在、aEl 直接子行
+        var grp = ln ? ln.nextElementSibling : null;
+        var afterLine = !!(grp && grp.classList.contains('cg-anchor-group') && grp.querySelector('.cg-note[data-note-id="${S.n2}"]'));
+        return { mark: true, inKids: inKids, afterLine: afterLine, lineHas: !!(ln && ln.textContent.indexOf('步长') >= 0 && ln.tagName !== 'CG-NOTE-A'),
+                 sent: !!(grp && grp.innerText.indexOf('Q2SENTINEL') >= 0 && grp.innerText.indexOf('ANSWER2SENTINEL') >= 0) }; })()`);
+    chk('N5 子追问落父回答锚段之后（非节末）', !!n5 && n5.mark === true && n5.inKids === false && n5.afterLine === true && n5.lineHas === true && n5.sent === true, { n5 });
+
+    // N5b 子锚不中降级：n2b 落父节末尾 .cg-note-kids，内容不丢（九追）
+    const n5b = await evalJs(`(function(){ var k = document.querySelector('.cg-read-note[data-note-id="${S.n1}"] .cg-note-kids .cg-note[data-note-id="${S.n2b}"]');
+        return !!k && k.innerText.indexOf('Q2BSENTINEL') >= 0 && k.innerText.indexOf('ANSWER2BSENTINEL') >= 0; })()`);
+    chk('N5b 子锚不中降级节末 kids 内容不丢', n5b === true, { n5b });
 
     // N6 点锚文本收起 → 回答区消失只剩摘要；再点恢复展开
     await evalJs(`document.querySelector('#cgMdBody .cg-anchor').click(); 'ok'`, false);

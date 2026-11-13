@@ -895,6 +895,13 @@
         while ((nnode = tw.nextNode())) {
             if (nnode.closest && nnode.closest('script, style')) continue;
             if (!nnode.nodeValue) continue;
+            // 嵌套隔离（九追 2026-11-13）：从文本上溯到搜索根 root 途中遇 .cg-anchor-group
+            // → 该文本属于已落入 root 内部的笔记子组（如父回答里的子追问），不参与锚搜索；
+            // root 自身所在的祖先组不算（顶层组内父回答正文必须可被子锚命中）
+            for (var up = nnode.parentElement; up && up !== root; up = up.parentElement) {
+                if (up.classList && up.classList.contains('cg-anchor-group')) { nnode = null; break; }
+            }
+            if (!nnode) continue;
             nodes.push({ node: nnode, start: full.length });
             full += nnode.nodeValue;
         }
@@ -927,11 +934,73 @@
     function noteSectionHtml(list) {
         return list.map(function (n) { return renderNoteNode(n); }).join('');
     }
+    // 九追 2026-11-13：追问的追问要落在父回答里被框选的那段下面（此前所有子节点无条件
+    // 堆父节末尾，子笔记 anchor_text 从不参与落位——用户报「追问记录里位置都不对」）。
+    // 统一管线：渲父回答→回填 KaTeX（子锚以渲染后文本为准，与课文层同口径）→
+    // 子组插进带锚段后；锚不中/表格内降级节末容器，内容不丢。
+    function hydrateNoteTree(root, seen) {
+        if (!root || !root.querySelectorAll) return;
+        Array.prototype.forEach.call(root.querySelectorAll(':scope > .cg-note'), function (sec) { hydrateNoteSection(sec, seen); });
+    }
+    function hydrateNoteSection(sec, seen) {
+        var n = noteById(Number(sec.getAttribute('data-note-id')));
+        if (!n) return;
+        var aEl = sec.querySelector(':scope > .cg-note-a');
+        if (!aEl) return; // 折叠态无回答区：子节随父一起收起，展开重建时恢复
+        renderLessonMd(aEl, n.answer_md);
+        cgMermaid(aEl);
+        // 子锚搜索命中的是 renderLessonMd 内 applyMath 已回填的 KaTeX 渲染后文本（框选入库口径）；
+        // 此处 cgHydrateMath 仅作防御（引用级占位槽残余），不可去掉 renderLessonMd 的公式回填
+        cgHydrateMath(aEl);
+        placeChildNotes(sec, seen);
+    }
+    function placeChildNotes(sec, seen) {
+        seen = seen || {}; // 脏数据 parent_id 成环时限深（环上节点只渲一次，不致递归死循环）
+        var sid = Number(sec.getAttribute('data-note-id'));
+        if (seen[sid]) return;
+        seen[sid] = 1;
+        var kids = (flow.notes || []).filter(function (c) { return c.parent_id === sid; });
+        if (!kids.length) return;
+        var aEl = sec.querySelector(':scope > .cg-note-a');
+        var fallback = sec.querySelector(':scope > .cg-note-kids');
+        var grpMap = {}, order = []; // 同锚串归一组（与顶层 anchorNotes 同构）
+        kids.forEach(function (c) {
+            var k = String(c.anchor_text || '');
+            if (!grpMap[k]) { grpMap[k] = []; order.push(k); }
+            grpMap[k].push(c);
+        });
+        order.forEach(function (k) {
+            var list = grpMap[k];
+            var box = document.createElement('div');
+            box.className = 'cg-anchor-group';
+            var gk = 'cgAG' + list.map(function (c) { return c.id; }).join('_');
+            box.setAttribute('data-anchor-group', gk);
+            box.innerHTML = noteSectionHtml(list);
+            box.querySelectorAll(':scope > .cg-note').forEach(function (s) { s.setAttribute('data-anchor-group', gk); });
+            var placed = false;
+            if (aEl && k) {
+                var marks = wrapAnchorText(aEl, k, gk);
+                if (marks.length) {
+                    // 行级容器上溯同课文层口径（六追教训：挂整块=列表末尾错位）；
+                    // 找不到行级宿主（如锚在表格内）宁可降级，不硬插错位位置；
+                    // 同行已有子组时跨组链追加（CodeReview Major-1：同 appendNoteSection 走位，多组保持建序不反序）
+                    var ln = marks[0].parentNode, LINE_RE = /^(P|LI|BLOCKQUOTE|H[1-6]|DD|DT)$/;
+                    while (ln && ln !== aEl && !LINE_RE.test(ln.tagName || '')) ln = ln.parentNode;
+                    if (ln && ln !== aEl) {
+                        var ref = ln.nextSibling;
+                        while (ref && ref.nodeType === 1 && ref.classList && ref.classList.contains('cg-anchor-group')) { ref = ref.nextSibling; }
+                        ln.parentNode.insertBefore(box, ref); placed = true;
+                    }
+                }
+            }
+            if (!placed && fallback) { fallback.appendChild(box); placed = true; } // 降级：锚不中/无锚子节落节末，内容不丢
+            if (placed) hydrateNoteTree(box, seen); // 入文档后递归（携环检测）：孙辈在子回答内同法落位
+        });
+    }
     // 递归渲染一个笔记节点（虚线淡黄子章节）：引用 + 问 + 答（MD+公式+思路图同管线）
     // + 子节点（追问的追问，无限嵌套）+ 编辑/折叠；默认展开，折叠态存内存
     function renderNoteNode(n) {
         var collapsed = !!(flow.collapsed || {})[n.id];
-        var kids = (flow.notes || []).filter(function (c) { return c.parent_id === n.id; });
         var inner = '<div class="flex items-start justify-between gap-2 mb-1">'
             + '<span class="cg-note-tag text-[10px] font-medium text-amber-700 shrink-0 mt-0.5">追问笔记</span>'
             + '<span class="flex items-center gap-1 shrink-0">'
@@ -942,7 +1011,7 @@
         }
         inner += '<div class="cg-note-q text-[12px] font-medium text-cl-text mb-1">问：' + cgMdSpan(n.question) + '</div>';
         if (!collapsed) inner += '<div class="cg-note-a text-[12px] leading-6 text-cl-text"></div>'; // 折叠态只显摘要（引用+问），回答不渲染
-        if (!collapsed && kids.length) inner += '<div class="cg-note-kids mt-2 flex flex-col gap-2">' + kids.map(function (k) { return renderNoteNode(k); }).join('') + '</div>';
+        if (!collapsed) inner += '<div class="cg-note-kids mt-2 flex flex-col gap-2"></div>'; // 子节容器：命中锚的子节插进回答对应段后，此处只收降级件（九追）
         return '<div class="cg-read-note cg-note rounded-cl p-2.5 my-2" data-note-id="' + n.id + '" data-collapsed="' + (collapsed ? 1 : 0) + '">' + inner + '</div>';
     }
     function appendNoteSection(mdEl, anchorEl, list, gkey) {
@@ -960,15 +1029,9 @@
             if (ref) { anchorEl.parentNode.insertBefore(wrap, ref); }
             else { anchorEl.parentNode.appendChild(wrap); }
         } else { mdEl.appendChild(wrap); }
-        // 回答区（含嵌套子节）：入文档后就地渲染，走课文同一 MD/公式/mermaid 管线（图文并貌 prompt 的产物能出图）
-        Array.prototype.forEach.call(wrap.querySelectorAll('.cg-note'), function (sec) {
-            var n = noteById(Number(sec.getAttribute('data-note-id')));
-            if (!n) return;
-            var aEl = sec.querySelector('.cg-note-a');
-            if (!aEl) return; // 折叠态无回答区（展开时重建再渲）
-            renderLessonMd(aEl, n.answer_md);
-            cgMermaid(aEl);
-        });
+        // 回答区（含嵌套子节）：入文档后走统一管线（九追）——逐节渲回答→回填 KaTeX→
+        // 子追问在父回答内按锚落位；图文并貌 prompt 的产物能出图
+        hydrateNoteTree(wrap);
         cgHydrateMath(wrap); // 引用/问题占位 span 回填（KaTeX 必须在已入文档节点上渲）
     }
     function renderNotesIndex() {
@@ -1185,15 +1248,8 @@
             tmp.querySelectorAll(':scope > .cg-note').forEach(function (s) { s.setAttribute('data-anchor-group', gkey); });
         }
         if (grp.parentNode) grp.parentNode.replaceChild(tmp, grp);
-        // 入文档后再渲回答与回填占位（KaTeX/mermaid 对分离碎片不渲染）
-        Array.prototype.forEach.call(tmp.querySelectorAll('.cg-note'), function (sec) {
-            var n = noteById(Number(sec.getAttribute('data-note-id')));
-            if (!n) return;
-            var aEl = sec.querySelector('.cg-note-a');
-            if (!aEl) return; // 折叠节无回答区，展开时再渲染
-            renderLessonMd(aEl, n.answer_md);
-            cgMermaid(aEl);
-        });
+        // 入文档后走统一管线重建（九追）：回答渲染、KaTeX/mermaid 回填、子追问按锚落位全部重算
+        hydrateNoteTree(tmp);
         cgHydrateMath(tmp);
         window.__cgNoteToggled = true; // CDP 断言哨兵
     }

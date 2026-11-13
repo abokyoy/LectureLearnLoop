@@ -70,6 +70,18 @@ def create_app() -> Flask:
     def _reset_billing_ctx():
         _credits.set_last_billing(None)
 
+    # HTML 页面全局防缓存（实弹轮 2026-11-13 八追）：页面模板内嵌全部 JS，此前项目 0 个
+    # 缓存控制头，Chromium/Electron 对无 validators 的响应走启发式缓存——服务重启部署后
+    # 用户仍跑旧版页面（「改了但用户碰不到」三度重演的结构性根因）。除 text/html 外还
+    # 须覆盖 /fragments/：SPA 菜单切页走 fetch('/fragments/<id>')，页面 HTML+JS 裹在
+    # application/json 体里送达，是用户实际碰到的主页面通道；静态资源不受影响（cl.css
+    # 已有 mtime 版本号机制）。
+    @app.after_request
+    def _no_store_html(resp):
+        if resp.mimetype == "text/html" or request.path.startswith("/fragments/"):
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
+
     app.register_blueprint(pages_bp)  # P2c 页面路由（SPA 壳 + 登录页 + fragments）
     app.register_blueprint(auth_bp)
     app.register_blueprint(kb_bp)  # P3 业务 API（科目/提取/确认/错题/收藏/脑图/练习/笔记）
@@ -91,15 +103,20 @@ def create_app() -> Flask:
     # 仅限 /api/ 前缀，页面路由不受影响；异常照旧进统一调试日志留痕。
     @app.errorhandler(Exception)
     def _api_error_json(e):
+        from werkzeug.exceptions import HTTPException
         if request.path.startswith("/api/"):
             try:
                 debug_logger.log_error("api", "unhandled_exception", e, {"path": request.path})
             except Exception:  # noqa: BLE001 留痕失败不阻断报错
                 pass
-            from werkzeug.exceptions import HTTPException
             if isinstance(e, HTTPException):  # 404/405 等标准错误也回 JSON 形
                 return jsonify({"success": False, "error": e.description or str(e)}), e.code
             return jsonify({"success": False, "error": f"服务内部错误: {e}"}), 500
+        # 非 API 路径：HTTP 异常（404/405 等）原样渲染标准错误页。此前直接 raise e
+        # 会被 Flask 当作「错误处理器自身抛异常」不再二次处理，页面路由 404 全部变
+        # 500（八追实弹轮 2026-11-13 活服探针发现）；真未控异常照旧上抛走默认处理。
+        if isinstance(e, HTTPException):
+            return e.get_response()
         raise e
 
     # 统一调试日志通道（客户端/前端上报；与旧工程 app_flask 相同语义：静默失败）
