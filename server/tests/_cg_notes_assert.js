@@ -108,6 +108,14 @@ function chk(name, ok, info) {
                  svg: s.querySelectorAll('.cg-note-a svg').length }; })()`);
     chk('N4 淡黄虚线章节+问答+思路图', n4 && n4.border === 'dashed' && n4.q === true && n4.a === true && n4.svg >= 1, { n4 });
 
+    // N4b 列表锚定回归守卫（完全展开轮 2026-11-13 实弹：锚句在列表第2项，笔记曾被推到整张 ul 末尾）：
+    //     章节组必须紧跟在带锚 li 之后（同一 ul 内），而非列表尾部
+    const n4b = await evalJs(`(function(){ var a = document.querySelector('#cgMdBody .cg-anchor');
+        if (!a) return null; var li = a.closest('li'); if (!li) return 'no-li';
+        var sib = li.nextElementSibling;
+        return !!(sib && sib.classList.contains('cg-anchor-group') && sib.querySelector('.cg-read-note')); })()`);
+    chk('N4b 笔记紧跟带锚列表项（非整表末尾）', n4b === true, { n4b });
+
     // N5 无限嵌套：追问的追问渲染在父章节 .cg-note-kids 内
     const n5 = await evalJs(`(function(){ var k = document.querySelector('.cg-read-note[data-note-id="${S.n1}"] .cg-note-kids .cg-note[data-note-id="${S.n2}"]');
         return !!k && k.innerText.indexOf('Q2SENTINEL') >= 0 && k.innerText.indexOf('ANSWER2SENTINEL') >= 0; })()`);

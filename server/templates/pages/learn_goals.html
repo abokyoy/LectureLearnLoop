@@ -572,7 +572,14 @@
         principle: { label: '原理图', btn: '生成原理图' },
         lab: { label: '交互实验', btn: '生成实验' }
     };
-    var visState = {}, visHasContent = true, visTimer = null;
+    var visState = {}, visHasContent = true, visTimer = null, cgVisSink = {};
+    // 展示位高度回报消息口：只认已注册且仍在文档的 iframe，高度范围守卫防伪造/垃圾值
+    window.addEventListener('message', function (ev) {
+        var d = ev.data; if (!d || !d.cgVis) return;
+        var f = cgVisSink[d.cgVis]; if (!f || !f.isConnected) return;
+        var h = Math.round(Number(d.h)); if (!(h > 60 && h <= 8000)) return; // 8000 硬顶：超长图文页也够，同时封死异常爬升
+        f.style.height = (h + 8) + 'px'; // 小边距防底部裁切；只在内容真溢出时报高（见注入侧），vh 型内容不会循环增长
+    });
     function visReset() {
         visState = {}; visHasContent = true;
         VIS_KINDS.forEach(function (k) { visState[k] = { state: 'none', opened: false, jobId: null, view: null, error: '', startedAt: 0, rechecking: false }; });
@@ -598,8 +605,16 @@
         f.setAttribute('referrerpolicy', 'no-referrer');
         f.title = VIS_META[kind].label;
         f.className = 'w-full border border-cl-border rounded-cl bg-white';
-        f.style.height = '520px'; // 展示位内嵌高度固定约一屏内（计划裁定：全屏大看图暂不做）
-        f.srcdoc = String((visState[kind].view || {}).html || '');
+        f.style.height = '420px'; // 首次高度回报前的兑底值，回报后按内容真实高度撑满（完全展开轮 2026-11-13：用户裁定不要垂直滚动拉杆）
+        var token = 'cgv' + (window.crypto && crypto.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0].toString(36) : Math.random().toString(36).slice(2));
+        Object.keys(cgVisSink).forEach(function (t) { if (!cgVisSink[t].isConnected) delete cgVisSink[t]; }); // 清掉已移除的旧框，防注册表只增
+        cgVisSink[token] = f;
+        // sandbox 无 allow-same-origin → srcdoc 是独立 origin，父页读不到 contentDocument，
+        // 只能由注入脚本 postMessage 报高；口径：只在 scrollHeight 真溢出当前视口(+4)时才报——
+        // 定高内容一次撑到位；min-height:100vh 型内容撑到位后 scrollHeight≈clientHeight 自动闭嘴，
+        // 不会「变高→再报→再变高」循环爬升（评审 Minor-1，vh 写法在产物里很常见）；变高只长不缩，防抖动
+        var inj = '<scr' + 'ipt>(function(){function rep(){var de=document.documentElement,sh=Math.max(de.scrollHeight,document.body?document.body.scrollHeight:0);if(sh>de.clientHeight+4){try{parent.postMessage({cgVis:"' + token + '",h:sh},"*");}catch(e){}}}window.addEventListener("load",rep);document.addEventListener("DOMContentLoaded",rep);if(window.ResizeObserver){try{new ResizeObserver(rep).observe(document.documentElement);}catch(e){}}setInterval(rep,1500);})();</scr' + 'ipt>';
+        f.srcdoc = String((visState[kind].view || {}).html || '') + inj;
         return f;
     }
     function paintVis() {
@@ -860,8 +875,13 @@
             if (!marks.length) { flow.unAnchored.push.apply(flow.unAnchored, tops[k]); return; }
             var first = marks[0];
             var block = closestBlock(first, md);
-            var holder = first.parentNode;
-            while (holder && holder !== md && holder !== block) holder = holder.parentNode;
+            // 笔记要挂在锚点真正所在的「那一行」下：上溯先找最近行级容器（p/li/引用/标题）；
+            // 列项场景若直接用顶层块（整个 ul）当宿主，笔记会挂到整张列表末尾（实弹轮 2026-11-13：
+            // 用户报「追问不在那句下面而是下三行」——凸性句是列表第3项，笔记被推到第4项后）；
+            // 表格/无行级容器场景保持顶层块现例（插 div 进 tr 会碎版）
+            var line = first.parentNode, LINE_RE = /^(P|LI|BLOCKQUOTE|H[1-6]|DD|DT)$/;
+            while (line && line !== md && !LINE_RE.test(line.tagName || '')) line = line.parentNode;
+            var holder = (line && line !== md) ? line : block;
             appendNoteSection(md, holder || block, tops[k], gid);
         });
         (flow.notes || []).forEach(function (n) { /* 子节点在各自父章节内递归渲染，无需额外动作 */ });
