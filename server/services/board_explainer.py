@@ -37,6 +37,9 @@ from services import principle_cache as PC
 
 # ---------------------------------------------------------------- 常量
 _LLM_TIMEOUT = 240          # 原理图输出比微课实验页更长：2026-11-09 实测 deepseek-flash 产 14k 字耗 154s，留量防贴脸超时
+_LLM_TIMEOUT_REFRESH = 600  # refresh（thinking=on）放宽：非流式+开思考的长 HTML 生成整段时
+                            # 间不吐字节，实弹铁证 2026-11-12 用户重画原理图 GLM 240s 无首字
+                            # 节超时；关思考实测 44~57s 用 240 预算足够，只给思考模式单独扩容
 _SCENE = "原理图生成"
 _LAB_SCENE = "课文实验图生成"   # 图文结合轮（2026-11-12 A 方案）：课级交互实验台独立计量场景
 _LESSON_MAT_MAX = 9000         # 课级产物素材上限：课文正文比板卡快照长，单独定量
@@ -335,8 +338,9 @@ def _run(job_id: str, uid: str, prompt: str, mode: str = "off",
     pc_kind/scene：归档轨道与计量场景（黑板链默认 "lesson"/原理图；课文页走
     "course_lesson" 与实验台场景，两轨互不串，图文结合轮 2026-11-12）。"""
     try:
-        raw = call_llm_for_user(uid, prompt, scene=scene, timeout=_LLM_TIMEOUT,
-                                thinking=mode)
+        raw = call_llm_for_user(uid, prompt, scene=scene, timeout=(
+            _LLM_TIMEOUT_REFRESH if mode == "on" else _LLM_TIMEOUT),
+            thinking=mode)
         obj = MC.validate_scene_content("interactive", raw)
         warn = MC.external_ref_note(obj.get("html") or "")
         # 先归档再置 done（同 board_lesson 评审 M-3「先落盘再记账」）：轮询到 done 的

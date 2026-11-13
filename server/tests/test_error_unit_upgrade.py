@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 import unittest
@@ -24,7 +25,7 @@ import requests
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-BASE = "http://127.0.0.1:6001"
+BASE = os.getenv("LL_TEST_BASE", "http://127.0.0.1:6001")
 SUBJECT = f"错题单元{int(time.time()) % 100000}_{uuid.uuid4().hex[:4]}"
 
 
@@ -280,6 +281,30 @@ class TestP4Service(unittest.TestCase):
         self.assertEqual(obj["summary_md"], "a")
         with self.assertRaises(ValueError):
             self.WR.extract_json_object("模型拒绝回答，没有 JSON")
+
+    def test_01b_extract_truncated_hint(self):
+        """截断可诊断（坏舞台轮 2026-11-10）：本地模型 ctx 上限吐出的半截 JSON
+        必须报「被截断」，不能伪装成「格式不合」让老师无从转述真实原因；
+        完全没 JSON 的输出保持原文案（不误报截断）。"""
+        with self.assertRaises(ValueError) as cm:
+            self.WR.extract_json_object('```json\n{"title": "x", "canvas_html": "<html>没写完')
+        self.assertIn("截断", str(cm.exception))
+        with self.assertRaises(ValueError) as cm2:
+            self.WR.extract_json_object("模型拒绝回答，没有 JSON")
+        self.assertNotIn("截断", str(cm2.exception))
+
+    def test_01c_extract_lenient_control_chars(self):
+        """偶发畸形 JSON 救回（实验台轮 2026-11-12）：GLM 偶发在长 html 串值里写
+        裸换行/制表符（严格 JSON 非法），同 prompt 重跑又正常——本地 strict=False
+        补轮即可救回，不得误报「不可解析」白扣一单；救回后控制字符转为真换行，
+        下游 html 不受影响。未闭合截断检测不受宽松解析影响（仍报截断）。"""
+        bad = '{"title": "实验台", "html": "<script>\nvar a=1;\t\n</script>"}'
+        obj = self.WR.extract_json_object(bad)
+        self.assertEqual(obj["title"], "实验台")
+        self.assertIn("var a=1;", obj["html"])   # 制表符/换行完整保留
+        with self.assertRaises(ValueError) as cm3:
+            self.WR.extract_json_object('{"html": "a\nb')
+        self.assertIn("截断", str(cm3.exception))
 
     def test_02_validate_strict(self):
         vid = {11, 12}

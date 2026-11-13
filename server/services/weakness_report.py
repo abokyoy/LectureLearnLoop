@@ -77,12 +77,22 @@ def extract_json_object(text: str) -> dict:
         cand = t[s:e + 1]
         candidates += [cand, _TRAILING_COMMA_RE.sub(r"\1", cand)]
     for cand in candidates:
-        try:
-            obj = json.loads(cand)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            return obj
+        # strict=False 补轮（实验台偶发畸形 JSON 轮 2026-11-12）：GLM 偶发在长
+        # html 字符串值里写裸换行/制表符（严格 JSON 非法），同 prompt 重跑又正常——
+        # 本地修复层多试一次宽松解析即可救回，禁自动重发（防双扣分）前提下免浪费一单
+        for kw in ({}, {"strict": False}):
+            try:
+                obj = json.loads(cand, **kw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict):
+                return obj
+    # 截断与格式不合要分开报（坏舞台轮 2026-11-10）：本地模型 ctx/生成长度上限不足时
+    # 吐出的是「有 { 无 }」的半截 JSON，报「不可解析」会把容量问题伪装成格式问题，
+    # 老师只能转述「再点一次试试」，用户永远猜不到要的是调大 num_ctx。
+    if t.find("{") >= 0 and t.rfind("}") < 0:
+        raise ValueError("模型输出被截断（JSON 未闭合）：本地模型上下文或生成长度"
+                         "上限不足，本页暂时生成不了")
     raise ValueError("模型返回不可解析为 JSON 对象")
 
 

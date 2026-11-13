@@ -184,6 +184,27 @@ def test_21_cache_reuse_zero_calls():
         _purge_pc(uid)
 
 
+def test_21b_timeout_budget_by_mode():
+    """超时预算按 mode 分流（超时扩容轮 2026-11-12）：refresh 开思考 + 非流式，
+    GLM 整段生成期间不吐一个字节，实弹铁证撞死 240s（09:11 原理图 240.7s 无首字节）；
+    关思考实测 44~57s 用 240 预算足够——只给思考模式单独扩容 600s。
+    断言引用模块常量而非魔数，防预算调整时测试假绿。"""
+    uid = "cv" + uuid.uuid4().hex[:8]
+    stub = Stub(result=_json_ok())
+    BE.call_llm_for_user = stub
+    try:
+        r1 = BE.start_for_lesson(uid, _ctx(), "principle")
+        _wait_done(uid, r1["job"]["job_id"])
+        assert stub.calls[0]["timeout"] == BE._LLM_TIMEOUT     # 普通生成 240 不变
+        assert stub.calls[0]["thinking"] == "off"
+        r2 = BE.start_for_lesson(uid, _ctx(), "principle", refresh=True)
+        _wait_done(uid, r2["job"]["job_id"])
+        assert stub.calls[1]["timeout"] == BE._LLM_TIMEOUT_REFRESH  # 重画 600
+        assert stub.calls[1]["thinking"] == "on"
+    finally:
+        _purge_pc(uid)
+
+
 def test_22_inflight_reuse_same_slot():
     uid = "cv" + uuid.uuid4().hex[:8]
     gate = threading.Event()
