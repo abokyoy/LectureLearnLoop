@@ -678,7 +678,7 @@
                 if (s.state !== 'generating') return;
                 if (j.state === 'done') { s.state = 'done'; s.view = j; s.opened = true; s.jobId = null; }
                 else if (j.state === 'failed') { s.state = 'failed'; s.error = j.error || '生成失败，请重试'; s.jobId = null; }
-                else if (Date.now() - s.startedAt > 300000) { s.state = 'failed'; s.error = '生成超时，请重试'; s.jobId = null; } // 后端 LLM 超时 240s，留余量
+                else if (Date.now() - s.startedAt > 660000) { s.state = 'failed'; s.error = '生成超时，请重试'; s.jobId = null; } // 后端预算：普通 240s／深度重画（思考模式）600s，留 60s 余量（超时扩容轮 2026-11-13：写死 300s 曾把 346s 真成功误判成假超时）
             });
             paintVis();
             if (VIS_KINDS.some(function (k) { return visState[k].state === 'generating'; })) visTimer = setTimeout(visTick, 4000);

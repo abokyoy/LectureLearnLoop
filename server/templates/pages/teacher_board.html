@@ -1,0 +1,2189 @@
+{# teacher_board v5 (phase 5 + v0.2.6 two-column bottom: left = branch board text stream, right figure rail = the picture being lectured now, PPT-style — it stays until a newer plot or an explicit pick takes the rail, and collapses to none while no plot exists; bottom strip = timeline thumbnails). Top zone stays the live caption stream. Draggable split saved to localStorage.tb_split_ratio. Plot graphics are rendered only by /static/js/tb_charts.js (ECharts + rough.js, local vendor, no CDN, no SVG fallback). When a plot is pushed out by a new one, the sentences the teacher said about it are burned into a PNG and archived as a courseware slide (micro_courses source_type='live' / micro_scenes scene_type='board'), exportable to PDF/PPTX. Hardware ESP32 lessons have no caption text on the server -> top zone degrades to the card stream with a hint. UI Chinese strings are ASCII escapes (\u in JS, &#x; in HTML) so this file stays pure-ASCII and transport-safe. #}
+<link rel="stylesheet" href="/static/vendor/vditor/dist/js/katex/katex.min.css">
+<script src="/static/vendor/vditor/dist/js/katex/katex.min.js"></script>
+<script src="/static/vendor/echarts/echarts.min.js"></script>
+<script src="/static/vendor/rough/rough.js"></script>
+<script src="/static/js/vendor/mermaid.min.js"></script>
+<script src="/static/js/tb_charts.js"></script>
+<style>
+    /* chalk surface + page-private bits Tailwind cannot express (.tb- prefix) */
+    .tb-board { background: #1e3d2f; box-shadow: inset 0 0 42px rgba(0,0,0,.35); }
+    .tb-chalk { color: #f3efe2; }
+    .tb-card { border-left: 4px solid transparent; border-radius: 8px;
+               padding: 6px 10px; transition: box-shadow .25s, background .25s; }
+    .tb-kind-problem  { border-left-color: #7dd3fc; background: rgba(125,211,252,.07); }
+    .tb-kind-options  { border-left-color: #93c5fd; background: rgba(147,197,253,.06); }
+    .tb-kind-step     { border-left-color: #6ee7b7; }
+    .tb-kind-formula  { border-left-color: #fcd34d; background: rgba(252,211,77,.06); }
+    .tb-kind-note     { border-left-color: #f9a8d4; background: rgba(249,168,212,.07); }
+    .tb-kind-plot     { border-left-color: #a5b4fc; background: rgba(165,180,252,.08); }
+    .tb-kind-topic    { border-left-color: #fde68a; background: rgba(253,230,138,.10); font-weight: 600; }
+    /* focus lamp: the line being lectured glows, others stay plain */
+    .tb-focus { box-shadow: 0 0 0 2px rgba(253,230,138,.8), 0 0 22px rgba(253,230,138,.35);
+                background: rgba(253,230,138,.10) !important; }
+    .tb-focus::after { content: "\8bb2\8bfe\4e2d"; font-size: 10px; color: #fde68a;
+                       margin-left: 8px; vertical-align: 2px; }
+    .tb-id { color: #86b8a2; font-size: 11px; margin-right: 6px; }
+    .tb-plot-title { font-size: 12px; color: #cde8d9; }
+    .tb-stepno { display: inline-block; min-width: 20px; color: #6ee7b7; font-weight: 600; }
+    .tb-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; margin-top: 4px; }
+    .tb-opt b { color: #93c5fd; margin-right: 6px; }
+    .tb-formula { text-align: center; font-size: 17px; padding: 6px 0; }
+    /* caption lines: teacher (chalk white) vs student (dimmer cyan) */
+    .tb-say { border-left: 4px solid transparent; padding: 3px 10px; border-radius: 8px; }
+    .tb-say-teacher { border-left-color: #f3efe2; color: #f3efe2; }
+    .tb-say-student { border-left-color: #7dd3fc; color: #bcd6cb; }
+    .tb-who { font-size: 10px; opacity: .55; margin-right: 6px; }
+    .tb-plotrow { border: 1px solid rgba(243,239,226,.12); border-radius: 10px;
+                  padding: 6px 8px; transition: opacity .25s; }
+    .tb-plotrow.tb-dim { opacity: .55; }
+    /* phase 5 main board: stage rows render the same card markup, larger */
+    .tb-stage-card { border-left: 4px solid rgba(243,239,226,.18); padding: 4px 12px; }
+    .tb-stage-card.tb-kind-problem { border-left-color: #f59e0b; }
+    .tb-stage-card.tb-kind-formula { border-left-color: #7dd3fc; }
+    .tb-stage-card.tb-kind-plot { border-left-color: #34d399; }
+    .tb-stage-root { border: 1px solid rgba(243,239,226,.25); border-radius: 10px;
+                     padding: 8px 14px; background: rgba(255,255,255,.05); }
+    .tb-band { flex: 0 0 auto; width: 118px; border: 1px solid rgba(243,239,226,.15);
+               border-radius: 8px; background: rgba(255,255,255,.04); overflow: hidden;
+               cursor: pointer; padding: 2px; color: inherit; text-align: left; }
+    .tb-band-cur { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245,158,11,.5); }
+    /* v0.2.6 figure rail: the lectured picture lives here, centered, until a newer one takes over */
+    #tb-col-figure:not(.hidden) { display: flex; }   /* hidden toggles display:none, flex-col needs flex */
+    .tb-figbox { display: flex; align-items: flex-start; justify-content: center; }
+    /* embedded anchors (pre-planted pointer targets) */
+    .tb-anc { border-radius: 4px; padding: 0 2px; transition: background .25s, box-shadow .25s; }
+    .tb-anc-on { background: rgba(253,230,138,.22); box-shadow: 0 0 0 1px rgba(253,230,138,.6); }
+    /* laser pointer dot flying over to the focused anchor/mark */
+    #tb-laser { position: fixed; width: 14px; height: 14px; border-radius: 9999px;
+                background: radial-gradient(circle, #ff6b5e 0%, #ef4444 55%, rgba(239,68,68,0) 100%);
+                box-shadow: 0 0 10px 4px rgba(239,68,68,.55); pointer-events: none;
+                z-index: 999; opacity: 0; left: 0; top: 0;
+                transition: left .45s cubic-bezier(.22,.8,.36,1), top .45s cubic-bezier(.22,.8,.36,1),
+                            opacity .3s; }
+    #tb-laser.tb-laser-on { opacity: 1; }
+    @keyframes tb-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; } }
+    .tb-in { animation: tb-in .35s ease-out; }
+    /* offscreen stage used only for burning archived PNGs (never visible) */
+    .tb-offscreen { position: fixed; left: -10000px; top: 0; width: 880px; height: 460px;
+                    overflow: hidden; pointer-events: none; }
+    /* KaTeX a11y copy: Blink lets MathML descendants ignore ancestor overflow
+       clipping when computing the document scroll extent, so a formula sitting in
+       #tb-board's scroll area also inflates the whole page (double scrollbar).
+       The visual layer is .katex-html; mathml is screen-reader only -> drop it
+       from layout entirely on this page. */
+    #tb-root .katex-mathml { display: none; }
+    /* C-phase animation stage (kept from phase 2/3) */
+    .tb-stage-iframe { width: 100%; min-height: 360px; border: 0; display: block; }
+    /* principle-diagram popup frame (demo round 2026-11-09): fills the modal body */
+    .tb-explain-frame { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+    .tb-stepdot { width: 10px; height: 10px; border-radius: 9999px; background: #d1d5db;
+                  display: inline-block; }
+    .tb-stepdot-on { background: #f59e0b; }
+    .tb-dot { width: 9px; height: 9px; border-radius: 9999px; display: inline-block; }
+</style>
+
+<div class="h-full w-full flex flex-col min-h-0 bg-cl-bg" id="tb-root">
+    <!-- header: lamps + lesson actions -->
+    <div class="shrink-0 px-4 py-3 flex items-center justify-between gap-3 border-b border-cl-border">
+        <div class="min-w-0">
+            <h1 class="text-lg font-semibold text-cl-text truncate">AI &#x8001;&#x5e08;&#x9ed1;&#x677f;</h1>
+            <p class="text-xs text-cl-text-3 mt-1 truncate">
+                &#x8001;&#x5e08;&#x8bb2;&#x5230;&#x54ea;&#xff0c;&#x5b57;&#x5e55;&#x8d70;&#x5230;&#x54ea;&#xff1b;&#x56fe;&#x88ab;&#x65b0;&#x56fe;&#x9876;&#x8d70;&#x65f6;&#xff0c;&#x8001;&#x5e08;&#x9488;&#x5bf9;&#x5b83;&#x8bf4;&#x7684;&#x8bdd;&#x4f1a;&#x70e7;&#x8fdb;&#x56fe;&#x91cc;&#xff0c;&#x65e0;&#x5f62;&#x4e2d;&#x5c31;&#x6210;&#x4e86;&#x8bfe;&#x4ef6;&#x3002;
+            </p>
+        </div>
+        <div class="flex items-center gap-3 shrink-0">
+            <span class="flex items-center gap-1.5 text-xs text-cl-text-3">
+                <span class="tb-dot" id="tb-dot"></span>
+                <span id="tb-bridge-text">&#x6865;&#x72b6;&#x6001;&#x672a;&#x77e5;</span>
+            </span>
+            <span class="flex items-center gap-1.5 text-xs text-cl-text-3">
+                <span class="tb-dot" id="tb-voice-dot"></span>
+                <span id="tb-voice-text">&#x672a;&#x4e0a;&#x8bfe;</span>
+            </span>
+            <button id="tb-voice-btn" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer">&#x5f00;&#x59cb;&#x4e0a;&#x8bfe;</button>
+            <button id="tb-lesson-btn" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+            <button id="tb-prep-btn" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+            <button id="tb-clear-btn" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer">&#x64e6;&#x9ed1;&#x677f;</button>
+        </div>
+    </div>
+
+    <!-- transient banner: archive status / engine missing / prep ready -->
+    <div id="tb-banner" class="shrink-0 hidden px-4 py-1.5 text-xs border-b border-cl-border bg-cl-primary-soft text-cl-text-2"></div>
+
+    <!-- C-phase staged animation host (kept from phase 2/3; shown when ready) -->
+    <div id="tb-stage" class="shrink-0 hidden mx-4 mt-3 rounded-cl border border-cl-border bg-cl-surface shadow-cl p-4">
+        <div class="flex items-center justify-between mb-2">
+            <p id="tb-stage-title" class="text-sm font-semibold text-cl-text"></p>
+            <div id="tb-stage-dots" class="flex items-center gap-1.5"></div>
+        </div>
+        <div id="tb-stage-frame"></div>
+        <p id="tb-stage-err" class="text-xs mt-1 hidden text-cl-danger"></p>
+        <p id="tb-stage-cap" class="text-sm mt-2 text-cl-text-2 min-h-[1.5em]"></p>
+        <p class="text-[11px] text-cl-text-3">&#x8001;&#x5e08;&#x5ff5;&#x5230;&#x54ea;&#x6b65;&#xff0c;&#x753b;&#x9762;&#x5c31;&#x53d8;&#x5230;&#x54ea;&#x6b65;&#xff08;&#x821e;&#x53f0;&#x5728;&#x72ec;&#x7acb;&#x6c99;&#x7bb1;&#x4e2d;&#x8fd0;&#x884c;&#xff09;&#x3002;</p>
+    </div>
+
+    <!-- two zones: top = caption stream, bottom = plots (newest first) -->
+    <div class="flex-1 flex flex-col min-h-0 px-4 py-3" id="tb-split">
+        <section id="tb-zone-sub" class="flex flex-col min-h-0 overflow-hidden rounded-cl tb-board">
+            <div class="shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/10">
+                <span class="text-[11px] tracking-[2px] text-[#86b8a2]">&#x8bb2; &#xb7; &#x7a3f;</span>
+                <span class="flex items-center gap-2">
+                    <span id="tb-sub-hint" class="text-[11px] text-[#cde8d9] hidden">&#x771f;&#x673a;&#x4e0a;&#x8bfe;&#x65e0;&#x53e3;&#x64ad;&#x5b57;&#x5e55;&#xff0c;&#x8bfe;&#x4ef6;&#x53ea;&#x5b58;&#x56fe;</span>
+                    <button id="tb-back-btn" type="button"
+                            class="hidden px-2 py-1 rounded-clbtn text-[11px] text-cl-text border border-cl-border bg-cl-surface hover:bg-cl-primary-soft cursor-pointer">&#x56de;&#x5230;&#x6700;&#x65b0;</button>
+                </span>
+            </div>
+            <div id="tb-stream" class="flex-1 min-h-0 overflow-y-auto px-2 py-2 flex flex-col gap-1.5">
+                <p id="tb-stream-empty" class="text-sm opacity-60 px-2 py-1 tb-chalk">&#x8fd8;&#x6ca1;&#x5f00;&#x8bfe;&#xff0c;&#x7b49;&#x8001;&#x5e08;&#x5f00;&#x53e3;&#x2026;</p>
+            </div>
+        </section>
+
+        <div id="tb-divider" role="separator" aria-orientation="horizontal"
+             class="shrink-0 h-2 mx-1 my-1.5 rounded-full bg-cl-border hover:bg-cl-primary cursor-row-resize select-none"></div>
+
+        <section id="tb-zone-plot" class="flex-1 flex flex-col min-h-0 overflow-hidden rounded-cl tb-board">
+            <div class="shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/10">
+                <span class="text-[11px] tracking-[2px] text-[#86b8a2]">&#x677f; &#xb7; &#x4e66;</span>
+                <span class="flex items-center gap-2">
+                    <span id="tb-plot-count" class="text-[11px] text-[#cde8d9]"></span>
+                    <button id="tb-explain-btn" type="button"
+                            class="px-2 py-1 rounded-clbtn text-[11px] text-cl-text border border-cl-border bg-cl-surface hover:bg-cl-primary-soft cursor-pointer disabled:opacity-50 disabled:cursor-wait">&#x539f;&#x7406;&#x56fe;</button>
+                </span>
+            </div>
+            <!-- v0.2.6 two-column: left = board text stream, right = the picture being lectured now
+                 (PPT-style, persists until a newer plot takes the stage; collapses to none when no plot) -->
+            <div class="flex-1 flex flex-row min-h-0">
+                <div id="tb-board" class="flex-1 min-w-0 overflow-y-auto px-3 py-2 flex flex-col gap-2">
+                    <p id="tb-board-welcome" class="text-sm opacity-60 px-2 py-1 tb-chalk hidden"></p>
+                </div>
+                <aside id="tb-col-figure" class="shrink-0 hidden flex-col min-h-0 border-l border-white/10" style="width:46%;">
+                    <div class="shrink-0 flex items-center justify-between gap-2 px-3 py-1.5 border-b border-white/10">
+                        <span class="text-[11px] tracking-[2px] text-[#86b8a2]">&#x753b; &#xb7; &#x9762;</span>
+                        <span id="tb-fig-title" class="text-[11px] text-[#cde8d9] truncate max-w-[60%]"></span>
+                    </div>
+                    <div id="tb-figure" class="flex-1 min-h-0 overflow-y-auto px-3 py-2 tb-figbox"></div>
+                </aside>
+            </div>
+            <div id="tb-timeline" class="shrink-0 h-[92px] flex items-stretch gap-2 px-2 py-1.5 border-t border-white/10 overflow-x-auto"></div>
+        </section>
+    </div>
+
+    <p class="shrink-0 text-[11px] text-cl-text-3 px-4 pb-2" id="tb-meta"></p>
+</div>
+
+<div id="tb-laser" aria-hidden="true"></div>
+<div class="tb-offscreen" aria-hidden="true"><div id="tb-off-host"></div></div>
+
+<!-- courseware drawer: archived slides of this lesson + export -->
+<div id="tb-drawer-mask" class="hidden fixed inset-0 z-50 bg-black/50 flex justify-end">
+    <div class="w-full max-w-md h-full flex flex-col min-h-0 bg-cl-surface border-l border-cl-border">
+        <div class="shrink-0 px-4 py-3 flex items-center justify-between gap-2 border-b border-cl-border">
+            <div class="min-w-0">
+                <p id="tb-drawer-title" class="text-sm font-semibold text-cl-text truncate"></p>
+                <p id="tb-drawer-sub" class="text-[11px] text-cl-text-3 mt-0.5 truncate"></p>
+            </div>
+            <button id="tb-drawer-close" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+        </div>
+        <div id="tb-drawer-body" class="flex-1 min-h-0 overflow-y-auto px-4 py-3 flex flex-col gap-3"></div>
+        <div class="shrink-0 px-4 py-3 border-t border-cl-border flex items-center gap-2">
+            <button id="tb-exp-pdf" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+            <button id="tb-exp-pptx" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+            <span id="tb-drawer-status" class="text-[11px] text-cl-text-3 truncate"></span>
+        </div>
+    </div>
+</div>
+
+<!-- lesson prep dialog (double entry: this button + saying "help me prepare a lesson about X") -->
+<div id="tb-prep-mask" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-6">
+    <div class="w-full max-w-lg max-h-full flex flex-col min-h-0 bg-cl-surface rounded-cl border border-cl-border shadow-cl">
+        <div class="shrink-0 px-4 py-3 border-b border-cl-border">
+            <p id="tb-prep-title" class="text-sm font-semibold text-cl-text"></p>
+            <div id="tb-prep-tabs" class="flex items-center gap-2 mt-2"></div>
+        </div>
+        <div class="flex-1 min-h-0 overflow-y-auto px-4 py-3 flex flex-col gap-2">
+            <label class="text-[11px] text-cl-text-3 flex flex-col gap-1">
+                <span id="tb-prep-subject-label"></span>
+                <select id="tb-prep-subject" class="text-sm rounded-clbtn border border-cl-border px-2 py-1.5 text-cl-text"></select>
+            </label>
+            <div id="tb-prep-freebox" class="hidden flex flex-col gap-1">
+                <label class="text-[11px] text-cl-text-3" for="tb-prep-free"></label>
+                <input id="tb-prep-free" type="text"
+                       class="text-sm rounded-clbtn border border-cl-border px-2 py-1.5 text-cl-text">
+            </div>
+            <div id="tb-prep-list" class="flex flex-col gap-1.5 max-h-64 overflow-y-auto"></div>
+            <p id="tb-prep-cost" class="text-[11px] text-cl-text-3"></p>
+            <p id="tb-prep-status" class="text-xs text-cl-text-2"></p>
+        </div>
+        <div class="shrink-0 px-4 py-3 border-t border-cl-border flex items-center justify-end gap-2">
+            <button id="tb-prep-cancel" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text-2 hover:bg-cl-primary-soft cursor-pointer"></button>
+            <button id="tb-prep-go" type="button"
+                    class="px-3 py-1.5 rounded-clbtn text-xs text-white bg-cl-primary hover:bg-cl-primary-hover cursor-pointer"></button>
+        </div>
+    </div>
+</div>
+
+<!-- principle-diagram popup (demo round 2026-11-09): LLM-written self-contained HTML,
+     rendered in a sandboxed iframe (same safety boundary as tb-stage / micro-lesson lab pages) -->
+<div id="tb-explain-mask" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-6">
+    <div class="w-full max-w-5xl h-[86vh] flex flex-col min-h-0 bg-cl-surface rounded-cl border border-cl-border shadow-cl">
+        <div class="shrink-0 px-4 py-3 flex items-center justify-between gap-2 border-b border-cl-border">
+            <div class="min-w-0">
+                <p id="tb-explain-title" class="text-sm font-semibold text-cl-text truncate"></p>
+                <p id="tb-explain-warn" class="text-[11px] text-cl-danger mt-0.5 hidden"></p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button id="tb-explain-vers" type="button"
+                        class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+                <button id="tb-explain-again" type="button"
+                        class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+                <button id="tb-explain-close" type="button"
+                        class="px-3 py-1.5 rounded-clbtn text-xs text-cl-text border border-cl-border hover:bg-cl-primary-soft cursor-pointer"></button>
+            </div>
+        </div>
+        <!-- version history (ruled 2026-11: old versions are archived in DB by seq; viewing /
+             promoting back are pure DB reads/copies — zero LLM calls, zero credits) -->
+        <div id="tb-explain-verpanel" class="hidden shrink-0 max-h-44 overflow-y-auto px-4 py-2 border-b border-cl-border text-xs text-cl-text"></div>
+        <div id="tb-explain-verbar" class="hidden shrink-0 px-4 py-1.5 flex items-center justify-between gap-2 border-b border-cl-border bg-cl-primary-soft text-[11px] text-cl-text"></div>
+        <div id="tb-explain-body" class="flex-1 min-h-0 overflow-hidden flex items-center justify-center p-3 text-sm text-cl-text-2"></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    // SPA 重入单实例守卫（k-NN 课事故 2026-11-07）：updateContentArea 换内容区时本脚本
+    // 会被重新执行，但旧实例的 setInterval / 语音状态回调还活着——新旧两个实例各画一遍
+    // 同一 DOM，板书卡流/缩略条成双，下课链被跑两遍（close_caption/slide/lesson_close
+    // 全双份）。新实例接管令牌，旧实例在各入口发现令牌不再属于己身即自毁。
+    if (window.__tbBoot && window.__tbBoot.retire) { try { window.__tbBoot.retire(); } catch (e) { /* 旧实例已退场 */ } }
+    var boot = { alive: true, timer: null,
+                 retire: function () { this.alive = false;
+                     if (this.timer) { clearInterval(this.timer); this.timer = null; }
+                     exStop(); } };
+    window.__tbBoot = boot;
+    function alive() { return boot.alive; }
+    var POLL_MS = 1200;
+    var SPLIT_KEY = 'tb_split_ratio';
+    var SPLIT_DEF = 38;              // 38/62 (plan-mandated default)
+    var PLOT_BIG = 320, PLOT_SMALL = 150;
+    var OFF_H = 460;                 // offscreen height when burning an archived page
+    var B64_MAX = 2800000;           // single slide PNG base64 gate (~2MB raw)
+    var SHOT_SETTLE = 900;           // let ECharts finish drawing before toDataURL
+    var RETRY_MAX = 2;
+    var PLOT_LIVE_MAX = 8;           // only the newest N plots keep a live ECharts instance; older ones expand on click
+
+    var ZH = {
+        stageErr: '\u821e\u53f0\u7ec4\u4ef6\u8fd0\u884c\u51fa\u9519\uff1a',
+        unknown: '\u672a\u77e5',
+        stageTitle: '\u52a8\u753b\u821e\u53f0',
+        stepWord: '\u7b2c ',
+        stepTail: ' \u6b65',
+        problem: '\u9898\u76ee',
+        bridgeOn: '\u5c0f\u667a\u6865\u5df2\u8fde\u63a5',
+        bridgeOff: '\u5c0f\u667a\u6865\u672a\u8fde\u63a5',
+        metaCards: '\u5f20\u5361',
+        metaSpeech: '\u53e5\u5b57\u5e55',
+        metaErr: ' \u00b7 \u6b63\u5728\u8bb2\u9519\u9898 #',
+        chartMiss: '\u7ed8\u56fe\u5f15\u64ce\u672a\u5c31\u7eea\uff08\u672c\u5730 vendor \u672a\u52a0\u8f7d\uff09\uff0c\u56fe\u5f62\u6682\u4e0d\u80fd\u4e0a\u677f',
+        sayTeacher: '\u5e08',
+        sayStudent: '\u751f',
+        plotBig: '\u653e\u5927',
+        plotSmall: '\u6536\u8d77',
+        plotWord: '\u5f20\u56fe',
+        plotCold: '\u70b9\u5f00\u770b\u56fe',
+                mmMiss: '\u601d\u8def\u56fe\u5f15\u64ce\u7f3a\u5931',
+                mmBusy: '\u6b63\u5728\u753b\u601d\u8def\u56fe\u2026',
+                mmFail: '\u601d\u8def\u56fe\u8bed\u6cd5\u672a\u88ab\u8bc6\u522b\uff1a',
+        backNew: '\u56de\u5230\u6700\u65b0',
+        streamNone: '\u8fd8\u6ca1\u5f00\u8bfe\uff0c\u7b49\u8001\u5e08\u5f00\u53e3\u2026',
+        plotsNone: '\u8fd8\u6ca1\u753b\u56fe',
+        boardWelcome: '\u8bfe\u8fd8\u6ca1\u5f00\u59cb\uff1a\u8001\u5e08\u4e0a\u8bfe\u540e\uff0c\u8fd9\u91cc\u5c31\u662f\u677f\u4e66',
+        boardWiped: '\u8001\u5e08\u6b63\u5728\u64e6\u9ed1\u677f\uff0c\u65b0\u677f\u4e66\u9a6c\u4e0a\u51fa\u73b0',
+        bandTopic: '\u677f\u4e66',
+        bandCards: ' \u5f20',
+        drawerTitle: '\u672c\u8bfe\u8bfe\u4ef6',
+        drawerEmpty: '\u8fd9\u4e00\u8bfe\u8fd8\u6ca1\u6709\u5f52\u6863\u9875\uff1a\u753b\u8fc7\u56fe\u3001\u56fe\u88ab\u65b0\u56fe\u9876\u8d70\u65f6\u624d\u751f\u6210\u8bfe\u4ef6\u9875\u3002',
+        drawerPages: '\u5df2\u5f52\u6863 ',
+        drawerPagesTail: ' \u9875',
+        drawerCap: '\u8bb2\u7a3f',
+        drawerClose: '\u5173\u95ed',
+        drawerExportPdf: '\u5bfc\u51fa PDF',
+        drawerExportPptx: '\u5bfc\u51fa PPTX',
+        drawerBusy: '\u6b63\u5728\u5bfc\u51fa\u2026',
+        drawerDone: '\u5df2\u5bfc\u51fa ',
+        drawerLoading: '\u6b63\u5728\u8bfb\u53d6\u672c\u8bfe\u8bfe\u4ef6\u2026',
+        drawerErr: '\u8bfb\u53d6\u8bfe\u4ef6\u5931\u8d25\uff1a',
+        prepTitle: '\u8bf7\u8001\u5e08\u5907\u8bfe',
+        prepTabKp: '\u77e5\u8bc6\u70b9',
+        prepTabErr: '\u9519\u9898',
+        prepTabFree: '\u81ea\u5199\u4e3b\u9898',
+        prepSubject: '\u5b66\u79d1',
+        prepFreePh: '\u4f8b\u5982\uff1asin x / x \u7684\u6781\u9650\u4e0e\u5939\u903c',
+        prepCost: '\u9884\u8ba1\u6d88\u8017\u79ef\u5206\uff1a',
+        prepGo: '\u5f00\u59cb\u5907\u8bfe',
+        prepCancel: '\u53d6\u6d88',
+        prepBusy: '\u5907\u8bfe\u5df2\u5f00\u5de5\uff08\u540e\u53f0\u751f\u6210\uff0c\u7ea6\u51e0\u5206\u949f\uff09\uff0c\u8bb2\u8bfe\u7167\u5e38\u3002',
+        prepErr: '\u5907\u8bfe\u5931\u8d25\uff1a',
+        prepNeed: '\u5148\u9009\u597d\u8981\u5907\u7684\u5185\u5bb9',
+        archiveBusy: '\u8bfe\u4ef6\u5f52\u6863\u4e2d\u2026',
+        archiveDone: '\u672c\u8bfe\u8bfe\u4ef6\u5df2\u6536\u597d\uff1a',
+        archivePages: ' \u9875',
+        archiveErr: '\u5f52\u6863\u5931\u8d25\uff1a',
+        archiveSkip: '\u8bfe\u4ef6\u9875\u5f52\u6863\u8df3\u8fc7\uff1a',
+        archiveBig: '\u5355\u9875\u56fe\u7247\u8d85\u8fc7 2MB\uff0c\u5df2\u4e22\u5f03\u8be5\u9875',
+        clearAsk: '\u64e6\u9ed1\u677f\u4f1a\u628a\u5f53\u524d\u677f\u4e66\u6e05\u96f6\uff0c\u5e76\u628a\u624b\u4e0a\u7684\u56fe\u5f52\u6863\u6210\u8bfe\u4ef6\u3002\u786e\u5b9a\uff1f',
+        voiceStart: '\u5f00\u59cb\u4e0a\u8bfe',
+        voiceRecall: '\u53ec\u56de\u5c0f\u667a',
+        voiceStopHw: '\u7ed3\u675f\u771f\u673a\u4e0a\u8bfe',
+        voiceInClass: '\u4e0a\u8bfe\u4e2d',
+        voiceHwClass: '\u771f\u673a\u5c0f\u667a\u4e0a\u8bfe\u4e2d',
+        voiceIdle: '\u672a\u4e0a\u8bfe',
+        voiceDesktopOnly: '\u4ec5\u684c\u9762\u7aef\u53ef\u7528',
+        animHint: '\u52a8\u753b\u821e\u53f0\u751f\u6210\u4e2d\uff08\u8981\u51e0\u5206\u949f\uff09\uff0c\u8bb2\u8bfe\u7167\u5e38\u2026',
+        chartFail: '\u8fd9\u5f20\u56fe\u4e0a\u677f\u5931\u8d25\uff1a',
+        drawerSeq: '\u7b2c ',
+        drawerSeqTail: ' \u9875',
+        drawerNoImg: '\u8fd9\u9875\u6ca1\u5b58\u5230\u56fe\uff08\u5f52\u6863\u65f6\u6d4f\u89c8\u5668\u6ca1\u753b\u51fa\u6765\uff09',
+        drawerOpen: '\u6253\u5f00\u5927\u56fe',
+        clearDone: '\u5df2\u64e6\u9ed1\u677f\uff0c\u624b\u4e0a\u7684\u56fe\u6b63\u5728\u5f52\u6863\u6210\u8bfe\u4ef6\u2026',
+        prepPick: '\u5df2\u9009\uff1a',
+        prepNone: '\u8fd9\u4e2a\u5b66\u79d1\u91cc\u8fd8\u6ca1\u6709\u53ef\u5907\u7684\u5185\u5bb9',
+        prepLoadErr: '\u8bfb\u53d6\u5b66\u79d1\u5185\u5bb9\u5931\u8d25\uff1a',
+        prepFreeLabel: '\u81ea\u5199\u4e3b\u9898\uff08\u53ea\u8981\u4e00\u53e5\u8bdd\uff09',
+        prepKpLabel: '\u9009\u4e00\u4e2a\u77e5\u8bc6\u70b9\uff08\u70b9\u4e00\u4e0b\u9009\u4e2d\uff09',
+        prepErrLabel: '\u9009\u4e00\u9053\u9519\u9898\uff08\u70b9\u4e00\u4e0b\u9009\u4e2d\uff09',
+        prepAnnounce: '\u5df2\u5907\u597d\u4e00\u8282\u300a',
+        prepAnnounceTail: '\u300b\uff0c\u70b9\u51fb\u67e5\u770b\u8bfe\u4ef6\uff1b\u8bfe\u4e0a\u76f4\u63a5\u5bf9\u5c0f\u667a\u8bf4\u300c\u6211\u4eec\u4e0a\u5907\u597d\u7684\u90a3\u8282\u8bfe\u300d',
+        exportNone: '\u672c\u8bfe\u8fd8\u6ca1\u6709\u8bfe\u4ef6\u9875\uff0c\u5bfc\u4e0d\u51fa\u6765',
+        adoptAsk: '\u8981\u7528\u300a{t}\u300b\u8fd9\u8282\u5907\u597d\u7684\u8bfe\u5f00\u8bb2\u5417\uff1f\u70b9\u786e\u5b9a\u540e\u9ed1\u677f\u6e05\u7a7a\uff0c\u8fd9\u8282\u8bfe\u753b\u7684\u56fe\u4f1a\u5f52\u5230\u8fd9\u4efd\u8bfe\u4ef6\u91cc\u3002',
+        adoptDone: '\u5df2\u63a5\u8fc7\u300a',
+        adoptDoneTail: '\u300b\uff1a\u73b0\u5728\u5f00\u8bb2\uff0c\u677f\u4e66\u56fe\u4f1a\u8865\u8fdb\u8fd9\u4efd\u8bfe\u4ef6',
+        adoptErr: '\u63a5\u8bfe\u5931\u8d25\uff1a',
+        // v0.2.8 "AI teacher assign" banner (entry buttons -> board -> auto start lesson)
+        assignPre: '\u300cAI\u8001\u5e08\u8bb2\u300d\u6307\u5b9a\u8bb2\u89e3\uff1a\u300e',
+        assignMid: '\u300f',
+        assignAuto: '\uff0c\u6b63\u5728\u81ea\u52a8\u5f00\u8bfe\u2026',
+        assignManual: '\uff0c\u8bf7\u5728\u684c\u9762\u7aef\uff08EXE\uff09\u6253\u5f00\u9ed1\u677f\u5f00\u8bfe',
+        // ^ browser-side voice btn is disabled+renamed (wireVoice), pointing at it
+        //   would mislead; desktop EXE is the real lesson entry (review Minor-1)
+        // principle diagram (demo round 2026-11-09, methodology from html-explainer)
+        explainBtn: '\u539f\u7406\u56fe',
+        explainWait: '\u6b63\u5728\u751f\u6210\u539f\u7406\u56fe\u2026\u753b\u9762\u662f\u6a21\u578b\u73b0\u5199\u7684\uff0c\u901a\u5e38\u9700\u8981\u5341\u51e0\u79d2\u5230\u4e00\u4e24\u5206\u949f',
+        explainFail: '\u539f\u7406\u56fe\u751f\u6210\u5931\u8d25\uff1a',
+        explainSlow: '\u8fd8\u5728\u540e\u53f0\u751f\u6210\uff0c\u7a0d\u540e\u518d\u70b9\u4e00\u6b21\u67e5\u770b',
+        explainClose: '\u5173\u95ed',
+        explainAgain: '\u91cd\u65b0\u751f\u6210',
+        // deep-rewrite confirm (cost round 2026-11-10): regenerate = thinking mode, slower & pricier
+        explainDeepAsk: '\u5c06\u7528\u6df1\u5ea6\u601d\u8003\u6a21\u5f0f\u91cd\u753b\uff0c\u66f4\u6162\u3001\u66f4\u8017\u79ef\u5206\u3002\u7ee7\u7eed\u5417\uff1f',
+        // version history (user ruling: old versions reviewable + promotable, popup only)
+        explainVers: '\u5386\u53f2\u7248\u672c',
+        explainVerNone: '\u6682\u65e0\u5386\u53f2\u7248\u672c',
+        explainVerView: '\u67e5\u770b',
+        explainVerCurTag: '\u5f53\u524d\u7248',
+        explainVerQuick: '\u5feb\u901f',
+        explainVerDeep: '\u6df1\u5ea6\u601d\u8003',
+        explainVerAt: '\u6b63\u5728\u67e5\u770b\u65e7\u7248\u672c #',
+        explainVerNotCur: '\uff08\u4e0d\u662f\u5f53\u524d\u7248\uff09',
+        explainUseThis: '\u7528\u8fd9\u7248\uff08\u4e0d\u8017\u79ef\u5206\uff09',
+        explainBackCur: '\u56de\u5230\u5f53\u524d\u7248',
+        explainUseAsk: '\u628a\u8fd9\u4e00\u7248\u8bbe\u4e3a\u5f53\u524d\u7248\uff1f\u4e0d\u82b1\u79ef\u5206\u3001\u4e5f\u4e0d\u7528\u7b49\u5f85\u751f\u6210\u3002',
+        explainVerErr: '\u5386\u53f2\u7248\u672c\u6253\u5f00\u5931\u8d25\uff1a'
+    };
+
+    // ---- tiny helpers
+    function el(id) { return document.getElementById(id); }
+    function show(id, on) { var n = el(id); if (n) n.classList.toggle('hidden', !on); }
+    function api(method, path, body) {
+        var r = window.LLAuth && window.LLAuth.request;
+        if (!r) return Promise.reject(new Error('auth-req-missing'));
+        return Promise.resolve(r(method, path, body));
+    }
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function fmtStamp(ts) {
+        var d = new Date(ts || Date.now());
+        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +
+            ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    }
+    function setBanner(key, text, ttlMs) {
+        if (!text) { delete banners[key]; renderBanner(); return; }
+        banners[key] = text;
+        if (ttlMs) {
+            setTimeout(function () { if (banners[key] === text) { delete banners[key]; renderBanner(); } }, ttlMs);
+        }
+        renderBanner();
+    }
+    function renderBanner() {
+        if (!alive()) return;   // 旧实例不写共享 banner DOM（setBanner 与 TTL 定时器两条路都被这闸挡住）
+        var box = el('tb-banner');
+        if (!box) return;
+        var ks = Object.keys(banners);
+        if (!ks.length) { box.classList.add('hidden'); box.textContent = ''; return; }
+        box.textContent = ks.map(function (k) { return banners[k]; }).join('   \u00b7   ');
+        box.classList.remove('hidden');
+    }
+
+    var lastRev = -1, timer = null;
+    var reg = {};            // 'c'+id -> board-card row inside the caption stream
+    var plotReg = {};        // plot id -> the ONE live entry currently shown in the figure rail (right column)
+    var bandReg = {};        // 'plot1'/'topic3' -> timeline thumbnail entry
+    var stageReg = {};       // 'c'+id -> main-board row inside #tb-board (focus target)
+    var curFocus = null, firstFrame = true;
+    var stageMode = { mode: 'branch', topicId: null, plotId: null };
+    var lastStageTopic = null, lastStagePlot = null;   // newest topic / newest plot at last render
+    var follow = true, autoScrolling = false;
+    var stageBusy = false;
+    var lessonKey = null, boardTitle = '';
+    var outSeen = {}, outQueue = [], outBusy = false, pendingArchive = false, archiving = false;
+    var hwMode = false;
+    var banners = {};
+    // v0.2.8 "AI teacher assign": pending web-side assignment (error/kp to lecture)
+    var assignPending = null;
+    // ---- desktop voice entry (start lesson / real-hardware vs on-pc choice)
+    (function wireVoice() {
+        var vb = el('tb-voice-btn'), vd = el('tb-voice-dot'), vt = el('tb-voice-text');
+        if (!vb) return;
+        if (!window.xzVoice || !window.xzVoice.openAndStart) {
+            vb.textContent = ZH.voiceDesktopOnly;
+            vb.disabled = true;
+            return;
+        }
+        var live = false, devReal = false, asked = false, wasLive = false;
+        var PREF = 'xz_voice_mode';
+        function repaint() {
+            vb.textContent = hwMode ? ZH.voiceStopHw : (live ? ZH.voiceRecall : ZH.voiceStart);
+            if (vd) vd.style.background = hwMode ? '#f59e0b' : (live ? '#34d399' : '#9ca3af');
+            if (vt) vt.textContent = hwMode ? ZH.voiceHwClass : (live ? ZH.voiceInClass : ZH.voiceIdle);
+            // hardware ESP32 lessons never give the server the spoken text -> card stream only
+            show('tb-sub-hint', hwMode);
+        }
+        function chooseModal(onExe, onHw) {
+            if (document.getElementById('tb-choose-mask')) return;   // double-click guard
+            function close() { var m = document.getElementById('tb-choose-mask'); if (m) document.body.removeChild(m); }
+            var mask = document.createElement('div');
+            mask.id = 'tb-choose-mask';
+            mask.className = 'fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-6';
+            var card = document.createElement('div');
+            card.className = 'w-full max-w-sm bg-cl-surface rounded-cl border border-cl-border shadow-cl p-5';
+            var h = document.createElement('div');
+            h.className = 'text-[15px] font-semibold text-cl-text mb-1.5';
+            h.textContent = '\u8fd9\u53f0\u5c0f\u667a\u60f3\u600e\u4e48\u4e0a\u8bfe\uff1f';
+            var p = document.createElement('div');
+            p.className = 'text-xs text-cl-text-3 leading-relaxed mb-3.5';
+            p.textContent = '\u4f60\u7684\u8d26\u53f7\u7ed1\u5b9a\u7684\u662f\u771f\u5b9e\u7684 ESP32 \u5c0f\u667a\u3002\u7528\u7535\u8111\u8bf4\u8bdd\u65f6\uff0c\u5ba2\u6237\u7aef\u4f1a\u63a5\u7ba1\u8fd9\u53f0\u5c0f\u667a\uff0c\u771f\u673a\u88ab\u9876\u4e0b\u7ebf\uff1b\u7528\u771f\u673a\u5c0f\u667a\u65f6\uff0c\u76f4\u63a5\u5bf9\u786c\u4ef6\u8bf4\u8bdd\u5373\u53ef\uff0c\u6559\u5ba4\u4f1a\u81ea\u5df1\u66f4\u65b0\u3002';
+            card.appendChild(h); card.appendChild(p);
+            function mkBtn(text, sub, accent, fn) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'block w-full mb-2 px-3 py-2.5 rounded-cl text-left cursor-pointer border text-[13px] font-semibold text-cl-text ' +
+                    (accent ? 'border-cl-secondary bg-cl-secondary-soft' : 'border-cl-border bg-cl-surface');
+                b.textContent = text;
+                var s = document.createElement('span');
+                s.className = 'block text-[11px] font-normal text-cl-text-3 mt-0.5';
+                s.textContent = sub;
+                b.appendChild(s);
+                b.onclick = function () { close(); fn(); };
+                return b;
+            }
+            card.appendChild(mkBtn('\u7528\u7535\u8111\u8bf4\u8bdd', '\u5f00\u5173\u7a97\u53d1\u97f3\u81f3\u4e91\u7aef\uff0c\u5bf9\u7740\u7535\u8111\u8bf4\u8bdd', true, onExe));
+            card.appendChild(mkBtn('\u7528\u771f\u673a\u5c0f\u667a', '\u5bf9\u786c\u4ef6\u5c0f\u667a\u8bf4\u8bdd\uff0c\u9ed1\u677f\u7167\u5e38\u5b9e\u65f6\u8054\u52a8', false, onHw));
+            var c = document.createElement('button');
+            c.type = 'button';
+            c.className = 'block w-full px-3 py-2 rounded-cl text-xs text-cl-text-3 cursor-pointer';
+            c.textContent = ZH.prepCancel;
+            c.onclick = function () { close(); };
+            card.appendChild(c);
+            mask.appendChild(card);
+            mask.onclick = function (e) { if (e.target === mask) close(); };
+            document.body.appendChild(mask);
+        }
+        function startHw() {
+            try { localStorage.setItem(PREF, 'hw'); } catch (e) { /* private mode */ }
+            hwMode = true; repaint();
+            window.xzVoice.openPanel();
+        }
+        function startExe() {
+            try { localStorage.setItem(PREF, 'exe'); } catch (e) {}
+            hwMode = false; repaint();
+            window.xzVoice.openAndStart();
+        }
+        vb.onclick = function () {
+            if (hwMode) { hwMode = false; repaint(); finishLesson(); return; }
+            if (live) { window.xzVoice.openPanel(); return; }
+            if (!asked) {
+                asked = true;
+                api('GET', '/api/board/xzdevice/status').then(function (d) {
+                    devReal = !!(d && d.bound && d.dev_type === 'real');
+                    if (!devReal) { window.xzVoice.openAndStart(); return; }
+                    var pref = '';
+                    try { pref = localStorage.getItem(PREF) || ''; } catch (e) {}
+                    if (pref === 'hw') startHw();
+                    else if (pref === 'exe') startExe();
+                    else chooseModal(startExe, startHw);
+                }).catch(function () { window.xzVoice.openAndStart(); });
+                return;
+            }
+            if (devReal) { hwMode = false; repaint(); chooseModal(startExe, startHw); }
+            else window.xzVoice.openAndStart();
+        };
+        if (window.xzVoice.onState) window.xzVoice.onState(function (s) {
+            if (!alive()) return;   // 旧实例：状态变化不再触发收课链（双下课的直接源头）
+            live = !!(s && s.sessionActive);
+            if (!live && s && s.needActivation && !hwMode) {
+                try { localStorage.removeItem(PREF); } catch (e) {}
+            }
+            if (wasLive && !live) finishLesson();   // lesson over: close caption window + archive
+            wasLive = live;
+            repaint();
+        });
+        repaint();
+    })();
+
+    // ---- C-phase stage: sandboxed iframe (protocol unchanged with the micro-lesson host)
+    var stageFrame = null, lastCanvas = '', lastPush = null;
+    function simDoc(html) {
+        var shim = '<script>window.onerror=function(m){parent.postMessage({t:"mc-sim-err",m:String(m).slice(0,200)},"*")};' +
+            'addEventListener("load",function(){setTimeout(function(){parent.postMessage({t:"mc-sim-h",h:document.documentElement.scrollHeight+40},"*")},120)});</' + 'script>';
+        var i = html.indexOf('</head>'); if (i >= 0) return html.slice(0, i) + shim + html.slice(i);
+        var j = html.indexOf('</html>'); if (j >= 0) return html.slice(0, j) + shim + html.slice(j);
+        return shim + html;
+    }
+    if (!window.__tbSimHook) {
+        window.__tbSimHook = true;
+        window.addEventListener('message', function (e) {
+            var d = e && e.data;
+            if (!d || typeof d !== 'object' || (d.t !== 'mc-sim-h' && d.t !== 'mc-sim-err')) return;
+            var box = el('tb-stage-frame');
+            if (!box) return;
+            var f = null, fs = box.querySelectorAll('iframe');
+            for (var k = 0; k < fs.length; k++) { if (e.source === fs[k].contentWindow) { f = fs[k]; break; } }
+            if (!f) return;
+            if (d.t === 'mc-sim-h') {
+                var h = parseInt(d.h, 10) || 0;
+                if (h > 0) f.style.height = Math.max(360, Math.min(2000, h)) + 'px';
+            } else {
+                var er = el('tb-stage-err');
+                if (er) { er.textContent = ZH.stageErr + (d.m || ZH.unknown); er.classList.remove('hidden'); }
+            }
+        });
+    }
+    function stagePost(i, n, caption) {
+        lastPush = [i, n, caption];
+        if (stageFrame && stageFrame.contentWindow) {
+            try { stageFrame.contentWindow.postMessage({ t: 'mc-step', i: i, n: n, caption: caption }, '*'); } catch (e) { /* not ready */ }
+        }
+    }
+    function renderStage(a) {
+        var host = el('tb-stage');
+        if (!host) return;
+        setBanner('anim', (a && a.state === 'generating') ? ZH.animHint : '');
+        if (!a || a.state !== 'ready') {
+            stageBusy = false;
+            host.classList.add('hidden');
+            if (stageFrame) { stageFrame.remove(); stageFrame = null; lastCanvas = ''; }
+            return;
+        }
+        stageBusy = (a.current >= 0);
+        host.classList.remove('hidden');
+        el('tb-stage-title').textContent = '\uD83C\uDFAC ' + (a.title || ZH.stageTitle);
+        var steps = a.steps || [], n = steps.length;
+        if (n && a.canvas_html !== lastCanvas) {
+            lastCanvas = a.canvas_html;
+            var box = el('tb-stage-frame');
+            box.innerHTML = '';
+            stageFrame = document.createElement('iframe');
+            stageFrame.className = 'tb-stage-iframe';
+            stageFrame.setAttribute('sandbox', 'allow-scripts');
+            stageFrame.setAttribute('referrerpolicy', 'no-referrer');
+            stageFrame.srcdoc = simDoc(a.canvas_html);
+            stageFrame.onload = function () { if (lastPush) stagePost(lastPush[0], lastPush[1], lastPush[2]); };
+            box.appendChild(stageFrame);
+            el('tb-stage-err').classList.add('hidden');
+        }
+        var i = (a.current >= 0 && a.current < n) ? a.current : 0;
+        el('tb-stage-cap').textContent = (steps[i] && steps[i].caption) || '';
+        var dots = el('tb-stage-dots');
+        if (dots.childElementCount !== n) {
+            dots.innerHTML = '';
+            for (var k = 0; k < n; k++) {
+                var s = document.createElement('span');
+                s.className = 'tb-stepdot'; s.title = ZH.stepWord + k + ZH.stepTail;
+                dots.appendChild(s);
+            }
+        }
+        [].forEach.call(dots.children, function (d, k) {
+            d.className = 'tb-stepdot' + (k === i ? ' tb-stepdot-on' : '');
+        });
+        stagePost(i, n, (steps[i] && steps[i].caption) || '');
+    }
+    // ---------------------------------------------------------------- caption stream (top zone)
+    function txt(node, s) { node.textContent = (s == null ? '' : String(s)); }
+    function renderFormula(node, src) {
+        if (window.katex) {
+            try { katex.render(String(src || ''), node, { throwOnError: false, displayMode: true }); return; }
+            catch (e) { /* bad LaTeX must not kill the card: fall back to plain text */ }
+        }
+        txt(node, src);
+    }
+    // text keeps the bracket-stripped form; anchors are wrapped back as spans so point=N can light one
+    function renderAnchored(node, s, anchors) {
+        node.innerHTML = '';
+        var rest = String(s || '');
+        if (!anchors || !anchors.length || rest.indexOf('\u3014') >= 0) { txt(node, rest); return; }
+        anchors.forEach(function (frag, i) {
+            var k = frag ? rest.indexOf(frag) : -1;
+            if (k < 0) return;
+            if (k > 0) node.appendChild(document.createTextNode(rest.slice(0, k)));
+            var sp = document.createElement('span');
+            sp.className = 'tb-anc'; sp.setAttribute('data-anc', String(i));
+            sp.textContent = frag;
+            node.appendChild(sp);
+            rest = rest.slice(k + frag.length);
+        });
+        if (rest) node.appendChild(document.createTextNode(rest));
+    }
+    function mkCardInner(host, card, stepNo) {
+        host.innerHTML = '';
+        var id = document.createElement('span');
+        id.className = 'tb-id'; id.textContent = '#' + card.id;
+        host.appendChild(id);
+        var kind = card.kind;
+        if (kind === 'formula') {
+            var f = document.createElement('span');
+            f.className = 'tb-formula inline-block align-middle';
+            renderFormula(f, card.text);
+            host.appendChild(f);
+        } else if (kind === 'options') {
+            var list = (card.data && card.data.length) ? card.data
+                : String(card.text || '').split(/[\uff1b;]/).map(function (x) { return x.trim(); }).filter(Boolean);
+            var g = document.createElement('span');
+            g.className = 'tb-opts inline-block align-top';
+            list.forEach(function (o, i) {
+                var d = document.createElement('span'); d.className = 'tb-opt';
+                var b = document.createElement('b'); b.textContent = String.fromCharCode(65 + i);
+                d.appendChild(b);
+                d.appendChild(document.createTextNode(/^[A-Z][.\uff0e\u3001]/.test(o) ? o.slice(2) : o));
+                g.appendChild(d);
+            });
+            host.appendChild(g);
+        } else if (kind === 'plot') {
+            // the picture itself lives in the bottom zone; the stream keeps one chalk bullet line
+            var lab = document.createElement('span');
+            lab.className = 'tb-plot-title';
+            lab.textContent = '\uD83D\uDDDA ' + ZH.plotWord + ' \u00b7 ' + (card.text || ZH.unknown);
+            host.appendChild(lab);
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ml-2 px-2 py-0.5 rounded-clbtn text-[11px] text-[#cde8d9] border border-white/20 hover:bg-white/10 cursor-pointer';
+            btn.textContent = ZH.plotBig;
+            btn.onclick = function (e) { e.preventDefault(); openPlot(card.id); };
+            host.appendChild(btn);
+        } else if (kind === 'problem' || kind === 'topic') {
+            if (kind === 'problem') {
+                var t = document.createElement('span');
+                t.className = 'tb-plot-title mr-1.5'; t.textContent = ZH.problem;
+                host.appendChild(t);
+            }
+            var body = document.createElement('span');
+            if (kind === 'topic') body.className = 'tb-chalk font-semibold';
+            renderAnchored(body, card.text, card.anchors);
+            host.appendChild(body);
+        } else {
+            if (kind === 'step') {
+                var sn = document.createElement('span');
+                sn.className = 'tb-stepno'; sn.textContent = stepNo || '';
+                host.appendChild(sn);
+            }
+            var bd = document.createElement('span');
+            renderAnchored(bd, card.text, card.anchors);
+            host.appendChild(bd);
+        }
+    }
+    function cardSig(c) {
+        // plot cards carry an object payload, text cards an array: both must yield a signature,
+        // otherwise renderStream throws and the whole page stops refreshing
+        var d = c.data;
+        var ds = d == null ? '' : (Array.isArray(d) ? d.join('|') : plotSig(d));
+        return [c.kind, c.text, (c.anchors || []).join('|'), ds, c.highlighted ? 1 : 0].join('\u0001');
+    }
+    function buildCardRow(card) {
+        var d = document.createElement('div');
+        d.className = 'tb-card tb-kind-' + card.kind + ' tb-in text-[15px] leading-relaxed tb-chalk break-words';
+        d.setAttribute('data-card', String(card.id));
+        mkCardInner(d, card, '');
+        return d;
+    }
+    function buildSayRow(s) {
+        var d = document.createElement('div');
+        var teacher = s.role !== 'student';
+        d.className = 'tb-say ' + (teacher ? 'tb-say-teacher' : 'tb-say-student') +
+            ' tb-in text-sm leading-relaxed break-words';
+        var who = document.createElement('span');
+        who.className = 'tb-who';
+        who.textContent = teacher ? ZH.sayTeacher : ZH.sayStudent;
+        d.appendChild(who);
+        var body = document.createElement('span');
+        body.textContent = s.text || '';
+        d.appendChild(body);
+        return d;
+    }
+    function streamRows(items, speech) {
+        var rows = [], stepI = 0;
+        items.forEach(function (c) {
+            if (c.kind === 'step') stepI += 1;
+            rows.push({ ts: c.ts || 0, ord: c.id, key: 'c' + c.id, kind: 'card', o: c, step: stepI ? (ZH.stepWord + stepI + ZH.stepTail) : '' });
+        });
+        speech.forEach(function (s) { rows.push({ ts: s.ts || 0, ord: s.id, key: 's' + s.id, kind: 'say', o: s }); });
+        rows.sort(function (a, b) { return (a.ts - b.ts) || (a.ord - b.ord) || (a.kind === b.kind ? 0 : (a.kind === 'card' ? -1 : 1)); });
+        return rows;
+    }
+    function renderStream(items, speech) {
+        var stream = el('tb-stream');
+        if (!stream) return;
+        var rows = streamRows(items, speech), keep = {}, moved = 0;
+        var expect = stream.firstElementChild;
+        rows.forEach(function (r) {
+            keep[r.key] = 1;
+            var e = reg[r.key];
+            if (!e) {
+                e = { node: r.kind === 'card' ? buildCardRow(r.o) : buildSayRow(r.o), sig: r.kind === 'card' ? cardSig(r.o) : String(r.o.text) };
+                reg[r.key] = e;
+            } else if (r.kind === 'card' && e.sig !== cardSig(r.o)) {
+                mkCardInner(e.node, r.o, r.step);
+                e.node.className = 'tb-card tb-kind-' + r.o.kind + ' text-[15px] leading-relaxed tb-chalk break-words';
+                e.sig = cardSig(r.o);
+            } else if (r.kind === 'say' && e.sig !== String(r.o.text)) {
+                e.node.lastChild.textContent = r.o.text || '';
+                e.sig = String(r.o.text);
+            }
+            if (e.node !== expect) { stream.insertBefore(e.node, expect); moved++; }
+            else expect = expect.nextElementSibling;
+        });
+        Object.keys(reg).forEach(function (k) {
+            if (keep[k]) return;
+            var e = reg[k];
+            if (e && e.node && e.node.parentNode) e.node.parentNode.removeChild(e.node);
+            delete reg[k];
+        });
+        show('tb-stream-empty', !rows.length);
+        // pin to the newest line only while the reader has not scrolled away; lines that
+        // arrive during a detached read must raise the "back to newest" handle instead
+        if (follow) stickBottom();
+        else if (moved) show('tb-back-btn', true);
+    }
+    function stickBottom() {
+        var s = el('tb-stream');
+        if (!s) return;
+        autoScrolling = true;
+        s.scrollTop = s.scrollHeight;
+        setTimeout(function () { autoScrolling = false; }, 60);
+        show('tb-back-btn', false);
+    }
+    // ---------------------------------------------------------------- plot zone (bottom, newest on top)
+    function plotSig(d) { try { return JSON.stringify(d || null); } catch (e) { return String(d); } }
+    // ---- 题目原图水合：vault 相对路径 → dataUrl（与错题清单/知识库同 /api/vault/image
+    // 链路；rel 由服务端校验后下发，前端只照读不拼接）。按 rel 缓存，失败不缓存。
+    var imgCache = {};
+    function imgDataUrl(rel) {
+        if (!rel) return Promise.reject(new Error('img-no-rel'));
+        if (imgCache[rel]) return imgCache[rel];
+        var p = api('GET', '/api/vault/image?path=' + encodeURIComponent(rel))
+            .then(function (j) {
+                var d = (j && j.dataUrl) ? j : ((j && j.data) || {});
+                if (!d.dataUrl) throw new Error('img-unreadable');
+                return d.dataUrl;
+            });
+        imgCache[rel] = p;
+        p.catch(function () { delete imgCache[rel]; });
+        return p;
+    }
+    // mermaid 思路图：vendor 10.6.1 UMD（项目内 online_course_notes 已实战同库）；
+    // strict + htmlLabels:false → 纯 SVG 文字、无 foreignObject 无交互，页面显示与归档同源
+    var mmReady = false, mmSeq = 0;
+    function mmEnsure() {
+        if (mmReady || !window.mermaid) return;
+        try {
+            mermaid.initialize({
+                startOnLoad: false, securityLevel: 'strict', theme: 'dark',
+                flowchart: { htmlLabels: false },
+                fontFamily: (window.TBCharts && TBCharts.font) || 'sans-serif'
+            });
+        } catch (e) { }
+        mmReady = true;
+    }
+    function mmRender(code) {
+        if (!window.mermaid || !code) return Promise.reject(new Error('mm-unavailable'));
+        mmEnsure();
+        var r;
+        mmSeq += 1;
+        try { r = mermaid.render('tbmm' + mmSeq, code); }
+        catch (e) { return Promise.reject(e); }
+        // v10 返回 Promise<{svg}>；旧构建同步返回 {svg}（同 online_course_notes 双兼容口径）
+        if (r && typeof r.then === 'function')
+            return r.then(function (o) { return (o && o.svg) || ''; });
+        if (r && r.svg) return Promise.resolve(r.svg);
+        return Promise.reject(new Error('mm-api'));
+    }
+    function mmSvgUrl(svg) {
+        return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    }
+    function plotBoxPaint(box, item, big, live) {
+        box.innerHTML = '';
+        var inst = null;
+        // 原图卡（plot_type=image）：真图片不是图表，ECharts 不接、激光笔自然禁用
+        if (item.data && item.data.plot_type === 'image') {
+            var im = document.createElement('img');
+            im.className = 'block mx-auto object-contain rounded';
+            im.style.maxHeight = (big ? PLOT_BIG : PLOT_SMALL) + 'px';
+            im.style.maxWidth = '100%';
+            im.alt = live ? (item.text || ZH.unknown) : ZH.plotCold;
+            box.appendChild(im);
+            if (live) {
+                imgDataUrl(String(item.data.rel || '')).then(function (u) {
+                    if (im.isConnected) im.src = u;
+                }).catch(function () {
+                    if (im.isConnected) im.alt = '\u539f\u56fe\u8bfb\u53d6\u5931\u8d25';
+                });
+            }
+            return null;
+        }
+        // 思路卡（plot_type=mermaid）：本地 mermaid 渲染 SVG 后经 img 展示（与归档同一张图）
+        if (item.data && item.data.plot_type === 'mermaid') {
+            var mp = document.createElement('p');
+            mp.className = 'text-xs text-cl-text-3 px-1 py-2';
+            mp.textContent = !live ? ZH.plotCold : (!window.mermaid ? ZH.mmMiss : ZH.mmBusy);
+            box.appendChild(mp);
+            if (live && window.mermaid) {
+                mmRender(String(item.data.code || '')).then(function (svg) {
+                    if (!mp.isConnected) return;   // same stale-paint guard as the fail branch
+                    var mi = document.createElement('img');
+                    mi.className = 'block mx-auto object-contain rounded';
+                    mi.style.maxHeight = (big ? PLOT_BIG : PLOT_SMALL) + 'px';
+                    mi.style.maxWidth = '100%';
+                    mi.alt = item.text || ZH.unknown;
+                    mi.src = mmSvgUrl(svg);
+                    box.innerHTML = '';
+                    box.appendChild(mi);
+                }).catch(function () {
+                    if (mp.isConnected) mp.textContent = ZH.mmFail + (item.text || '');
+                });
+            }
+            return null;
+        }
+        if (live && window.TBCharts) {
+            try { inst = TBCharts.create(box, item.data, { height: big ? PLOT_BIG : PLOT_SMALL, animate: big }); }
+            catch (e) { inst = null; }
+        }
+        if (!inst) {
+            var p = document.createElement('p');
+            p.className = 'text-xs text-cl-text-3 px-1 py-2';
+            // a folded (cold) row only says "click to open"; a live one that failed says why
+            p.textContent = live ? ((window.echarts ? ZH.chartFail : ZH.chartMiss) + (item.text || '')) : ZH.plotCold;
+            box.appendChild(p);
+        }
+        return inst;
+    }
+    // ---------------------------------------------------------------- phase 5: main board (branch tree) + timeline
+    function buildStageRow(card, stepNo, asRoot) {
+        var d = document.createElement('div');
+        if (asRoot) {
+            d.className = 'tb-stage-root tb-in';
+            var rt = document.createElement('span');
+            rt.className = 'tb-chalk text-lg font-semibold block';
+            renderAnchored(rt, card.text, card.anchors);
+            d.appendChild(rt);
+        } else {
+            d.className = 'tb-card tb-kind-' + card.kind + ' tb-stage-card tb-in text-[17px] leading-relaxed tb-chalk break-words';
+            mkCardInner(d, card, stepNo);   // plot rows stay a chalk bullet line: the picture itself is in the figure rail
+        }
+        d.setAttribute('data-card', String(card.id));
+        if (card.kind === 'plot') d.setAttribute('data-plot', String(card.id));
+        return d;
+    }
+    function stageRows(items) {
+        // v0.2.6 two-column: the left column is the branch text stream only; the lectured
+        // picture lives in the figure rail (renderFigure), never pushed away by later cards
+        var topics = items.filter(function (c) { return c.kind === 'topic'; });
+        if (!topics.length) {
+            var loose = items.filter(function (c) { return c.kind !== 'topic'; });
+            if (!loose.length) return [];
+            var lr = [], lStep = 0;
+            loose.forEach(function (c) {
+                if (c.kind === 'step') lStep += 1;
+                lr.push({ card: c, step: c.kind === 'step' ? (ZH.stepWord + lStep + ZH.stepTail) : '' });
+            });
+            return lr;                     // no topic yet: loose cards are the board itself
+        }
+        var tid = stageMode.topicId == null ? topics[topics.length - 1].id : stageMode.topicId;
+        var root = null;
+        topics.forEach(function (c) { if (c.id === tid) root = c; });
+        if (!root) { root = topics[topics.length - 1]; tid = root.id; }
+        var rows = [{ root: true, card: root }], stepI = 0;
+        items.forEach(function (c) {
+            if (c.kind === 'topic' || c.parent_id !== tid) return;
+            if (c.kind === 'step') stepI += 1;
+            rows.push({ card: c, step: c.kind === 'step' ? (ZH.stepWord + stepI + ZH.stepTail) : '' });
+        });
+        return rows;
+    }
+    function renderStageArea(items) {
+        var host = el('tb-board');
+        if (!host) return;
+        var rows = stageRows(items), keep = {};
+        // v0.2.6: the left column keeps NO live chart at all (the single live instance sits
+        // in the figure rail), so rows are pure DOM diffing: rebuild on sig change, reuse otherwise.
+        var expect = host.firstElementChild;
+        rows.forEach(function (r) {
+            var card = r.card, key = 'c' + card.id;
+            keep[key] = 1;
+            var sig = r.root ? 'R' + cardSig(card) : cardSig(card);
+            var e = stageReg[key];
+            if (e && e.sig !== sig) {
+                if (e.node && e.node.parentNode) {
+                    // the cursor may sit exactly on the node being dropped: walk it past
+                    // first, otherwise the next insertBefore throws NotFoundError and the
+                    // whole paint dies mid-frame
+                    if (expect === e.node) expect = e.node.nextElementSibling;
+                    e.node.parentNode.removeChild(e.node);
+                }
+                e = null;
+            }
+            if (!e) {
+                e = { node: buildStageRow(card, r.step, r.root), sig: sig };
+                stageReg[key] = e;
+            }
+            if (e.node !== expect) host.insertBefore(e.node, expect);
+            else expect = expect.nextElementSibling;
+        });
+        Object.keys(stageReg).forEach(function (k) {
+            if (keep[k]) return;
+            var e = stageReg[k];
+            if (e.node && e.node.parentNode) e.node.parentNode.removeChild(e.node);
+            delete stageReg[k];
+        });
+        // never-empty fallback: the welcome line stays mounted in #tb-board and only
+        // toggles via the hidden class (removing it would orphan the getElementById ref,
+        // and a later board-clear could never bring the fallback back)
+        // 八期方案 D：课中擦板后板面空着≠没开课——说过话/写过卡就用「正在擦黑板」
+        // 接替课前占位，免得学生以为课程被重置（降维课观感事故）
+        var w = el('tb-board-welcome');
+        if (w) {
+            txt(w, (inClass ? ZH.boardWiped : ZH.boardWelcome)
+                + (rows.length ? '' : (boardTitle ? ' \u00b7 ' + boardTitle : '')));
+            w.classList.toggle('hidden', !!rows.length);
+        }
+    }
+    // ---------------------------------------------------------------- figure rail (right column)
+    function figureCard(items) {
+        // the picture being lectured now: the one explicitly on stage (timeline click /
+        // laser promote), else the newest plot of the shown branch, else the newest plot
+        // on the board. No plot at all -> null -> the rail collapses, board goes full width.
+        var plots = items.filter(function (c) { return c.kind === 'plot'; });
+        if (!plots.length) return null;
+        if (stageMode.mode === 'plot') {
+            for (var i = 0; i < plots.length; i++) {
+                if (plots[i].id === stageMode.plotId) return plots[i];
+            }
+            stageMode = { mode: 'branch', topicId: null, plotId: null };   // stale id: fall back
+        }
+        var tid = shownTopicId(items);
+        if (tid != null) {
+            for (var j = plots.length - 1; j >= 0; j--) {
+                if (plots[j].parent_id === tid) return plots[j];
+            }
+        }
+        return plots[plots.length - 1];
+    }
+    function renderFigure(items) {
+        var rail = el('tb-col-figure'), host = el('tb-figure');
+        if (!rail || !host) return;
+        var card = figureCard(items);
+        if (!card) {
+            if (!rail.classList.contains('hidden')) {
+                rail.classList.add('hidden');
+                Object.keys(plotReg).forEach(function (k) {
+                    var o = plotReg[k];
+                    if (o.inst) { try { o.inst.dispose(); } catch (err) { } }
+                    delete plotReg[k];
+                });
+            }
+            txt(el('tb-fig-title'), '');
+            return;
+        }
+        rail.classList.remove('hidden');
+        txt(el('tb-fig-title'), card.text || ZH.unknown);
+        var key = String(card.id), sig = plotSig(card.data);
+        var e = plotReg[key];
+        if (e && e.sig === sig) {   // same picture, same content: just re-aim the laser fallback row
+            e.row = (stageReg['c' + card.id] || {}).node || e.row;
+            return;
+        }
+        // single live instance: whatever sat on the rail before is disposed and wiped
+        // before the new chart mounts
+        Object.keys(plotReg).forEach(function (k) {
+            var o = plotReg[k];
+            if (o.inst) { try { o.inst.dispose(); } catch (err) { } }
+            delete plotReg[k];
+        });
+        host.innerHTML = '';
+        var box = document.createElement('div');
+        box.className = 'w-full';
+        box.setAttribute('data-fig', String(card.id));
+        host.appendChild(box);
+        // attach-before-chart rule (phase 5 bug of 2026-11-06): the box is in the DOM by now
+        var inst = plotBoxPaint(box, card, true, true);
+        plotReg[key] = { row: (stageReg['c' + card.id] || {}).node || box, box: box,
+                         inst: inst, sig: sig, big: true, live: true };
+    }
+    function bandItems(items) {
+        var es = [];
+        items.forEach(function (c) {
+            if (c.kind === 'plot') es.push({ key: 'plot' + c.id, kind: 'plot', id: c.id, ts: c.ts || 0, o: c });
+            else if (c.kind === 'topic') es.push({ key: 'topic' + c.id, kind: 'topic', id: c.id, ts: c.ts || 0, o: c });
+        });
+        es.sort(function (a, b) { return (b.ts - a.ts) || (b.id - a.id); });   // newest first
+        return es;
+    }
+    function shownTopicId(items) {
+        if (stageMode.mode !== 'branch') return null;
+        if (stageMode.topicId != null) return stageMode.topicId;
+        var topics = items.filter(function (c) { return c.kind === 'topic'; });
+        return topics.length ? topics[topics.length - 1].id : null;
+    }
+    function buildBandThumb(en, live) {
+        var items = lastItems();
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tb-band';
+        b.setAttribute('data-band', en.kind + ':' + en.id);
+        b.onclick = function () { bandPick(en.kind, en.id); };   // by id: never a stale closure over state
+        var e = { node: b, inst: null, cnt: null, liveFlag: live };
+        if (en.kind === 'plot') {
+            var box = document.createElement('div');
+            b.appendChild(box);
+            if (live) {
+                e.pendingBox = box;   // chart mounts after insert in renderTimeline (attach-first rule)
+            } else {
+                var cap = document.createElement('span');
+                cap.className = 'text-[10px] text-cl-text-3 px-1 block truncate';
+                cap.textContent = en.o.text || ZH.unknown;
+                b.appendChild(cap);
+            }
+        } else {
+            var t = document.createElement('span');
+            t.className = 'text-[11px] tb-chalk block px-1 pt-1 truncate';
+            t.textContent = en.o.text || ZH.unknown;
+            b.appendChild(t);
+            var s = document.createElement('span');
+            s.className = 'text-[10px] text-cl-text-3 block px-1';
+            b.appendChild(s);
+            e.cnt = s;
+        }
+        if (e.cnt) {
+            var n = 0;
+            items.forEach(function (c) { if (c.parent_id === en.id) n += 1; });
+            e.cnt.textContent = ZH.bandTopic + ' \u00b7 ' + n + ZH.bandCards;
+        }
+        return e;
+    }
+    function renderTimeline(items) {
+        var host = el('tb-timeline');
+        if (!host) return;
+        var es = bandItems(items), keep = {}, budget = Math.max(0, PLOT_LIVE_MAX - 1);
+        var curTopic = shownTopicId(items);
+        var figCard = figureCard(items);   // the rail's picture owns the "current" band highlight
+        var expect = host.firstElementChild;
+        es.forEach(function (en) {
+            keep[en.key] = 1;
+            var live = en.kind === 'plot' && budget > 0;
+            if (en.kind === 'plot') budget -= 1;
+            var e = bandReg[en.key];
+            if (e && en.kind === 'plot' && e.liveFlag !== live) {   // live slot moved: rebuild cold (dispose first)
+                if (e.inst) { try { e.inst.dispose(); } catch (err) { } e.inst = null; }
+                if (e.node && e.node.parentNode) {
+                    if (expect === e.node) expect = e.node.nextElementSibling;   // same cursor rule as the stage
+                    e.node.parentNode.removeChild(e.node);
+                }
+                e = null;
+            }
+            if (!e) { e = buildBandThumb(en, live); bandReg[en.key] = e; }
+            if (e.cnt) {
+                var n = 0;
+                items.forEach(function (c) { if (c.parent_id === en.id) n += 1; });
+                e.cnt.textContent = ZH.bandTopic + ' \u00b7 ' + n + ZH.bandCards;
+            }
+            var cur = en.kind === 'plot'
+                ? !!(figCard && figCard.id === en.id)
+                : (en.id === curTopic);
+            e.node.classList.toggle('tb-band-cur', !!cur);
+            e.node.setAttribute('data-current', cur ? '1' : '0');
+            if (e.node !== expect) host.insertBefore(e.node, expect);
+            else expect = expect.nextElementSibling;
+            if (e.pendingBox) {
+                // same attach-before-chart rule as the stage: init needs a real box size
+                var pbox = e.pendingBox;
+                e.pendingBox = null;
+                if (window.TBCharts) { try { e.inst = TBCharts.create(pbox, en.o.data, { height: 58 }); } catch (err) { e.inst = null; } }
+                if (!e.inst) {
+                    var pcap = document.createElement('span');
+                    pcap.className = 'text-[10px] text-cl-text-3 px-1 block truncate';
+                    pcap.textContent = en.o.text || ZH.unknown;
+                    e.node.appendChild(pcap);
+                }
+            }
+        });
+        Object.keys(bandReg).forEach(function (k) {
+            if (keep[k]) return;
+            var e = bandReg[k];
+            if (e.inst) { try { e.inst.dispose(); } catch (err) { } }
+            if (e.node && e.node.parentNode) e.node.parentNode.removeChild(e.node);
+            delete bandReg[k];
+        });
+    }
+    function bandPick(kind, id) {
+        if (kind === 'plot') {
+            if (stageMode.mode === 'plot' && stageMode.plotId === id) stageMode = { mode: 'branch', topicId: null, plotId: null };
+            else stageMode = { mode: 'plot', topicId: null, plotId: id };
+        } else if (stageMode.mode === 'branch' && stageMode.topicId === id) {
+            stageMode = { mode: 'branch', topicId: null, plotId: null };   // click the shown root again: back to newest
+        } else {
+            stageMode = { mode: 'branch', topicId: id, plotId: null };
+        }
+        renderBoard(lastItems());
+    }
+    function renderBoard(items) {
+        var topics = items.filter(function (c) { return c.kind === 'topic'; });
+        var plots = items.filter(function (c) { return c.kind === 'plot'; });
+        var newestTopic = topics.length ? topics[topics.length - 1].id : null;
+        var newestPlot = plots.length ? plots[plots.length - 1].id : null;
+        // a new chart on the board or a new topic takes the stage back to the newest branch
+        if (newestPlot !== lastStagePlot || newestTopic !== lastStageTopic) {
+            stageMode = { mode: 'branch', topicId: null, plotId: null };
+        }
+        lastStagePlot = newestPlot; lastStageTopic = newestTopic;
+        renderStageArea(items);
+        renderFigure(items);
+        renderTimeline(items);
+        txt(el('tb-plot-count'), plots.length ? (plots.length + ' ' + ZH.plotWord) : '');
+    }
+    function openPlot(id) {
+        // v0.2.6: "enlarge" = pin this picture onto the figure rail (right column)
+        if (id == null) stageMode = { mode: 'branch', topicId: null, plotId: null };
+        else stageMode = { mode: 'plot', topicId: null, plotId: id };
+        renderBoard(lastItems());
+    }
+    // ---------------------------------------------------------------- laser + focus lamp
+    // 激光常驻（十一轮旁白跟随课）：以前亮 3 秒自灭，老师连讲几句屏幕上就没焦点；
+    // 现在只要板上有可指对象（focus 或兜底卡）激光就一直盯着目标，位置由 laserTrack 持续对齐
+    function showLaserAt(x, y) {
+        var L = el('tb-laser');
+        if (!L) return;
+        L.style.left = Math.round(x - 7) + 'px';
+        L.style.top = Math.round(y - 7) + 'px';
+        L.classList.add('tb-laser-on');
+    }
+    function laserHide() {
+        var L = el('tb-laser');
+        if (L) L.classList.remove('tb-laser-on');
+    }
+    function laserOnNode(node) {
+        if (!node) return false;
+        var r = node.getBoundingClientRect();
+        if (!r.width && !r.height) return false;
+        showLaserAt(r.left + r.width / 2, r.top + r.height / 2);
+        return true;
+    }
+    function clearLight() {
+        [].forEach.call(document.querySelectorAll('.tb-anc-on'), function (n) { n.classList.remove('tb-anc-on'); });
+        [plotReg, bandReg].forEach(function (map) {
+            Object.keys(map).forEach(function (k) {
+                var i = map[k].inst;
+                if (i) { try { i.clearHighlights(); } catch (e) { } }
+            });
+        });
+    }
+    function applyFocus(f) {
+        var items = lastItems(), card = null;
+        if (f) { for (var q = 0; q < items.length; q++) { if (items[q].id === f.item_id) { card = items[q]; break; } } }
+        // reg/stageReg hold {node, sig} entries: aim at the real rows, not the wrappers
+        var sEntry = f ? reg['c' + f.item_id] : null;
+        var gEntry = f ? stageReg['c' + f.item_id] : null;
+        var sNode = sEntry ? sEntry.node : null, gNode = gEntry ? gEntry.node : null;
+        [].forEach.call(document.querySelectorAll('.tb-focus'), function (n) { n.classList.remove('tb-focus'); });
+        clearLight();
+        if (!f || !card) return;
+        if (sNode) sNode.classList.add('tb-focus');
+        if (gNode) gNode.classList.add('tb-focus');
+        if (card.kind === 'plot') {
+            if (!plotReg[String(f.item_id)]) {
+                // the chart lives in another branch: promote it onto the stage, then aim
+                stageMode = { mode: 'plot', topicId: null, plotId: f.item_id };
+                renderBoard(items);
+                gEntry = stageReg['c' + f.item_id];
+                gNode = gEntry ? gEntry.node : null;
+                if (gNode) gNode.classList.add('tb-focus');
+            }
+            var e = plotReg[String(f.item_id)];
+            if (!e || !e.inst) { if (!laserOnNode(gNode)) laserOnNode(sNode); return; }
+            if (f.reveal != null) { try { e.inst.reveal(f.reveal); } catch (err) { } }
+            var hit = false;
+            if (f.mark != null) {
+                var pt = null;
+                try { pt = e.inst.pointAt(f.mark); } catch (err) { pt = null; }
+                if (pt) hit = laserAtClient(pt);
+                else {
+                    var name = null;
+                    try { name = e.inst.itemOf(f.mark); } catch (err) { name = null; }
+                    if (name != null) {
+                        try { e.inst.highlightItem(name); hit = laserOnNode(e.box); } catch (err) { }
+                    }
+                }
+                // v0.2.7 系列指认：mark 带 series=N 时整组放大、其余压暗（激光已落重心）
+                try {
+                    var sn = e.inst.seriesOf ? e.inst.seriesOf(f.mark) : null;
+                    if (sn != null) e.inst.highlightSeries(sn);
+                } catch (err) { }
+            }
+            if (!hit) { if (!laserOnNode(gNode || (e && e.row))) laserOnNode(sNode); }
+            return;
+        }
+        // anchor is the 1-based bracket number the teacher/brain picked (same contract as point=N)
+        if (f.anchor != null) {
+            var host = gNode || sNode;
+            if (host) {
+                var spans = host.querySelectorAll('.tb-anc');
+                var sp = spans[f.anchor - 1] || null;
+                if (sp) { sp.classList.add('tb-anc-on'); if (laserOnNode(sp)) return; }
+            }
+        }
+        var aim = gNode || sNode;
+        if (aim && !laserOnNode(aim)) aim.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    function laserAtClient(pt) {
+        if (!pt) return false;
+        showLaserAt(pt.x, pt.y);
+        return true;
+    }
+    function nodeClient(n) {
+        // 节点当前屏幕中心 client 坐标；零尺寸/不在文档返 null
+        if (!n || !n.isConnected) return null;
+        var r = n.getBoundingClientRect();
+        if (!r.width && !r.height) return null;
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    function aimFocus(f) {
+        // 纯瞄准：算 focus 此刻的落点 {x,y}，不写任何 DOM——首次瞄准与持续追踪共用。
+        // 带动画副作用的整组放大（highlightItem/highlightSeries）只在 applyFocus 首发做一次，
+        // 追踪只挪点不重放动画
+        if (!f) return null;
+        var items = lastItems(), card = null;
+        for (var q = 0; q < items.length; q++) { if (items[q].id === f.item_id) { card = items[q]; break; } }
+        if (!card) return null;
+        if (card.kind === 'plot') {
+            var e = plotReg[String(f.item_id)];
+            if (e && e.inst && f.mark != null) {
+                var pt = null;
+                try { pt = e.inst.pointAt(f.mark); } catch (err) { pt = null; }
+                if (pt && (isFinite(pt.x) && isFinite(pt.y))) return pt;
+            }
+            var pn = (stageReg['c' + f.item_id] || {}).node || (e && (e.row || e.box)) || (reg['c' + f.item_id] || {}).node;
+            return nodeClient(pn);
+        }
+        var host = (stageReg['c' + f.item_id] || {}).node || (reg['c' + f.item_id] || {}).node;
+        if (!host) return null;
+        if (f.anchor != null) {
+            var spans = host.querySelectorAll('.tb-anc');
+            var sp = spans[f.anchor - 1] || null;
+            if (sp) return nodeClient(sp);
+        }
+        return nodeClient(host);
+    }
+    function aimFallback() {
+        // 板上没有 focus（旧卡被删/老师还没手势）时的兜底：台上图 > 最新卡，
+        // 学生任何时候都有该看的地方
+        var items = lastItems();
+        if (!items.length) return null;
+        var fc = figureCard(items);
+        if (fc) { var a = aimFocus({ item_id: fc.id }); if (a) return a; }
+        var last = items[items.length - 1];
+        var n = (reg['c' + last.id] || {}).node;
+        return nodeClient(n);
+    }
+    function laserTrack() {
+        if (!alive()) return;
+        var a = aimFocus(curFocus);
+        if (!a) a = aimFallback();
+        if (a) showLaserAt(a.x, a.y);
+        else laserHide();
+    }
+    // ---------------------------------------------------------------- state -> DOM + polling
+    var lastState = { items: [], speech: [] }, outTries = {}, pagesDone = 0;
+    // sticky 课中标记：一旦有卡/有字幕就置真不再回退（board_clear 清空 items 后，
+    // 占位文案仍区分课前/课中；页面重载即重新判定，符合预期）
+    var inClass = false;
+    function lastItems() { return lastState.items || []; }
+    function deriveTitle(items) {
+        for (var i = items.length - 1; i >= 0; i--) { if (items[i].kind === 'topic') return items[i].text || ''; }
+        for (var j = items.length - 1; j >= 0; j--) { if (items[j].kind === 'problem') return String(items[j].text || '').slice(0, 20); }
+        return '';
+    }
+    function paint(s) {
+        if (!alive()) return;   // 旧实例不写 DOM：DOM 归最近一次执行的实例所有
+        // an unchanged-rev poll may still be the FIRST frame the page renders (empty board:
+        // the fallback/welcome line must paint once); only skip repeats after one full paint.
+        // firstFrame flips false at the end, so a mid-paint throw auto-retries on the next tick.
+        if (!s || (s.changed === false && !firstFrame)) return;
+        lastState = s;
+        if ((s.items || []).length || (s.speech || []).length) inClass = true;
+        if (s.lesson_key) lessonKey = s.lesson_key;
+        boardTitle = deriveTitle(s.items || []);
+        var be = el('tb-bridge-text'), bd = el('tb-dot');
+        if (be) be.textContent = s.bridge_connected ? ZH.bridgeOn : ZH.bridgeOff;
+        if (bd) bd.style.background = s.bridge_connected ? '#34d399' : '#9ca3af';
+        renderStream(s.items || [], s.speech || []);
+        renderBoard(s.items || []);
+        // assignment banner is about the OPENING of the lecture: retire only when cards
+        // GREW past the entry baseline (stale cards from the previous lesson must not
+        // instantly kill the banner; checkAssign may resolve after first paint - Minor-5)
+        if (assignPending && (s.items || []).length > (assignPending.base || 0)) {
+            assignPending = null; setBanner('assign', '');
+        }
+        renderStage(s.anim);
+        var f = s.focus || null;
+        if (f && curFocus && curFocus.seq === f.seq) f = null;    // same event: already aimed
+        curFocus = s.focus || null;
+        if (f) applyFocus(f);
+        laserTrack();   // 新事件瞄准后立即对齐一次（同事件重复轮询靠主 timer 追位置）
+        var nSay = (s.speech || []).length;
+        txt(el('tb-meta'), (s.items || []).length + ' ' + ZH.metaCards + ' \u00b7 ' +
+            nSay + ' ' + ZH.metaSpeech + (lessonKey ? ' \u00b7 ' + lessonKey.slice(0, 8) : '') +
+            (s.source_error_id ? ZH.metaErr + s.source_error_id : ''));
+        queueOutbox(s.outbox || []);
+        if (firstFrame) { firstFrame = false; stickBottom(); }
+        // advance the rev cursor only after a full frame: a mid-paint throw keeps the
+        // next poll fetching the same snapshot so the frame replays instead of sticking
+        lastRev = s.rev;
+    }
+    function poll() {
+        if (!alive()) return;   // 已让位给新实例：不再取数不再画
+        // keep last frame on failure (a poll error must never blank a live lesson),
+        // but leave the trace on window so CDP assertions / field debugging can read it
+        api('GET', '/api/board/state?since=' + lastRev).then(function (s) {
+            try { paint(s); window.__tbPollErr = null; } catch (e) { window.__tbPollErr = String((e && e.stack) || e); }
+        }).catch(function (e) { window.__tbPollErr = String((e && e.stack) || e); });
+    }
+    function wireScroll() {
+        var s = el('tb-stream');
+        if (s) s.addEventListener('scroll', function () {
+            if (autoScrolling) return;
+            var near = s.scrollHeight - s.scrollTop - s.clientHeight < 24;
+            follow = near;
+            show('tb-back-btn', !near);
+            laserTrack();   // 滚动时目标跟着挪位：激光随手势即刻重新对齐
+        });
+        var b = el('tb-back-btn');
+        if (b) b.onclick = function () { follow = true; stickBottom(); };
+    }
+    // ---------------------------------------------------------------- archive outbox -> PNG -> courseware
+    function shotFigureOne(entry, u, capScale) {
+        // 图页合成通用件（image/mermaid 共用）：黑板绿底 + 标题/图体/口播/角印；
+        // capScale=1 不放大（栅格原图），>1 允许矢量适度放大不糊
+        return new Promise(function (resolve) {
+            var im = new Image();
+            im.onload = function () {
+                var url = null;
+                try {
+                    var W = 1280, H = OFF_H;
+                    var cv = document.createElement('canvas');
+                    cv.width = W; cv.height = H;
+                    var g = cv.getContext('2d');
+                    var T = window.TBCharts || {};
+                    g.fillStyle = T.bg || '#1e3d2f';
+                    g.fillRect(0, 0, W, H);
+                    var ink = T.ink || '#f3efe2', font = T.font || 'sans-serif';
+                    g.fillStyle = ink;
+                    g.font = 'bold 22px ' + font;
+                    g.fillText(String(entry.title || ''), 24, 38);
+                    g.font = '13px ' + font;
+                    g.textAlign = 'right';
+                    g.fillText(fmtStamp(entry.ts), W - 24, 36);
+                    g.textAlign = 'left';
+                    // 图体等比居中，预留标题行与口播行
+                    var mh = H - 100, mw = W - 48;
+                    var s = Math.min(mw / im.width, mh / im.height, capScale);
+                    var w = Math.max(1, Math.round(im.width * s)), hh = Math.max(1, Math.round(im.height * s));
+                    g.drawImage(im, (W - w) / 2, 54 + (mh - hh) / 2, w, hh);
+                    var caption = String(entry.caption || '');
+                    if (caption.length > 60) caption = caption.slice(0, 59) + '\u2026';
+                    if (caption) {
+                        g.font = '16px ' + font;
+                        g.fillText(caption, 24, H - 22);
+                    }
+                    url = cv.toDataURL('image/png');
+                } catch (e) { url = null; }
+                resolve(url);
+            };
+            im.onerror = function () { resolve(null); };
+            im.src = u;
+        });
+    }
+    function shotImageOne(entry) {
+        // 原图页烧进课件：服务端校验过的 rel 水合后交通用合成（不放大）
+        var rel = String((entry.data && entry.data.rel) || '');
+        if (!rel) return Promise.resolve(null);
+        return imgDataUrl(rel).then(function (u) {
+            return shotFigureOne(entry, u, 1);
+        }).catch(function () { return null; });
+    }
+    function shotMermaidOne(entry) {
+        // 思路页烧进课件：本地渲染同一份 DSL 出 SVG，矢量适度放大不糊（与屏幕同源）
+        var code = String((entry.data && entry.data.code) || '');
+        if (!code || !window.mermaid) return Promise.resolve(null);
+        return mmRender(code).then(function (svg) {
+            return shotFigureOne(entry, mmSvgUrl(svg), 2.5);
+        }).catch(function () { return null; });
+    }
+    function shotOne(entry) {
+        if (entry && entry.data && entry.data.plot_type === 'image') return shotImageOne(entry);
+        if (entry && entry.data && entry.data.plot_type === 'mermaid') return shotMermaidOne(entry);
+        var host = el('tb-off-host');
+        if (!host || !window.TBCharts || !entry || !entry.data) return Promise.resolve(null);
+        var inst = null;
+        try { inst = TBCharts.create(host, entry.data, { height: OFF_H, animate: false }); }
+        catch (e) { inst = null; }
+        if (!inst) { host.innerHTML = ''; return Promise.resolve(null); }
+        return new Promise(function (resolve) {
+            function kill() { try { inst.dispose(); } catch (e) { } host.innerHTML = ''; }
+            setTimeout(function () {
+                // 让位后宿主 el('tb-off-host') 已是新实例的节点：只拆自己的图，
+                // 绝不清 host（否则抹掉新实例在飞的截图 → 丢页，比双页更严重）
+                if (!alive()) { try { inst.dispose(); } catch (e) { } resolve(null); return; }
+                var p = null;
+                try {
+                    p = inst.toPNG({ title: entry.title || '', caption: entry.caption || '', stamp: fmtStamp(entry.ts) });
+                } catch (e) { p = null; }
+                if (!p || typeof p.then !== 'function') { kill(); resolve(null); return; }
+                p.then(function (url) { kill(); resolve(url); }, function () { kill(); resolve(null); });
+            }, SHOT_SETTLE);
+        });
+    }
+    function dropOutbox(entry, why) {
+        if (why) setBanner('arch', ZH.archiveSkip + why, 7000);
+        return api('POST', '/api/board/outbox_drop', { oids: [entry.oid] }).catch(function () { return null; });
+    }
+    function queueOutbox(list) {
+        var mine = {};
+        (list || []).forEach(function (o) {
+            mine[o.oid] = 1;
+            if (!outSeen[o.oid]) { outSeen[o.oid] = 1; outQueue.push(o); }
+        });
+        Object.keys(outSeen).forEach(function (k) {
+            if (mine[k]) return;
+            delete outSeen[k];
+            for (var i = 0; i < outQueue.length; i++) { if (outQueue[i].oid === +k) { outQueue.splice(i, 1); break; } }
+        });
+        pumpOutbox();
+    }
+    function pumpOutbox() {
+        if (!alive()) return;   // 旧实例：件箱流水线归最新实例，本实例不再开火
+        if (outBusy) return;
+        var e = outQueue.shift();
+        if (!e) {
+            if (pendingArchive && !archiving) { pendingArchive = false; doArchive(); }
+            else setBanner('arch', '');
+            return;
+        }
+        outBusy = true;
+        setBanner('arch', ZH.archiveBusy);
+        shotOne(e).then(function (url) {
+            var b64 = url ? String(url).split(',')[1] || '' : '';
+            if (!b64) return dropOutbox(e, ZH.chartFail);
+            if (b64.length > B64_MAX) return dropOutbox(e, ZH.archiveBig);
+            return api('POST', '/api/board/slide_image', {
+                lesson_key: e.lesson_key || lessonKey, image_b64: b64,
+                caption: e.caption || '', title: e.title || '',
+                plot_json: e.data || null, source_error_id: e.source_error_id || null
+            }).then(function (d) {
+                pagesDone = (d && d.pages) || pagesDone;
+                return dropOutbox(e, '');
+            }).catch(function (err) {
+                var t = (outTries[e.oid] || 0) + 1;
+                outTries[e.oid] = t;
+                if (t > RETRY_MAX) return dropOutbox(e, ZH.archiveErr + String((err && err.message) || err));
+                outQueue.push(e);
+                return null;
+            });
+        }).catch(function () { return null; }).then(function () {
+            outBusy = false;
+            setTimeout(pumpOutbox, outQueue.length && outTries ? 900 : 60);
+        });
+    }
+    function doArchive() {
+        if (!alive()) return;   // 旧实例不归档：新课件挂接归最新实例
+        if (!lessonKey) { setBanner('arch', ''); return; }
+        archiving = true;
+        api('POST', '/api/board/archive', { lesson_key: lessonKey, title: boardTitle }).then(function (d) {
+            archiving = false;
+            setBanner('arch', ZH.archiveDone + ((d && d.title) || boardTitle) +
+                ' ' + ((d && d.pages) || pagesDone) + ZH.archivePages, 7000);
+        }).catch(function (err) {
+            archiving = false;
+            setBanner('arch', ZH.archiveErr + String((err && err.message) || err), 7000);
+        });
+    }
+    // lesson over: close the last caption window, burn every finished page, then file the course
+    function finishLesson() {
+        if (archiving) return;
+        archiving = true;
+        api('POST', '/api/board/close_caption').then(function (s) {
+            archiving = false;
+            if (!alive()) return;   // 旧实例的下课链到此停：新实例会自行收课
+            paint(s);
+            if (outBusy || outQueue.length) pendingArchive = true;
+            else doArchive();
+            pumpOutbox();
+        }).catch(function () {
+            archiving = false;
+            if (!alive()) return;   // 同上：让位后不再驱动归档/件箱
+            pendingArchive = true;
+            pumpOutbox();
+        });
+    }
+    // ---------------------------------------------------------------- draggable split (38/62 default)
+    var splitRatio = SPLIT_DEF;
+    function readSplit() {
+        try { var v = parseInt(localStorage.getItem(SPLIT_KEY), 10); return (v >= 20 && v <= 80) ? v : SPLIT_DEF; }
+        catch (e) { return SPLIT_DEF; }
+    }
+    function applySplit(r) {
+        splitRatio = r;
+        var z = el('tb-zone-sub');
+        if (z) z.style.flex = '0 0 ' + r + '%';
+        try { localStorage.setItem(SPLIT_KEY, String(r)); } catch (e) { /* private mode */ }
+    }
+    function resizeCharts() {
+        [plotReg, bandReg].forEach(function (map) {
+            Object.keys(map).forEach(function (k) {
+                var i = map[k].inst;
+                if (i) { try { i.resize(); } catch (e) { /* disposed */ } }
+            });
+        });
+    }
+    function wireDivider() {
+        var dv = el('tb-divider'), wrap = el('tb-split');
+        if (!dv || !wrap) return;
+        function ratioFromY(y) {
+            var b = wrap.getBoundingClientRect();
+            var h = Math.max(120, b.height - 14);
+            return Math.max(20, Math.min(80, Math.round(((y - b.top) / h) * 100)));
+        }
+        dv.addEventListener('mousedown', function (ev) { startDrag(ev, false); });
+        dv.addEventListener('touchstart', function (ev) { startDrag(ev, true); });
+        dv.addEventListener('dblclick', function () { applySplit(SPLIT_DEF); resizeCharts(); });
+        function startDrag(ev, touch) {
+            ev.preventDefault();
+            document.body.style.userSelect = 'none';
+            function move(e2) {
+                var p = touch ? (e2.touches && e2.touches[0]) : e2;
+                if (p) applySplit(ratioFromY(p.clientY));
+            }
+            function up() {
+                document.body.style.userSelect = '';
+                document.removeEventListener('mousemove', move);
+                document.removeEventListener('mouseup', up);
+                document.removeEventListener('touchmove', move);
+                document.removeEventListener('touchend', up);
+                resizeCharts();
+            }
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', up);
+            document.addEventListener('touchmove', move, { passive: true });
+            document.addEventListener('touchend', up);
+        }
+    }
+    // ---------------------------------------------------------------- courseware drawer + export
+    var drawerKey = null;
+    function assetHref(sig, dl) {
+        return '/api/board/asset?u=' + encodeURIComponent(sig.u) + '&rel=' + encodeURIComponent(sig.rel) +
+            '&exp=' + sig.exp + '&t=' + encodeURIComponent(sig.t) + (dl ? '&dl=1' : '');
+    }
+    function signAsset(rel) {
+        return api('GET', '/api/board/asset/sign?rel=' + encodeURIComponent(rel))
+            .then(function (d) { return (d && d.t) ? d : null; }).catch(function () { return null; });
+    }
+    function slideCard(s) {
+        var c = document.createElement('div');
+        c.className = 'rounded-cl border border-cl-border bg-cl-bg p-2';
+        var h = document.createElement('p');
+        h.className = 'text-[12px] font-semibold text-cl-text mb-1 truncate';
+        h.textContent = ZH.drawerSeq + s.seq + ZH.drawerSeqTail + ' \u00b7 ' + (s.title || ZH.unknown);
+        c.appendChild(h);
+        if (s.has_image && s.image_rel) {
+            var img = document.createElement('img');
+            img.className = 'w-full rounded-cl border border-cl-border bg-cl-surface';
+            img.alt = s.title || '';
+            img.loading = 'lazy';
+            c.appendChild(img);
+            signAsset(s.image_rel).then(function (sig) {
+                if (!sig) { img.alt = ZH.drawerErr; return; }
+                img.src = assetHref(sig, false);
+                var a = document.createElement('a');
+                a.className = 'block mt-1 text-[11px] text-cl-primary hover:underline';
+                a.href = assetHref(sig, false); a.target = '_blank'; a.rel = 'noopener';
+                a.textContent = ZH.drawerOpen;
+                c.appendChild(a);
+            });
+        } else {
+            var n = document.createElement('p');
+            n.className = 'text-[11px] text-cl-text-3'; n.textContent = ZH.drawerNoImg;
+            c.appendChild(n);
+        }
+        if (s.caption) {
+            var cp = document.createElement('p');
+            cp.className = 'text-[11px] text-cl-text-2 mt-1 leading-relaxed';
+            cp.textContent = ZH.drawerCap + '\uff1a' + s.caption;
+            c.appendChild(cp);
+        }
+        return c;
+    }
+    function openDrawer(key) {
+        drawerKey = key || lessonKey;
+        var mask = el('tb-drawer-mask');
+        if (!mask) return;
+        mask.classList.remove('hidden');
+        var body = el('tb-drawer-body');
+        if (body) body.innerHTML = '';
+        txt(el('tb-drawer-status'), '');
+        txt(el('tb-drawer-title'), ZH.drawerTitle);
+        if (!drawerKey) { txt(el('tb-drawer-sub'), ZH.drawerEmpty); return; }
+        txt(el('tb-drawer-sub'), ZH.drawerLoading);
+        api('GET', '/api/board/lesson?lesson_key=' + encodeURIComponent(drawerKey)).then(function (d) {
+            var slides = (d && d.slides) || [];
+            txt(el('tb-drawer-title'), ZH.drawerTitle + ' \u00b7 ' + ((d && d.title) || boardTitle || ZH.unknown));
+            txt(el('tb-drawer-sub'), ZH.drawerPages + slides.length + ZH.drawerPagesTail);
+            var box = el('tb-drawer-body');
+            if (!box) return;
+            box.innerHTML = '';
+            if (!slides.length) {
+                var p = document.createElement('p');
+                p.className = 'text-xs text-cl-text-3 leading-relaxed';
+                p.textContent = ZH.drawerEmpty;
+                box.appendChild(p);
+                return;
+            }
+            slides.forEach(function (s) { box.appendChild(slideCard(s)); });
+        }).catch(function (e) {
+            txt(el('tb-drawer-sub'), ZH.drawerErr + String((e && e.message) || e));
+        });
+    }
+    function closeDrawer() {
+        var m = el('tb-drawer-mask');
+        if (m) m.classList.add('hidden');
+    }
+    function doExport(fmt) {
+        var st = el('tb-drawer-status');
+        if (!drawerKey) { txt(st, ZH.exportNone); return; }
+        txt(st, ZH.drawerBusy);
+        api('POST', '/api/board/export', { lesson_key: drawerKey, fmt: fmt, title: boardTitle })
+            .then(function (r) {
+                if (r && r.success === false) { txt(st, ZH.drawerErr + (r.error || '')); return; }
+                txt(st, ZH.drawerDone + ((r && r.name) || '') + (r && r.pages ? ' (' + r.pages + ')' : ''));
+                if (r && r.url) {
+                    var a = document.createElement('a');
+                    a.href = r.url; a.download = (r.name || '');
+                    document.body.appendChild(a); a.click(); a.parentNode.removeChild(a);
+                }
+            })
+            .catch(function (e) { txt(st, ZH.drawerErr + String((e && e.message) || e)); });
+    }
+    // ---------------------------------------------------------------- lesson prep dialog
+    var prep = { tab: 'kp', sel: null, subjects: false };
+    function prepLabelEl() { return el('tb-prep-freebox').querySelector('label'); }
+    function prepBuildTabs() {
+        var box = el('tb-prep-tabs');
+        if (!box) return;
+        box.innerHTML = '';
+        [[ 'kp', ZH.prepTabKp ], [ 'err', ZH.prepTabErr ], [ 'free', ZH.prepTabFree ]].forEach(function (t) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'px-2.5 py-1 rounded-clbtn text-xs border cursor-pointer ' +
+                (prep.tab === t[0] ? 'border-cl-primary bg-cl-primary-soft text-cl-text'
+                                   : 'border-cl-border text-cl-text-2 hover:bg-cl-primary-soft');
+            b.textContent = t[1];
+            b.onclick = function () { prep.tab = t[0]; prepBuildTabs(); prepFill(); };
+            box.appendChild(b);
+        });
+        show('tb-prep-freebox', prep.tab === 'free');
+        show('tb-prep-list', prep.tab !== 'free');
+        txt(el('tb-prep-subject-label'), ZH.prepSubject + ' \u00b7 ' +
+            (prep.tab === 'kp' ? ZH.prepKpLabel : (prep.tab === 'err' ? ZH.prepErrLabel : ZH.prepFreeLabel)));
+        var lb = prepLabelEl();
+        if (lb) lb.textContent = ZH.prepFreeLabel;
+        var fi = el('tb-prep-free');
+        if (fi) fi.placeholder = ZH.prepFreePh;
+        txt(el('tb-prep-status'), prep.sel ? ZH.prepPick + prep.selText : '');
+    }
+    function prepEstimate() {
+        api('GET', '/api/micro-course/estimate' + (prep.tab === 'err' ? '?mode=error' : ''))
+            .then(function (d) {
+                txt(el('tb-prep-cost'), ZH.prepCost +
+                    (d && d.estimated_credits != null ? d.estimated_credits : ZH.unknown));
+            })
+            .catch(function () { txt(el('tb-prep-cost'), ''); });
+    }
+    function prepItemBtn(label, sub, on) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'text-left px-2.5 py-2 rounded-cl border text-[12px] cursor-pointer ' +
+            (on ? 'border-cl-primary bg-cl-primary-soft text-cl-text' : 'border-cl-border text-cl-text-2 hover:bg-cl-primary-soft');
+        b.textContent = label;
+        if (sub) {
+            var s = document.createElement('span');
+            s.className = 'block text-[11px] text-cl-text-3 mt-0.5 truncate';
+            s.textContent = sub;
+            b.appendChild(s);
+        }
+        return b;
+    }
+    function prepItemLabel(it) {
+        return prep.tab === 'kp' ? String(it.point_name || it.name || ('#' + it.id))
+                                : String(it.question_content || '').slice(0, 46);
+    }
+    function prepItemSub(it) {
+        return prep.tab === 'kp' ? String(it.core_description || '')
+                                : String(it.explanation || it.correct_answer || '').slice(0, 60);
+    }
+    function prepRenderList(list) {
+        var box = el('tb-prep-list');
+        if (!box) return;
+        box.innerHTML = '';
+        list.forEach(function (it) {
+            var label = prepItemLabel(it);
+            var b = prepItemBtn(label, prepItemSub(it), prep.sel === it.id);
+            b.onclick = function () {
+                prep.sel = it.id;
+                prep.selText = label;
+                txt(el('tb-prep-status'), ZH.prepPick + label);
+                prepEstimate();
+                prepRenderList(list);
+            };
+            box.appendChild(b);
+        });
+    }
+    function prepFill() {
+        prep.sel = null;
+        prep.selText = '';
+        txt(el('tb-prep-cost'), '');
+        txt(el('tb-prep-status'), '');
+        var box = el('tb-prep-list');
+        if (!box) return;
+        box.innerHTML = '';
+        if (prep.tab === 'free') { prepEstimate(); return; }
+        var sel = el('tb-prep-subject');
+        var sub = sel ? sel.value : '';
+        if (!sub) { txt(box, ZH.prepNone); return; }
+        var path = (prep.tab === 'kp' ? '/api/knowledge/points?subject=' : '/api/kb/errors?subject=') +
+            encodeURIComponent(sub);
+        txt(box, ZH.drawerLoading);
+        api('GET', path).then(function (rows) {
+            var list = (rows || []).slice(0, 40);
+            if (!list.length) { txt(box, ZH.prepNone); return; }
+            prepRenderList(list);
+        }).catch(function (e) { txt(box, ZH.prepLoadErr + String((e && e.message) || e)); });
+    }
+    function openPrep() {
+        var m = el('tb-prep-mask');
+        if (!m) return;
+        m.classList.remove('hidden');
+        prepBuildTabs();
+        if (prep.subjects) return;
+        api('GET', '/api/subjects').then(function (list) {
+            prep.subjects = true;
+            var sel = el('tb-prep-subject');
+            if (!sel) return;
+            sel.innerHTML = '';
+            (list || []).forEach(function (s) {
+                var name = (s && (s.subject_name || s.name)) || s;
+                if (!name) return;
+                var o = document.createElement('option');
+                o.value = String(name); o.textContent = String(name);
+                sel.appendChild(o);
+            });
+            sel.onchange = prepFill;
+            prepFill();
+        }).catch(function (e) { txt(el('tb-prep-status'), ZH.prepLoadErr + String((e && e.message) || e)); });
+    }
+    function closePrep() {
+        var m = el('tb-prep-mask');
+        if (m) m.classList.add('hidden');
+    }
+    function prepGo() {
+        var go = el('tb-prep-go'), st = el('tb-prep-status');
+        if (!go || go.disabled) return;
+        var path = '/api/micro-course/create', body = null;
+        if (prep.tab === 'free') {
+            var t = String((el('tb-prep-free') || {}).value || '').trim();
+            if (!t) { txt(st, ZH.prepNeed); return; }
+            path = '/api/board/prep';
+            body = { topic: t, subject: ((el('tb-prep-subject') || {}).value || '') };
+        } else {
+            if (!prep.sel) { txt(st, ZH.prepNeed); return; }
+            body = prep.tab === 'kp' ? { kp_id: prep.sel } : { error_id: prep.sel };
+        }
+        go.disabled = true;
+        txt(st, ZH.drawerBusy);
+        api('POST', path, body).then(function (d) {
+            go.disabled = false;
+            if (d && d.success === false) { txt(st, ZH.prepErr + (d.error || '')); return; }
+            closePrep();
+            setBanner('prepBusy', ZH.prepBusy, 15000);
+        }).catch(function (e) {
+            go.disabled = false;
+            txt(st, ZH.prepErr + String((e && e.message) || e));
+        });
+    }
+    // ---------------------------------------------------------------- prepared lessons -> announce + adopt
+    var prepSeen = {}, prepAnnounced = null, tick = 0;
+    try { prepSeen = JSON.parse(localStorage.getItem('tb_prep_seen') || '{}') || {}; } catch (e) { prepSeen = {}; }
+    function announcePrep(L) {
+        prepAnnounced = L;
+        setBanner('prep', ZH.prepAnnounce + (L.title || ZH.unknown) + ZH.prepAnnounceTail);
+    }
+    function checkPreps() {
+        api('GET', '/api/board/lessons').then(function (d) {
+            var ls = (d && d.lessons) || [];
+            for (var i = 0; i < ls.length; i++) {
+                var L = ls[i];
+                if (!L || !L.lesson_key || !(L.pages > 0) || L.status === 'generating') continue;
+                if (L.lesson_key === lessonKey || prepSeen[L.lesson_key] || prepAnnounced) continue;
+                prepSeen[L.lesson_key] = 1;
+                try { localStorage.setItem('tb_prep_seen', JSON.stringify(prepSeen)); } catch (e) { }
+                announcePrep(L);
+                return;
+            }
+        }).catch(function () { /* silent: this is garnish, not class flow */ });
+    }
+    function adoptPrep() {
+        var L = prepAnnounced;
+        if (!L) return;
+        var ask = ZH.adoptAsk.replace('{t}', L.title || ZH.unknown);
+        if (!window.confirm(ask)) { setBanner('prep', ''); prepAnnounced = null; return; }
+        api('POST', '/api/board/adopt', { lesson_key: L.lesson_key }).then(function (s) {
+            setBanner('prep', ZH.adoptDone + (L.title || ZH.unknown) + ZH.adoptDoneTail, 12000);
+            prepAnnounced = null;
+            if (s && s.lesson_key) lessonKey = s.lesson_key;
+            stageMode = { mode: 'branch', topicId: null, plotId: null };
+            paint(s);
+        }).catch(function (e) {
+            setBanner('prep', ZH.adoptErr + String((e && e.message) || e), 8000);
+            prepAnnounced = null;   // failed adopt must not mute every later prep announcement
+        });
+    }
+    // ---------------------------------------------------------------- header actions + mount
+    // v0.2.8 "AI teacher assign" entry: the multi-page buttons POST /api/board/assign then
+    // navigate here. On mount we show a banner and fire the very same start-lesson flow
+    // the header button uses (real-device choice included); the lecture directive itself
+    // is injected server-side into get_lesson_material, so the browser never carries content.
+    function checkAssign() {
+        api('GET', '/api/board/assign').then(function (d) {
+            if (!alive()) return;   // 旧实例：不抢黑板、不自动按语音钮
+            var a = d && d.assign;
+            if (!a || !a.label) return;
+            assignPending = a;
+            // baseline = cards already on board at entry (lastState may be pre-first-paint)
+            assignPending.base = ((lastState && lastState.items) || []).length;
+            var vb = el('tb-voice-btn');
+            var auto = !!(vb && !vb.disabled);
+            setBanner('assign', ZH.assignPre + a.label + ZH.assignMid + (auto ? ZH.assignAuto : ZH.assignManual));
+            window.__tbAssign = { kind: a.kind, label: a.label, auto: auto, at: Date.now() };  // CDP trace
+            if (auto) vb.click();   // reuse the header flow (device check / pref / modal)
+        }).catch(function () { /* silent: a failed probe must not block the board */ });
+    }
+    function doClear() {
+        if (!window.confirm(ZH.clearAsk)) return;
+        api('POST', '/api/board/clear').then(function (s) {
+            setBanner('arch', ZH.clearDone, 6000);
+            stageMode = { mode: 'branch', topicId: null, plotId: null };
+            paint(s);
+        }).catch(function (e) { setBanner('arch', ZH.archiveErr + String((e && e.message) || e), 6000); });
+    }
+    // ---- principle diagram (demo round 2026-11-09, html-explainer "model writes the canvas"
+    // methodology): entry btn above the board -> POST starts a job (background thread asks the
+    // LLM for one self-contained HTML page) -> GET polls -> done renders in a sandboxed iframe
+    // (same protocol as tb-stage / micro-lesson lab). exLast caches the finished job so reopening
+    // never re-bills; cost round 2026-11-10: reopening first asks /explain/latest (DB archive, so a
+    // server restart still shows the old page instantly), and "regenerate" = deep thinking redraw
+    // (POST body {refresh:true}) after a confirm — the only path that spends credits again.
+    var exTimer = null, exJobId = null, exBusy = false, exTries = 0, exLast = null;
+    // version history state (ruled 2026-11): exSeqCur = DB 当前版号，exVerList = 档案缓存
+    //（生成开工即作废），exViewSeq = 面板里正在查看的旧版号；全程纯读库/库内拷贝零计费
+    var exVerList = null, exSeqCur = null, exViewSeq = null;
+    function exStop() { if (exTimer) { clearTimeout(exTimer); exTimer = null; } }
+    function exBtn(enabled) { var b = el('tb-explain-btn'); if (b) b.disabled = !enabled; }
+    function exWaitBox() { var b = el('tb-explain-body'); if (b) { b.innerHTML = ''; txt(b, ZH.explainWait); } }
+    function exFailBox(msg) {
+        exStop(); exBusy = false; exJobId = null; exBtn(true);
+        var b = el('tb-explain-body');
+        if (b) { b.innerHTML = ''; txt(b, ZH.explainFail + (msg || ZH.unknown)); }
+    }
+    function exShow(j) {
+        exStop(); exBusy = false; exJobId = null; exBtn(true);
+        if (j.state !== 'done') {
+            // 失败终态不缓存：重开入口能直接重试，不会重放旧失败
+            exLast = null; exFailBox(j.error || ZH.unknown); return;
+        }
+        exLast = j;
+        txt(el('tb-explain-title'), j.title || ZH.explainBtn);
+        var wn = el('tb-explain-warn');
+        if (wn) { wn.textContent = j.warning || ''; wn.classList.toggle('hidden', !j.warning); }
+        var box = el('tb-explain-body');
+        if (!box) return;
+        box.innerHTML = '';
+        var f = document.createElement('iframe');
+        f.className = 'tb-explain-frame';
+        f.setAttribute('sandbox', 'allow-scripts');
+        f.setAttribute('referrerpolicy', 'no-referrer');
+        f.srcdoc = String(j.html || '');
+        box.appendChild(f);
+        exVerBar(j);
+    }
+    function exVerHide() {
+        var p = el('tb-explain-verpanel');
+        if (p) { p.classList.add('hidden'); p.innerHTML = ''; }
+    }
+    function exVerBar(j) {
+        // 旧版横幅：只有「带版号且不是当前版」才出——实时生成 job 视图无版号，天然安静
+        var bar = el('tb-explain-verbar');
+        if (!bar) return;
+        bar.innerHTML = '';
+        bar.classList.add('hidden');
+        if (!j.seq || exSeqCur == null || j.seq === exSeqCur) return;
+        bar.classList.remove('hidden');
+        var lab = document.createElement('span');
+        lab.className = 'min-w-0 truncate';
+        txt(lab, ZH.explainVerAt + j.seq + ' ' + ZH.explainVerNotCur);
+        bar.appendChild(lab);
+        var wrap = document.createElement('span');
+        wrap.className = 'flex items-center gap-2 shrink-0';
+        var use = document.createElement('button');
+        use.type = 'button';
+        use.className = 'px-2 py-1 rounded-clbtn text-[11px] border border-cl-border hover:bg-cl-surface cursor-pointer disabled:opacity-50';
+        txt(use, ZH.explainUseThis);
+        use.onclick = function () {
+            // promote = 库内整版拷贝（不碰 LLM），确认文案只讲「不花钱」不讲等待
+            if (!window.confirm(ZH.explainUseAsk)) return;
+            use.disabled = true;
+            api('POST', '/api/board/explain/promote', { seq: j.seq }).then(function () {
+                exVerList = null; exViewSeq = null;
+                exRefreshCur();   // 转正后切到新版号内容（与旧版同文，版号归一）
+            }).catch(function (e) {
+                use.disabled = false;
+                exFailBox(ZH.explainVerErr + String((e && e.message) || e));
+            });
+        };
+        var back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'px-2 py-1 rounded-clbtn text-[11px] border border-cl-border hover:bg-cl-surface cursor-pointer';
+        txt(back, ZH.explainBackCur);
+        back.onclick = exRefreshCur;
+        wrap.appendChild(use);
+        wrap.appendChild(back);
+        bar.appendChild(wrap);
+    }
+    function exRefreshCur() {
+        api('GET', '/api/board/explain/latest').then(function (d) {
+            if (!alive()) return;
+            var j = (d && d.job) || null;
+            if (j && j.state === 'done') { exSeqCur = j.seq; exViewSeq = null; exShow(j); }
+            else { exStart(false); }   // 当前版没了（理论罕见）：回正常开工链
+        }).catch(function (e) { exFailBox(String((e && e.message) || e)); });
+    }
+    function exVerToggle() {
+        var p = el('tb-explain-verpanel');
+        if (!p) return;
+        if (!p.classList.contains('hidden')) { exVerHide(); return; }
+        p.classList.remove('hidden');
+        p.innerHTML = '';
+        api('GET', '/api/board/explain/versions').then(function (d) {
+            if (!alive()) return;
+            exVerList = (d && d.versions) || [];
+            if (exVerList.length) exSeqCur = exVerList[0].seq;   // 最新即当前版
+            exVerRender(p);
+        }).catch(function (e) {
+            var n = document.createElement('p');
+            txt(n, ZH.explainVerErr + String((e && e.message) || e));
+            p.appendChild(n);
+        });
+    }
+    function exVerRender(p) {
+        p.innerHTML = '';
+        if (!exVerList || !exVerList.length) {
+            var n = document.createElement('p');
+            txt(n, ZH.explainVerNone);
+            p.appendChild(n);
+            return;
+        }
+        exVerList.forEach(function (v) {
+            var row = document.createElement('div');
+            row.className = 'flex items-center justify-between gap-2 py-1 border-b border-cl-border';
+            var lab = document.createElement('span');
+            lab.className = 'min-w-0 truncate';
+            txt(lab, '#' + v.seq + ' · ' + (v.mode === 'on' ? ZH.explainVerDeep : ZH.explainVerQuick) +
+                (v.created_time ? ' · ' + String(v.created_time).slice(0, 16) : '') +
+                (v.seq === exSeqCur ? ' · ' + ZH.explainVerCurTag : ''));
+            row.appendChild(lab);
+            if (v.seq !== exSeqCur) {
+                var b = document.createElement('button');
+                b.type = 'button';
+                b.className = 'px-2 py-0.5 rounded-clbtn text-[11px] border border-cl-border hover:bg-cl-primary-soft cursor-pointer shrink-0';
+                txt(b, ZH.explainVerView);
+                b.onclick = function () {
+                    api('GET', '/api/board/explain/version/' + v.seq).then(function (d) {
+                        if (!alive()) return;
+                        var j = (d && d.job) || null;
+                        if (j && j.state === 'done') { exViewSeq = v.seq; exShow(j); }
+                        else exFailBox((j && j.error) || ZH.unknown);
+                    }).catch(function (e) {
+                        exFailBox(ZH.explainVerErr + String((e && e.message) || e));
+                    });
+                };
+                row.appendChild(b);
+            }
+            p.appendChild(row);
+        });
+    }
+    function exPoll() {
+        exStop();
+        if (!alive() || !exJobId) return;
+        exTimer = setTimeout(function () {
+            exTimer = null;
+            if (!alive()) return;
+            api('GET', '/api/board/explain/' + exJobId).then(function (d) {
+                if (!alive()) return;
+                var j = (d && d.job) || null;
+                if (j && j.state === 'generating') {
+                    if (++exTries > 264) exFailBox(ZH.explainSlow); // 2.5s×264≈660s：对齐后端思考模式 600s 预算留余量（超时扩容轮 2026-11-13，原 120 次=300s 会误杀深度重画）
+                    else exPoll();
+                    return;
+                }
+                if (j) exShow(j); else exFailBox(ZH.unknown);
+            }).catch(function (e) { exFailBox(String((e && e.message) || e)); });
+        }, 2500);
+    }
+    function exStart(refresh) {
+        var m = el('tb-explain-mask'); if (!m) return;
+        m.classList.remove('hidden');
+        // 开工即作废版本缓存与版号认知（新成功后最新版变了），横幅归零
+        exVerList = null; exSeqCur = null; exViewSeq = null; exVerHide();
+        txt(el('tb-explain-title'), ZH.explainBtn);
+        var wn = el('tb-explain-warn'); if (wn) { wn.textContent = ''; wn.classList.add('hidden'); }
+        exWaitBox();
+        exStop(); exBusy = true; exTries = 0; exBtn(false);
+        api('POST', '/api/board/explain', { refresh: !!refresh }).then(function (d) {
+            if (!alive()) return;
+            var j = (d && d.job) || null;
+            if (!j || !j.job_id) { exFailBox(ZH.unknown); return; }
+            if (j.state === 'generating') { exJobId = j.job_id; exPoll(); }
+            else exShow(j);
+        }).catch(function (e) { exFailBox(String((e && e.message) || e)); });
+    }
+    function explainEntry() {
+        var m = el('tb-explain-mask'); if (!m) return;
+        if (exLast) { m.classList.remove('hidden'); exShow(exLast); return; }
+        if (exBusy && exJobId) { m.classList.remove('hidden'); exWaitBox(); exPoll(); return; }
+        // DB archive first (cost round 2026-11-10, rule 2): same-lesson finished page shows
+        // instantly with zero calls; miss (404/network) falls through to the normal start.
+        m.classList.remove('hidden'); exWaitBox(); exBtn(false);
+        api('GET', '/api/board/explain/latest').then(function (d) {
+            if (!alive()) return;
+            var j = (d && d.job) || null;
+            if (j && j.state === 'done') { exBtn(true); exSeqCur = j.seq || null; exShow(j); return; }
+            exBtn(true); exStart(false);
+        }).catch(function () { if (alive()) { exBtn(true); exStart(false); } });
+    }
+    function wireButtons() {
+        var lb = el('tb-lesson-btn');
+        if (lb) lb.onclick = function () { openDrawer(lessonKey); };
+        var pb = el('tb-prep-btn');
+        if (pb) pb.onclick = openPrep;
+        var cb = el('tb-clear-btn');
+        if (cb) cb.onclick = doClear;
+        var dc = el('tb-drawer-close');
+        if (dc) dc.onclick = closeDrawer;
+        var dm = el('tb-drawer-mask');
+        if (dm) dm.addEventListener('click', function (e) { if (e.target === dm) closeDrawer(); });
+        var ep = el('tb-exp-pdf'), ex = el('tb-exp-pptx');
+        if (ep) ep.onclick = function () { doExport('pdf'); };
+        if (ex) ex.onclick = function () { doExport('pptx'); };
+        var pc = el('tb-prep-cancel'), pg = el('tb-prep-go'), pm = el('tb-prep-mask');
+        if (pc) pc.onclick = closePrep;
+        if (pg) pg.onclick = prepGo;
+        if (pm) pm.addEventListener('click', function (e) { if (e.target === pm) closePrep(); });
+        var bn = el('tb-banner');
+        if (bn) bn.addEventListener('click', function () { if (banners.prep) adoptPrep(); });
+        var xb = el('tb-explain-btn');
+        if (xb) xb.onclick = explainEntry;
+        var xc = el('tb-explain-close');
+        if (xc) xc.onclick = function () { var m = el('tb-explain-mask'); if (m) m.classList.add('hidden'); exVerHide(); };
+        var xvs = el('tb-explain-vers');
+        if (xvs) xvs.onclick = exVerToggle;
+        var xa = el('tb-explain-again');
+        if (xa) xa.onclick = function () {
+            // regenerate = deep redraw for quality fallback (user ruling 2026-11-10):
+            // thinking mode on, slower and costs more credits — ask before spending
+            if (!window.confirm(ZH.explainDeepAsk)) return;
+            exLast = null; exStart(true);
+        };
+        var xm = el('tb-explain-mask');
+        if (xm) xm.addEventListener('click', function (e) { if (e.target === xm) xm.classList.add('hidden'); });
+    }
+    var mounted = false;
+    function init() {
+        if (mounted || !el('tb-root')) return;
+        mounted = true;
+        txt(el('tb-lesson-btn'), ZH.drawerTitle);
+        txt(el('tb-prep-btn'), ZH.prepTitle);
+        txt(el('tb-drawer-close'), ZH.drawerClose);
+        txt(el('tb-exp-pdf'), ZH.drawerExportPdf);
+        txt(el('tb-exp-pptx'), ZH.drawerExportPptx);
+        txt(el('tb-prep-title'), ZH.prepTitle);
+        txt(el('tb-prep-cancel'), ZH.prepCancel);
+        txt(el('tb-prep-go'), ZH.prepGo);
+        txt(el('tb-back-btn'), ZH.backNew);
+        txt(el('tb-explain-btn'), ZH.explainBtn);
+        txt(el('tb-explain-vers'), ZH.explainVers);
+        txt(el('tb-explain-close'), ZH.explainClose);
+        txt(el('tb-explain-again'), ZH.explainAgain);
+        txt(el('tb-stream-empty'), ZH.streamNone);
+        txt(el('tb-board-welcome'), ZH.boardWelcome);
+        wireScroll();
+        wireDivider();
+        wireButtons();
+        applySplit(readSplit());
+        if (!window.TBCharts || !TBCharts.ready().echarts) setBanner('eng', ZH.chartMiss);
+        poll();
+        checkAssign();   // v0.2.8: web-side "AI teacher assign" -> banner + auto start lesson
+        if (!timer) {
+            timer = setInterval(function () {
+                if (!alive()) { clearInterval(timer); timer = null; boot.timer = null; return; }
+                poll();
+                tick += 1;
+                if (tick % 8 === 0) checkPreps();
+                laserTrack();   // 激光常驻：每轮询把光点对准当前焦点（平滑靠 CSS transition）
+            }, POLL_MS);
+            boot.timer = timer;
+        }
+        window.addEventListener('resize', function () { if (alive()) resizeCharts(); });
+    }
+    window.onPageMounted = init;
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+})();
+</script>
