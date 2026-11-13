@@ -64,6 +64,17 @@ t('货币防误判：$5 和 $6 不当公式', function () {
     assert.ok(ex.text.indexOf('$') >= 0, '原文保留');
 });
 
+t('数字开头含数学痕迹的公式照常提取（2026-11-13 收紧，$2e_i$ 实弹）', function () {
+    const ex = MdRender.extract('外层导数给 $2e_i$，即 $2(\\hat y_i - y_i)$');
+    assert.strictEqual(ex.slots.length, 2);
+    assert.strictEqual(ex.slots[0].body, '2e_i');
+    // 纯数字无线索仍按货币保护
+    const ex2 = MdRender.extract('取值 $3.14$ 附近');
+    assert.strictEqual(ex2.slots.length, 0);
+    const ex3 = MdRender.extract('总价 $1,000$ 元');
+    assert.strictEqual(ex3.slots.length, 0);
+});
+
 t('行内代码与围栏代码内的 $ 不提取', function () {
     const ex = MdRender.extract('用 `$x$` 表示：\n```\n$$a+b$$\n```\n结束 $y$');
     assert.strictEqual(ex.slots.length, 1);

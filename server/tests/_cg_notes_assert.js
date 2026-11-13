@@ -105,8 +105,11 @@ function chk(name, ok, info) {
     const n4 = await evalJs(`(function(){ var s = document.querySelector('.cg-read-note[data-note-id="${S.n1}"]');
         if (!s) return null; var cs = getComputedStyle(s);
         return { border: cs.borderStyle, q: s.innerText.indexOf('Q1SENTINEL') >= 0, a: s.innerText.indexOf('ANSWER1SENTINEL') >= 0,
-                 svg: s.querySelectorAll('.cg-note-a svg').length }; })()`);
+                 svg: s.querySelectorAll('.cg-note-a svg').length,
+                 kx: s.querySelectorAll('.cg-note-a .katex').length, bare: s.innerText.indexOf('$2e_i$') >= 0 }; })()`);
     chk('N4 淡黄虚线章节+问答+思路图', n4 && n4.border === 'dashed' && n4.q === true && n4.a === true && n4.svg >= 1, { n4 });
+    // N4a 数字开头公式渲染回归守卫（实弹轮 2026-11-13：$2e_i$ 被旧货币防误判规则整批丢弃裸显）
+    chk('N4a 回答内 $2e_i$ 已 KaTeX 渲染且不裸显', !!n4 && n4.kx >= 1 && n4.bare === false, { n4 });
 
     // N4b 列表锚定回归守卫（完全展开轮 2026-11-13 实弹：锚句在列表第2项，笔记曾被推到整张 ul 末尾）：
     //     章节组必须紧跟在带锚 li 之后（同一 ul 内），而非列表尾部

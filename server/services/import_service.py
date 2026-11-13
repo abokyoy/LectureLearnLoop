@@ -50,6 +50,11 @@ _SEM = threading.Semaphore(2)     # 转换并发预算（评审优化项 5）
 
 _ALLOWED_IMG_EXT = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
 
+_SURROGATE_RE = re.compile("[\ud800-\udfff]")   # 孤立/成对代理位探测（C 层扫描，供 _clean_surrogates 快速路径）
+# 代理对被 TJ kerning 空格拆开的重组（《测试.pdf》探针实锤 0xd835 0x20 0xdc43）；
+# 不跨 \n：跨换行相邻多为结构性丢低位（d835 0xa d835）且合并会破坏行对齐。
+_SURR_GAP_RE = re.compile("([\ud800-\udbff])[ \t\u00a0]{1,3}([\udc00-\udfff])")
+
 
 def _now() -> str:
     return dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
@@ -269,6 +274,9 @@ _CHROME_RE = re.compile(
 )
 # 尾部推荐位区特征：命中后丢弃本页剩余行（打印页侧栏标题串流尾，空行/分页重置）
 _TAIL_RE = re.compile(r"^(上[一二]篇[·・]|下[一二]篇[·・]|推荐\d+[个大])")
+# 字体解码失败垃圾 token（2026-11-04 九下数学页脚乱码）：无 ToUnicode 的装饰字体
+# 解出必含 C0/C1 控制字符的拉丁碎片串（如出版社名 SNN\x1c^\x08…），正常正文零控制字符
+_CTRL_CH_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # CJK 部首补充区（U+2ED0-2EF3）NFKC 无映射，手工还原简体正字
 _RADICAL_SRS = {"⻓": "长", "⻢": "马", "⻔": "门", "⻚": "页", "⻜": "飞", "⻝": "食",
                 "⻉": "贝", "⻩": "黄", "⻰": "龙", "⻛": "风", "⻣": "骨", "⻦": "鸟",
@@ -340,6 +348,12 @@ def postprocess_pdf_text_layer(text: str, images: dict[int, str] | None = None) 
             if s[1:].strip():
                 paragraphs.append(s[1:].strip())
             continue
+        if _CTRL_CH_RE.search(s):        # 含控制字符的空格分隔 token 整剔（字体解码垃圾；行级标记已在上方处理）
+            s = " ".join(t for t in s.split(" ") if t and not _CTRL_CH_RE.search(t)).strip()
+            if not s:
+                flush()
+                tail = False
+                continue
         if not s:
             flush()
             tail = False       # 分页/空行重置推荐位区状态，防误杀后续页正文
@@ -579,8 +593,45 @@ def _walk_image_events(cs, resources, ctm, depth, events, seen_ids):
                     pass
 
 
+def _cmyk_img_to_rgb(img) -> "object":
+    """CMYK/YCCK 图像 → RGB 图像；近黑图仅当反相后更亮才四通道复原（DCT/位图共用口径）。
+
+    护栏（评审 M1/m1）：合法暗图（夜空/黑板类 K 通道占重）反相后不会更亮，
+    保持直接转换结果；只有 Adobe 反相存储的"0=满墨"图才触发复原。
+    """
+    from PIL import Image, ImageStat
+    rgb = img.convert("RGB")
+    if max(ImageStat.Stat(rgb).mean) < 60:  # 直接转换近黑 → 疑似反相存储
+        inv = Image.merge("CMYK", tuple(ch.point(lambda v: 255 - v)
+                                        for ch in img.split()))
+        cand = inv.convert("RGB")
+        if max(ImageStat.Stat(cand).mean) > max(ImageStat.Stat(rgb).mean):
+            return cand
+    return rgb
+
+
+def _cmyk_jpeg_to_rgb(data: bytes) -> bytes:
+    """CMYK/YCCK JPEG 转 RGB JPEG 字节（2026-11-04 黑图修复）。
+
+    书籍排版 PDF（Adobe 导出）内嵌 CMYK JPEG 常按"0=满墨"反相存储且 APP14 错标
+    YCCK，浏览器不支持 CMYK JPEG、PIL 直接转换也得黑图；复原判据见 _cmyk_img_to_rgb。
+    """
+    from io import BytesIO
+    from PIL import Image
+    img = Image.open(BytesIO(data))
+    if img.mode not in ("CMYK", "YCCK"):
+        return data
+    rgb = _cmyk_img_to_rgb(img)
+    out = BytesIO()
+    rgb.save(out, format="JPEG", quality=90)
+    return out.getvalue()
+
+
 def _save_pdf_image(xob: object, att_dir: Path, base_name: str) -> str | None:
-    """解码单张内嵌图存附件目录，返回文件名；不支持的编码/颜空间返回 None。"""
+    """解码单张内嵌图存附件目录，返回文件名；不支持的编码返回 None。
+
+    落盘一律浏览器可显示的色彩空间：CMYK/YCCK 图转 RGB（2026-11-04 黑图修复）。
+    """
     try:
         from PIL import Image
         filt = str(xob.get("/Filter") or "")  # noqa: SLF001
@@ -592,6 +643,18 @@ def _save_pdf_image(xob: object, att_dir: Path, base_name: str) -> str | None:
             data = xob.get_data()
         if "DCTDecode" in filt:
             name = base_name + ".jpg"
+            cs_dct = str(xob.get("/ColorSpace") or "")
+            if "CMYK" in cs_dct.upper() or "YCCK" in cs_dct.upper():
+                data = _cmyk_jpeg_to_rgb(data)
+            else:  # 未标 CMYK 也按流内容兜底判定（本书实测 ColorSpace 与流不一致）
+                try:
+                    with Image.open(io.BytesIO(data)) as _probe:
+                        _pmode = _probe.mode
+                    if _pmode in ("CMYK", "YCCK"):
+                        data = _cmyk_jpeg_to_rgb(data)
+                except Exception as e:  # noqa: BLE001 探测失败透传，但留痕可追（评审 m2）
+                    log.log("import", "pdf_dct_probe_failed", "warn",
+                            {"base": base_name, "err": str(e)[:120]})
             (att_dir / name).write_bytes(data)
             return name
         if "JPXDecode" in filt:
@@ -620,6 +683,8 @@ def _save_pdf_image(xob: object, att_dir: Path, base_name: str) -> str | None:
         if mode is None or int(xob.get("/BitsPerComponent", 8)) != 8:
             return None
         img = Image.frombytes(mode, (w, h), data)
+        if mode == "CMYK":  # PIL 存不了 CMYK PNG 且浏览器不显示 → 转 RGB（同 DCT 口径，评审 M1）
+            img = _cmyk_img_to_rgb(img)
         name = base_name + ".png"
         img.save(att_dir / name)
         return name
@@ -655,6 +720,197 @@ def start_pdf_task(task_id: str, user_id: str, pdf_path: Path, target_md: Path) 
     t.start()
 
 
+def _clean_surrogates(s: str) -> str:
+    r"""清洗 PDF 文本层提取出的未配对代理字符（2026-11-02 修复《测试.pdf》转换报错）。
+
+    部分 PDF 数学字体的 ToUnicode CMap 把增补平面码位写成 UTF-16 代理位，pypdf 按码点
+    拼接后可能产出孤立 \udXXX；后续 write_text/入库按 utf-8 严格编码即抛
+    "surrogates not allowed"，整个转换任务 failed。策略：utf-16 往返——相邻高低代理
+    重组为真实增补字符（不丢字），天然孤立代理替换为 \ufffd，正常文本零 diff。
+    只在提取源头清洗（调用点：_extract_layer_blocks 的 txt、OCR/入库带兑底），
+    不逐 visitor 片段清洗：代理位若跨 run 边界，碎片级清洗会把本可成对的代理各变
+    \ufffd，与整页 txt 清洗结果分叉，导致行元数据对齐失配（评审 m2）。
+    """
+    if not s or not _SURROGATE_RE.search(s):
+        return s
+    s = _SURR_GAP_RE.sub(lambda m: m.group(1) + m.group(2), s)
+    return s.encode('utf-16-le', 'surrogatepass').decode('utf-16-le', 'replace')
+
+
+# ---------------------------------------------------------------- 分数版式还原（2026-11-02 二段，用户裁定转 LaTeX）
+
+_FRAC_PART_MAX_LEN = 12        # 分子/分母候选行最大字符数（分数部件是短行，正文行长≫此值）
+_FRAC_DY_MIN_PT = 5.0          # 堆叠间距绝对下限 pt（排除同一视觉行的上标/基线碎片）
+_FRAC_R_LO = 0.85              # dy/字号下限：真实堆叠实测 0.92–1.65（《测试.pdf》全页扫描）
+_FRAC_R_HI = 1.75              # dy/字号上限：正常换行 dy/fs≈2.3+，同行碎片≤0.6，均由此窗口排除
+_FRAC_DX_MIN = 10.0            # 水平中心对齐最小容差 pt（双栏错位实测 dx≥11.5，真分数≤9.7）
+# 分数部件白名单：数字/字母/运算符/数学斜体增补字符/乱码占位（无等号、无 CJK/全角标点；
+# 评审 W2：剔除 {} 与反引号——不配对花括号会破坏 $\frac$ 定界结构，部件行本不需要它们）
+_FRAC_OK_RE = re.compile("^[\\s\\dA-Za-z.,()\\[\\]|+\\-\u2212\u2213*/\u00d7\u00f7\u00b1\u221a^_<>\u2032\u2033\ufffd"
+                         "\U0001D400-\U0001D7FF\ufe63\u2011]+$")
+_FRAC_HAS_CONTENT_RE = re.compile("[\\dA-Za-z\ufffd\U0001D400-\U0001D7FF]")
+
+
+def _frac_part_ok(t: str) -> bool:
+    """分子/分母候选行：短、纯数学白名单字符、至少含一个字母/数字/增补字符。"""
+    return (bool(t) and len(t) <= _FRAC_PART_MAX_LEN
+            and bool(_FRAC_OK_RE.match(t)) and bool(_FRAC_HAS_CONTENT_RE.search(t)))
+
+
+def _content_chars(s: str) -> int:
+    """正文字符数（字母/数字/CJK/增补平面，排除 \ufffd 占位）：重建守卫的守恒度量。"""
+    return sum(1 for c in s if (c.isalnum() and ord(c) > 32) or 0x4E00 <= ord(c) <= 0x9FFF)
+
+
+# 文本层乱码门槛（2026-11-02 三段，用户裁定：乱码文档整份自动回落 Paddle OCR）：
+# 真机定标——《测试.pdf》文本层 3477 字符含 57 个 \ufffd（1.87%，同文件 OCR 零乱码+40 个 LaTeX 分数）；
+# 对照《大书.pdf》69917 字符 0 乱码。双口径防误杀：绝对数≥ 20 且占比≥ 0.5% 才判不可用
+# （大文档零星乱码仍属可用，不白耗远端额度）。
+_TEXT_LAYER_BAD_MIN = 20
+_TEXT_LAYER_BAD_RATIO = 0.005
+
+
+def _text_layer_garbled(md_text: str) -> bool:
+    """文本层产物乱码率是否过门槛（命中→调用方弃文本层、整份回落 OCR）。"""
+    if not md_text:
+        return False
+    bad = md_text.count("\ufffd")
+    if bad < _TEXT_LAYER_BAD_MIN:
+        return False
+    nonspace = sum(1 for c in md_text if not c.isspace())
+    return bad / max(nonspace, 1) >= _TEXT_LAYER_BAD_RATIO
+
+
+# Paddle OCR 公式定界收口（2026-11-03 预览显示源码修复）：OCR 产物风格是 `$ \frac{a}{x} $`
+# 双侧带空格（《测试_3.md》实测 98 处），而 md_render.js 行内口径要求 $ 后首字符非空格
+# （货币防误判）→ 整篇公式不匹配显示源码。在输出侧收口（一处改动全渲染点受益，
+# 与 error_analyze「定界保底」同侧同构）。
+# 两侧只吃水平空白 [ \t]（用 \s 会把 `$$\n` 块级换行误当行内空格收口，破坏跨行 $$ 结构）。
+# 评审 W1（二轮）：开 $ 前若紧贴任何 ASCII 可见字符（除空白/换行/中文全角），它都可能是
+# 上一公式的闭合定界而非开定界——拒配整个集合 [!-~] 去掉 $ 本身（$ 要放行，否则 `$$ x $$`
+# 内层不收口）。Paddle 风格 `$ x $` 开 $ 前恒为空格或全角标点，此口径零漏；而 `$\frac{1}{2}$ and $
+#  x $` 类混排不再被闭合 $ 错配吞掉后面的真公式。用 lookbehind 在引擎层拒配（而非 sub 内跳过：
+# 跳过仍会消耗匹配，把后面的真公式 `$ y $` 吃掉造成配对丢失），另围栏/行内代码段整段不参与收口。
+_OCR_MATH_LOOKBEHIND = r"(?<![!-#%-~])"
+_OCR_MATH_INLINE_RE = re.compile(
+    _OCR_MATH_LOOKBEHIND + r"\$([ \t]+[^$\n]+?[ \t]+|[ \t]+[^$\n]+?|[^$\n]+?[ \t]+)\$")
+_OCR_MATH_CJK_RE = re.compile("[\u4e00-\u9fff]")
+# 代码段隔离（与 md_render.js protect 同口径）：奇数下标段原样保留
+_MD_CODE_SPLIT_RE = re.compile(r"(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)")
+
+
+# 数字守卫的数学痕迹线索（与 md_render.js 货币规则同口径，2026-11-13 收紧）：
+# 数字开头但含 _ ^ { } \ = 的是真公式（如 "$ 2e_i $"），应收口；纯数字才按货币不动
+_OCR_MATH_TRACE_RE = re.compile(r"[_\^{}\\=]")
+
+
+def _normalize_ocr_math_delims(md: str) -> str:
+    """`$ … $` 内层空格收口为 `$…$`；守卫宁漏不错包：体空/体首数字且无数学痕迹（货币语境）/
+    体含 CJK 均不动；数字开头但含数学痕迹（$ 2e_i $）照常收口；`$$…$$` 块级结构不破坏
+    （外层 $ 不参与匹配，收口后仍成对）；围栏/行内代码段整段跳过。迭代至收敛（真实《测试_3.md》实测单轮因 $ 配对错位
+    仍有 2 处残留，二轮才稳）；每轮只减空格单调必终止，上限 8 轮防理论病态输入，
+    耗尽仍变化则告警（评审 I3）。"""
+
+    def _fix(m):
+        body = m.group(1).strip()
+        if not body or _OCR_MATH_CJK_RE.search(body):
+            return m.group(0)
+        if body[0].isdigit() and not _OCR_MATH_TRACE_RE.search(body):
+            return m.group(0)  # 纯数字无线索：货币语境保留原文
+        return f"${body}$"
+
+    def _norm_seg(seg: str) -> str:
+        out = seg
+        for _ in range(8):
+            nxt = _OCR_MATH_INLINE_RE.sub(_fix, out)
+            if nxt == out:
+                return out
+            out = nxt
+        log.log("import", "ocr_math_delim_unconverged", "warn", {"chars": len(seg)})
+        return out
+
+    segs = _MD_CODE_SPLIT_RE.split(md)
+    return "".join(s if i % 2 == 1 else _norm_seg(s) for i, s in enumerate(segs))
+
+
+def _recover_fractions(txt: str, rows: list[list]) -> str | None:
+    """垂直堆叠的分子/分母短行对 → 整行替换为 $\\frac{分子}{分母}$（用户裁定：KaTeX 可渲染）。
+
+    输入 txt 为整页 extract_text 代理清洗后的文本（守恒守卫度量基准），rows 来自
+    _build_font_lines（含坐标/字号/x 跨度）。返回 None 表示无分数对——
+    调用方保留原 extract_text 文本（普通文档零 diff）。命中时返回由 rows 重建的页文本：
+    真实数学 PDF 里 pypdf 把分子/分母与相邻栏正文粘成同一 txt 行（《测试.pdf》实锤：
+    rows=182 vs txt=75，行级 txt 替换不可行），rows 顺序=内容流顺序，重建仅多行拆分、
+    不改字符序列，后续 postprocess 段落重排会重新聚合。已知代价：rows 粒度比
+    extract_text 更细，正文段落略碎（实测相邻行 y 差不落在 0–2.5pt，无法用归并救回，
+    重实现版面排序会打乱双栏阅读顺序，故接受）。
+    配对判据（全页扫描实测）：分子在上分母在下；dy ≥ 5pt 且 dy/fs ∈ [0.85, 1.75]
+    （fs=两侧最大代表字号，真分数 0.92–1.65，上标碎片≤0.6，正常换行≥2.3）；
+    水平中心 dx ≤ max(10, 0.6×较大跨度)（同栏对齐真分数≤9.7，双栏错位≥11.5）；
+    两侧都是白名单短行且字号可取。多候选按 dy 升序贪心，分子/分母各只用一次。
+    仅限整文件路径调用；书籍段（with_anchors）本阶段零改动。
+    """
+    cands: list[tuple[int, float, float, float, float, str]] = []
+    for i, rr in enumerate(rows):
+        if len(rr) < 9 or rr[4] is None or rr[7] is None:
+            continue
+        fs = float(rr[1] or 0.0)
+        if fs <= 0:
+            continue
+        t = _clean_surrogates(rr[0]).strip()
+        if not _frac_part_ok(t):
+            continue
+        x0, x1 = float(rr[7]), float(rr[8]) if rr[8] is not None else float(rr[7])
+        cands.append((i, float(rr[4]), x0, max(x1, x0), fs, t))
+    # 候选软上限（评审 W3）：纯算式密集页候选爆炸时 O(cands²) 配对扫描失控，直接零 diff 回退
+    if len(cands) < 2 or len(cands) > 400:
+        return None
+    full_text = "".join(_clean_surrogates(rr[0]) for rr in rows)
+    pair_cands: list[tuple[float, int, int]] = []
+    for ia, ya, a0, a1, fa, ta in cands:
+        for ib, yb, b0, b1, fb, tb in cands:
+            if ib == ia:
+                continue
+            dy = ya - yb
+            if dy < _FRAC_DY_MIN_PT:
+                continue
+            if not (_FRAC_R_LO * max(fa, fb) <= dy <= _FRAC_R_HI * max(fa, fb)):
+                continue
+            ca, cb = (a0 + a1) / 2, (b0 + b1) / 2
+            if abs(ca - cb) > max(_FRAC_DX_MIN, 0.6 * max(a1 - a0, b1 - b0)):
+                continue
+            pair_cands.append((dy, ia, ib))
+    pair_cands.sort()
+    used: set[int] = set()
+    pairs: dict[int, int] = {}
+    for _dy, ia, ib in pair_cands:
+        if ia in used or ib in used:
+            continue
+        used.add(ia)
+        used.add(ib)
+        pairs[ia] = ib
+    if not pairs:
+        return None
+    drop = set(pairs.values())
+    # 守恒守卫：rows 重建产物正文字符数不得少于原 txt（visitor 漏采文本时重建会丢正文，
+    # 宁缺勿滥保留原文）；同源时两者相等，不触发
+    if _content_chars(full_text) < _content_chars(txt):
+        log.log("import", "pdf_frac_lossy_fallback", "warn",
+                {"rebuilt_chars": _content_chars(full_text), "txt_chars": _content_chars(txt)})
+        return None
+    out_lines: list[str] = []
+    for i, rr in enumerate(rows):
+        if i in drop:
+            continue
+        if i in pairs:
+            out_lines.append("$\\frac{%s}{%s}$" % (_clean_surrogates(rr[0]).strip(),
+                                                   _clean_surrogates(rows[pairs[i]][0]).strip()))
+        else:
+            out_lines.append(_clean_surrogates(rr[0]))
+    log.log("import", "pdf_frac_recovered", "success", {"pairs": len(pairs)})
+    return "\n".join(out_lines)
+
+
 def _extract_layer_blocks(reader, att_dir: Path | None, task_id: str, start_idx: int, end_idx: int,
                           with_font_meta: bool = False):
     """按页索引范围 [start_idx, end_idx)（0-based）逐页提取原始文本层（含 \x00IMG 标记）。
@@ -681,25 +937,33 @@ def _extract_layer_blocks(reader, att_dir: Path | None, task_id: str, start_idx:
             except (TypeError, ValueError, IndexError):
                 y = 0.0
             _ys.append(y)
-            if with_font_meta and text:
+            if text:
+                # 片段坐标/字号常采（整文件路径分数堆叠检测需要 x/y/fs；字体名仅书籍清洗用）
                 try:
-                    real_fs = float(fs or 0) * abs(float(tm[0]) * float(cm[0]))
-                except (TypeError, ValueError, IndexError):
-                    real_fs = 0.0
-                try:
-                    # 页面真实 x 同 y：文本空间 x 经 CTM（行向量约定 tm[4]*cm[0]+cm[4]）
                     real_x = float(tm[4]) * float(cm[0]) + float(cm[4])
                 except (TypeError, ValueError, IndexError):
                     real_x = 0.0
                 try:
-                    base = str((fd or {}).get("/BaseFont", "") or "")
-                except Exception:  # noqa: BLE001
+                    real_fs = float(fs or 0) * abs(float(tm[0]) * float(cm[0]))
+                except (TypeError, ValueError, IndexError):
+                    real_fs = 0.0
+                if with_font_meta:
+                    try:
+                        base = str((fd or {}).get("/BaseFont", "") or "")
+                    except Exception:  # noqa: BLE001
+                        base = ""
+                else:
                     base = ""
                 _fr.append((y, real_x, text, real_fs, base))
 
-        txt = (pg.extract_text(visitor_text=vt) or "").strip()
+        txt = _clean_surrogates((pg.extract_text(visitor_text=vt) or "").strip())
         if not txt:
             continue
+        if not with_font_meta:
+            # 整文件路径：垂直堆叠的分子/分母短行还原为 $\frac$（命中才用 rows 重建，否则零 diff）
+            rebuilt = _recover_fractions(txt, _build_font_lines(frags))
+            if rebuilt is not None:
+                txt = rebuilt
         if att_dir is not None and task_id:
             events: list = []
             try:
@@ -769,16 +1033,19 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
     主导字体被空格抢走时由此字段兜底，2026-10-04 正文页探针实变）；
     第 7 字段=黑体片段携带的汉字数占行内全部汉字数的比例（评审 Warning：仅个别内联黑体强调
     的正文短句覆盖率低，兜底判定需覆盖率≥0.5；真实标题汉字几乎全黑体，拉丁/数字不计入分母，
-    无汉字行比例记 0——R1 本身要求行含 CJK，不影响判定）。
+    无汉字行比例记 0——R1 本身要求行含 CJK，不影响判定）；
+    第 8/9 字段 x_min/x_max=行内非空片段的水平起止坐标（分数堆叠检测 _recover_fractions 用，
+    2026-11-02 追加式扩展，既有消费方按索引 0..6 访问不受影响）。
     """
     import collections
-    rows: list[list] = []          # [行文本, 首片段 x, 首片段 y, [(fs, base)]]
+    rows: list[list] = []          # [行文本, 首片段 x, 首片段 y, [(fs, base)], x_min, x_max]
     cur_t, cur_frags = "", []
     cur_x = cur_y = None
+    cur_xmin = cur_xmax = None
     last_y = None
 
     def flush():
-        nonlocal cur_t, cur_frags, cur_x, cur_y, last_y
+        nonlocal cur_t, cur_frags, cur_x, cur_y, last_y, cur_xmin, cur_xmax
         if cur_t.strip() or "\n" in cur_t:
             # 行尾内嵌 \n（pypdf 附加在末 run 上）只表示结束，不生成额外空行；
             # 真空行由独立 '\n' 片段分支占位，与 txt.split("\n") 的换行总数一一对应
@@ -787,8 +1054,10 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
                 pieces = pieces[:-1]
             for i, pc in enumerate(pieces):
                 rows.append([pc, cur_x if i == 0 else None, cur_y if i == 0 else None,
-                             cur_frags if i == 0 else []])
+                             cur_frags if i == 0 else [],
+                             cur_xmin if i == 0 else None, cur_xmax if i == 0 else None])
         cur_t, cur_frags, cur_x, cur_y, last_y = "", [], None, None, None
+        cur_xmin = cur_xmax = None
 
     for y, x, text, fs, base in frags:
         if text == "\n" and cur_t:
@@ -797,8 +1066,9 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
             flush()
             continue
         if text == "\n":
-            # 行首即换行（空行）：自成一行占位
-            rows.append(["", None, None, []])
+            # 行首即换行（空行）：自成一行占位（6 元素与 flush 同构，评审 C1：
+            # 缺 x_min/x_max 位会被 L953 六字段解包炸穿整条文本层路径回落 OCR）
+            rows.append(["", None, None, [], None, None])
             continue
         if last_y is not None and abs(y - last_y) > 2.0 and cur_t:
             flush()
@@ -807,10 +1077,14 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
         cur_t += text
         if text.strip():
             cur_frags.append((fs, base, text.strip()))
+            if cur_xmin is None:
+                cur_xmin = cur_xmax = x
+            else:
+                cur_xmin, cur_xmax = min(cur_xmin, x), max(cur_xmax, x)
         last_y = y
     flush()
     out: list[list] = []
-    for rt, rx, ry, fr in rows:
+    for rt, rx, ry, fr, rmin, rmax in rows:
         rep_fs = max((f for f, _b, _t in fr), default=0.0)
         w: collections.Counter = collections.Counter()
         hei_fs = 0.0
@@ -824,7 +1098,7 @@ def _build_font_lines(frags: list[tuple]) -> list[list]:
                 hei_cjk += n_cjk
         dom = w.most_common(1)[0][0] if w else ""
         ratio = hei_cjk / tot_cjk if tot_cjk else 0.0
-        out.append([rt, rep_fs, dom, rx, ry, hei_fs, round(ratio, 3)])
+        out.append([rt, rep_fs, dom, rx, ry, hei_fs, round(ratio, 3), rmin, rmax])
     return out
 
 
@@ -881,12 +1155,18 @@ def _pdf_worker(task_id: str, user_id: str, pdf_path: Path, target_md: Path) -> 
     try:
         update_task(task_id, status="running")
         md_text = None
-        # 文本层优先：命中则不耗远端额度、全文零丢失；内嵌图同步提取；本地解析不占转换并发信号量
+        # 文本层优先：命中且乱码率达标则不耗远端额度、全文零丢失；内嵌图同步提取；本地解析不占转换并发信号量
         layer_text, _ = extract_pdf_text_layer(pdf_path, target_md.parent / ATTACH_DIR_NAME, task_id)
-        if layer_text is not None:
-            md_text = layer_text
+        if layer_text is not None and not _text_layer_garbled(layer_text):
+            # 评审 I2：文本层同样收口（Markdown 导出类 PDF 的文本层本就带 `$ x $`，
+            # 不收口则同书 OCR 页渲染、文本层页显源码口径不一）
+            md_text = _normalize_ocr_math_delims(layer_text)
             log.log("import", "pdf_text_layer_hit", "success", {"task": task_id, "chars": len(md_text)})
         else:
+            if layer_text is not None:
+                # CMap 残缺类 PDF：命中文本层但产物大量 \ufffd（文本层不可修复）→ 整份改走 OCR
+                log.log("import", "pdf_text_layer_garbled_fallback", "warn",
+                        {"task": task_id, "ufffd": layer_text.count("\ufffd"), "chars": len(layer_text)})
             with _SEM:
                 jsonl_text = _paddle_convert(str(pdf_path), task_id)
             md_text = _jsonl_to_markdown(jsonl_text, target_md.parent / ATTACH_DIR_NAME, task_id)
@@ -919,6 +1199,8 @@ def sync_note_content(user_id: str, md_path: Path, content: str) -> bool:
     公开函数：routes 层 MD/TXT 直落与 worker 共用同一入库路径。
     返回是否入库成功（评审 MF-1：调用方据此区分 done/failed，不得报假成功）。
     """
+    # 入库前兑底：孤立代理字符无法 utf-8 编码入 PG，一律在出口清洗（评审 m5）
+    content = _clean_surrogates(content)
     try:
         from routes_knowledge import get_kms
         r = get_kms().upsert_note_content(user_id, str(md_path), content)
@@ -973,7 +1255,9 @@ def _jsonl_to_markdown(jsonl_text: str, att_dir: Path, task_id: str,
             page += 1
     if bad_lines:
         log.log("import", "jsonl_partial_skip", "warn", {"task": task_id, "bad_lines": bad_lines})
-    return "\n\n".join(parts)
+    # 兑底：json.loads 会把远端返回里的 \udXXX 转义直接反序列化为孤立代理（评审 m5）
+    # 出口再做公式定界收口：Paddle `$ x $` 风格→`$x$`，否则前端 KaTeX 不认、预览显示源码
+    return _normalize_ocr_math_delims(_clean_surrogates("\n\n".join(parts)))
 
 
 def _save_remote_image(img_url: str, att_dir: Path, task_id: str, page: int, idx: int, rel_key: str) -> str | None:
@@ -1440,7 +1724,7 @@ def pdf_is_text_layer(pdf_path) -> bool:
         rich = 0
         for i in cands:
             try:
-                t = (r.pages[i].extract_text() or "").strip()
+                t = _clean_surrogates((r.pages[i].extract_text() or "").strip())
             except Exception:  # noqa: BLE001 单页探测失败当作非文本页
                 t = ""
             if len(t) >= PDF_TEXT_MIN_CHARS:
@@ -1571,7 +1855,8 @@ def _convert_one_segment(pdf_path: Path, att_dir: Path, seg_from: int, seg_to: i
                     rr.close()
                 except Exception:  # noqa: BLE001
                     pass
-        return (md or ""), covered, requested, "text"
+        # 评审 I2：书籍文本层段同口径收口（与 _pdf_worker 一致）
+        return _normalize_ocr_math_delims(md or ""), covered, requested, "text"
     with _SEM:
         md, covered = _ocr_convert_segment(pdf_path, seg_from, seg_to, att_dir, task_id)
     return md, covered, requested, "ocr"
