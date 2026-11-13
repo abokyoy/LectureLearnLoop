@@ -575,7 +575,7 @@
     var visState = {}, visHasContent = true, visTimer = null;
     function visReset() {
         visState = {}; visHasContent = true;
-        VIS_KINDS.forEach(function (k) { visState[k] = { state: 'none', opened: false, jobId: null, view: null, error: '', startedAt: 0 }; });
+        VIS_KINDS.forEach(function (k) { visState[k] = { state: 'none', opened: false, jobId: null, view: null, error: '', startedAt: 0, rechecking: false }; });
         if (visTimer) { clearTimeout(visTimer); visTimer = null; }
     }
     function loadVisuals() {
@@ -605,7 +605,7 @@
     function paintVis() {
         var bar = $('cgVisualBar');
         if (!bar) return;
-        var pendHtml = '<span class="text-[11px] text-cl-muted animate-pulse">生成中…（通常 1~3 分钟，可先继续读课文）</span>';
+        var pendHtml = '<span class="text-[11px] text-cl-muted animate-pulse">生成中…（普通生成约 1 分钟，深度重画 3~6 分钟，可先继续读课文）</span>';
         bar.innerHTML = VIS_KINDS.map(function (k) {
             var s = visState[k], m = VIS_META[k];
             var badge = s.state === 'done' ? '<span class="text-[11px] font-normal text-green-600">✓ 已生成' + ((s.view && s.view.seq) ? ' · v' + s.view.seq : '') + '</span>'
@@ -678,7 +678,20 @@
                 if (s.state !== 'generating') return;
                 if (j.state === 'done') { s.state = 'done'; s.view = j; s.opened = true; s.jobId = null; }
                 else if (j.state === 'failed') { s.state = 'failed'; s.error = j.error || '生成失败，请重试'; s.jobId = null; }
-                else if (Date.now() - s.startedAt > 660000) { s.state = 'failed'; s.error = '生成超时，请重试'; s.jobId = null; } // 后端预算：普通 240s／深度重画（思考模式）600s，留 60s 余量（超时扩容轮 2026-11-13：写死 300s 曾把 346s 真成功误判成假超时）
+                else if (Date.now() - s.startedAt > 660000 && !s.rechecking) {
+                    // 后端预算思考模式 600s 硬终态，660s 仍无终态只可能是服务重启/job 表回收丢了记账，
+                    // 而产物很可能已落库（实弹铁证 2026-11-13：346s/370s 真成功被旧 300s 闸门误判假超时）——
+                    // 到点不直接判死，先查库兜底：有 done 产物直接显示，确实没有才报中断
+                    s.rechecking = true;
+                    var lid2 = flow.lid;
+                    apiGet('/api/course/lessons/' + lid2 + '/visual').then(function (d2) {
+                        if (!flow || flow.lid !== lid2) return;
+                        var v2 = (d2.visual || {})[pr[0]];
+                        if (v2 && v2.state === 'done') { s.state = 'done'; s.view = v2; s.opened = true; }
+                        else { s.state = 'failed'; s.error = '生成中断（服务可能重启过），请再点一次'; }
+                        s.jobId = null; s.rechecking = false; paintVis();
+                    }).catch(function () { if (!flow || flow.lid !== lid2) return; s.state = 'failed'; s.error = '生成中断，请再点一次'; s.jobId = null; s.rechecking = false; paintVis(); });
+                }
             });
             paintVis();
             if (VIS_KINDS.some(function (k) { return visState[k].state === 'generating'; })) visTimer = setTimeout(visTick, 4000);
