@@ -889,40 +889,59 @@
     }
     function wrapAnchorText(root, text, nid) {
         if (!root || !text) return [];
-        var nodes = [], full = '';
+        // 去空白归一匹配（九追二 2026-11-13 镜像铁证）：框选入库的锚是「渲染后选区文本」——
+        // KaTeX 堆叠结构逐符号吐换行/零宽字符、表格单元格间吐 \t，与 DOM 文本节点原样拼接
+        // 永远对不上（含公式锚全部沉节末）；两头去空白再匹配。命中后按字符级映射回原节点
+        // 逐段包裹（原始 index 区间整段入 mark，段内空白一并包住不影响视觉）。
+        // .katex-mathml 子树是隐藏重复且 annotation 夹带 LaTeX 源码，排除出搜索流防误裹坏公式。
+        // WS 不加 g（CodeReview Nit：带 g 时 .test() 的 lastIndex 会交替漏判）
+        var WS = /[\s\u200b\u200c\u200d\u2060\ufeff]/;
+        var needle = '';
+        for (var ni = 0; ni < text.length; ni++) { var nc = text.charAt(ni); if (!WS.test(nc)) needle += nc; }
+        if (!needle) return [];
+        var map = [], full = '';
         var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
         var nnode;
         while ((nnode = tw.nextNode())) {
-            if (nnode.closest && nnode.closest('script, style')) continue;
-            if (!nnode.nodeValue) continue;
-            // 嵌套隔离（九追 2026-11-13）：从文本上溯到搜索根 root 途中遇 .cg-anchor-group
-            // → 该文本属于已落入 root 内部的笔记子组（如父回答里的子追问），不参与锚搜索；
-            // root 自身所在的祖先组不算（顶层组内父回答正文必须可被子锚命中）
+            // Text 节点无 closest()，必须经 parentElement 判断（CodeReview 加固，DOMPurify 已剥 script/style，双保险）
+            if (nnode.parentElement && nnode.parentElement.closest('script, style')) continue;
+            if (nnode.parentElement && nnode.parentElement.closest('.katex-mathml')) continue;
+            // 嵌套隔离（九追）：从文本上溯到搜索根 root 途中遇 .cg-anchor-group → 属已落入
+            // root 内部的笔记子组（如父回答里的子追问），不参与锚搜索；root 自身所在祖先组不算
             for (var up = nnode.parentElement; up && up !== root; up = up.parentElement) {
                 if (up.classList && up.classList.contains('cg-anchor-group')) { nnode = null; break; }
             }
             if (!nnode) continue;
-            nodes.push({ node: nnode, start: full.length });
-            full += nnode.nodeValue;
+            var v = nnode.nodeValue;
+            if (!v) continue;
+            for (var ci = 0; ci < v.length; ci++) {
+                var ch = v.charAt(ci);
+                if (WS.test(ch)) continue;
+                map.push([nnode, ci]);
+                full += ch;
+            }
         }
-        var pos = full.indexOf(text);
+        var pos = full.indexOf(needle);
         if (pos < 0) return [];
-        var end = pos + text.length, marks = [];
-        for (var i = 0; i < nodes.length; i++) {
-            var it = nodes[i], s = it.start, e = it.start + it.node.nodeValue.length;
-            if (e <= pos || s >= end) continue;
-            var a = Math.max(pos, s) - s, b = Math.min(end, e) - s;
-            var target = it.node;
-            if (a > 0) { target = it.node.splitText(a); }
-            var keep = null;
-            if (b - a < target.nodeValue.length) { keep = target.splitText(b - a); }
+        var end = pos + needle.length;
+        var spans = []; // 命中区间按文本节点归并成逐段 [a,b)（原始下标）
+        for (var mi = pos; mi < end; mi++) {
+            var e = map[mi], lst = spans[spans.length - 1];
+            if (lst && lst.node === e[0]) { lst.b = e[1] + 1; }
+            else spans.push({ node: e[0], a: e[1], b: e[1] + 1 });
+        }
+        var marks = [];
+        for (var si = 0; si < spans.length; si++) {
+            var sp = spans[si], target = sp.node;
+            if (sp.a > 0) { target = sp.node.splitText(sp.a); }
+            var len = sp.b - sp.a;
+            if (len < target.nodeValue.length) { target.splitText(len); } // 段尾回原位不参与包裹（同旧 keep 语义）
             var mark = document.createElement('span');
             mark.className = 'cg-anchor';
             mark.setAttribute('data-nid', nid);
             target.parentNode.insertBefore(mark, target);
             mark.appendChild(target);
             marks.push(mark);
-            if (keep) { nodes[i + 1] = { node: keep, start: it.start + b }; } // keep 真实起点含左偏移 a，漏算会把匹配段外的尾巴错包成锚（CodeReview Critical-1）
         }
         return marks;
     }

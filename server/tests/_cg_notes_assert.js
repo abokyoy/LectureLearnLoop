@@ -137,6 +137,20 @@ function chk(name, ok, info) {
         return !!k && k.innerText.indexOf('Q2BSENTINEL') >= 0 && k.innerText.indexOf('ANSWER2BSENTINEL') >= 0; })()`);
     chk('N5b 子锚不中降级节末 kids 内容不丢', n5b === true, { n5b });
 
+    // N5c 选区噪声锚归一（九追二 2026-11-13 镜像铁证：KaTeX 堆叠/表格选区入库带换行/零宽字符，
+    // 原样拼接永不命中全沉节末）：同一段文本夹带噪声，去空白归一后仍须落父回答锚段之后
+    const n5c = await evalJs(`(function(){ var sec = document.querySelector('.cg-read-note[data-note-id="${S.n1}"]');
+        var aEl = sec.querySelector(':scope > .cg-note-a');
+        var kidsSec = sec.querySelector(':scope > .cg-note-kids');
+        var c = aEl.querySelector(':scope .cg-note[data-note-id="${S.n2c}"]');
+        if (!c || kidsSec.contains(c)) return { ok: false };
+        var grp = c.closest('.cg-anchor-group');
+        var prev = grp ? grp.previousElementSibling : null; // 同段两组：建序 n2 在前（跨链追加不反序）
+        return { ok: true, sent: c.innerText.indexOf('Q2CSENTINEL') >= 0 && c.innerText.indexOf('ANSWER2CSENTINEL') >= 0,
+                 afterN2: !!(prev && prev.querySelector('.cg-note[data-note-id="${S.n2}"]')) }; })()`);
+    chk('N5c 噪声锚去空白归一后仍落父回答内', !!n5c && n5c.ok === true && n5c.sent === true, { n5c });
+    chk('N5d 同段两子组保持建序（n2 在前 n2c 紧随）', !!n5c && n5c.afterN2 === true, { n5c });
+
     // N6 点锚文本收起 → 回答区消失只剩摘要；再点恢复展开
     await evalJs(`document.querySelector('#cgMdBody .cg-anchor').click(); 'ok'`, false);
     await sleep(400);
