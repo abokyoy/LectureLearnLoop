@@ -875,14 +875,11 @@
             if (!marks.length) { flow.unAnchored.push.apply(flow.unAnchored, tops[k]); return; }
             var first = marks[0];
             var block = closestBlock(first, md);
-            // 笔记要挂在锚点真正所在的「那一行」下：上溯先找最近行级容器（p/li/引用/标题）；
-            // 列项场景若直接用顶层块（整个 ul）当宿主，笔记会挂到整张列表末尾（实弹轮 2026-11-13：
-            // 用户报「追问不在那句下面而是下三行」——凸性句是列表第3项，笔记被推到第4项后）；
-            // 表格/无行级容器场景保持顶层块现例（插 div 进 tr 会碎版）
-            var line = first.parentNode, LINE_RE = /^(P|LI|BLOCKQUOTE|H[1-6]|DD|DT)$/;
-            while (line && line !== md && !LINE_RE.test(line.tagName || '')) line = line.parentNode;
-            var holder = (line && line !== md) ? line : block;
-            appendNoteSection(md, holder || block, tops[k], gid);
+            // 笔记要挂在锚点真正所在的「那一行」下：行级容器/表格宿主判定走公共口径
+            // noteAnchorHost（六追实弹：凸性句是列表第3项，若用顶层块当宿主会被推到第4项后）；
+            // 均找不到时回落到 root 直接子块
+            var host = noteAnchorHost(first, md);
+            appendNoteSection(md, (host && host.node) || block, tops[k], gid);
         });
         (flow.notes || []).forEach(function (n) { /* 子节点在各自父章节内递归渲染，无需额外动作 */ });
         bindNoteEvents(md);
@@ -894,10 +891,13 @@
         // 永远对不上（含公式锚全部沉节末）；两头去空白再匹配。命中后按字符级映射回原节点
         // 逐段包裹（原始 index 区间整段入 mark，段内空白一并包住不影响视觉）。
         // .katex-mathml 子树是隐藏重复且 annotation 夹带 LaTeX 源码，排除出搜索流防误裹坏公式。
-        // WS 不加 g（CodeReview Nit：带 g 时 .test() 的 lastIndex 会交替漏判）
-        var WS = /[\s\u200b\u200c\u200d\u2060\ufeff]/;
+        // 公式形态差异字符一并透明（十追 2026-11-14 镜像铁证：真实笔记 3659 一条锚里混了
+        // 两种形态——表格内公式已渲染成符号，而 `$2e_i$` 那处是框选时的 md 源码字面，DOM 里是
+        // 渲染后的 2ei）：同一公式在源码与渲染两态只差 $ 定界、^ _ 上下标、\ 命令前缀、{} 分组，
+        // 把这四个字符与空白/零宽同视为透明，混形态锚也能一次命中（不需双轮匹配）。
+        // SKIP/anchorCh 已提至模块级 NOTE_ANCHOR_SKIP / noteAnchorCh（与 noteAnchorHost 同级）
         var needle = '';
-        for (var ni = 0; ni < text.length; ni++) { var nc = text.charAt(ni); if (!WS.test(nc)) needle += nc; }
+        for (var ni = 0; ni < text.length; ni++) { needle += noteAnchorCh(text.charAt(ni)); }
         if (!needle) return [];
         var map = [], full = '';
         var tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
@@ -915,14 +915,33 @@
             var v = nnode.nodeValue;
             if (!v) continue;
             for (var ci = 0; ci < v.length; ci++) {
-                var ch = v.charAt(ci);
-                if (WS.test(ch)) continue;
+                var fc = noteAnchorCh(v.charAt(ci));
+                if (!fc) continue;
                 map.push([nnode, ci]);
-                full += ch;
+                full += fc;
             }
         }
         var pos = full.indexOf(needle);
-        if (pos < 0) return [];
+        if (pos >= 0 && needle.length < 12 && /[$^_\\{}]/.test(text)) {
+            // 含公式定界符的短锚归一后存在等价误命中风险（如「$100 元」→「100元」与正文纯文本同形，
+            // CodeReview Nit 2026-11-14）：非唯一命中宁沉节末，不误裹
+            if (full.indexOf(needle, pos + 1) >= 0) return [];
+        }
+        if (pos < 0) {
+            // 最长前缀兜底（镜像铁证 3659）：锚里混有 `\hat` 这类渲染态不产生字母的命令，
+            // 整段永远对不上；锚的**起点**仍是用户框选内容，落位只看起点宿主，
+            // 故取最长命中前缀包裹。门槛：前缀≥40 归一字且全文唯一命中，短串禁止兜底防误伤
+            var lo = 0, nhi = needle.length;
+            while (lo < nhi) {
+                var mid = (lo + nhi + 1) >> 1;
+                if (full.indexOf(needle.slice(0, mid)) >= 0) lo = mid; else nhi = mid - 1;
+            }
+            if (lo < 40) return [];
+            var pre = needle.slice(0, lo);
+            pos = full.indexOf(pre);
+            if (full.indexOf(pre, pos + 1) >= 0) return []; // 不唯一 → 宁可沉节末也不误裹
+            needle = pre;
+        }
         var end = pos + needle.length;
         var spans = []; // 命中区间按文本节点归并成逐段 [a,b)（原始下标）
         for (var mi = pos; mi < end; mi++) {
@@ -950,13 +969,40 @@
         while (n && n.parentNode && n !== root && n.parentNode !== root) n = n.parentNode;
         return n && n !== root ? n : null;
     }
+    // 锚落位宿主（公共口径，课文层与父回答层共用，防两侧漂移）：从锚点文本上溯，
+    // 谁离得近用谁——【行级容器】p/li/blockquote/h1-6/dd/dt → 笔记贴「那一行」之后；
+    // 【整张表】表格内锚（td/tr 之间插块级节点会碎版，用户裁定 2026-11-13：
+    // 「表格里的追问也必须贴到那一行下面，按整张表后面紧跟的折中做」）→ 贴那张表之后；
+    // 两者都没命中回 null，由调用方降级（铁律：降级只限于锚已找不到/无宿主页的情形）。
+    var NOTE_LINE_RE = /^(P|LI|BLOCKQUOTE|H[1-6]|DD|DT)$/;
+    function noteAnchorHost(el, root) {
+        // 遇 TABLE 即返：行级元素嵌在表格内（如 td 里的 p）时让位整张表，与用户裁定一致（CodeReview Nit）；
+        // 否则只记最内层行级容器，走完后返回
+        var lineHit = null;
+        for (var n = el && el.parentNode; n && n !== root; n = n.parentNode) {
+            var tg = n.tagName || '';
+            if (tg === 'TABLE') return { node: n, kind: 'table' };
+            if (!lineHit && NOTE_LINE_RE.test(tg)) lineHit = n;
+        }
+        return lineHit ? { node: lineHit, kind: 'line' } : null;
+    }
+    // 锚归一公用口径（模块级，CodeReview Nit：不在 wrapAnchorText 内逐次重建）：
+    // SKIP 不加 g（带 g 时 .test() 的 lastIndex 会交替漏判）；两态同形等价两侧同规则应用
+    var NOTE_ANCHOR_SKIP = /[\s\u200b\u200c\u200d\u2060\ufeff$^_\\{}]/;
+    function noteAnchorCh(ch) {
+        if (NOTE_ANCHOR_SKIP.test(ch)) return '';
+        if (ch >= '\u0300' && ch <= '\u036f') return '';
+        if (ch === '\u2212' || ch === '\u2013' || ch === '\u2014') return '-';
+        return ch;
+    }
     function noteSectionHtml(list) {
         return list.map(function (n) { return renderNoteNode(n); }).join('');
     }
     // 九追 2026-11-13：追问的追问要落在父回答里被框选的那段下面（此前所有子节点无条件
     // 堆父节末尾，子笔记 anchor_text 从不参与落位——用户报「追问记录里位置都不对」）。
     // 统一管线：渲父回答→回填 KaTeX（子锚以渲染后文本为准，与课文层同口径）→
-    // 子组插进带锚段后；锚不中/表格内降级节末容器，内容不丢。
+    // 子组插进带锚段后（表格内锚贴整张表后，同课文层公共口径 noteAnchorHost）；
+    // 锚不中才降级节末容器，内容不丢。
     function hydrateNoteTree(root, seen) {
         if (!root || !root.querySelectorAll) return;
         Array.prototype.forEach.call(root.querySelectorAll(':scope > .cg-note'), function (sec) { hydrateNoteSection(sec, seen); });
@@ -1000,15 +1046,14 @@
             if (aEl && k) {
                 var marks = wrapAnchorText(aEl, k, gk);
                 if (marks.length) {
-                    // 行级容器上溯同课文层口径（六追教训：挂整块=列表末尾错位）；
-                    // 找不到行级宿主（如锚在表格内）宁可降级，不硬插错位位置；
-                    // 同行已有子组时跨组链追加（CodeReview Major-1：同 appendNoteSection 走位，多组保持建序不反序）
-                    var ln = marks[0].parentNode, LINE_RE = /^(P|LI|BLOCKQUOTE|H[1-6]|DD|DT)$/;
-                    while (ln && ln !== aEl && !LINE_RE.test(ln.tagName || '')) ln = ln.parentNode;
-                    if (ln && ln !== aEl) {
-                        var ref = ln.nextSibling;
+                    // 宿主判定与课文层同一公共口径（noteAnchorHost）：行级容器 → 那一行后；
+                    // 表格内 → 整张表后（用户裁定 2026-11-13：表格里的追问也不得沉节末）；
+                    // 同行/同表已有子组时跳过后链追加（CodeReview Major-1：多组保持建序不反序）
+                    var host = noteAnchorHost(marks[0], aEl);
+                    if (host) {
+                        var ref = host.node.nextSibling;
                         while (ref && ref.nodeType === 1 && ref.classList && ref.classList.contains('cg-anchor-group')) { ref = ref.nextSibling; }
-                        ln.parentNode.insertBefore(box, ref); placed = true;
+                        host.node.parentNode.insertBefore(box, ref); placed = true;
                     }
                 }
             }

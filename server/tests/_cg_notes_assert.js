@@ -124,12 +124,14 @@ function chk(name, ok, info) {
         if (!sec) return null; var aEl = sec.querySelector(':scope > .cg-note-a');
         var kidsSec = sec.querySelector(':scope > .cg-note-kids');
         var inKids = !!(kidsSec && kidsSec.querySelector('.cg-note[data-note-id="${S.n2}"]'));
-        var m = aEl.querySelector('.cg-anchor'); if (!m) return { mark: false, inKids: inKids };
-        var ln = m; while (ln && ln.parentNode !== aEl) ln = ln.parentNode; // 锚所在、aEl 直接子行
-        var grp = ln ? ln.nextElementSibling : null;
-        var afterLine = !!(grp && grp.classList.contains('cg-anchor-group') && grp.querySelector('.cg-note[data-note-id="${S.n2}"]'));
-        return { mark: true, inKids: inKids, afterLine: afterLine, lineHas: !!(ln && ln.textContent.indexOf('步长') >= 0 && ln.tagName !== 'CG-NOTE-A'),
-                 sent: !!(grp && grp.innerText.indexOf('Q2SENTINEL') >= 0 && grp.innerText.indexOf('ANSWER2SENTINEL') >= 0) }; })()`);
+        var e2 = aEl.querySelector('.cg-note[data-note-id="${S.n2}"]');
+        if (!e2) return { mark: false, inKids: inKids };
+        var grp = e2.closest('.cg-anchor-group') || e2.parentElement;
+        var ln = grp.previousElementSibling;
+        while (ln && !(ln.querySelector && ln.querySelector('.cg-anchor'))) { ln = ln.previousElementSibling; }
+        var afterLine = !!(ln && ln.querySelector('.cg-anchor') && ln.textContent.indexOf('步长') >= 0);
+        return { mark: true, inKids: inKids, afterLine: afterLine, lineHas: afterLine,
+                 sent: !!(grp.innerText.indexOf('Q2SENTINEL') >= 0 && grp.innerText.indexOf('ANSWER2SENTINEL') >= 0) }; })()`);
     chk('N5 子追问落父回答锚段之后（非节末）', !!n5 && n5.mark === true && n5.inKids === false && n5.afterLine === true && n5.lineHas === true && n5.sent === true, { n5 });
 
     // N5b 子锚不中降级：n2b 落父节末尾 .cg-note-kids，内容不丢（九追）
@@ -150,6 +152,48 @@ function chk(name, ok, info) {
                  afterN2: !!(prev && prev.querySelector('.cg-note[data-note-id="${S.n2}"]')) }; })()`);
     chk('N5c 噪声锚去空白归一后仍落父回答内', !!n5c && n5c.ok === true && n5c.sent === true, { n5c });
     chk('N5d 同段两子组保持建序（n2 在前 n2c 紧随）', !!n5c && n5c.afterN2 === true, { n5c });
+
+    // N5e/N5e2 表格内锚落位（用户裁定 2026-11-13：表格里的追问也必须贴在那一行下面，
+    // 行内插块级节点会碎版，折中为紧跟整张表，绝不沉节末）；锚文本还夹带制表符+零宽，
+    // 同时验证去空白归一在表格选区场景生效
+    const n5e = await evalJs(`(function(){ var sec = document.querySelector('.cg-read-note[data-note-id="${S.n1}"]');
+        var aEl = sec.querySelector(':scope > .cg-note-a');
+        var kidsSec = sec.querySelector(':scope > .cg-note-kids');
+        var d = aEl.querySelector(':scope .cg-note[data-note-id="${S.n2d}"]');
+        if (!d || kidsSec.contains(d)) return { ok: false };
+        var grp = d.closest('.cg-anchor-group');
+        var prev = grp ? grp.previousElementSibling : null;
+        return { ok: true, sent: d.innerText.indexOf('Q2DSENTINEL') >= 0 && d.innerText.indexOf('ANSWER2DSENTINEL') >= 0,
+                 afterTable: !!(prev && prev.tagName === 'TABLE' && prev.innerText.indexOf('动量项') >= 0) }; })()`);
+    chk('N5e 表格内锚落父回答内（不沉节末）', !!n5e && n5e.ok === true && n5e.sent === true, { n5e });
+    chk('N5e2 表格追问紧跟整张表之后', !!n5e && n5e.afterTable === true, { n5e });
+    
+        // N5f 公式源码态锚（十追镜像铁证：真实笔记 3659 锚里 $2e_i$ 是框选时的 md 源码字面，
+        // DOM 已渲染成符号；SKIP 把 $ ^ _ \ {} 与空白同视为透明后必须一次命中，落父回答内）
+        const n5f = await evalJs(`(function(){ var sec = document.querySelector('.cg-read-note[data-note-id="${S.n1}"]');
+            var aEl = sec.querySelector(':scope > .cg-note-a');
+            var kidsSec = sec.querySelector(':scope > .cg-note-kids');
+            var e = aEl.querySelector(':scope .cg-note[data-note-id="${S.n2e}"]');
+            if (!e || kidsSec.contains(e)) return { ok: false };
+            var grp = e.closest('.cg-anchor-group');
+            var prev = grp ? grp.previousElementSibling : null;
+            // 锚标记在宿主行内（源码态 $2e_i$ 归一后命中的是渲染态文本，标记文字无 $ _）
+            return { ok: true, sent: e.innerText.indexOf('Q2ESENTINEL') >= 0 && e.innerText.indexOf('ANSWER2ESENTINEL') >= 0,
+                     marked: !!(prev && prev.querySelector && prev.querySelector('.cg-anchor') && prev.textContent.indexOf('残差导数项') >= 0) }; })()`);
+        chk('N5f 源码态公式锚归一命中落父回答内', !!n5f && n5f.ok === true && n5f.sent === true && n5f.marked === true, { n5f });
+
+    // N5g 命令词锈锚最长前缀兜底（镜像铁证 3659：`\hat` 渲染态不产生字母，整段永远对不上；
+    // 兜底前缀≥40 归一字且唯一命中 → 包裹前缀、落宿主段后，绝不沉节末）
+    const n5g = await evalJs(`(function(){ var sec = document.querySelector('.cg-read-note[data-note-id="${S.n1}"]');
+        var aEl = sec.querySelector(':scope > .cg-note-a');
+        var kidsSec = sec.querySelector(':scope > .cg-note-kids');
+        var f = aEl.querySelector(':scope .cg-note[data-note-id="${S.n2f}"]');
+        if (!f || kidsSec.contains(f)) return { ok: false };
+        var grp = f.closest('.cg-anchor-group');
+        var prev = grp ? grp.previousElementSibling : null;
+        return { ok: true, sent: f.innerText.indexOf('Q2FSENTINEL') >= 0 && f.innerText.indexOf('ANSWER2FSENTINEL') >= 0,
+                 marked: !!(prev && prev.querySelector && prev.querySelector('.cg-anchor') && prev.textContent.indexOf('链式法则不可省略') >= 0) }; })()`);
+        chk('N5g 命令词锈锚最长前缀兜底落父回答内', !!n5g && n5g.ok === true && n5g.sent === true && n5g.marked === true, { n5g });
 
     // N6 点锚文本收起 → 回答区消失只剩摘要；再点恢复展开
     await evalJs(`document.querySelector('#cgMdBody .cg-anchor').click(); 'ok'`, false);
