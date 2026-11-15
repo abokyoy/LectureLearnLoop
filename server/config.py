@@ -51,6 +51,13 @@ PHOTO_PORT = int(os.getenv("PHOTO_PORT", "9991"))
 PHOTO_PUBLIC_BASE = os.getenv("PHOTO_PUBLIC_BASE", "")  # 公网可达完整前缀，如 http://xxx.oicp.vip:12345（穿透公网端口由服务商定，整串配置不自动拼）
 PHOTO_DISABLE = os.getenv("PHOTO_DISABLE", "") == "1"   # 测试/禁用环境不拉起小服务
 
+# ---------------------------------------------------------------- 小智云端讲师 MCP 桥（黑板，2026-11-04）
+# 本项目作 WebSocket 客户端连小智接入点，云端下发 tools/call 驱动黑板。
+# ENDPOINT 含 token，只存 .env；置空则不启动桥（测试环境降级）。
+XZ_MCP_ENDPOINT = os.getenv("XZ_MCP_ENDPOINT", "")
+XZ_MCP_USER = os.getenv("XZ_MCP_USER", "")              # 接入点归属的本系统用户名（解析为 user_id 后隔离黑板）
+XZ_MCP_DEVICE_MAC = os.getenv("XZ_MCP_DEVICE_MAC", "")  # 小智设备 MAC，仅备档/未来按设备分桥使用
+
 # ---------------------------------------------------------------- 错题智能分析：视觉大模型（2026-10-13）
 # 系统级 VL 通道（硅基流动 OpenAI 兼容）；国内直连，请求侧 trust_env=False 避开 V2RAYN（实测代理对
 # paddle/siliconflow 通道会 SSL 握手失败）。用户自备视觉 Key 优先，此段仅作系统兜底。
@@ -118,6 +125,10 @@ def load_config() -> dict:
         "ollama_url": "http://localhost:11434",
         "ollama_model": "",
         "ollama_api_url": "http://localhost:11434/api/generate",
+        # 智谱 GLM（Coding Plan，2026-11-11 新增：专属网关 OpenAI 兼容端点）
+        "glm_api_key": os.getenv("GLM_API_KEY", ""),
+        "glm_model": os.getenv("GLM_MODEL", "glm-4.7"),
+        "glm_api_url": os.getenv("GLM_API_URL", "https://open.bigmodel.cn/api/coding/paas/v4"),
         # 相似度匹配（业务规则已确认：阈值 0.35）
         "similarity_min_score": float(os.getenv("SIMILARITY_MIN_SCORE", "0.35")),
         # 运行时路径

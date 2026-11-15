@@ -76,12 +76,13 @@
                     <option value="DeepSeek">DeepSeek (在线)</option>
                     <option value="Gemini">Gemini (云端)</option>
                     <option value="Qwen">通义千问 (阿里云)</option>
+                    <option value="GLM">智谱 GLM (Coding Plan)</option>
                     <option value="Ollama">Ollama (本地)</option>
                 </select>
             </label>
             <label class="block">
                 <span class="text-xs font-medium text-cl-text-2 block mb-1.5">模型名称</span>
-                <input type="text" id="llm-model" placeholder="如 deepseek-chat / qwen-flash / gemini-1.5-flash-002"
+                <input type="text" id="llm-model" placeholder="如 deepseek-chat / glm-4.7 / qwen-flash / gemini-1.5-flash-002"
                     class="h-10 w-full rounded-clbtn border border-cl-border bg-cl-surface px-3 text-sm text-cl-text placeholder:text-cl-text-3 focus:outline-none focus:ring-2 focus:ring-cl-primary/30">
             </label>
             <label class="block">
@@ -189,6 +190,68 @@
         </button>
     </div>
 
+    <!-- ============ 小智智能教室连接（MCP，2026-11-05） ============ -->
+    <div class="cl-card p-6 space-y-4">
+        <div class="cl-section-title">
+            <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-headphones"/></svg>
+            小智智能教室连接
+        </div>
+        <!-- 第一步：小智设备账号级绑定（2026-11-05 身份跟账号走） -->
+        <p class="text-[13px] text-cl-text-2 leading-relaxed">
+            <b class="text-cl-text">第一步，绑定小智设备</b>：一个账号认一台。可以<b class="text-cl-text">生成一台虚拟小智</b>（不需要任何硬件），
+            也可以把<b class="text-cl-text">已有的 ESP32 小智</b>设备认进来（填设备 MAC）。
+            绑定后不管在哪台电脑登录客户端，用的都是这同一台小智。
+        </p>
+        <div class="rounded-clbtn bg-cl-primary-soft px-4 py-3 flex items-center gap-3 flex-wrap text-[13px]">
+            <span class="w-2.5 h-2.5 rounded-full flex-none" id="xzd-dot" style="background:#9ca3af"></span>
+            <span id="xzd-state" class="font-medium text-cl-text">检查中…</span>
+            <span id="xzd-mac" class="text-cl-text-3 font-mono truncate"></span>
+        </div>
+        <div id="xzd-unbound" class="space-y-3 hidden">
+            <div class="flex items-center gap-3 flex-wrap">
+                <button type="button" class="cl-btn-primary" id="xzd-gen-btn">生成虚拟小智</button>
+                <span class="text-[12px] text-cl-text-3">没有硬件选这个，点一下就能造一台</span>
+            </div>
+            <div class="flex items-center gap-3 flex-wrap">
+                <input type="text" id="xzd-mac-input" placeholder="已有 ESP32：粘贴它的 MAC（如 62:A9:76:83:9F:15）"
+                    class="h-10 flex-1 min-w-48 rounded-clbtn border border-cl-border bg-cl-surface px-3 text-sm text-cl-text placeholder:text-cl-text-3 focus:outline-none focus:ring-2 focus:ring-cl-primary/30">
+                <button type="button" id="xzd-bind-btn" class="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-clbtn bg-cl-surface text-cl-text text-sm font-semibold border border-cl-border hover:bg-cl-primary-soft transition-colors cursor-pointer">绑定这台设备</button>
+            </div>
+        </div>
+        <div id="xzd-pending" class="rounded-clbtn border border-cl-border bg-cl-surface px-4 py-3 space-y-2 hidden">
+            <div class="text-[13px] text-cl-text-2">等待认领：请到 <b class="text-cl-text">xiaozhi.me 控制台→添加设备</b>，输入下面这个 6 位码</div>
+            <div class="text-[28px] font-bold tracking-[0.3em] text-cl-primary font-mono" id="xzd-code">——</div>
+            <div class="flex items-center gap-3 flex-wrap">
+                <button type="button" id="xzd-recheck-btn" class="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-clbtn bg-cl-surface text-cl-text text-sm font-semibold border border-cl-border hover:bg-cl-primary-soft transition-colors cursor-pointer">我输好码了，刷新状态</button>
+                <button type="button" id="xzd-pending-unbind-btn" class="text-[12px] text-cl-danger underline cursor-pointer">放弃并解绑</button>
+                <span class="text-[12px] text-cl-text-3">认领成功后自动完成绑定</span>
+            </div>
+        </div>
+        <div id="xzd-bound" class="flex items-center gap-3 flex-wrap hidden">
+            <span class="text-[13px] text-cl-text-2" id="xzd-bound-text"></span>
+            <button type="button" id="xzd-unbind-btn" class="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-clbtn bg-cl-surface text-cl-danger text-sm font-semibold border border-cl-danger/40 hover:bg-red-50 transition-colors cursor-pointer">解绑</button>
+        </div>
+        <div id="xzd-msg"></div>
+        <!-- 第二步：MCP 接入点（2026-11-05 设置页化） -->
+        <p class="text-[13px] text-cl-text-2 leading-relaxed">
+            <b class="text-cl-text">第二步，粘贴 MCP 接入点</b>：在这台小智的小智 console（xiaozhi.me）设备设置页找到「MCP 连接 / 接入点」，复制形如
+            <code class="text-cl-text">wss://api.xiaozhi.me/mcp/?token=…</code> 的地址粘贴到下方，点「连接」。
+            连上后小智能读到你的讲义与错题，并能实时写 AI 老师黑板；黑板归属为当前登录账号。
+        </p>
+        <div class="rounded-clbtn bg-cl-primary-soft px-4 py-3 flex items-center gap-3 flex-wrap text-[13px]">
+            <span class="w-2.5 h-2.5 rounded-full flex-none" id="xzm-dot" style="background:#9ca3af"></span>
+            <span id="xzm-state" class="font-medium text-cl-text">检查中…</span>
+            <span id="xzm-ep" class="text-cl-text-3 font-mono truncate"></span>
+        </div>
+        <div class="flex items-center gap-3 flex-wrap">
+            <input type="text" id="xzm-endpoint" placeholder="粘贴接入点地址（wss://api.xiaozhi.me/mcp/?token=…）"
+                class="h-10 flex-1 min-w-48 rounded-clbtn border border-cl-border bg-cl-surface px-3 text-sm text-cl-text placeholder:text-cl-text-3 focus:outline-none focus:ring-2 focus:ring-cl-primary/30">
+            <button type="button" class="cl-btn-primary" id="xzm-connect-btn">连接</button>
+            <button type="button" id="xzm-disconnect-btn" class="inline-flex items-center justify-center gap-2 h-10 px-5 rounded-clbtn bg-cl-surface text-cl-danger text-sm font-semibold border border-cl-danger/40 hover:bg-red-50 transition-colors cursor-pointer hidden">断开</button>
+        </div>
+        <div id="xzm-msg"></div>
+    </div>
+
     <!-- 保存按钮（总结/日志设置） -->
     <div class="flex items-center justify-end gap-4">
         <span id="st-save-msg" class="text-[13px] text-cl-text-3"></span>
@@ -208,7 +271,7 @@
 
     // ---- 渲染令牌模式（P024）：片段重注入/快速操作时旧异步链不得写入 DOM ----
     // CodeReview 批6 M-1：令牌按模块独立，子操作重载只作废本模块旧链，不跨模块误伤
-    var creditTk = 0, llmTk = 0, otherTk = 0;
+    var creditTk = 0, llmTk = 0, otherTk = 0, devTk = 0;
 
     // ---- DOM 引用顶部一次性捕获 ----
     var $ = function (id) { return document.getElementById(id); };
@@ -301,7 +364,11 @@
 
     // ==================== 用户级大模型配置 ====================
     function toggleUrlRow() {
-        elUrlRow.style.display = elProvider.value === 'Ollama' ? 'block' : 'none';
+        var p = elProvider.value;
+        elUrlRow.style.display = (p === 'Ollama' || p === 'GLM') ? 'block' : 'none';
+        elUrl.placeholder = p === 'GLM'
+            ? 'https://open.bigmodel.cn/api/coding/paas/v4（Coding Plan 专属网关，留空用默认）'
+            : 'http://localhost:11434/api/generate';
     }
 
     function loadUserLlm(my) {
@@ -402,15 +469,189 @@
 
     elAdminBtn.addEventListener('click', function () { location.href = '/admin/credits'; });
 
+    // ==================== 小智设备账号级绑定（第一步，2026-11-05） ====================
+    // 三态：未绑定（生成/绑真机）→ 等认领（6 位码 + 轮询 recheck）→ 已绑定（解绑）。
+    // postJSON 双层契约：success=false 时读 error 字段抛异常（recheck「还在等待认领」也走此路径 → catch=未就绪，非报错）。
+    var elXdDot = $('xzd-dot'), elXdState = $('xzd-state'), elXdMac = $('xzd-mac'),
+        elXdUnbound = $('xzd-unbound'), elXdPending = $('xzd-pending'), elXdCode = $('xzd-code'),
+        elXdBound = $('xzd-bound'), elXdBoundText = $('xzd-bound-text'), elXdMsg = $('xzd-msg'),
+        elXdGenBtn = $('xzd-gen-btn'), elXdMacInput = $('xzd-mac-input'), elXdBindBtn = $('xzd-bind-btn'),
+        elXdRecheckBtn = $('xzd-recheck-btn'), elXdUnbindBtn = $('xzd-unbind-btn'),
+        elXdPendingUnbindBtn = $('xzd-pending-unbind-btn');
+    var DEV_POLL_MS = 5000, DEV_POLL_MAX = 36;   // 认领轮询约 3 分钟封顶，超时不打断（手动「刷新状态」仍可用）
+
+    function renderDev(d) {
+        if (!d) return;
+        elXdUnbound.classList.toggle('hidden', !!d.has_device);
+        elXdPending.classList.toggle('hidden', !(d.has_device && !d.bound));
+        elXdBound.classList.toggle('hidden', !d.bound);
+        if (d.bound) {
+            elXdDot.style.background = '#22c55e';
+            elXdState.textContent = d.dev_type === 'real' ? '已绑定：你的 ESP32 小智' : '已绑定：虚拟小智';
+            elXdMac.textContent = (d.mac || '').toUpperCase();
+            elXdBoundText.textContent = '这台小智已认到当前账号名下，任何电脑登录客户端都是它。MAC ' + (d.mac || '').toUpperCase();
+        } else if (d.has_device) {
+            elXdDot.style.background = '#f59e0b';
+            elXdState.textContent = '等待认领…';
+            elXdMac.textContent = '';
+            elXdCode.textContent = d.code || '——';
+        } else {
+            elXdDot.style.background = '#9ca3af';
+            elXdState.textContent = '未绑定';
+            elXdMac.textContent = '';
+        }
+    }
+    function loadDevStatus(my) {
+        getJSON('/api/board/xzdevice/status').then(function (d) {
+            if (my !== devTk || !d) return;
+            renderDev(d);
+        }).catch(function () { /* 静默：不阻塞设置页其它区块 */ });
+    }
+    // 认领轮询：后台 recheck 直到 bound 或次数用尽；令牌守卫防解绑/重生成后旧链写入（P024）
+    function pollDevRecheck(my, tries) {
+        if (tries <= 0 || my !== devTk) return;
+        setTimeout(function () {
+            if (my !== devTk) return;
+            postJSON('/api/board/xzdevice/recheck', {}).then(function (d) {
+                if (my !== devTk || !d) return;
+                renderDev(d);
+                if (d.bound) { msg(elXdMsg, '认领成功，设备已绑定', true); return; }
+                pollDevRecheck(my, tries - 1);
+            }).catch(function () {
+                if (my !== devTk) return;
+                pollDevRecheck(my, tries - 1);   // 还在等待认领：继续等
+            });
+        }, DEV_POLL_MS);
+    }
+    function doGenerate() {
+        elXdGenBtn.disabled = true;
+        postJSON('/api/board/xzdevice/generate', {}).then(function (d) {
+            elXdGenBtn.disabled = false;
+            if (d && d.bound) { msg(elXdMsg, '这台设备此前已认领过，直接绑定完成', true); }
+            else { msg(elXdMsg, '把下面的码到 xiaozhi.me 控制台输入即可', true); }
+            renderDev(d);
+            pollDevRecheck(devTk, DEV_POLL_MAX);
+        }).catch(function (e) {
+            elXdGenBtn.disabled = false;
+            msg(elXdMsg, '生成失败：' + e.message, false);
+        });
+    }
+    function doBindReal() {
+        var mac = (elXdMacInput.value || '').trim();
+        if (!mac) { msg(elXdMsg, '请先粘贴设备 MAC 地址', false); return; }
+        elXdBindBtn.disabled = true;
+        postJSON('/api/board/xzdevice/bind_real', { mac: mac }).then(function (d) {
+            elXdBindBtn.disabled = false;
+            elXdMacInput.value = '';
+            msg(elXdMsg, (d && d.bound) ? '设备已绑定' : ((d && d.message) || '已登记，等待认领'), d && d.bound);
+            renderDev(d);
+            if (d && d.has_device && !d.bound) pollDevRecheck(devTk, DEV_POLL_MAX);
+        }).catch(function (e) {
+            elXdBindBtn.disabled = false;
+            msg(elXdMsg, '绑定失败：' + e.message, false);
+        });
+    }
+    function doRecheck() {
+        elXdRecheckBtn.disabled = true;
+        postJSON('/api/board/xzdevice/recheck', {}).then(function (d) {
+            elXdRecheckBtn.disabled = false;
+            devTk++;                        // 绑定成功：作废轮询链
+            renderDev(d);
+            msg(elXdMsg, '认领成功，设备已绑定', true);
+        }).catch(function (e) {
+            elXdRecheckBtn.disabled = false;
+            msg(elXdMsg, e.message || '还在等待认领', false);
+            pollDevRecheck(devTk, DEV_POLL_MAX);
+        });
+    }
+    function doUnbind() {
+        if (!confirm('解绑后这台小智将不再属于本账号，客户端无法上课；换绑前也需先解绑。确定解绑？')) return;
+        elXdUnbindBtn.disabled = true;
+        elXdPendingUnbindBtn.disabled = true;
+        devTk++;                            // 作废未完成的轮询链
+        postJSON('/api/board/xzdevice/unbind', {}).then(function (d) {
+            elXdUnbindBtn.disabled = false;
+            elXdPendingUnbindBtn.disabled = false;
+            renderDev(d);
+            msg(elXdMsg, '已解绑', true);
+        }).catch(function (e) {
+            elXdUnbindBtn.disabled = false;
+            elXdPendingUnbindBtn.disabled = false;
+            msg(elXdMsg, '解绑失败：' + e.message, false);
+        });
+    }
+
+    // ==================== 小智智能教室连接（MCP） ====================
+    var mcpTk = 0;
+    var elXmDot = $('xzm-dot'), elXmState = $('xzm-state'), elXmEp = $('xzm-ep'),
+        elXmInput = $('xzm-endpoint'), elXmConnBtn = $('xzm-connect-btn'),
+        elXmDiscBtn = $('xzm-disconnect-btn'), elXmMsg = $('xzm-msg');
+
+    function renderMcp(d) {
+        if (!d) return;
+        elXmDot.style.background = d.connected ? '#22c55e' : (d.configured ? '#f59e0b' : '#9ca3af');
+        elXmState.textContent = d.connected ? '已连接，小智可以读你的黑板了'
+            : (d.configured ? '已配置，正在等待云端握手…' : '未连接');
+        elXmEp.textContent = (d.endpoint_masked || '') + (d.bound_user ? '（' + d.bound_user + '）' : '');
+        if (d.last_error) msg(elXmMsg, '上次异常：' + d.last_error, false);
+        elXmDiscBtn.classList.toggle('hidden', !d.configured);
+    }
+    // 连接是后台线程异步完成：未连上前每 1.5s 自动刷新（最多 12 次），令牌守卫防旧链写入（P024）
+    function loadMcpStatus(my, tries) {
+        getJSON('/api/board/mcp/status').then(function (d) {
+            if (my !== mcpTk || !d) return;
+            renderMcp(d);
+            if (tries > 0 && d.configured && !d.connected) {
+                setTimeout(function () { loadMcpStatus(my, tries - 1); }, 1500);
+            }
+        }).catch(function () { /* 静默：不阻塞设置页其它区块 */ });
+    }
+    function doMcpConnect() {
+        var ep = (elXmInput.value || '').trim();
+        if (!ep) { msg(elXmMsg, '请先粘贴接入点地址', false); return; }
+        elXmConnBtn.disabled = true;
+        postJSON('/api/board/mcp/connect', { endpoint: ep }).then(function (d) {
+            elXmConnBtn.disabled = false;
+            elXmInput.value = '';
+            msg(elXmMsg, '已保存接入点，正在连接…', true);
+            loadMcpStatus(mcpTk, 12);
+        }).catch(function (e) {
+            elXmConnBtn.disabled = false;
+            msg(elXmMsg, '连接失败：' + e.message, false);
+        });
+    }
+    function doMcpDisconnect() {
+        if (!confirm('断开后小智将无法读写黑板，确定断开？')) return;
+        elXmDiscBtn.disabled = true;
+        postJSON('/api/board/mcp/disconnect', {}).then(function (d) {
+            elXmDiscBtn.disabled = false;
+            mcpTk++;              // 作废未完成的轮询链
+            renderMcp(d);
+            msg(elXmMsg, '已断开', true);
+        }).catch(function (e) {
+            elXmDiscBtn.disabled = false;
+            msg(elXmMsg, '断开失败：' + e.message, false);
+        });
+    }
+
     // ==================== 初始化 ====================
     function init() {
         loadCredits(++creditTk);
         loadUserLlm(++llmTk);
         loadOtherSettings(++otherTk);
+        loadMcpStatus(++mcpTk, 0);
+        loadDevStatus(++devTk);
         elRedeemBtn.addEventListener('click', doRedeem);
         elSaveLlmBtn.addEventListener('click', saveUserLlm);
         elSaveBtn.addEventListener('click', saveOtherSettings);
         elProvider.addEventListener('change', toggleUrlRow);
+        elXmConnBtn.addEventListener('click', doMcpConnect);
+        elXmDiscBtn.addEventListener('click', doMcpDisconnect);
+        elXdGenBtn.addEventListener('click', doGenerate);
+        elXdBindBtn.addEventListener('click', doBindReal);
+        elXdRecheckBtn.addEventListener('click', doRecheck);
+        elXdUnbindBtn.addEventListener('click', doUnbind);
+        elXdPendingUnbindBtn.addEventListener('click', doUnbind);
     }
     if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); }
     else { init(); }

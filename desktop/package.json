@@ -1,6 +1,6 @@
 {
   "name": "lecturelearnloop-desktop",
-  "version": "0.1.4",
+  "version": "0.2.8",
   "description": "LectureLearnLoop Electron 桌面客户端（悬浮窗录音 + 学习闭环）",
   "main": "main.js",
   "scripts": {
@@ -10,6 +10,13 @@
   "author": "LectureLearnLoop",
   "license": "MIT",
   "dependencies": {
+    "@audio/encode-opus": "file:_opustgz/_audio_encode-opus.tgz",
+    "@audio/resample-polyphase": "file:_opustgz/_audio_resample-polyphase.tgz",
+    "@eshaz/web-worker": "file:_opustgz/_eshaz_web-worker.tgz",
+    "@wasm-audio-decoders/common": "file:_opustgz/_wasm-audio-decoders_common.tgz",
+    "libopus-wasm": "file:_opustgz/libopus-wasm.tgz",
+    "opus-decoder": "file:_opustgz/opus-decoder.tgz",
+    "simple-yenc": "file:_opustgz/simple-yenc.tgz",
     "ws": "^8.18.0"
   },
   "devDependencies": {

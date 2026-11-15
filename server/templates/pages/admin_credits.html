@@ -222,6 +222,7 @@
         gemini_api_key: 'Gemini API Key', gemini_model: 'Gemini 模型',
         qwen_api_key: '通义千问 API Key', qwen_model: '通义千问 模型', qwen_api_url: '通义千问 URL',
         ollama_api_url: 'Ollama URL', ollama_model: 'Ollama 模型',
+        glm_api_key: 'GLM API Key', glm_model: 'GLM 模型', glm_api_url: 'GLM URL',
     };
     function loadLlmConfig(my) {
         getJSON('/api/admin/llm-config').then(function (d) {
@@ -233,7 +234,7 @@
                 return '<div class="flex flex-wrap items-center gap-3 mb-3">' +
                     '<label class="w-full sm:w-52 text-sm font-medium text-cl-text-2 shrink-0">' + esc(label) + '</label>' +
                     '<input data-lkey="' + esc(k) + '" type="text" value="' + esc(d[k]) + '"' +
-                    (k === 'llm_provider' ? ' placeholder="DeepSeek / Gemini / Qwen / Ollama"' : '') + ' class="' + ROW_INP + '">' +
+                    (k === 'llm_provider' ? ' placeholder="DeepSeek / Gemini / Qwen / GLM / Ollama"' : '') + ' class="' + ROW_INP + '">' +
                     '<span class="text-xs text-cl-text-3">' + (isKey ? '（掩码显示，不修改请原样保存）' : '') + '</span></div>';
             }).join('');
         }).catch(function (e) {

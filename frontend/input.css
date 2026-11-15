@@ -39,6 +39,19 @@
   .cl-badge {
     @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
+  /* 微课四期 A1：逐段聚光灯播放（dim 待讲块 / lit 当前讲块，老师讲到哪亮到哪） */
+  .mc-spot {
+    @apply transition-all duration-500;
+  }
+  .mc-spot-dim {
+    opacity: 0.28;
+    filter: blur(1.5px);
+  }
+  .mc-spot-lit {
+    @apply bg-cl-primary-soft border-l-2 border-cl-primary;
+    padding-left: 0.625rem;
+    opacity: 1;
+  }
   .cl-badge-orange { @apply cl-badge bg-cl-primary-soft text-cl-primary; }
   .cl-badge-green { @apply cl-badge bg-cl-secondary-soft text-cl-secondary; }
   /* 进度条 */

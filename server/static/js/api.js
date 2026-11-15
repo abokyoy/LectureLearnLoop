@@ -143,6 +143,7 @@
         'memory_errors': '/practice',
         'knowledge_point': '/practice',  // u10 详情直达页（SPA 内走 /fragments，多页兜底回练总览）
         'knowledge_base': '/knowledge_base',
+        'teacher_board': '/teacher_board',  // 2026-11-04 小智云端讲师黑板
         'settings': '/settings',
         'llm_logs': '/llm_logs',
         'admin_credits': '/admin/credits',

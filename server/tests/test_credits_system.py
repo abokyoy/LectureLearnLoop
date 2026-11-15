@@ -343,11 +343,15 @@ class TestCreditsSystem:
 
             class StubProvider:
                 model = "stub-model"
+                supports_vision = False  # 与 LLMProvider 基类同名属性，自备 Key 分支需要读它
 
                 def __init__(self, usage):
                     self.usage = usage
 
-                def call(self, prompt, context="", usage_out=None):
+                def call(self, prompt, context="", usage_out=None, images=None,
+                         timeout=None, thinking=None):
+                    # 签名跟随 LLMProvider.call（二期补 timeout；images 为 2026-10 视觉链存量补参；
+                    # thinking 为 2026-11 成本轮补参）
                     if usage_out is not None and self.usage:
                         usage_out.update(self.usage)
                     return "OK-reply"

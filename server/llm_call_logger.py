@@ -12,7 +12,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from config import load_config
 
 
@@ -37,6 +37,10 @@ class LLMCallRecord:
     api_endpoint: str               # API端点
     status_code: int                # HTTP状态码
     context: str                    # 调用上下文(如"生成练习题目"、"AI聊天"等)
+    # usage 明细（原理图成本优化轮 2026-11-10）：provider 回传的 token 账目，
+    # 形如 {prompt_tokens, completion_tokens, cached_tokens, reasoning_tokens}；
+    # 带默认值放末尾，旧 jsonl 行 LLMCallRecord(**record_data) 回填天然兼容。
+    usage: Dict[str, Any] = field(default_factory=dict)
 
 
 class LLMCallLogger:
@@ -148,7 +152,8 @@ class LLMCallLogger:
                     break
     
     def end_call(self, call_id: str, response: str = "", success: bool = True, 
-                 error_message: str = "", status_code: int = 200):
+                 error_message: str = "", status_code: int = 200,
+                 usage: Optional[Dict[str, Any]] = None):
         """结束记录LLM调用"""
         if not self.is_logging_enabled() or not call_id:
             return
@@ -165,6 +170,8 @@ class LLMCallLogger:
                     record.success = success
                     record.error_message = error_message
                     record.status_code = status_code
+                    if usage:
+                        record.usage = dict(usage)
                     
                     # 如果没有记录首字节时间，使用结束时间
                     if record.first_byte_time == 0:
@@ -280,9 +287,10 @@ def record_first_byte(call_id: str):
 
 
 def end_llm_call(call_id: str, response: str = "", success: bool = True, 
-                 error_message: str = "", status_code: int = 200):
-    """结束记录LLM调用的便捷函数"""
-    llm_call_logger.end_call(call_id, response, success, error_message, status_code)
+                 error_message: str = "", status_code: int = 200,
+                 usage: Optional[Dict[str, Any]] = None):
+    """结束记录LLM调用的便捷函数（usage=token明细，逐笔可对账）"""
+    llm_call_logger.end_call(call_id, response, success, error_message, status_code, usage)
 
 
 def get_llm_call_records(limit: int = 50) -> List[Dict[str, Any]]:

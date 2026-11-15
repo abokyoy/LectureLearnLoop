@@ -987,6 +987,28 @@ class PracticeRecordManager:
         conn.close()
         return record_id
 
+    def get_error_id_for_record(self, record_id: int, user_id: str = "0001"):
+        """答错留痕后回查该流水对应的错题行（v0.2.8「AI老师讲」判分结果指派用）：
+        优先本次流水新建的行（举一反三派生题场景 pr.error_question_id 挂的是 root，
+        新行只靠 practice_record_id 关联），其次流水挂接的原行（同题堆行/重练又错）。
+        查无返回 None。公共函数：判分端点一律走此回查，禁止各端点自写 SQL。"""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                "SELECT id FROM error_questions WHERE practice_record_id = ? AND user_id = ?",
+                (record_id, user_id))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+            cursor.execute(
+                "SELECT error_question_id FROM practice_records WHERE id = ? AND user_id = ?",
+                (record_id, user_id))
+            row = cursor.fetchone()
+            return row[0] if row and row[0] is not None else None
+        finally:
+            conn.close()
+
 
 class ErrorQuestionManager:
     """错题管理器"""

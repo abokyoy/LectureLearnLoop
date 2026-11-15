@@ -18,6 +18,8 @@ const ICONS = [
   'book-marked', 'layers', 'bell', 'calendar-days',
   // 批3 网课笔记页
   'folder-plus', 'file-plus', 'eye', 'save', 'circle', 'square', 'panel-left-close', 'folder-open', 'sparkle',
+  // 微课四期 A1 逐段聚光灯播放
+  'play', 'pause',
 ];
 
 const SRC_DIR = path.join(__dirname, 'node_modules', 'lucide-static', 'icons');

@@ -65,6 +65,25 @@
         try { localStorage.setItem('pm_pending_review', JSON.stringify({ subject: String(subject || ''), eid: String(eid || ''), ts: Date.now() })); } catch (e) { /* ignore */ }
         goMenu('memory_errors');
     }
+    // v0.2.8「AI老师讲」：多入口进小黑板——服务端记指派讲解目标后跳黑板页，
+    // 提示条+自动开课链路由黑板页负责（与「讲解错题」微课轨并存，互不影响）
+    function goAiTeach(body, btn) {
+        if (btn) btn.disabled = true;   // 在途锁定防连点（成功后整页跳走，失败解锁）
+        postJSON('/api/board/assign', body).then(function () {
+            goMenu('teacher_board');
+        }).catch(function (e) {
+            if (btn) btn.disabled = false;
+            window.alert('打开 AI 老师黑板失败：' + ((e && e.message) || e));
+        });
+    }
+    // v0.2.8：判分结果里的「AI老师讲」统一绑定（练习引擎与知识点详情页共用，指派该题进小黑板）
+    function bindResultTeach(scope) {
+        scope.querySelectorAll('[data-pp-teach]').forEach(function (b) {
+            b.addEventListener('click', function () {
+                goAiTeach({ kind: 'error', error_id: Number(b.getAttribute('data-pp-teach')) }, b);
+            });
+        });
+    }
     function truncate(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
     // mastery_score = -1 是“未评估”哨兵值（建点默认入库），禁止当 0% 展示或参与均值（批5 负数 bug 根因）
     function isUnrated(score) { return score == null || Number(score) < 0; }
@@ -390,11 +409,14 @@
                 + '<div data-ehistory="' + e.id + '"><p class="text-cl-text-3">加载中…</p></div></div>';
         }
         h += '</div>';
-        // P3 行级按钮：练这题（single 组卷）/ 举一反三（analogy 针对该行）
-        if (opts && opts.unit && (opts.onSingle || opts.onAnalogy)) {
+        // P3 行级按钮：练这题（single 组卷）/ 举一反三（analogy 针对该行）/ 讲解错题（六期：单题深度讲解小课）
+        // v0.2.8 追加：AI老师讲（指派进小黑板自动开课，与讲解错题并存）
+        if (opts && opts.unit && (opts.onSingle || opts.onAnalogy || opts.onExplain || opts.onTeach)) {
             h += '<div class="mt-3 flex items-center gap-2">'
                 + (opts.onSingle ? '<button class="cl-btn-ghost !h-8 !text-xs" data-pp-single="' + e.id + '">' + icon('dumbbell', 'w-4 h-4') + ' 练这题</button>' : '')
                 + (opts.onAnalogy ? '<button class="cl-btn-ghost !h-8 !text-xs" data-pp-analogy="' + e.id + '">' + icon('lightbulb', 'w-4 h-4') + ' 举一反三</button>' : '')
+                + (opts.onExplain ? '<button class="cl-btn-ghost !h-8 !text-xs" data-pp-explain="' + e.id + '">' + icon('graduation-cap', 'w-4 h-4') + ' 讲解错题</button>' : '')
+                + (opts.onTeach ? '<button class="cl-btn-ghost !h-8 !text-xs" data-pp-teach="' + e.id + '">' + icon('mic', 'w-4 h-4') + ' AI老师讲</button>' : '')
                 + '</div>';
         }
         // 标记按钮放在折叠区外常显（批4 自测发现：藏在 hidden 详情内用户无法直接点击）
@@ -472,6 +494,16 @@
                     var ba = card.querySelector('[data-pp-analogy]');
                     if (ba) ba.addEventListener('click', function () { opts.onAnalogy(Number(ba.getAttribute('data-pp-analogy'))); });
                 }
+                if (opts.onExplain) {
+                    // 六期：讲解错题 → 积分预估确认弹窗 → 错题深度讲解小课（复用微课直达旗标机制）
+                    var be = card.querySelector('[data-pp-explain]');
+                    if (be) be.addEventListener('click', function () { opts.onExplain(Number(be.getAttribute('data-pp-explain'))); });
+                }
+                if (opts.onTeach) {
+                    // v0.2.8：AI老师讲 → 记指派进小黑板自动开课（不烧微课积分）
+                    var bt = card.querySelector('[data-pp-teach]');
+                    if (bt) bt.addEventListener('click', function () { opts.onTeach(Number(bt.getAttribute('data-pp-teach')), bt); });
+                }
             });
         }
         if (opts && opts.reviewBtn) {
@@ -524,33 +556,30 @@
                     if (p.core_description) h += '<p class="text-xs text-cl-text-2 mb-3">' + esc(truncate(p.core_description, 80)) + '</p>';
                     h += progressBar(p.mastery_score);
                     h += '<div class="flex items-center gap-2 mt-4">'
-                        + '<button class="cl-btn-ghost !h-8 !text-xs pm-kp-errors" data-kp="' + p.id + '">' + icon('alert-circle', 'w-4 h-4') + ' 相关错题</button>'
+                        + '<button class="cl-btn-ghost !h-8 !text-xs pm-kp-errors" data-kp="' + p.id + '" data-kpname="' + esc(p.point_name) + '">' + icon('alert-circle', 'w-4 h-4') + ' 相关错题</button>'
+                        + '<button class="cl-btn-ghost !h-8 !text-xs pm-kp-teach" data-kp="' + p.id + '">' + icon('mic', 'w-4 h-4') + ' AI老师讲</button>'
                         + '<button class="cl-btn-primary !h-8 !text-xs" data-gopoint="' + esc(String(p.id)) + '" data-goname="' + esc(p.point_name) + '">' + icon('dumbbell', 'w-4 h-4') + ' 去练习</button>'
                         + '</div>';
-                    h += '<div class="hidden mt-3 pt-3 border-t border-cl-border space-y-2 text-xs" data-kp-detail="' + p.id + '"></div>';
                     h += '</div>';
                     return h;
                 }).join('') + '</div>';
                 bindGoLinks(root);
+                // v0.2.8：AI老师讲（知识点卡）→ 指派本点进小黑板，老师先讲概念再拿名下错题敲例子
+                main.querySelectorAll('.pm-kp-teach').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        goAiTeach({ kind: 'kp', kp_id: Number(btn.getAttribute('data-kp')) }, btn);
+                    });
+                });
+                // 六期（用户裁定）：相关错题不再页内展开列表，改为直达错题练习页并按该知识点筛选
+                // （直达旗标一次性消费，与 pm_pending_point/pm_pending_course 同机制）
                 main.querySelectorAll('.pm-kp-errors').forEach(function (btn) {
                     btn.addEventListener('click', function () {
-                        var kp = btn.getAttribute('data-kp');
-                        var box = main.querySelector('[data-kp-detail="' + kp + '"]');
-                        if (!box) return;
-                        if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
-                        box.classList.remove('hidden');
-                        if (box.dataset.loaded) return;
-                        box.innerHTML = '<p class="text-cl-text-3">加载中…</p>';
-                        getJSON('/api/kb/errors?subject=' + encodeURIComponent(subject) + '&kp_id=' + kp).then(function (errs) {
-                            box.dataset.loaded = '1';
-                            if (!errs || !errs.length) { box.innerHTML = '<p class="text-cl-text-3">该知识点暂无错题，保持住</p>'; return; }
-                            box.innerHTML = errs.map(function (e) {
-                                var q = mdqHtml(e.question_content, 'text-cl-text-2 max-h-40 overflow-y-auto');
-                                return '<div class="rounded-clbtn bg-cl-bg px-3 py-2">' + q
-                                    + '<p class="text-cl-text-3 mt-1">练习于 ' + esc(relTime(e.practice_time)) + ' · 熟练度 ' + (isUnrated(e.current_proficiency) ? '未评估' : (Number(e.current_proficiency) || 0) + '%') + '</p></div>';
-                            }).join('');
-                            hydrateMdSlots(box);
-                        }).catch(function (err) { box.innerHTML = '<p class="text-cl-danger">' + esc(err.message) + '</p>'; });
+                        try { localStorage.setItem('pm_pending_error_filter', JSON.stringify({
+                            kp_id: Number(btn.getAttribute('data-kp')),
+                            kp_name: btn.getAttribute('data-kpname') || '',
+                            subject: subject, ts: Date.now(),
+                        })); } catch (e) { /* 存储不可用时仍导航（仅丢筛选） */ }
+                        goMenu('practice_errors');
                     });
                 });
             }).catch(function (err) {
@@ -819,12 +848,15 @@
                     + optionsHtml(oq, true, d.user_answer)
                     + '<p class="text-xs text-cl-text-3 mt-1">你的答案：' + mdqHtml(d.user_answer || '未答', '', true) + '　正确答案：' + mdqHtml(d.correct_answer, '', true) + '</p>'
                     + (d.comment ? '<div class="mt-1"><span class="text-xs text-cl-text-3">AI 点评：</span>' + mdqHtml(d.comment, 'text-xs text-cl-text-3 break-words') + '</div>' : '')
-                    + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '') + '</div>';
+                    + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '')
+                    // v0.2.8：答错的题行进黑板指派（后端已把入池错题行回传 teach_error_id）
+                    + (!d.is_correct && d.teach_error_id ? '<div class="mt-2"><button class="cl-btn-ghost !h-7 !text-xs" data-pp-teach="' + d.teach_error_id + '">' + icon('mic', 'w-3.5 h-3.5') + ' AI老师讲</button></div>' : '') + '</div>';
             });
             h += '</div>';
             card.innerHTML = h;
             hydrateMdSlots(card);
             bindClose();
+            bindResultTeach(card);
             if (opts.onDone) opts.onDone(r);
         }
     }
@@ -832,8 +864,26 @@
     // ---------------- 页2：基于错题练习 ----------------
     function bootPracticeErrors(root) {
         var search = root.querySelector('[data-role="search"]');
-        var cache = { subject: '', rows: [] };
+        var cache = { subject: '', rows: [], kpFilter: null };
+        // 六期：知识点卡「相关错题」直达旗标（一次性消费；学科预选与 kp 筛选同源于此）
+        // 评审 m2/m3：同 pm_pending_course 一样 10s 过期，并用模块级兜底应对 SPA 二次注入
+        var pf = null;
+        try {
+            pf = JSON.parse(localStorage.getItem('pm_pending_error_filter') || 'null');
+            if (pf) {
+                localStorage.removeItem('pm_pending_error_filter');
+                if (Number(pf.kp_id) > 0 && Date.now() - (pf.ts || 0) <= 10000) global.__pmErrFilterConsumed = pf;
+            }
+        } catch (e) { /* 坏旗标当未传入 */ }
+        if (!global.__pmErrFilterConsumed || Date.now() - (global.__pmErrFilterConsumed.ts || 0) > 10000) {
+            global.__pmErrFilterConsumed = null;
+        }
+        pf = pf || global.__pmErrFilterConsumed;
+        if (pf && Number(pf.kp_id) > 0) {
+            cache.kpFilter = { id: Number(pf.kp_id), name: String(pf.kp_name || ''), subject: String(pf.subject || '') };
+        }
         var page = 1, PER = 20; // 错题学习单元升级 P2：前端分页 20 题/页（用户裁定）
+        var firstCb = true; // 六期：首次学科回调保留直达筛选，之后换学科即清
         function render(main) {
             var rows = cache.rows;
             var kw = search ? search.value.trim() : '';
@@ -848,21 +898,36 @@
             var pages = Math.max(1, Math.ceil(filtered.length / PER));
             if (page > pages) page = pages;
             var slice = filtered.slice((page - 1) * PER, page * PER);
-            var h = '<div class="space-y-3">' + slice.map(function (e) { return errorRow(e, { reviewBtn: false, unit: true, onSingle: startSingle, onAnalogy: startAnalogyRow }); }).join('') + '</div>';
+            // 六期：知识点直达筛选条（可移除；筛在后端参数层，与关键词搜索不冲突）
+            var filterBar = '';
+            if (cache.kpFilter) {
+                filterBar = '<div class="flex items-center gap-2 mb-3 rounded-clbtn bg-cl-primary-soft px-3 py-2 text-xs">'
+                    + icon('filter', 'w-3.5 h-3.5 text-cl-primary')
+                    + '<span class="text-cl-primary flex-1 min-w-0">仅看知识点「' + esc(cache.kpFilter.name || '未命名') + '」的错题</span>'
+                    + '<button class="cl-btn-ghost !h-6 !text-xs" data-kpfclean>查看全部</button></div>';
+            }
+            var h = filterBar + '<div class="space-y-3">' + slice.map(function (e) { return errorRow(e, { reviewBtn: false, unit: true, onSingle: startSingle, onAnalogy: startAnalogyRow, onExplain: startExplainRow, onTeach: aiTeachRow }); }).join('') + '</div>';
             if (pages > 1) h += '<div class="flex items-center justify-center gap-3 mt-4">'
                 + '<button class="cl-btn-ghost !h-8 !text-xs" data-pg-prev' + (page <= 1 ? ' disabled' : '') + '>' + icon('chevron-left', 'w-4 h-4') + ' 上一页</button>'
                 + '<span class="text-xs text-cl-text-3">第 ' + page + ' / ' + pages + ' 页</span>'
                 + '<button class="cl-btn-ghost !h-8 !text-xs" data-pg-next' + (page >= pages ? ' disabled' : '') + '>下一页 ' + icon('chevron-right', 'w-4 h-4') + '</button></div>';
             main.innerHTML = h;
-            bindErrorRows(main, { reviewBtn: false, unit: true, onSingle: startSingle, onAnalogy: startAnalogyRow });
+            bindErrorRows(main, { reviewBtn: false, unit: true, onSingle: startSingle, onAnalogy: startAnalogyRow, onExplain: startExplainRow, onTeach: aiTeachRow });
             var pv = main.querySelector('[data-pg-prev]'), nx = main.querySelector('[data-pg-next]');
             if (pv) pv.addEventListener('click', function () { if (page > 1) { page--; render(main); main.scrollIntoView({ block: 'start' }); } });
             if (nx) nx.addEventListener('click', function () { if (page < pages) { page++; render(main); main.scrollIntoView({ block: 'start' }); } });
+            // 六期：筛选条「查看全部」——清旗标后按当前学科重拉全量（手增 token 丢弃在飞旧请求，与换学科同一防护栏）
+            var fc = main.querySelector('[data-kpfclean]');
+            if (fc) fc.addEventListener('click', function () {
+                cache.kpFilter = null;
+                loadBySubject(cache.subject, root.__pmSeq = (latestTk(root) || 0) + 1);
+            });
         }
         // ---- P3 练习闭环：公共引擎 pmPractice + error-pool/error-set-submit/analogy（提交后刷新列表） ----
         function refresh() {
             if (!cache.subject) return;
-            getJSON('/api/kb/errors?subject=' + encodeURIComponent(cache.subject)).then(function (rows) {
+            getJSON('/api/kb/errors?subject=' + encodeURIComponent(cache.subject)
+                    + (cache.kpFilter ? '&kp_id=' + cache.kpFilter.id : '')).then(function (rows) {
                 cache.rows = rows || [];
                 var main = root.querySelector('[data-role="main"]');
                 if (main) render(main);
@@ -887,6 +952,16 @@
                 submit: practiceSubmit, onDone: refresh,
             });
         }
+        // 六期：讲解错题 → 与知识点入口同构的积分预估确认弹窗 → 错题深度讲解小课→播放器页
+        // （独立错题无知识点上下文，后端会拒绝并回文案；前端不另拦截，防两处口径漂移）
+        function startExplainRow(eid) {
+            var e = null;
+            for (var i = 0; i < cache.rows.length; i++) { if (String(cache.rows[i].id) === String(eid)) { e = cache.rows[i]; break; } }
+            var lab = truncate(String((e && e.question_content) || '').replace(/[#*`$\n]+/g, ' '), 24);
+            openMicroCourseConfirm({ error_id: eid, label: '错题「' + lab + '」' });
+        }
+        // v0.2.8：AI老师讲 → 指派本题进小黑板自动开课（与讲解错题微课轨并存）
+        function aiTeachRow(eid, btn) { goAiTeach({ kind: 'error', error_id: eid }, btn); }
         // 简易选项弹窗（题量/勾题）；与知识点页 openPracticeChooser 同构但科目级+分页（PM 公共引擎口径）
         function openModal(inner, onMount) {
             var old = root.querySelector('[data-pp-chooser]');
@@ -1032,6 +1107,7 @@
                     + ((nd.evidence || []).length ? '<span class="text-[11px] text-cl-text-3">证据错题：' + nd.evidence.map(function (x) { return '#' + x; }).join(' ') + '</span>' : '')
                     + '<span class="ml-auto shrink-0">'
                     + (weak ? '<button class="cl-btn-ghost !h-7 text-[11px]" data-mm-prac="' + esc(nd.name) + '" data-mm-ev="' + esc((nd.evidence || []).join(',')) + '">' + icon('dumbbell', 'w-3.5 h-3.5') + ' 针对练习</button>' : '')
+                    + (weak && (nd.evidence || []).length ? '<button class="cl-btn-ghost !h-7 text-[11px] ml-1" data-mm-course="' + esc(nd.name) + '" data-mm-ev="' + esc(nd.evidence.join(',')) + '">' + icon('graduation-cap', 'w-3.5 h-3.5') + ' 讲这个薄弱点</button>' : '')
                     + '</span></div>'
                     + ((nd.children || []).length ? mindmapHtml(nd.children, true) : '')
                     + '</div>';
@@ -1100,6 +1176,14 @@
                         b.addEventListener('click', function () {
                             var ev = (b.getAttribute('data-mm-ev') || '').split(',').filter(Boolean).map(Number);
                             startTargetedPractice(b.getAttribute('data-mm-prac'), ev);
+                        });
+                    });
+                    // S1 微课入口（U5）：薄弱点「讲这个薄弱点」→ 预估弹窗 → create（锚定 kp 由后端按错题证据反查）
+                    card.querySelectorAll('[data-mm-course]').forEach(function (b) {
+                        b.addEventListener('click', function () {
+                            var ev = (b.getAttribute('data-mm-ev') || '').split(',').filter(Boolean).map(Number);
+                            var nm = b.getAttribute('data-mm-course') || '';
+                            openMicroCourseConfirm({ error_ids: ev, weakness_name: nm, label: '薄弱点「' + nm + '」' });
                         });
                     });
                 }
@@ -1191,10 +1275,18 @@
             if (cache.subject && main) render(main);
         });
         mountSubjects(root, function (subject, token) {
+            if (!firstCb) cache.kpFilter = null; // 手动换学科即离开直达场景，清知识点筛选（筛选仅对初次落地生效）
+            firstCb = false;
+            loadBySubject(subject, token);
+        }, (cache.kpFilter && cache.kpFilter.subject) || undefined); // 六期：直达旗标带学科时预选该学科
+        function loadBySubject(subject, token) {
+            // 评审 m4：旗标学科与实际落地学科不一致（学科被删/未同步 fallback 到首科）时清筛选，防 kp 挂错学科永远空列表
+            if (cache.kpFilter && cache.kpFilter.subject && cache.kpFilter.subject !== subject) cache.kpFilter = null;
             var main = root.querySelector('[data-role="main"]');
             main.innerHTML = '<p class="text-sm text-cl-text-3 py-6">加载中…</p>';
-            page = 1; // 换学科回到第一页
-            getJSON('/api/kb/errors?subject=' + encodeURIComponent(subject)).then(function (rows) {
+            page = 1; // 换学科/清筛选回到第一页
+            getJSON('/api/kb/errors?subject=' + encodeURIComponent(subject)
+                    + (cache.kpFilter ? '&kp_id=' + cache.kpFilter.id : '')).then(function (rows) {
                 if (token !== latestTk(root)) return; // 旧学科响应不得污染 cache/页面
                 cache.subject = subject;
                 cache.rows = rows || [];
@@ -1203,7 +1295,7 @@
                 if (token !== latestTk(root)) return;
                 main.innerHTML = '<p class="text-sm text-cl-danger py-6">错题加载失败：' + esc(err.message) + '</p>';
             });
-        });
+        }
     }
 
     // ---------------- 页3：基于知识点记忆（c2：记系列全卡片形态；背面四档自评→FSRS 熟练度） ----------------
@@ -1713,6 +1805,7 @@
         practice_knowledge: '从知识点练', practice_errors: '错题练习',
         memory_overview: '记·科目总览', memory_knowledge: '记知识点',
         memory_errors: '记错题', knowledge_point: '知识点详情',
+        micro_course: '我的微课',
         knowledge_base: '知识库', settings: '设置'
     };
     function crumbName(cid) { return PAGE_NAMES[cid] || cid; }
@@ -1850,7 +1943,11 @@
             h += '<div class="cl-card p-4 flex items-center gap-3 flex-wrap">';
             h += '<button class="cl-btn-primary !h-9 text-xs" data-act="assess">' + icon('sparkles', 'w-4 h-4') + ' 熟练度评估</button>';
             h += '<button class="cl-btn-ghost !h-9 text-xs" data-act="notes">' + icon('book-open', 'w-4 h-4') + ' 基于笔记练习</button>';
+            h += '<button class="cl-btn-ghost !h-9 text-xs" data-act="microcourse">' + icon('graduation-cap', 'w-4 h-4') + ' 重讲这个知识点</button>';
+            h += '<button class="cl-btn-ghost !h-9 text-xs" data-act="teach">' + icon('mic', 'w-4 h-4') + ' AI老师讲</button>';
+            h += '<button class="cl-btn-ghost !h-9 text-xs hidden" data-act="mchist">' + icon('history', 'w-4 h-4') + ' 微课历史</button>';
             h += '<span data-role="act-hint" class="text-xs text-cl-text-3"></span></div>';
+            h += '<div data-role="mc-history" class="cl-card p-4 space-y-1 hidden"></div>';
             // c3：记忆数据面板（曲线+星值+手动熟练度），详情页默认展开
             h += '<div class="cl-card p-6" data-mw-root>' + memoryPanelHtml() + '</div>';
             h += '<div data-role="assess-panel" class="cl-card p-6 hidden"></div>';
@@ -1889,15 +1986,49 @@
                     var act = b.getAttribute('data-act');
                     if (act === 'assess') startAssess(b);
                     else if (act === 'notes') startNotePractice(b);
+                    else if (act === 'microcourse') openMicroCourseConfirm({ kp_id: Number(pid), label: '知识点「' + (det.name || '') + '」' });
+                    else if (act === 'teach') goAiTeach({ kind: 'kp', kp_id: Number(pid) }, b);
                     else if (act === 'errprac') openPracticeChooser('error');
-                    else openPracticeChooser('analogy'); // P5：举一反三改为智能/手动模式弹窗
+                    else if (act === 'analogy') openPracticeChooser('analogy'); // P5：举一反三改为智能/手动模式弹窗（三期评审 Critical-1：显式匹配，mchist 由 loadMcHistory 自行绑定，不走兜底）
                 });
             });
             mountMemoryWidgets(main, 'kp', pid); // 每次整页重渲染后重新挂载取最新曲线/星值
+            loadMcHistory(); // 三期入口管理：本知识点微课历史徽标+列表（有历史才露出）
             bindDescEdit(); // P3 描述编辑（Vditor）
             renderDescView(); // 描述按 MD 渲染（含图片水合）
             loadLinkedNotes();
             loadLinkedQuestions();
+        }
+
+        // —— 三期入口管理：本知识点的微课历史（生成过就亮出来，防不知情重复扣费；失败静默不阻塞页面） ——
+        function loadMcHistory() {
+            getJSON('/api/micro-course/history?kp_id=' + encodeURIComponent(pid)).then(function (d) {
+                if (!document.body.contains(main)) return;
+                var cs = (d && d.success === true && d.courses) || [];
+                if (!cs.length) return;
+                var btn = main.querySelector('[data-act="microcourse"]');
+                if (btn) btn.innerHTML = icon('graduation-cap', 'w-4 h-4') + ' 重讲这个知识点（已有 ' + cs.length + ' 门）';
+                var chip = main.querySelector('[data-act="mchist"]');
+                var box = main.querySelector('[data-role="mc-history"]');
+                if (!chip || !box) return;
+                chip.classList.remove('hidden');
+                box.innerHTML = '<div class="cl-section-title mb-1">' + icon('graduation-cap', 'w-4 h-4 text-cl-primary') + ' 本知识点的微课历史（共 ' + cs.length + ' 门）</div>'
+                    + cs.map(function (c) {
+                        return '<button class="w-full text-left flex items-center gap-2 rounded-clbtn px-3 py-2 hover:bg-cl-bg transition-colors" data-mc-open="' + esc(c.course_key) + '" data-mc-title="' + esc(c.title || '') + '">'
+                            + statusBadge(c.status)
+                            + '<span class="text-[13px] font-semibold text-cl-text flex-1 min-w-0 truncate">' + esc(c.title || '未命名微课') + '</span>'
+                            + '<span class="text-[11px] text-cl-text-3 shrink-0">页 ' + esc(String(c.pages_done || 0)) + '/' + esc(String(c.pages || 0)) + ' · ' + esc(relTime(c.updated_time)) + '</span>'
+                            + icon('chevron-right', 'w-3.5 h-3.5 text-cl-text-3') + '</button>';
+                    }).join('');
+                if (!chip.__b) { chip.__b = true; chip.addEventListener('click', function () { box.classList.toggle('hidden'); }); }
+                box.querySelectorAll('[data-mc-open]').forEach(function (b) {
+                    if (b.__b) return; b.__b = true;
+                    b.addEventListener('click', function () {
+                        try { localStorage.setItem('pm_pending_course', JSON.stringify({ key: b.getAttribute('data-mc-open'), title: b.getAttribute('data-mc-title') || '', ts: Date.now() })); } catch (e) { /* 存储不可用时仍导航 */ }
+                        goMenu('micro_course');
+                    });
+                });
+            }).catch(function () { /* 历史为增强项：拉不到就不显示，不打扰主流程 */ });
         }
 
         // —— P3 描述编辑：手动输入 / 大模型生成 / 笔记关键字摘取（无 LLM）/ LLM 整理 ——
@@ -2749,11 +2880,13 @@
                         + mdqHtml(d.question, 'text-[13px] text-cl-text flex-1 break-words max-h-32 overflow-y-auto') + '</div>'
                         + optionsHtml(oq, true, d.user_answer)
                         + '<p class="text-xs text-cl-text-3 mt-1">你的答案：' + mdqHtml(d.user_answer || '未选', '', true) + '　正确答案：' + mdqHtml(d.correct_answer, '', true) + '</p>'
-                        + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '') + '</div>';
+                        + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '')
+                        + (!d.is_correct && d.teach_error_id ? '<div class="mt-2"><button class="cl-btn-ghost !h-7 !text-xs" data-pp-teach="' + d.teach_error_id + '">' + icon('mic', 'w-3.5 h-3.5') + ' AI老师讲</button></div>' : '') + '</div>';
                 });
                 h += '</div>';
                 p.innerHTML = h;
                 hydrateMdSlots(p); // 评估结果：原题/答/解析公式渲染
+                bindResultTeach(p); // v0.2.8：答错行「AI老师讲」进小黑板
                 // 头部掌握度同步刷新（免重拉详情）
                 if (state.det) {
                     state.det.mastery_score = score;
@@ -2902,11 +3035,13 @@
                         + optionsHtml(oq, true, d.user_answer)
                         + '<p class="text-xs text-cl-text-3 mt-1">你的答案：' + mdqHtml(d.user_answer || '未答', '', true) + '　正确答案：' + mdqHtml(d.correct_answer, '', true) + '</p>'
                         + (d.comment ? '<div class="mt-1"><span class="text-xs text-cl-text-3">AI 点评：</span>' + mdqHtml(d.comment, 'text-xs text-cl-text-3 break-words') + '</div>' : '')
-                        + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '') + '</div>';
+                        + (d.explanation ? '<div class="mt-1"><span class="text-xs text-cl-text-3">解析：</span>' + mdqHtml(d.explanation, 'text-xs text-cl-text-3 break-words') + '</div>' : '')
+                        + (!d.is_correct && d.teach_error_id ? '<div class="mt-2"><button class="cl-btn-ghost !h-7 !text-xs" data-pp-teach="' + d.teach_error_id + '">' + icon('mic', 'w-3.5 h-3.5') + ' AI老师讲</button></div>' : '') + '</div>';
                 });
                 h += '</div>';
                 p.innerHTML = h;
                 hydrateMdSlots(p); // 判分结果：原题/答/点评/解析公式渲染
+                bindResultTeach(p); // v0.2.8：答错行「AI老师讲」进小黑板
                 p.querySelector('[data-role="prac-close"]').addEventListener('click', function () { p.classList.add('hidden'); p.innerHTML = ''; });
                 // 头部掌握度同步刷新（与评估同口径；错题数/最近练习在再次进入本页时刷新）
                 if (state.det) {
@@ -3165,8 +3300,1008 @@
         });
     }
 
+    // ---------------- 微课页（S1 知识点→微课 + 二期交互仿真/语音旁白，2026-10-30） ----------------
+    // 双形态：默认列表；pm_pending_course 旗标 {key,title,ts} 直达详情（10s 过期 + 幂等消费，与 pm_pending_point 同契约）。
+    // generating/regenerating 时每 3s 轮询详情端点（逐页增量落库，进度直接读库，不依赖内存任务表，天然抗重启）；
+    // quiz 页作答走公共引擎 pmPractice + submitPointPractice 桥（判分+错题入池+FSRS 闭环，评审 M-1）；
+    // 二期：interactive 页 iframe srcdoc 沙箱渲染；narration 用浏览器原生 speechSynthesis 朗读（零成本）。
+    // 实验页 message 转发钩子：模块级单例，boot 时替换（SPA 片段重注入不得叠加监听）
+    var mcSimHook = null;
+    if (!global.__mcSimHooked) {
+        global.__mcSimHooked = true;
+        global.addEventListener('message', function (e) { if (mcSimHook) { try { mcSimHook(e); } catch (err) { /* 探针异常不扰宿主 */ } } });
+    }
+    function bootMicroCourse(root) {
+        var crumb = root.querySelector('#mc-crumb');
+        var main = root.querySelector('[data-role="main"]');
+        var pending = null;
+        try {
+            var raw = localStorage.getItem('pm_pending_course');
+            if (raw) {
+                localStorage.removeItem('pm_pending_course');
+                var pc = JSON.parse(raw);
+                if (pc && pc.key && Date.now() - (pc.ts || 0) <= 10000) pending = pc;
+            }
+        } catch (e) { /* 旗标损坏不影响主流程 */ }
+        // 片段重注入（连点）时旗标已被首次 boot 消费：10s 内沿用最近消费记录（与 bootKnowledgePoint 同契约）
+        if (!pending && global.__mcLastConsumed && Date.now() - (global.__mcLastConsumed.ts || 0) <= 10000) {
+            pending = global.__mcLastConsumed;
+        }
+        if (pending) global.__mcLastConsumed = { key: pending.key, title: pending.title || '', ts: Date.now() };
+
+        var st = { key: '', course: null, scenes: [], idx: 1, sceneFp: '',
+                   // 七期：互动页按需生成元信息（worthy=适合则翻开自动生成；cost=单页积分提示）
+                   meta: { worthy: false, note: '', cost: 0 }, autoFired: {}, dispatching: false };
+        var pollTimer = null;
+        // 视图代次守卫（评审 R2-3，本文件 guard() 同约定）：切列表/切课后，在飞异步响应不得回写旧视图
+        var viewSeq = 0;
+        function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+        function isBusy() { return !!(st.course && (st.course.status === 'generating' || st.course.status === 'regenerating')); }
+
+        // ===== 二期·语音旁白（浏览器原生 TTS；评审 C3：SPA 片段替换无 unmount 钩子，
+        // boot 时无条件 cancel 残留朗读，朗读队列另受 gen 令牌控制）=====
+        var ttsOk = 'speechSynthesis' in global;
+        var tts = { q: [], playing: false, paused: false, rate: 1, auto: false, lastKey: '', stoppedKey: '', gen: 0, said: 0, total: 0 };
+        try { tts.rate = parseFloat(localStorage.getItem('mc_tts_rate')) || 1; } catch (e) { /* 存储不可用用默认 */ }
+        try {
+            var isTouch = !!(global.matchMedia && global.matchMedia('(pointer: coarse)').matches);
+            var ap = localStorage.getItem('mc_tts_auto');
+            tts.auto = ap === null ? !isTouch : ap === '1';  // 默认桌面开、触屏关（评审 Major-3）
+        } catch (e) { tts.auto = true; }
+        if (ttsOk) { try { global.speechSynthesis.cancel(); } catch (e) { /* 忽略 */ } }
+        if (ttsOk) {
+            // Chrome 长语音 ~15s 静默截断的保活 ping（已分句 ≤80 字，双保险）；
+            // 旧 boot 泄漏的定时器因各自 tts.playing 恒 false 而无副作用
+            setInterval(function () {
+                if (tts.playing && !tts.paused && global.speechSynthesis.speaking) {
+                    global.speechSynthesis.pause(); global.speechSynthesis.resume();
+                }
+            }, 10000);
+        }
+        // 按中文标点分句，单句≤ 80 字（过长 Chrome 易静默截断），最小 20 字避免碎片
+        function splitNarr(t) {
+            var out = [], buf = '';
+            for (var i = 0; i < String(t).length; i++) {
+                var ch = String(t)[i];
+                buf += ch;
+                if ('。！？；!?;\n'.indexOf(ch) >= 0 && buf.length >= 20) { out.push(buf); buf = ''; }
+                else if (buf.length >= 80) { out.push(buf); buf = ''; }
+            }
+            if (buf.trim()) out.push(buf);
+            return out;
+        }
+        // ===== 朗读音色升级（用户反馈「机器味太重」）：旧逻辑抓第一个 zh 音色，
+        // Windows 上常命中最老的机器味桌面音色。现按名称特征（Natural/Neural 等）
+        // + zh-CN 优先级排序自动选最自然的，且朗读条可选择锁定（localStorage mc_tts_voice）。
+        function voiceScore(v) {
+            var n = v.name || '', s = 0;
+            if (/natural|neural|premium|enhanced/i.test(n)) s += 10;  // 神经/自然音色，真人感明显提升
+            if (/xiaoxiao|yaoyao|xiaoyi|yunxi|yunjian|yunxia|wanlung|hiu|shasha/i.test(n)) s += 4;  // 已知中文系列名
+            if ((v.lang || '').toLowerCase() === 'zh-cn') s += 5;      // 简中优先
+            return s;
+        }
+        function ttsVoiceList() {
+            var vs = global.speechSynthesis.getVoices() || [], zh = [];
+            for (var i = 0; i < vs.length; i++) if (/^zh/i.test(vs[i].lang || '')) zh.push(vs[i]);
+            zh.sort(function (a, b) {
+                return voiceScore(b) - voiceScore(a) || String(a.name).localeCompare(String(b.name));
+            });
+            return zh;
+        }
+        function voiceKey(v) { return (v.name || '') + '|' + (v.lang || ''); }
+        function ttsVoice() {
+            var zh = ttsVoiceList();
+            if (!zh.length) return null;
+            var want = null;
+            try { want = localStorage.getItem('mc_tts_voice'); } catch (e) { /* 存储不可用则自动挑选 */ }
+            if (want) { for (var i = 0; i < zh.length; i++) if (voiceKey(zh[i]) === want) return zh[i]; }
+            return zh[0];  // 自动模式：排序后最自然的一个
+        }
+        function voiceSelHtml() {
+            var zh = ttsVoiceList(), cur = ttsVoice(), h = '<option value="">自动·最自然</option>';
+            for (var i = 0; i < zh.length; i++)
+                h += '<option value="' + esc(voiceKey(zh[i])) + '"' +
+                     (cur && voiceKey(zh[i]) === voiceKey(cur) ? ' selected' : '') + '>' + esc(zh[i].name) + '</option>';
+            if (!zh.length) h += '<option value="" disabled>声音载入中…</option>';  // 音色表异步加载（掉坑笔记），voiceschanged 后刷新
+            return h;
+        }
+        function narrKey(s) {
+            var n = (s.content && s.content.narration) || '';
+            return st.key + ':' + s.seq + ':' + n.length + ':' + n.slice(0, 24);
+        }
+        function updateTtsBtn() {
+            var pb = main.querySelector('[data-tts-play]'); if (!pb) return;
+            pb.textContent = !tts.playing ? '朗读本页' : (tts.paused ? '继续朗读' : '暂停朗读');
+            var w = main.querySelector('[data-tts-voice]');
+            if (w) { if (tts.playing && !tts.paused && !ttsVoice()) w.classList.remove('hidden'); else w.classList.add('hidden'); }
+        }
+        function stopSpeak() {
+            tts.gen++; tts.q = [];
+            // 五期：画布分步播放共用朗读引擎，停止朗读时一并收台（画面态不变）
+            cp.gen++; cp.playing = false;
+            if (tts.playing) tts.stoppedKey = tts.lastKey;
+            tts.playing = false; tts.paused = false;
+            if (ttsOk) { try { global.speechSynthesis.cancel(); } catch (e) { /* 忽略 */ } }
+            updateTtsBtn();
+            spotResync(); // 四期 A1：朗读停了，聚光灯退回定时推进
+        }
+        function speakNext() {
+            if (!ttsOk || !tts.playing || tts.paused) return;
+            var g0 = tts.gen;  // 代数令牌：cancel/切页后旧 utterance 回调不得续播新队列
+            if (!tts.q.length) { tts.playing = false; updateTtsBtn(); return; }
+            var u = new global.SpeechSynthesisUtterance(tts.q.shift());
+            u.lang = 'zh-CN';
+            var v = ttsVoice(); if (v) u.voice = v;
+            u.rate = tts.rate;
+            u.onend = function () { if (g0 === tts.gen) setTimeout(speakNext, 60); };
+            u.onerror = function () { if (g0 === tts.gen) setTimeout(speakNext, 60); };
+            global.speechSynthesis.speak(u);
+            // 四期 A1：句→块比例映射，老师读到哪段，聚光灯就亮到哪段
+            tts.said++;
+            if (spot.on && spotTtsHere()) spotGoto(Math.min(spot.n - 1, Math.floor(tts.said * spot.n / Math.max(1, tts.total))));
+            updateTtsBtn();
+        }
+        function startSpeak(narr, key) {
+            if (!ttsOk || !narr) return;
+            if (key === tts.lastKey && tts.playing) return;  // 同键不重发：轮询重渲染不打断朗读（评审 Major-5）
+            stopSpeak();
+            tts.lastKey = key; tts.stoppedKey = '';
+            tts.q = splitNarr(narr); tts.playing = true;
+            tts.total = tts.q.length; tts.said = 0; // 四期 A1：总句数供块映射
+            speakNext();
+            spotResync();
+        }
+        function ttsBarHtml(ct) {
+            return '<div class="flex items-center gap-2 flex-wrap mb-3 rounded-clbtn bg-cl-bg px-3 py-2" data-tts-bar>'
+                + '<button class="cl-btn-primary !h-8 text-xs" data-tts-play>朗读本页</button>'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-tts-stop>停止</button>'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-tts-rate>语速 ' + tts.rate + 'x</button>'
+                + '<select class="!h-8 text-xs rounded-clbtn bg-cl-bg text-cl-text-3 border border-cl-border max-w-[200px]" data-tts-voice-sel title="选择朗读声音">' + voiceSelHtml() + '</select>'
+                + '<label class="flex items-center gap-1 text-[11px] text-cl-text-3 cursor-pointer"><input type="checkbox" data-tts-auto class="rounded border-cl-border text-cl-primary"' + (tts.auto ? ' checked' : '') + '>自动朗读</label>'
+                + '<p class="text-xs text-cl-text-3 flex-1 min-w-[140px] truncate" title="' + esc(ct.narration) + '">' + esc(ct.narration.slice(0, 60)) + '…</p>'
+                + '<p class="text-xs text-cl-warning w-full hidden" data-tts-voice>当前浏览器没有中文语音，可能听不到声音（可在系统/浏览器设置中添加语音）。</p></div>';
+        }
+        function bindTtsBar() {
+            if (!ttsOk) return;
+            var bar = main.querySelector('[data-tts-bar]'); if (!bar) return;
+            var pb = bar.querySelector('[data-tts-play]');
+            if (pb && !pb.__b) { pb.__b = true; pb.addEventListener('click', function () {
+                var s = currentScene(); var n = s && s.content && s.content.narration; if (!n) return;
+                if (tts.playing && !tts.paused) { tts.paused = true; try { global.speechSynthesis.pause(); } catch (e) { /* 忽略 */ } }
+                else if (tts.paused) { tts.paused = false; try { global.speechSynthesis.resume(); } catch (e) { /* 忽略 */ } }
+                else startSpeak(n, narrKey(s));
+                updateTtsBtn();
+            }); }
+            var sb = bar.querySelector('[data-tts-stop]');
+            if (sb && !sb.__b) { sb.__b = true; sb.addEventListener('click', function () { stopSpeak(); }); }
+            var rt = bar.querySelector('[data-tts-rate]');
+            if (rt && !rt.__b) { rt.__b = true; rt.addEventListener('click', function () {
+                var opts = [0.8, 1, 1.25];
+                tts.rate = opts[(opts.indexOf(tts.rate) + 1) % opts.length];
+                try { localStorage.setItem('mc_tts_rate', String(tts.rate)); } catch (e) { /* 忽略 */ }
+                rt.textContent = '语速 ' + tts.rate + 'x';  // 新语速自下一句生效（当前句不重发）
+            }); }
+            var ab = bar.querySelector('[data-tts-auto]');
+            if (ab && !ab.__b) { ab.__b = true; ab.addEventListener('change', function () {
+                tts.auto = !!ab.checked;
+                try { localStorage.setItem('mc_tts_auto', tts.auto ? '1' : '0'); } catch (e) { /* 忽略 */ }
+                if (!tts.auto) stopSpeak();
+            }); }
+            var vsel = bar.querySelector('[data-tts-voice-sel]');
+            if (vsel && !vsel.__b) { vsel.__b = true;
+                vsel.addEventListener('change', function () {
+                    try { localStorage.setItem('mc_tts_voice', vsel.value); } catch (e) { /* 忽略 */ }
+                    // 空闲时立刻用新音色念一句样例供听辨；播放中不插样例（下一句自然用新音色，不打断）
+                    if (!tts.playing) {
+                        var v = ttsVoice(); if (!v) return;
+                        try {
+                            global.speechSynthesis.cancel();
+                            var u = new global.SpeechSynthesisUtterance('这就是选中的声音，念一句给您听。');
+                            u.lang = v.lang || 'zh-CN'; u.voice = v; u.rate = tts.rate;
+                            global.speechSynthesis.speak(u);
+                        } catch (e) { /* 忽略 */ }
+                    }
+                });
+                if (!(global.speechSynthesis.getVoices() || []).length) {
+                    // 首次打开音色表未就绪：等 voiceschanged 刷一次下拉（once 防重复挂泄漏）
+                    global.speechSynthesis.addEventListener('voiceschanged', function () {
+                        if (document.contains(vsel)) vsel.innerHTML = voiceSelHtml();
+                    }, { once: true });
+                }
+            }
+            updateTtsBtn();
+        }
+
+        // ===== 四期 A1·逐段聚光灯播放（纯前端：文字页型按顶层块切分，随朗读/定时逐块点亮）=====
+        var spot = { on: false, i: 0, n: 0, timer: null };
+        function spotNodes() { return [].slice.call(main.querySelectorAll('[data-spot]')); }
+        function spotTtsHere() {
+            var sc = currentScene();
+            return !!(sc && tts.playing && narrKey(sc) === tts.lastKey);
+        }
+        function spotClearTimer() { if (spot.timer) { clearInterval(spot.timer); spot.timer = null; } }
+        function spotResync() {
+            if (!spot.on) return;
+            spotClearTimer();
+            // 本页朗读在播 → 句同步推进（speakNext 钩子驱动）；否则定时推进
+            if (!spotTtsHere()) spot.timer = setInterval(function () { if (spot.on) spotGoto(spot.i + 1); }, 2500);
+        }
+        function spotRefresh() {
+            var nodes = spotNodes();
+            spot.n = nodes.length;
+            if (spot.i >= spot.n) spot.i = Math.max(0, spot.n - 1);
+            nodes.forEach(function (el, i) {
+                el.classList.toggle('mc-spot-lit', spot.on && i === spot.i);
+                el.classList.toggle('mc-spot-dim', spot.on && i !== spot.i);
+            });
+            if (!spot.on) return;
+            var cnt = main.querySelector('[data-spot-count]');
+            if (cnt) cnt.textContent = (spot.i + 1) + '/' + spot.n;
+            var cur = nodes[spot.i];
+            if (cur) { try { cur.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { /* 老环境不跟随即可 */ } }
+        }
+        function updateSpotBtn() {
+            var t = main.querySelector('[data-spot-toggle]'); if (!t) return;
+            t.innerHTML = spot.on ? icon('square', 'w-4 h-4') + ' 退出逐段播放' : icon('play', 'w-4 h-4') + ' 逐段播放';
+            var ctrl = main.querySelector('[data-spot-ctrl]'); if (ctrl) ctrl.classList.toggle('hidden', !spot.on);
+            var cnt = main.querySelector('[data-spot-count]'); if (cnt) cnt.classList.toggle('hidden', !spot.on);
+        }
+        function spotGoto(i) {
+            if (!spot.on) return;
+            spot.i = Math.max(0, Math.min(spot.n - 1, i));
+            spotRefresh();
+            if (spot.i >= spot.n - 1) spotClearTimer(); // 末块停下，不回绕
+        }
+        function spotStart() {
+            spot.n = spotNodes().length;
+            if (spot.n < 2) return;
+            spot.on = true; spot.i = 0;
+            // 课堂感：播放伴随朗读（本页没有在播且讲稿可用时自动发起）
+            var sc = currentScene();
+            if (ttsOk && sc && sc.content && sc.content.narration && !tts.playing) startSpeak(sc.content.narration, narrKey(sc));
+            spotRefresh(); spotResync(); updateSpotBtn();
+        }
+        function spotStop() {
+            spot.on = false; spotClearTimer(); spotRefresh(); updateSpotBtn();
+        }
+        function spotBarHtml() {
+            return '<div class="flex items-center gap-2 flex-wrap mb-2" data-spot-bar>'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-spot-toggle></button>'
+                + '<span class="cl-badge bg-cl-primary-soft text-cl-primary hidden" data-spot-count></span>'
+                + '<div class="flex items-center gap-1 hidden" data-spot-ctrl>'
+                + '<button class="cl-btn-ghost !h-8 px-3 text-xs" data-spot-prev>上一段</button>'
+                + '<button class="cl-btn-ghost !h-8 px-3 text-xs" data-spot-next>下一段</button></div>'
+                + '<span class="text-[11px] text-cl-text-3">像老师讲课一样逐段点亮</span></div>';
+        }
+        function spotWrap(i, inner) { return '<div class="mc-spot rounded-clbtn" data-spot="' + i + '">' + inner + '</div>'; }
+        // 四期 A2：讲解页内嵌交互图解 widget（与实验页同管线：simDoc shim + 只给 allow-scripts，
+        // 永不加 allow-same-origin）；err 提示紧跟本帧，供 mcSimHook 按帧定位
+        function widgetFrameHtml(html) {
+            return '<div class="my-3"><iframe class="w-full min-h-[240px] rounded-clbtn border border-cl-border bg-white" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="' + esc(simDoc(html)) + '" data-sim-frame data-widget-frame></iframe>'
+                + '<p class="text-xs text-cl-danger mt-1 hidden" data-sim-err></p>'
+                + '<p class="text-[11px] text-cl-text-3 mt-1">图解组件在独立沙箱中运行，动手调参数观察变化。</p></div>';
+        }
+
+        // ===== 五期·分步画布播放（explain/example：PPT 式分步动画，声画由同一 step 序号驱动）=====
+        // 同步协议：宿主→舞台 postMessage({t:'mc-step', i, n, caption})，与服务端
+        // micro_course._STEP_STAGE_RULES 同口径，改一侧必改另一侧；每步 narration 整条
+        // 作为一个 utterance 朗读（不走 splitNarr 切句），onend → 推下一步。
+        // 旧存量页（body_md/problem_md 形态）不带 canvas_html → 仍走四期聚光灯兜底。
+        function isCanvasScene(s) {
+            var ct = s && s.status === 'done' && s.content;
+            return !!(ct && (s.scene_type === 'explain' || s.scene_type === 'example')
+                && ct.canvas_html && Array.isArray(ct.steps) && ct.steps.length);
+        }
+        var cp = { i: 0, playing: false, gen: 0, key: '', stoppedKey: '' };
+        function cpSceneKey(s) {
+            return st.key + ':' + s.seq + ':' + String(s.updated_time || '') + ':' + (s.content.steps || []).length;
+        }
+        function canvasPlayerHtml(ct) {
+            var steps = ct.steps || [];
+            // 舞台复用实验页沙箱管线（simDoc shim 报高度/报错 + 只给 allow-scripts）；
+            // data-canvas-frame 标记供 mcSimHook 多帧匹配与重推定位
+            return '<iframe class="w-full min-h-[420px] rounded-clbtn border border-cl-border bg-white"'
+                + ' sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="' + esc(simDoc(ct.canvas_html)) + '" data-sim-frame data-canvas-frame></iframe>'
+                + '<p class="text-xs text-cl-danger mt-2 hidden" data-sim-err></p>'
+                + '<div class="rounded-clbtn bg-cl-bg px-4 py-3 mt-2" data-cp-bar>'
+                + '<p class="text-[15px] leading-relaxed text-cl-text min-h-[1.5em]" data-mc-caption>' + esc((steps[0] || {}).caption || '') + '</p>'
+                + '<div class="flex items-center gap-1.5 flex-wrap mt-2">' + steps.map(function (x, k) {
+                    return '<button class="mc-dot w-2.5 h-2.5 rounded-full bg-cl-border transition-colors" data-cp-dot="' + k + '" aria-label="第 ' + (k + 1) + ' 步"></button>';
+                }).join('') + '</div>'
+                + '<div class="flex items-center gap-2 mt-2.5 flex-wrap">'
+                + '<button class="cl-btn-primary !h-8 text-xs" data-cp-play>播放</button>'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-cp-prev>上一段</button>'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-cp-next>下一段</button>'
+                + '<span class="cl-badge bg-cl-surface text-cl-text-2" data-cp-count></span>'
+                + '<span class="text-[11px] text-cl-text-3">老师念到哪步，画面就变到哪步</span></div></div>';
+        }
+        function cpPost(i, n, caption) {
+            var fr = main.querySelector('[data-canvas-frame]');
+            if (!fr || !fr.contentWindow) return;
+            try { fr.contentWindow.postMessage({ t: 'mc-step', i: i, n: n, caption: caption }, '*'); } catch (e) { /* 舞台未就绪无碍 */ }
+        }
+        function cpPush(i) {  // 画面/字幕/步点切到第 i 步（只推视觉，不起朗读）
+            var s = currentScene();
+            if (!s || !isCanvasScene(s)) return;
+            var steps = s.content.steps;
+            cp.i = Math.max(0, Math.min(steps.length - 1, i));
+            var capEl = main.querySelector('[data-mc-caption]');
+            if (capEl) capEl.textContent = steps[cp.i].caption || '';
+            var cnt = main.querySelector('[data-cp-count]');
+            if (cnt) cnt.textContent = (cp.i + 1) + '/' + steps.length;
+            main.querySelectorAll('[data-cp-dot]').forEach(function (b, k) {
+                b.classList.toggle('bg-cl-primary', k === cp.i);
+                b.classList.toggle('bg-cl-border', k !== cp.i);
+            });
+            // srcdoc 舞台监听注册有异步窗口：立发一次 + 600ms 补发一次（幂等协议，重收不坏）
+            // M-3：补发不能读 live cp.i / 旧闭包 steps（600ms 内可能已切页/跳步越界）——调用时冻结本次值
+            var iSnap = cp.i, nSnap = steps.length, capSnap = steps[cp.i].caption || '';
+            cpPost(iSnap, nSnap, capSnap);
+            setTimeout(function () { cpPost(iSnap, nSnap, capSnap); }, 600);
+        }
+        function cpUpdateBtn() {
+            var b = main.querySelector('[data-cp-play]');
+            if (b) b.textContent = cp.playing ? '暂停' : '播放';
+        }
+        function cpSpeak(i, g0) {
+            if (g0 !== cp.gen || !cp.playing) return;  // M-1：入口代数+播放态守卫（暂停落在 onend→150ms 间隙里也不漏念下一步，speakNext 同口径）
+            var s = currentScene();
+            if (!s || !isCanvasScene(s) || !stepsAt(s)[i]) { cp.playing = false; cpUpdateBtn(); return; }
+            var u = new global.SpeechSynthesisUtterance(stepsAt(s)[i].narration);
+            u.lang = 'zh-CN';
+            var v = ttsVoice(); if (v) u.voice = v;
+            u.rate = tts.rate;
+            u.onend = function () {
+                if (g0 !== cp.gen || !cp.playing) return;  // 代数令牌：跳步/切页后旧回调作废（speakNext 同法）
+                var stp = stepsAt(currentScene());
+                if (!stp) return;
+                if (i + 1 < stp.length) { cpPush(i + 1); setTimeout(function () { cpSpeak(i + 1, g0); }, 150); }
+                else { cp.playing = false; cpUpdateBtn(); }  // 末步自然收尾
+            };
+            u.onerror = u.onend;  // 无中文语音/被插断也继续步进，不卡死
+            global.speechSynthesis.speak(u);
+        }
+        function stepsAt(s) { return s && s.content && s.content.steps; }
+        function cpStopAll() {  // 停播放与朗读（画面保持当前步态）
+            cp.gen++; cp.playing = false;
+            if (ttsOk) { try { global.speechSynthesis.cancel(); } catch (e) { /* 忽略 */ } }
+            cpUpdateBtn();
+        }
+        function cpStart() {
+            if (!ttsOk) return;
+            var s = currentScene();
+            if (!s || !isCanvasScene(s)) return;
+            cpStopAll();
+            cp.stoppedKey = '';
+            cp.key = cpSceneKey(s);
+            cp.playing = true;
+            cpPush(cp.i);   // 从当前步起步：先同步画面再开口
+            cpSpeak(cp.i, cp.gen);
+            cpUpdateBtn();
+        }
+        function cpStep(i, followPlay) {
+            // 手动跳步：在播→重读新步；暂停→只换画面（跳步可能任意序，舞台协议已兼容）
+            var was = cp.playing;
+            cpStopAll();
+            cpPush(i);
+            if (was && followPlay) cpStart();
+        }
+        function bindCanvasBar() {
+            var bar = main.querySelector('[data-cp-bar]');
+            if (!bar) { cpStopAll(); return; }  // 切到非画布页：停发朗读（画面态由下一帧接管）
+            var pb = bar.querySelector('[data-cp-play]');
+            if (pb && !pb.__b) { pb.__b = true; pb.addEventListener('click', function () {
+                if (cp.playing) { cp.stoppedKey = cp.key; cpStopAll(); }  // 手动暂停记键，防自动重发
+                else cpStart();
+            }); }
+            var pv = bar.querySelector('[data-cp-prev]');
+            if (pv && !pv.__b) { pv.__b = true; pv.addEventListener('click', function () { cpStep(cp.i - 1, true); }); }
+            var nx = bar.querySelector('[data-cp-next]');
+            if (nx && !nx.__b) { nx.__b = true; nx.addEventListener('click', function () { cpStep(cp.i + 1, true); }); }
+            bar.querySelectorAll('[data-cp-dot]').forEach(function (d) {
+                if (d.__b) return; d.__b = true;
+                d.addEventListener('click', function () { cpStep(parseInt(d.getAttribute('data-cp-dot'), 10), true); });
+            });
+            cpUpdateBtn();
+        }
+        // 文字页型切成聚光灯块序列；非文字页型/块数不足返回 null（sceneBody 退回原整段渲染）
+        function textBlocksHtml(s, ct) {
+            var i = 0, blocks, out = '';
+            var bodyCls = 'text-sm text-cl-text-2 leading-relaxed break-words';
+            if (s.scene_type === 'explain') {
+                blocks = splitMdBlocks(ct.body_md || '');
+                var kps = ct.key_points || [];
+                if (blocks.length < 1 || (blocks.length < 2 && !kps.length)) return null;
+                // 四期 A2：图解组件插在正文第 2 块后（无 tb 降级路径同样渲染，见 sceneBody）
+                var whtml = (typeof ct.widget === 'string' && ct.widget) ? widgetFrameHtml(ct.widget) : '';
+                var parts = [];
+                blocks.forEach(function (b) {
+                    parts.push(spotWrap(i++, mdqHtml(b, bodyCls)));
+                    if (parts.length === 2 && whtml) { parts.push(spotWrap(i++, whtml)); whtml = ''; }
+                });
+                if (whtml) parts.push(spotWrap(i++, whtml)); // 正文不足 2 块时兜底插尾部
+                out = parts.join('');
+                if (kps.length) {
+                    out += spotWrap(i++, '<div class="mt-4 pt-4 border-t border-cl-border"><p class="text-xs font-semibold text-cl-text-2 mb-2">本页要点</p>'
+                        + '<ul class="space-y-1.5">' + kps.map(function (k) {
+                            return '<li class="flex items-start gap-2 text-[13px] text-cl-text">' + icon('check', 'w-3.5 h-3.5 text-cl-primary shrink-0 mt-0.5') + mdqHtml(k, '', true) + '</li>';
+                        }).join('') + '</ul></div>');
+                }
+                return { n: i, html: out };
+            }
+            if (s.scene_type === 'example') {
+                blocks = splitMdBlocks(ct.solve_md || '');
+                if (!blocks.length) return null;
+                out = spotWrap(i++, '<p class="text-xs font-semibold text-cl-text-2 mb-1">题目</p>' + mdqHtml(ct.problem_md || '', 'text-sm text-cl-text break-words rounded-clbtn bg-cl-bg px-3 py-2'));
+                out += spotWrap(i++, '<p class="text-xs font-semibold text-cl-text-2 mt-4 mb-1">分步解答</p>');
+                out += blocks.map(function (b) { return spotWrap(i++, mdqHtml(b, bodyCls)); }).join('');
+                return { n: i, html: out };
+            }
+            if (s.scene_type === 'summary') {
+                blocks = splitMdBlocks(ct.body_md || '');
+                if (blocks.length < 2) return null;
+                out = blocks.map(function (b) { return spotWrap(i++, mdqHtml(b, bodyCls)); }).join('');
+                return { n: i, html: out };
+            }
+            return null;
+        }
+        function bindSpotBar() {
+            var t = main.querySelector('[data-spot-toggle]');
+            if (!t) { if (spot.on) spotStop(); return; } // 切到无播放条的页型：退出播放
+            if (!t.__b) { t.__b = true; t.addEventListener('click', function () { spot.on ? spotStop() : spotStart(); }); }
+            var pv = main.querySelector('[data-spot-prev]');
+            if (pv && !pv.__b) { pv.__b = true; pv.addEventListener('click', function () { spotGoto(spot.i - 1); }); }
+            var nx = main.querySelector('[data-spot-next]');
+            if (nx && !nx.__b) { nx.__b = true; nx.addEventListener('click', function () { spotGoto(spot.i + 1); }); }
+            updateSpotBtn();
+            if (spot.on) spotRefresh(); // 轮询重建 DOM 后重放 dim/点亮状态
+        }
+
+        // ===== 二期·交互仿真沙箱（OpenMAIC InteractiveIframeHost 同法）=====
+        // shim 由我们注入（非 LLM 输出）：运行错误上报 + 高度同步；插在 </head> 前，先于实验 JS 生效
+        function simDoc(html) {
+            var shim = '<script>window.onerror=function(m){parent.postMessage({t:"mc-sim-err",m:String(m).slice(0,200)},"*")};'
+                + 'addEventListener("load",function(){setTimeout(function(){parent.postMessage({t:"mc-sim-h",h:document.documentElement.scrollHeight+40},"*")},120)});</' + 'script>';
+            var i = html.indexOf('</head>'); if (i >= 0) return html.slice(0, i) + shim + html.slice(i);
+            var j = html.indexOf('</html>'); if (j >= 0) return html.slice(0, j) + shim + html.slice(j);
+            return shim + html;
+        }
+        mcSimHook = function (e) {
+            var d = e && e.data;
+            if (!d || typeof d !== 'object' || (d.t !== 'mc-sim-h' && d.t !== 'mc-sim-err')) return;  // 消息形状校验
+            // 四期 A2：一页可能多帧（实验页 + 讲解页内嵌图解）——按事件源匹配到具体帧（三重校验保留：节点活性+事件源+形状，评审 C3）
+            var fs = [].slice.call(main.querySelectorAll('[data-sim-frame]'));
+            var f = null;
+            for (var k = 0; k < fs.length; k++) { if (document.contains(fs[k]) && e.source === fs[k].contentWindow) { f = fs[k]; break; } }
+            if (!f) return;
+            if (d.t === 'mc-sim-h') {
+                var hh = parseInt(d.h, 10) || 0;
+                var minH = f.hasAttribute('data-widget-frame') ? 240 : 420; // 图解组件比实验页矮
+                if (hh > 0) f.style.height = Math.max(minH, Math.min(2400, hh)) + 'px';
+            } else {
+                var b2 = (f.parentNode ? f.parentNode.querySelector('[data-sim-err]') : null) || main.querySelector('[data-sim-err]');
+                if (b2) { b2.textContent = '实验组件运行出错：' + (d.m || '未知') + '（可点“重新讲本页”重新生成）'; b2.classList.remove('hidden'); }
+            }
+        };
+        function sceneFingerprint() {
+            var s = currentScene();
+            if (!s) return 'none:' + st.scenes.length + ':' + (st.course ? st.course.status : '');
+            var c = s.content ? JSON.stringify(s.content) : '';
+            return s.seq + ':' + s.status + ':' + c.length + ':' + c.slice(0, 24);
+        }
+        // 两段式确认删除（3s 内二次点才真删，不引入原生 confirm 弹窗）
+        function bindDelButtons(scope, after) {
+            scope.querySelectorAll('[data-del]').forEach(function (b) {
+                if (b.__delBound) return; b.__delBound = true;
+                b.addEventListener('click', function () {
+                    if (b.disabled) return;
+                    if (!b.__armed) {
+                        b.__armed = true; b.textContent = '确认删除？';
+                        setTimeout(function () { if (b.__armed) { b.__armed = false; b.textContent = b.getAttribute('data-del-label') || '删除'; } }, 3000);
+                        return;
+                    }
+                    b.disabled = true;
+                    postJSON('/api/micro-course/' + encodeURIComponent(b.getAttribute('data-del')) + '/delete', {}).then(function (r) {
+                        if (r && r.success === true) { after(); return; }
+                        b.disabled = false; b.__armed = false; b.textContent = (r && r.error) || '删除失败';
+                    }).catch(function (e) { b.disabled = false; b.__armed = false; b.textContent = e.message || '删除失败'; });
+                });
+            });
+        }
+
+        // ---- 列表态 ----
+        function renderList() {
+            stopPoll(); stopSpeak();
+            var seq = ++viewSeq; // 三期评审 Minor-6：与 fetchCourse 同口径，回包时旧 seq 作废防覆盖
+            st.key = ''; st.course = null; st.scenes = [];
+            crumb.innerHTML = '<span class="text-cl-text font-semibold">我的微课</span>';
+            main.innerHTML = '<p class="text-sm text-cl-text-3 py-6">加载中…</p>';
+            getJSON('/api/micro-course/list').then(function (d) {
+                if (seq !== viewSeq || !document.contains(main)) return;
+                if (!d || d.success !== true) throw new Error((d && d.error) || '加载失败');
+                var items = d.items || [];
+                if (!items.length) {
+                    main.innerHTML = emptyBox('还没有微课', '去知识点详情页点「重讲这个知识点」，或在错题练习的薄弱点报告点「讲这个薄弱点」', '去练习总览', 'practice_overview');
+                    bindGoLinks(root);
+                    return;
+                }
+                var h = '<div class="space-y-3">' + items.map(function (c) {
+                    var busy = c.status === 'generating' || c.status === 'regenerating';
+                    return '<div class="cl-card p-4 flex items-center gap-3 flex-wrap">'
+                        + '<span class="cl-badge bg-cl-primary-soft text-cl-primary shrink-0">' + esc(c.subject_name || '未分学科') + '</span>'
+                        + (c.kp_name ? '<button class="cl-badge bg-cl-bg text-cl-text-2 shrink-0 hover:text-cl-primary transition-colors" data-mc-kp="' + esc(String(c.anchor_kp_id || '')) + '" data-mc-kp-name="' + esc(c.kp_name) + '">' + icon('target', 'w-3 h-3') + ' ' + esc(c.kp_name) + '</button>' : '')
+                        + '<div class="min-w-0 flex-1"><p class="text-[14px] font-semibold text-cl-text truncate">' + esc(c.title || '未命名微课') + '</p>'
+                        + '<p class="text-[11px] text-cl-text-3 mt-0.5">页数 ' + esc(String(c.pages_done || 0)) + '/' + esc(String(c.pages || 0)) + ' · 更新于 ' + esc(relTime(c.updated_time)) + '</p></div>'
+                        + statusBadge(c.status)
+                        + '<div class="flex items-center gap-2 shrink-0">'
+                        + '<button class="cl-btn-primary !h-8 text-xs" data-open="' + esc(c.course_key) + '">' + (busy ? '查看进度' : '进入课堂') + '</button>'
+                        + '<button class="cl-btn-ghost !h-8 text-xs text-cl-danger" data-del="' + esc(c.course_key) + '" data-del-label="删除"' + (busy ? ' disabled' : '') + '>删除</button>'
+                        + '</div></div>';
+                }).join('') + '</div>';
+                main.innerHTML = h;
+                main.querySelectorAll('[data-open]').forEach(function (b) {
+                    b.addEventListener('click', function () { st.idx = 1; fetchCourse(b.getAttribute('data-open')); });
+                });
+                bindDelButtons(main, renderList);
+                main.querySelectorAll('[data-mc-kp]').forEach(function (b) { // 三期：知识点徽标反向直达详情页
+                    b.addEventListener('click', function () { goPracticePoint(b.getAttribute('data-mc-kp'), b.getAttribute('data-mc-kp-name')); });
+                });
+            }).catch(function (e) {
+                main.innerHTML = '<div class="cl-card p-6"><p class="text-sm text-cl-danger">微课列表加载失败：' + esc(e.message || '') + '</p></div>';
+            });
+        }
+
+        // ---- 详情态 ----
+        function fetchCourse(key) {
+            var seq = ++viewSeq;
+            getJSON('/api/micro-course/' + encodeURIComponent(key)).then(function (d) {
+                if (!document.contains(main)) { stopPoll(); stopSpeak(); return; }  // 活性守卫（评审 C3）
+                if (seq !== viewSeq) return;
+                if (!d || d.success !== true) { stopPoll(); st.course = null; renderError((d && d.error) || '未找到该微课'); return; }
+                st.key = key; st.course = d.course; st.scenes = d.scenes || [];
+                // 七期：detail 顶层互动页判断/理由/单页价入 st.meta；换课重置自动派发记录
+                st.meta = { worthy: d.interactive_worthy === true,
+                            note: d.interactive_note || '', cost: d.scene_unit_cost || 0 };
+                st.autoFired = {}; st.dispatching = false;
+                st.snap = JSON.stringify([d.course, st.scenes]);
+                if (!st.scenes.some(function (s) { return s.seq === st.idx; })) st.idx = st.scenes.length ? st.scenes[0].seq : 1;
+                renderDetail();
+                if (isBusy()) startPoll(); else stopPoll();
+            }).catch(function (e) { if (seq !== viewSeq) return; stopPoll(); renderError('加载失败：' + (e.message || '未知错误')); });
+        }
+        function renderError(text) {
+            crumb.innerHTML = '<button class="hover:text-cl-primary cursor-pointer transition-colors" data-back-list>我的微课</button>';
+            crumb.querySelector('[data-back-list]').addEventListener('click', renderList);
+            main.innerHTML = '<div class="cl-card p-6"><p class="text-sm text-cl-danger">' + esc(text) + '</p>'
+                + '<button class="cl-btn-ghost !h-9 text-xs mt-3" data-back-list2>返回列表</button></div>';
+            main.querySelector('[data-back-list2]').addEventListener('click', renderList);
+        }
+        function startPoll() {
+            stopPoll();
+            st.fails = 0;
+            pollTimer = setInterval(function () {
+                if (!document.contains(main)) { stopPoll(); stopSpeak(); return; }  // 活性守卫：离页后轮询闭包不得存活（评审 C3）
+                if (!st.key) { stopPoll(); return; }
+                var seq = viewSeq;
+                getJSON('/api/micro-course/' + encodeURIComponent(st.key)).then(function (d) {
+                    if (seq !== viewSeq) return;  // 已切视图，丢弃在飞响应（评审 R2-3）
+                    st.fails = 0;
+                    if (!d || d.success !== true) { stopPoll(); return; }
+                    // 浅比较快照：数据未变则不重建 DOM，避免周期打断阅读（评审 R1-9）
+                    var snap = JSON.stringify([d.course, d.scenes || []]);
+                    if (snap === st.snap) return;
+                    st.snap = snap;
+                    st.course = d.course; st.scenes = d.scenes || [];
+                    renderDetail();
+                    if (!isBusy()) stopPoll();
+                }).catch(function () {
+                    // 瞬时网络抖动不停轮，连续 3 次失败才停（评审 R2-3）
+                    if (seq !== viewSeq) return;
+                    st.fails = (st.fails || 0) + 1;
+                    if (st.fails >= 3) stopPoll();
+                });
+            }, 3000);
+        }
+        function currentScene() {
+            for (var i = 0; i < st.scenes.length; i++) if (st.scenes[i].seq === st.idx) return st.scenes[i];
+            return null;
+        }
+        function sceneBody() {
+            var s = currentScene();
+            if (!s) {
+                // 整课失败且 0 页：给明确原因与重发起引导，不留“等待生成”死态（评审 R1-7）
+                if (st.course && st.course.status === 'failed') {
+                    return '<div class="cl-card p-8 text-center space-y-3">'
+                        + '<p class="text-sm text-cl-danger">微课生成失败：' + esc(st.course.error_note || '原因未知') + '</p>'
+                        + '<p class="text-xs text-cl-text-3">可回到知识点页重新发起，或删除本课后重建。</p></div>';
+                }
+                return '<div class="cl-card p-8 text-center text-sm text-cl-text-3">本课还没有页，等待生成…</div>';
+            }
+            if (s.status === 'standby') {
+                // 七期（用户裁定）：互动页占位卡——适合则翻开自动派发生成（同屏积分提示不拦截），
+                // 不适合则保留页面由用户点按钮才生成；两条分支都未生成前不烧互动页的钱
+                var costTxt = st.meta.cost ? '约消耗 ' + st.meta.cost + ' 积分（相当于一页正文的钱）' : '';
+                if (st.meta.worthy) {
+                    // 评审 M-1：自动派发可能因课程忙态等被拒，兜底按钮保证不进"假死"死角
+                    return '<div class="cl-card p-8 text-center space-y-3">'
+                        + '<p class="text-sm text-cl-text-2 animate-pulse">这个内容适合动手探究，正在为你生成交互实验…</p>'
+                        + '<p class="text-xs text-cl-text-3">' + esc(costTxt) + '，只在你翻开本页时发生；不翻不扣。</p>'
+                        + '<button class="cl-btn-primary !h-9 text-xs" data-standby-go>' + icon('sparkles', 'w-4 h-4') + ' 生成互动实验</button>'
+                        + '<p class="text-xs text-cl-danger" data-standby-hint></p></div>';
+                }
+                return '<div class="cl-card p-8 text-center space-y-3">'
+                    + '<p class="text-sm text-cl-text-2">这一页可以做成动手实验：调参数、看变化，比只看文字更直观。</p>'
+                    + '<p class="text-xs text-cl-text-3">' + esc(st.meta.note || '本课内容以文字推演为主，实验非必需') + '</p>'
+                    + '<button class="cl-btn-primary !h-9 text-xs" data-standby-go>' + icon('sparkles', 'w-4 h-4') + ' 生成互动实验</button>'
+                    + '<p class="text-xs text-cl-text-3">' + esc(costTxt) + '，不点不扣。</p>'
+                    + '<p class="text-xs text-cl-danger" data-standby-hint></p></div>';
+            }
+            if (s.status === 'pending' || s.status === 'generating') {
+                return '<div class="cl-card p-8 text-center"><p class="text-sm text-cl-text-2 animate-pulse">本页生成中…（逐页生成，每页消耗积分）</p></div>';
+            }
+            if (s.status === 'failed') {
+                return '<div class="cl-card p-8 text-center space-y-3">'
+                    + '<p class="text-sm text-cl-danger">本页生成失败：' + esc(s.error_note || '原因未知') + '</p>'
+                    + '<button class="cl-btn-primary !h-9 text-xs" data-regen>' + icon('refresh-cw', 'w-4 h-4') + ' 重新讲本页</button>'
+                    + '<p class="text-xs text-cl-danger" data-regen-hint></p></div>';
+            }
+            var ct = s.content || {};
+            var shown = (ct && ct.title) || s.title || '';
+            var h = '';
+            if (isCanvasScene(s)) {
+                // 五期：分步画布页——画面是主体，字幕条+步点+播放控件；无页级 narration，
+                // 朗读条自然让位；不切聚光灯块（避免两套控件叠加）
+                h += '<div class="cl-card p-6">';
+                h += '<div class="cl-section-title mb-3">' + icon('graduation-cap', 'w-4 h-4 text-cl-primary') + ' ' + esc(shown) + '</div>';
+                h += canvasPlayerHtml(ct);
+                if (s.error_note) h += '<p class="text-xs text-cl-warning mt-2">' + esc(s.error_note) + '</p>';
+                h += '<p class="text-[11px] text-cl-text-3 mt-2">舞台在独立沙箱中运行（无法联网、摸不到本站数据）；也可点步点直接跳到任意一步。</p>';
+                h += '</div>';
+                h += '<div class="flex items-center justify-between">'
+                    + '<button class="cl-btn-ghost !h-8 text-xs" data-seq="' + (st.idx - 1) + '"' + (st.idx <= 1 ? ' disabled' : '') + '>上一页</button>'
+                    + '<button class="cl-btn-ghost !h-8 text-xs" data-seq="' + (st.idx + 1) + '"' + (st.idx >= st.scenes.length ? ' disabled' : '') + '>下一页</button></div>';
+                return h;
+            }
+            if (ttsOk && ct.narration) h += ttsBarHtml(ct);  // 二期：朗读条（特性检测不过整条不渲染）
+            h += '<div class="cl-card p-6">';
+            h += '<div class="cl-section-title mb-3">' + icon('graduation-cap', 'w-4 h-4 text-cl-primary') + ' ' + esc(shown) + '</div>';
+            // 四期 A1：文字页型切块，块数≥2 才出逐段播放条
+            var tb = (s.scene_type === 'explain' || s.scene_type === 'example' || s.scene_type === 'summary') ? textBlocksHtml(s, ct) : null;
+            if (tb && tb.n >= 2) h += spotBarHtml();
+            if (s.scene_type === 'quiz') {
+                var n = ((s.content || {}).questions || []).length;  // 二期断档：quiz 为 {narration, questions} 对象
+                h += '<p class="text-sm text-cl-text-2">本随堂页共 ' + n + ' 道题；作答后答错题将归到对应知识点入错题本，并更新熟练度（进入 FSRS 复习调度）。</p>';
+                h += '<div class="mt-4"><button class="cl-btn-primary !h-10 text-sm" data-quiz-go' + (n ? '' : ' disabled') + '>' + icon('dumbbell', 'w-4 h-4') + ' 开始作答</button></div>';
+            } else if (s.scene_type === 'explain') {
+                if (tb) { h += tb.html; }
+                else {
+                    h += mdqHtml(ct.body_md || '', 'text-sm text-cl-text-2 leading-relaxed break-words');
+                    if ((ct.key_points || []).length) {
+                        h += '<div class="mt-4 pt-4 border-t border-cl-border"><p class="text-xs font-semibold text-cl-text-2 mb-2">本页要点</p>'
+                            + '<ul class="space-y-1.5">' + ct.key_points.map(function (k) {
+                                return '<li class="flex items-start gap-2 text-[13px] text-cl-text">' + icon('check', 'w-3.5 h-3.5 text-cl-primary shrink-0 mt-0.5') + mdqHtml(k, '', true) + '</li>';
+                            }).join('') + '</ul></div>';
+                    }
+                    if (typeof ct.widget === 'string' && ct.widget) h += widgetFrameHtml(ct.widget); // 降级路径也露图解
+                }
+                if (s.error_note) h += '<p class="text-xs text-cl-warning mt-2">' + esc(s.error_note) + '</p>'; // 四期 A2：图解失败/外链警告留痕可见
+            } else if (s.scene_type === 'example') {
+                if (tb) { h += tb.html; }
+                else {
+                    h += '<p class="text-xs font-semibold text-cl-text-2 mb-1">题目</p>' + mdqHtml(ct.problem_md || '', 'text-sm text-cl-text break-words rounded-clbtn bg-cl-bg px-3 py-2');
+                    h += '<p class="text-xs font-semibold text-cl-text-2 mt-4 mb-1">分步解答</p>' + mdqHtml(ct.solve_md || '', 'text-sm text-cl-text-2 leading-relaxed break-words');
+                }
+            } else if (s.scene_type === 'interactive') {
+                // 二期交互仿真：sandbox 只给 allow-scripts——srcdoc+allow-scripts+allow-same-origin
+                // 等于放弃沙箱（嵌入页可读宿主 cookie/localStorage/DOM），永不加 allow-same-origin
+                h += '<iframe class="w-full min-h-[420px] rounded-clbtn border border-cl-border bg-white" sandbox="allow-scripts" referrerpolicy="no-referrer" srcdoc="' + esc(simDoc(ct.html || '')) + '" data-sim-frame></iframe>';
+                h += '<p class="text-xs text-cl-danger mt-2 hidden" data-sim-err></p>';
+                if (s.error_note) h += '<p class="text-xs text-cl-warning mt-2">' + esc(s.error_note) + '</p>';
+                h += '<p class="text-[11px] text-cl-text-3 mt-1">实验页在独立沙箱中运行（无法联网、摸不到本站数据），用鼠标或触摸操作，边玩边观察。</p>';
+            } else if (s.scene_type === 'summary' && tb) {
+                h += tb.html; // 四期 A1：小结页同样逐段点亮
+            } else {
+                h += mdqHtml(ct.body_md || '', 'text-sm text-cl-text-2 leading-relaxed break-words');
+            }
+            h += '</div>';
+            h += '<div class="flex items-center justify-between">'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-seq="' + (st.idx - 1) + '"' + (st.idx <= 1 ? ' disabled' : '') + '>上一页</button>'
+                + '<button class="cl-btn-ghost !h-8 text-xs" data-seq="' + (st.idx + 1) + '"' + (st.idx >= st.scenes.length ? ' disabled' : '') + '>下一页</button></div>';
+            return h;
+        }
+        function gotoSeq(n) {
+            // 切页统一收敛（评审 C3）：先停当前朗读并清停止标记，再按自动设置重新触发
+            stopSpeak(); tts.stoppedKey = '';
+            cp.stoppedKey = ''; // 五期：切页同理清画布播放停止记录（新页允许自动起播）
+            spotStop(); // 四期 A1：切页退出逐段播放
+            st.idx = n; renderDetail();
+        }
+        function startQuiz(s) {
+            stopSpeak();  // 二期：作答浮层抬起时停止朗读（pmPractice 公共件不改，在调用方处理）
+            var qs = (s.content || {}).questions || [];
+            if (!qs.length) return;
+            pmPractice(root, {
+                title: ((st.course && st.course.title) || '微课') + ' · ' + (s.title || '随堂题'),
+                load: function () { return Promise.resolve({ success: true, questions: qs }); },
+                submit: function (qArr, ans) {
+                    if (s.kp_id) {
+                        if (!global.bridge || typeof global.bridge.submitPointPractice !== 'function') {
+                            return Promise.resolve({ success: false, error: '桥方法不可用' });
+                        }
+                        return Promise.resolve(global.bridge.submitPointPractice(s.kp_id, qArr, ans)).then(parseBridge);
+                    }
+                    // 六期补丁：无知识点错题讲解课（页行 kp_id=NULL）判分走错题轨：
+                    // 变式题挂源错题 error_id 提交 error-set-submit（与举一反三同链路，
+                    // 答对升源行 FSRS，答错的派生新题干照常入池；该端点天然支持 kp 缺失）
+                    var eid = null;
+                    try { eid = (JSON.parse(st.course.source_ref || '{}').error_ids || [])[0] || null; } catch (e) { /* 坏 ref 当无归属提交 */ }
+                    var qs = (qArr || []).map(function (q) {
+                        var c = {}; for (var k in q) c[k] = q[k];
+                        if (eid) { c.error_id = eid; }
+                        return c;
+                    });
+                    return postJSON('/api/practice/error-set-submit', {
+                        subject_name: (st.course && st.course.subject_name) || '',
+                        questions: qs, answers: ans,
+                    }).then(function (r) { return r; });
+                },
+                onDone: null,
+            });
+        }
+        function renderDetail() {
+            var c = st.course; if (!c) return;
+            crumb.innerHTML = '<button class="hover:text-cl-primary cursor-pointer transition-colors" data-back-list>我的微课</button>'
+                + '<span class="text-cl-text-3">' + icon('chevron-right', 'w-3.5 h-3.5') + '</span>'
+                + '<span class="text-cl-text font-semibold">' + esc(c.title || '生成中的课') + '</span>';
+            crumb.querySelector('[data-back-list]').addEventListener('click', renderList);
+            var done = st.scenes.filter(function (s) { return s.status === 'done'; }).length;
+            // 七期：页数进度分母不含 standby 互动页（与后端 done 口径一致，课不会因互动页永不满页）
+            var genTotal = st.scenes.filter(function (s) { return s.status !== 'standby'; }).length;
+            var h = '<div class="cl-card p-5">';
+            h += '<div class="flex items-center gap-3 flex-wrap">' + statusBadge(c.status)
+                + '<h1 class="text-lg font-bold text-cl-text min-w-0 flex-1 truncate">' + esc(c.title || '（标题待生成）') + '</h1>'
+                + '<button class="cl-btn-ghost !h-8 text-xs text-cl-danger" data-del="' + esc(c.course_key) + '" data-del-label="删除本课"' + (isBusy() ? ' disabled' : '') + '>删除本课</button></div>';
+            h += '<p class="text-[11px] text-cl-text-3 mt-1">' + esc(c.subject_name || '') + ' · 页 ' + done + '/' + genTotal + '</p>';
+            if (isBusy() && genTotal) {
+                h += '<div class="cl-progress mt-3"><div class="cl-progress-bar" style="width:' + Math.round(done / genTotal * 100) + '%"></div></div>'
+                    + '<p class="text-[11px] text-cl-text-3 mt-1">AI 正在逐页讲课，每页生成即可阅读，无需等全部完成…</p>';
+            }
+            h += '</div>';
+            if (st.scenes.length) {
+                h += '<div class="flex items-center gap-2 flex-wrap">' + st.scenes.map(function (s) {
+                    var on = s.seq === st.idx;
+                    var mark = s.status === 'done' ? icon('check', 'w-3 h-3 text-cl-secondary')
+                        : s.status === 'failed' ? icon('x', 'w-3 h-3 text-cl-danger')
+                        : '<span class="w-2 h-2 rounded-full ' + (s.status === 'generating' ? 'bg-cl-primary animate-pulse' : 'bg-cl-border') + ' inline-block"></span>';
+                    return '<button class="cl-badge !text-[12px] flex items-center gap-1.5 ' + (on ? 'bg-cl-primary text-white' : 'bg-cl-surface text-cl-text-2 hover:text-cl-text border border-cl-border') + '" data-seq="' + s.seq + '">' + esc(TYPE_TXT[s.scene_type] || s.scene_type) + ' ' + s.seq + (s.status === 'standby' ? '·待生成' : '') + ' ' + mark + '</button>';
+                }).join('') + '</div>';
+            }
+            var fp = sceneFingerprint();
+            var keepScene = main.querySelector('[data-role="scene"]');
+            var reuse = !!(keepScene && fp === st.sceneFp && keepScene.parentNode === main);
+            main.innerHTML = h;
+            if (reuse) {
+                // 场景指纹未变（同页轮询刷新）：只重建头部与页签，scene 区原样保留——
+                // 重建会把 iframe 里正在操作的实验清零（评审 Major-4）
+                main.appendChild(keepScene);
+            } else {
+                main.insertAdjacentHTML('beforeend', '<div data-role="scene">' + sceneBody() + '</div>');
+            }
+            st.sceneFp = fp;
+            if (!reuse) hydrateMdSlots(main);
+            bindDelButtons(main, renderList);
+            main.querySelectorAll('[data-seq]').forEach(function (b) {
+                if (b.disabled || b.__b) return;
+                b.__b = true;
+                b.addEventListener('click', function () {
+                    var n = parseInt(b.getAttribute('data-seq'), 10);
+                    if (n >= 1 && n <= st.scenes.length) gotoSeq(n);
+                });
+            });
+            var qb = main.querySelector('[data-quiz-go]');
+            if (qb && !qb.__b) { qb.__b = true; qb.addEventListener('click', function () { var s = currentScene(); if (s && s.status === 'done') startQuiz(s); }); }
+            var rb = main.querySelector('[data-regen]');
+            if (rb && !rb.__b) { rb.__b = true; rb.addEventListener('click', function () {
+                rb.disabled = true; rb.textContent = '派发中…';
+                postJSON('/api/micro-course/' + encodeURIComponent(st.key) + '/regenerate-scene', { seq: st.idx }).then(function (r) {
+                    if (r && r.success === true) { fetchCourse(st.key); return; }
+                    rb.disabled = false; rb.textContent = '重新讲本页';
+                    var m = main.querySelector('[data-regen-hint]');
+                    if (m) m.textContent = (r && r.error) || '派发失败';
+                }).catch(function (e) {
+                    rb.disabled = false; rb.textContent = '重新讲本页';
+                    var m = main.querySelector('[data-regen-hint]');
+                    if (m) m.textContent = e.message || '请求失败';
+                });
+            }); }
+            // 七期：互动页按需派发（复用 regenerate-scene；后端乐观锁兜底防双跑）
+            function dispatchStandby(btn) {
+                if (st.dispatching) return;
+                st.dispatching = true;
+                if (btn) { btn.disabled = true; btn.textContent = '派发中…'; }
+                postJSON('/api/micro-course/' + encodeURIComponent(st.key) + '/regenerate-scene', { seq: st.idx }).then(function (r) {
+                    st.dispatching = false;
+                    if (r && r.success === true) { fetchCourse(st.key); return; }  // regenerating 态由 fetch 后 isBusy 接上轮询
+                    if (btn) { btn.disabled = false; btn.textContent = '生成互动实验'; }
+                    delete st.autoFired[st.idx];  // 评审 M-1：失败回滚一次性标记，快照刷新/重渲染后自动重试
+                    var m = main.querySelector('[data-standby-hint]');
+                    if (m) m.textContent = (r && r.error) || '派发失败，可稍后再试';
+                }).catch(function (e) {
+                    st.dispatching = false;
+                    if (btn) { btn.disabled = false; btn.textContent = '生成互动实验'; }
+                    delete st.autoFired[st.idx];  // 评审 M-1：同上，请求异常也不锁死自动派发
+                    var m = main.querySelector('[data-standby-hint]');
+                    if (m) m.textContent = e.message || '请求失败';
+                });
+            }
+            var sb = main.querySelector('[data-standby-go]');
+            if (sb && !sb.__b) { sb.__b = true; sb.addEventListener('click', function () {
+                if (sb.disabled) return;
+                if (!window.confirm('生成互动实验' + (st.meta.cost ? '将消耗约 ' + st.meta.cost + ' 积分' : '') + '，开始生成？')) return;
+                dispatchStandby(sb);
+            }); }
+            // worthy=true：用户翻到 standby 互动页即自动派发（每课每页一次，失败不循环重试）
+            var sc0 = currentScene();
+            if (sc0 && sc0.status === 'standby' && sc0.scene_type === 'interactive'
+                && st.meta.worthy && !st.autoFired[sc0.seq]) {
+                st.autoFired[sc0.seq] = true;
+                dispatchStandby(null);
+            }
+            bindTtsBar();
+            bindSpotBar(); // 四期 A1：逐段播放条（重建后重放状态）
+            bindCanvasBar();
+            // 自动朗读：新页/新内容且未被手动停止时才发起（同键不重发，评审 Major-5）
+            var sc = currentScene();
+            if (sc && sc.status === 'done' && isCanvasScene(sc)) {
+                // 五期：轮询重建 DOM 后按当前步重推 mc-step（新 iframe 需重收才能复现画面态）；
+                // 场景变了（换页/重生成）回第 0 步；自动起播每场景仅一次（stoppedKey 防重发）
+                var ck = cpSceneKey(sc);
+                if (ck !== cp.key) { cp.key = ck; cp.i = 0; cpStopAll(); }
+                cpPush(cp.i);
+                if (ttsOk && tts.auto && !cp.playing && ck !== cp.stoppedKey) cpStart();
+            } else if (ttsOk && sc && sc.status === 'done' && sc.content && sc.content.narration) {
+                var nk = narrKey(sc);
+                if (tts.auto && !tts.playing && nk !== tts.lastKey && nk !== tts.stoppedKey) startSpeak(sc.content.narration, nk);
+            }
+        }
+
+        if (pending && pending.key) fetchCourse(String(pending.key));
+        else renderList();
+    }
+
+    // ---------------- 微课入口公共函数（公共函数注册制：U5 各入口统一调本件，禁止自写副本） ----------------
+    // 微课四期 A1：markdown 源按顶层结构切块（聚光灯用；简单状态机不做语义解析：
+    // 空行分隔；代码围栏内不切；标题一行一块；列表/表格/引用连续行各自成块）
+    function splitMdBlocks(src) {
+        var lines = String(src || '').split(/\r?\n/);
+        var out = [], buf = [], mode = '', fence = false;
+        function flush() { if (buf.length) { var t = buf.join('\n').trim(); if (t) out.push(t); buf = []; mode = ''; } }
+        function type(ln) {
+            if (/^#{1,6}\s/.test(ln)) return 'h';
+            if (/^\s*([-*+]|\d+[.)])\s/.test(ln)) return 'li';
+            if (/^\s*\|.*\|\s*$/.test(ln)) return 'tb';
+            if (/^\s*>/.test(ln)) return 'bq';
+            return 'p';
+        }
+        for (var i = 0; i < lines.length; i++) {
+            var ln = lines[i];
+            if (/^\s*(```|~~~)/.test(ln)) { fence = !fence; buf.push(ln); continue; }
+            if (fence) { buf.push(ln); continue; }
+            if (!ln.trim()) { flush(); continue; }
+            var t = type(ln);
+            if (t === 'p' && (mode === 'li' || mode === 'tb' || mode === 'bq') && /^\s+\S/.test(ln)) { buf.push(ln); continue; } // 缩进续行并入当前块
+            if (t === 'h') { flush(); buf.push(ln); flush(); continue; }
+            if (buf.length && mode && mode !== t) flush();
+            mode = t; buf.push(ln);
+        }
+        flush();
+        return out;
+    }
+    // 三期：状态文案/页型文案/状态徽标上提模块级——微课页与知识点详情页两处复用
+    var STATUS_TXT = { generating: '生成中', ready: '已完成', partial: '部分完成', failed: '生成失败', regenerating: '重生成页中' };
+    var TYPE_TXT = { explain: '讲解', example: '例题', quiz: '随堂题', summary: '小结', interactive: '交互实验' };
+    function statusBadge(s) {
+        var cls = 'bg-cl-bg text-cl-text-2';
+        if (s === 'ready') cls = 'bg-cl-secondary-soft text-cl-secondary';
+        else if (s === 'failed') cls = 'bg-cl-danger-soft text-cl-danger';
+        else if (s === 'generating' || s === 'regenerating') cls = 'bg-cl-primary-soft text-cl-primary animate-pulse';
+        return '<span class="cl-badge ' + cls + '">' + esc(STATUS_TXT[s] || s || '') + '</span>';
+    }
+    // 积分预估弹窗（去术语化：只报积分不报调用次数，业务规则 15.5）→ create → 写直达旗标 → 跳微课页
+    function openMicroCourseConfirm(o) {
+        var busy = false;
+        var ov = document.createElement('div');
+        ov.setAttribute('data-mc-confirm', '1');
+        ov.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
+        ov.innerHTML = '<div class="cl-card p-6 w-full max-w-md" data-mc-card></div>';
+        function close() { document.removeEventListener('keydown', onEsc); ov.remove(); }
+        var onEsc = function (e) { if (e.key === 'Escape' && !busy) close(); };
+        document.addEventListener('keydown', onEsc);
+        ov.addEventListener('click', function (e) { if (e.target === ov && !busy) close(); });
+        document.body.appendChild(ov);
+        var card = ov.querySelector('[data-mc-card]');
+        var isErrExplain = !!o.error_id; // 六期：错题深度讲解分支（单题锚定小课，约 4 页）
+        var head = '<div class="cl-section-title mb-3">' + icon('graduation-cap', 'w-4 h-4 text-cl-primary') + ' ' + (isErrExplain ? '讲解这道错题' : '生成微课') + '</div>';
+        card.innerHTML = head + '<p class="text-sm text-cl-text-2 py-4 text-center">正在估算积分消耗…</p>';
+        // 三期确认闸：该知识点已有微课 → 弹窗顶部告知历史并提供「打开最新一课」（防不知情重复扣费）
+        // 时序：estimate 会重建 card.innerHTML，历史行必须等正文就绪后插入（双就绪幂等）
+        var estDone = false, histLatest = null;
+        function tryInsertHist() {
+            if (!estDone || !histLatest || !document.body.contains(ov)) return;
+            var c = histLatest;
+            var line = document.createElement('div');
+            line.className = 'rounded-clbtn bg-cl-bg px-3 py-2 mb-3 flex items-center gap-2 flex-wrap';
+            line.innerHTML = icon('history', 'w-3.5 h-3.5 text-cl-text-3')
+                + '<span class="text-xs text-cl-text-2 flex-1 min-w-[120px]">已生成过 ' + c.n + ' 门，最新：' + esc(c.title || '未命名微课') + '（' + esc(STATUS_TXT[c.status] || c.status || '') + '）</span>'
+                + '<button class="cl-btn-ghost !h-7 text-xs" data-mc-old>打开最新一课</button>';
+            var p0 = card.querySelector('p');
+            if (p0) card.insertBefore(line, p0);
+            line.querySelector('[data-mc-old]').addEventListener('click', function () {
+                try { localStorage.setItem('pm_pending_course', JSON.stringify({ key: c.key, title: c.title || '', ts: Date.now() })); } catch (e) { /* 存储不可用时仍导航 */ }
+                close();
+                goMenu('micro_course');
+            });
+        }
+        var hq = o.error_id ? ('error_id=' + encodeURIComponent(o.error_id))  // 六期：错题讲解按单题口径查重，不与知识点课串
+            : o.kp_id ? ('kp_id=' + encodeURIComponent(o.kp_id))
+            : ((o.error_ids && o.error_ids.length) ? ('error_ids=' + encodeURIComponent(o.error_ids.slice(0, 60).join(','))) : ''); // 三期评审 Minor-5：无锚定参数不发注定失败的请求
+        if (hq) getJSON('/api/micro-course/history?' + hq).then(function (hd) {
+            var cs = (hd && hd.success === true && hd.courses) || [];
+            if (!cs.length) return;
+            histLatest = { n: cs.length, key: cs[0].course_key, title: cs[0].title, status: cs[0].status };
+            tryInsertHist();
+        }).catch(function () { /* 静默：历史拉不到不拦生成主流程 */ });
+        getJSON('/api/micro-course/estimate' + (isErrExplain ? '?mode=error' : '')).then(function (d) {
+            if (!document.body.contains(ov)) return;
+            var est = (d && d.success === true && d.estimated_credits != null) ? d.estimated_credits : '~';
+            card.innerHTML = head
+                + '<p class="text-sm text-cl-text-2 leading-relaxed">' + (isErrExplain
+                    ? '将针对' + esc(o.label || '这道错题') + '做深度讲解：题目拆解考哪些知识点、对照你的作答诊断错因、巩固演示、变式题自测（约 4 页）。<br>'
+                    : '将把' + esc(o.label || '这个知识点') + '用微课重讲一遍（讲解/例题/随堂题/交互实验/小结，约 6 页；含实验页时消耗较高）。<br>')
+                + '预计共消耗约 <strong class="text-cl-text">' + esc(String(est)) + ' 积分</strong>，实际按用量计量。</p>'
+                + '<p class="text-xs text-cl-danger mt-2 min-h-4" data-mc-msg></p>'
+                + '<div class="flex items-center justify-end gap-2 mt-4">'
+                + '<button class="cl-btn-ghost !h-9 text-xs" data-mc-no>取消</button>'
+                + '<button class="cl-btn-primary !h-9 text-xs" data-mc-yes>' + icon('sparkles', 'w-4 h-4') + ' 开始生成</button></div>';
+            card.querySelector('[data-mc-no]').addEventListener('click', close);
+            estDone = true; tryInsertHist(); // 正文就绪，若历史已回包则补插
+            card.querySelector('[data-mc-yes]').addEventListener('click', function () {
+                if (busy) return;
+                busy = true;
+                var yes = card.querySelector('[data-mc-yes]');
+                var msg = card.querySelector('[data-mc-msg]');
+                yes.disabled = true; yes.textContent = '派发中…';
+                // 三期评审 Major-2：派发中锁住取消/打开旧课，防 create 回包劫持导航旗标
+                var noB = card.querySelector('[data-mc-no]'); if (noB) noB.disabled = true;
+                var oldB = card.querySelector('[data-mc-old]'); if (oldB) oldB.disabled = true;
+                var body = {};
+                if (o.error_id) body.error_id = o.error_id;
+                if (o.kp_id) body.kp_id = o.kp_id;
+                if (o.error_ids && o.error_ids.length) body.error_ids = o.error_ids.slice(0, 60);
+                if (o.weakness_name) body.weakness_name = o.weakness_name;
+                postJSON('/api/micro-course/create', body).then(function (r) {
+                    if (!r || r.success !== true) {
+                        busy = false; yes.disabled = false; yes.textContent = '开始生成';
+                        if (noB) noB.disabled = false; if (oldB) oldB.disabled = false;
+                        msg.textContent = (r && r.credits_insufficient) ? '积分不足，请先充值' : ((r && r.error) || '生成派发失败');
+                        return;
+                    }
+                    try { localStorage.setItem('pm_pending_course', JSON.stringify({ key: r.course_key, title: '', ts: Date.now() })); } catch (e) { /* 存储不可用时仍导航 */ }
+                    close();
+                    goMenu('micro_course');
+                }).catch(function (e) {
+                    busy = false; yes.disabled = false; yes.textContent = '开始生成';
+                    if (noB) noB.disabled = false; if (oldB) oldB.disabled = false;
+                    msg.textContent = '请求失败：' + (e.message || '未知错误');
+                });
+            });
+        }).catch(function (e) {
+            card.innerHTML = head + '<p class="text-sm text-cl-danger py-2">预估失败：' + esc(e.message || '未知错误') + '</p>';
+        });
+    }
+
     // ---------------- 工具导出（批6 起供其它页面复用，公共函数注册制：新页禁止再自写 tk/esc 等副本） ----------------
-    global.pmUtil = { tk: tk, esc: esc, relTime: relTime, icon: icon, getJSON: getJSON, postJSON: postJSON, goMenu: goMenu, goPracticePoint: goPracticePoint, truncate: truncate, isUnrated: isUnrated, emptyBox: emptyBox };
+    global.pmUtil = { tk: tk, esc: esc, relTime: relTime, icon: icon, getJSON: getJSON, postJSON: postJSON, goMenu: goMenu, goPracticePoint: goPracticePoint, truncate: truncate, isUnrated: isUnrated, emptyBox: emptyBox, openMicroCourseConfirm: openMicroCourseConfirm, splitMdBlocks: splitMdBlocks };
 
     // ---------------- 启动分发 ----------------
     var BUILDERS = {
@@ -3176,7 +4311,8 @@
         practice_errors: bootPracticeErrors,
         memory_knowledge: bootMemoryKnowledge,
         memory_errors: bootMemoryErrors,
-        knowledge_point: bootKnowledgePoint
+        knowledge_point: bootKnowledgePoint,
+        micro_course: bootMicroCourse
     };
     function bootAll() {
         document.querySelectorAll('[data-pm-page]').forEach(function (root) {

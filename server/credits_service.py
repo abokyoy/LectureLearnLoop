@@ -162,9 +162,12 @@ def _record_tx(conn, user_id: str, tx_type: str, scene: str, *, prompt_tokens: i
 
 # ---------------------------------------------------------------- 扣分
 def charge_llm(user_id: str, prompt_tokens: int, completion_tokens: int, scene: str = "",
-               provider: str = "", model: str = "", tokens_estimated: bool = False) -> dict:
+               provider: str = "", model: str = "", tokens_estimated: bool = False,
+               usage_note: str = "") -> dict:
     """LLM 调用后按 Token 折算扣分并记流水。管理员豁免（流水记录 delta=0）。
 
+    usage_note：cache 命中/思考 token 等明细（如 "cache_hit=1024 reasoning=0"），
+    追加进流水 note，逐笔可对账（原理图成本优化轮 2026-11-10）。
     返回 billing dict：{credits, tokens, balance, exempt_admin, use_own_key:False}
     """
     total = int(prompt_tokens or 0) + int(completion_tokens or 0)
@@ -173,6 +176,8 @@ def charge_llm(user_id: str, prompt_tokens: int, completion_tokens: int, scene: 
     note = f"{provider}/{model}" if provider else ""
     if tokens_estimated:
         note = (note + " ").lstrip() + "usage缺失，按字符估算"
+    if usage_note:
+        note = (note + " ").lstrip() + usage_note
     with _conn() as conn:
         ensure_account(conn, user_id)
         if admin:
@@ -486,7 +491,7 @@ def effective_llm_config(user_id: Optional[str] = None) -> dict:
         if own:
             c = dict(c)
             c["llm_provider"] = own["llm_provider"]
-            key_map = {"DeepSeek": "deepseek", "Gemini": "gemini", "Qwen": "qwen", "Ollama": "ollama"}
+            key_map = {"DeepSeek": "deepseek", "Gemini": "gemini", "Qwen": "qwen", "Ollama": "ollama", "GLM": "glm"}
             p = key_map.get(own["llm_provider"], "deepseek")
             c[f"{p}_api_key"] = own["api_key"]
             if own["model"]:

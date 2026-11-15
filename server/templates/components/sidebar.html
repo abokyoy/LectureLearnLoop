@@ -11,10 +11,23 @@
             <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-layout-dashboard"/></svg>
             <span class="text-xs">工作台</span>
         </a>
-        <a class="cl-nav-item" data-cid="online_course_notes" title="学 · 网课笔记" onclick="handleMenuClick('online_course_notes')">
-            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-graduation-cap"/></svg>
-            <span class="text-xs">学</span>
-        </a>
+        <!-- 学（2026-11-11 二级菜单）：父项直达目标导向学习；hover 展开 笔记学习/目标导向学习 -->
+        <div class="relative group">
+            <a class="cl-nav-item" data-cid="learn_goals" title="学 · 目标导向学习" tabindex="0" onclick="handleMenuClick('learn_goals')">
+                <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-graduation-cap"/></svg>
+                <span class="text-xs">学</span>
+            </a>
+            <div class="hidden group-hover:flex group-focus-within:flex absolute left-full top-0 flex-col gap-0.5 min-w-[176px] rounded-cl border border-cl-border bg-cl-surface p-1.5 shadow-lg">
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('online_course_notes')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-notebook-pen"/></svg>
+                    笔记学习
+                </a>
+                <a class="flex items-center gap-2 px-3 py-2 rounded-clbtn text-[13px] text-cl-text hover:bg-cl-primary-soft cursor-pointer" onclick="handleMenuClick('learn_goals')">
+                    <svg class="w-4 h-4 text-cl-primary" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-target"/></svg>
+                    目标导向学习
+                </a>
+            </div>
+        </div>
         <!-- 练（u8）：父项直达科目统计总览；hover 展开全部练习模式 -->
         <div class="relative group">
             <a class="cl-nav-item" data-cid="practice_overview" title="练 · 练习总览" tabindex="0" onclick="handleMenuClick('practice_overview')">
@@ -65,6 +78,10 @@
         <a class="cl-nav-item" data-cid="knowledge_base" title="知识库" onclick="handleMenuClick('knowledge_base')">
             <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-library"/></svg>
             <span class="text-xs">知识库</span>
+        </a>
+        <a class="cl-nav-item" data-cid="teacher_board" title="AI 老师黑板（小智语音授课）" onclick="handleMenuClick('teacher_board')">
+            <svg class="w-5 h-5" aria-hidden="true"><use href="/static/icons/lucide-sprite.svg#li-mic"/></svg>
+            <span class="text-xs">黑板</span>
         </a>
     </nav>
 

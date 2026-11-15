@@ -69,6 +69,37 @@ contextBridge.exposeInMainWorld('llNotePicker', {
   open: () => ipcRenderer.invoke('notepicker:open'),
 });
 
+// 电脑小智（2026-11-05）：语音上课。协议/编解码/打断全在主进程 xz_voice.js，
+// 本页只做：采集帧上行（xz:mic）、收下行播放/事件（xz:play/hold/resume/flush/evt）、控制按钮。
+contextBridge.exposeInMainWorld('xzVoice', {
+  openPanel: () => ipcRenderer.invoke('xz:openPanel'),
+  /** 黑板页入口：弹语音窗并自动开始上课（2026-11-05 入口合并） */
+  openAndStart: () => ipcRenderer.invoke('xz:openPanelStart'),
+  /** 只读订阅课堂状态（主进程 relay，无控制能力，远程内容安全） */
+  onState: (cb) => {
+    const l = (_e, s) => cb(s);
+    ipcRenderer.on('xz:voice-state', l);
+    return () => ipcRenderer.removeListener('xz:voice-state', l);
+  },
+  register: () => ipcRenderer.invoke('xz:register'),
+  state: () => ipcRenderer.invoke('xz:state'),
+  start: () => ipcRenderer.invoke('xz:start'),
+  stop: () => ipcRenderer.invoke('xz:stop'),
+  ctl: (cmd, arg) => ipcRenderer.invoke('xz:ctl', cmd, arg),
+  /** 上行一帧 16k Int16LE PCM（ArrayBuffer，960 样本/60ms），与 llAsr.sendChunk 同模式 */
+  mic: (arrayBuffer) => ipcRenderer.send('xz:mic', arrayBuffer),
+  /** 订阅面板下行：cb(channel, payload)，channel ∈ play|hold|resume|flush|evt|autostart */
+  onPanel: (cb) => {
+    const chans = ['xz:play', 'xz:hold', 'xz:resume', 'xz:flush', 'xz:evt', 'xz:autostart'];
+    const bound = chans.map((ch) => {
+      const l = (_e, p) => cb(ch.slice(3), p);
+      ipcRenderer.on(ch, l);
+      return [ch, l];
+    });
+    return () => bound.forEach(([ch, l]) => ipcRenderer.removeListener(ch, l));
+  },
+});
+
 // 选择页专用（note_picker.html）
 contextBridge.exposeInMainWorld('llNotePickerSel', {
   choose: (sel) => ipcRenderer.send('notepicker:choose', sel),

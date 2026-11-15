@@ -87,6 +87,18 @@ _TABLES_PG = [
         used_at TEXT NOT NULL DEFAULT ''
     )
     """,
+    # 小智设备账号级绑定（2026-11-05 账号唯一身份：虚拟小智生成/真 ESP32 借用，每账号至多一台）
+    """
+    CREATE TABLE IF NOT EXISTS xz_user_device (
+        user_id TEXT PRIMARY KEY,
+        dev_type TEXT NOT NULL DEFAULT 'virtual',
+        mac TEXT NOT NULL,
+        client_uuid TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL DEFAULT 'pending_code',
+        last_code TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )
+    """,
 ]
 
 _INDEXES = [
@@ -117,6 +129,9 @@ LLM_CONFIG_KEYS = {
     "qwen_api_url": "系统通义千问 API URL",
     "ollama_api_url": "系统 Ollama URL",
     "ollama_model": "系统 Ollama 模型",
+    "glm_api_key": "系统 GLM API Key",
+    "glm_model": "系统 GLM 模型",
+    "glm_api_url": "系统 GLM API URL",
 }
 
 

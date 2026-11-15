@@ -14,6 +14,7 @@ u13 知识点结构化练习模板 契约测试（2026-10-02 多题型答题改�
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 import unittest
@@ -29,7 +30,7 @@ import config
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-BASE = "http://127.0.0.1:6001"
+BASE = os.getenv("LL_TEST_BASE", "http://127.0.0.1:6001")
 SUBJECT = f"U13练习学科{int(time.time()) % 100000}_{uuid.uuid4().hex[:4]}"
 NOTE_FILE = Path(__file__).resolve().parents[1] / "logs" / f"u13_note_{uuid.uuid4().hex[:6]}.md"
 WEIGHTS = {"容易": 1.0, "中等": 1.2, "困难": 1.5}

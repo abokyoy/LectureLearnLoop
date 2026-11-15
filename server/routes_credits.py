@@ -93,7 +93,7 @@ def save_llm_config():
     显式清除需传 clear_key=true（防前端“留空”误销毁已存 Key 后静默回落系统 Key 扣分）。"""
     data = request.get_json(silent=True) or {}
     provider = (data.get("provider") or "DeepSeek").strip()
-    if provider not in ("DeepSeek", "Gemini", "Qwen", "Ollama"):
+    if provider not in ("DeepSeek", "Gemini", "Qwen", "Ollama", "GLM"):
         return jsonify({"success": False, "error": "不支持的提供商"}), 400
     enabled = bool(data.get("enabled", True))
     model = (data.get("model") or "").strip()

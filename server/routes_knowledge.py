@@ -95,6 +95,16 @@ def rename_subject(name):
 @kb_bp.route("/api/subjects/<name>", methods=["DELETE"])
 @require_auth
 def delete_subject(name):
+    # 目标导向学习连带防护（Spec §9，2026-11-11）：学科下存在未完成课程时禁删，
+    # 防课程/错题归属悬空；函数内延迟导入避循环依赖
+    from routes_courses import subject_open_lesson_count
+    conn = get_kms().db_manager.get_connection()
+    try:
+        open_cnt = subject_open_lesson_count(conn, g.user_id, name)
+    finally:
+        conn.close()
+    if open_cnt:
+        return _err("该学科有未完成的目标导向学习课程，请先完成或删除对应学习目标", 409)
     ok = get_kms().delete_subject(name, user_id=g.user_id)
     if not ok:
         return _err("删除失败：学科可能仍有知识点", 400)
@@ -1256,6 +1266,11 @@ def get_config():
         "qwen_model": cfg.get("qwen_model", ""),
         "qwen_api_url": cfg.get("qwen_api_url", ""),
         "qwen_is_selected": False,
+        # 智谱 GLM（Coding Plan，2026-11-11 新增）
+        "glm_api_key": _mask(cfg.get("glm_api_key")),
+        "glm_model": cfg.get("glm_model", ""),
+        "glm_api_url": cfg.get("glm_api_url", ""),
+        "glm_is_selected": cfg.get("llm_provider") == "GLM",
         # 运行时设置
         "summary_mode": cfg.get("summary_mode", "auto"),
         "auto_summary_interval": cfg.get("auto_summary_interval", 60),

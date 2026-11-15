@@ -15,6 +15,7 @@ P5 练习闭环端到端测试（真实 DeepSeek 仅用于可选出题步骤；�
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
 import unittest
@@ -25,7 +26,7 @@ import requests
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-BASE = "http://127.0.0.1:6001"
+BASE = os.getenv("LL_TEST_BASE", "http://127.0.0.1:6001")
 SUBJECT = f"P5练习学科{int(time.time()) % 100000}_{uuid.uuid4().hex[:4]}"
 
 

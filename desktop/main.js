@@ -4,10 +4,12 @@
  * P2：主窗口加载 Flask 服务端页面。
  * P4：悬浮录音窗（/overlay）、Deepgram 流式 WS 代理（asr_proxy）、框选截屏。
  */
-const { app, BrowserWindow, ipcMain, session, desktopCapturer, screen, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, screen, Menu, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const asr = require('./asr_proxy');
+const xzVoice = require('./xz_voice');
+const xzSpeech = require('./xz_speech');
 
 // 服务器地址：环境变量 > 随附 server_url.txt（与 main.js 同目录或 resources 下，打包时写入）> 本地默认 127.0.0.1:9992
 // 不依赖 app.isPackaged（win-unpacked 目录注入方式下其判定不可靠），直接按文件存在性解析
@@ -43,6 +45,8 @@ let overlayGeom = null; // 会话内记住悬浮窗 bounds（尺寸/位置），
 let captureWindow = null;
 let serverDownRetries = 0;
 let asrSession = null; // {send, close}
+let voiceWindow = null;   // 电脑小智语音窗（协议/编解码在主进程，此窗只采集/播放/UI）
+let xzEngine = null;      // XzVoiceEngine 实例
 
 function loadServerPage(win) {
   win.loadURL(SERVER_BASE + '/').catch(() => { /* did-fail-load 里统一处理 */ });
@@ -319,6 +323,138 @@ ipcMain.on('notepicker:choose', (e, sel) => {
   if (pendingPickerResolver) { pendingPickerResolver(sel || null); pendingPickerResolver = null; }
 });
 
+/* ------------------------------------------------------- 电脑小智（2026-11-05） */
+// 冒充 ESP32 设备连小智云：OTA/WS/opus/打断全在主进程 xz_voice.js（可 node 断言直测），
+// 这里只注入 Electron 侧依赖：net 版 httpPost（自走系统代理，外网 OTA 需要）、语音窗口路由。
+function netHttpPost(url, body, headers) {
+  return new Promise((resolve, reject) => {
+    const req = net.request({ method: 'POST', url });
+    Object.keys(headers || {}).forEach((k) => { try { req.setHeader(k, String(headers[k])); } catch (e) {} });
+    req.on('response', (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { text += c; });
+      res.on('end', () => resolve({ status: res.statusCode, text }));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+function createVoiceWindow() {
+  if (voiceWindow && !voiceWindow.isDestroyed()) { voiceWindow.show(); voiceWindow.focus(); return; }
+  const isMac = process.platform === 'darwin';
+  voiceWindow = new BrowserWindow({
+    width: 520,
+    height: 680,
+    title: 'AI老师语音上课',
+    autoHideMenuBar: true,
+    backgroundColor: '#FAF7F2',
+    titleBarStyle: 'hidden',
+    ...(isMac ? { trafficLightPosition: { x: 16, y: 14 } } : { titleBarOverlay: { color: '#FFFFFF', symbolColor: '#78716C', height: 44 } }),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      // 采集/播放/定时器在窗未聚焦时也必须跑（上课期间用户必然在其它窗口），同悬浮窗口径
+      backgroundThrottling: false,
+    },
+  });
+  // 本地页非 http/localhost，不会命中主窗口的 insecure-origin 开关；但 Chromium 对 file://
+  // 的 mediaDevices 默认放行，这里再显式授权音频一次，防后续权限策略收紧。
+  voiceWindow.loadFile(path.join(__dirname, 'xiaozhi_voice.html'));
+  voiceWindow.on('closed', () => {
+    voiceWindow = null;
+    // 窗关了就下课：断 WS/释 codec，不留幽灵会话（面板设"点开始才建通道"的直播形态语义）
+    if (xzEngine) { try { xzEngine.lessonStop(); } catch (e) {} }
+  });
+}
+
+/** 弹语音窗；autoStart=true 时页面就绪后代按「开始上课」（上课指令仍由语音窗自身发出，守住 sender 安全边界） */
+function openVoicePanel(autoStart) {
+  const isNew = !(voiceWindow && !voiceWindow.isDestroyed());
+  createVoiceWindow();
+  if (!autoStart) return true;
+  const fire = () => {
+    try { if (voiceWindow && !voiceWindow.isDestroyed()) voiceWindow.webContents.send('xz:autostart', {}); } catch (e) { /* noop */ }
+  };
+  if (isNew) voiceWindow.webContents.once('did-finish-load', fire);
+  else fire();   // 窗已开着：页面早加载完，直接补一发
+  return true;
+}
+
+ipcMain.handle('xz:openPanel', () => openVoicePanel(false));
+// 黑板页「开始上课」（2026-11-05 入口合并）：开窗 + 自动开课一步到位
+ipcMain.handle('xz:openPanelStart', () => openVoicePanel(true));
+
+/**
+ * 主进程 → 本服务器 API 的唯一出口（v0.2.2 抽公共）：带主窗口 token、解双层契约只回 data。
+ * serverApi（开课/绑定链路）与字幕上报共用这一条，避免两套鉴权/解包口径漂移。
+ * 失败一律 throw（调用方自决降级），超时 10s（CodeReview P2-4：服务僵死不能挂死流程）。
+ */
+async function serverRequest(method, p, body) {
+  const tkn = await getMainAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (tkn) headers['Authorization'] = 'Bearer ' + tkn;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, 10000);
+  let res, j = null;
+  try {
+    res = await fetch(SERVER_BASE + p, {
+      method: method, headers: headers, body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    try { j = await res.json(); } catch (e) { /* 空/非 JSON 响应 */ }
+  } finally { clearTimeout(timer); }
+  if (!res || !j || j.success !== true) {
+    throw new Error(String((j && j.error) || ('HTTP ' + (res ? res.status : '网络异常'))));
+  }
+  return j.data;
+}
+
+// 字幕上报器（口播句=老师、识别句=学生，失败静默）：setupXzVoice 里创建，注入 serverRequest 便于单测
+let boardSpeech = null;
+
+function setupXzVoice() {
+  boardSpeech = xzSpeech.createSpeechReporter({ request: serverRequest, now: () => Date.now() });
+  xzEngine = xzVoice.createXzVoice({
+    configDir: app.getPath('userData'),
+    ipc: ipcMain,
+    httpPost: netHttpPost,
+    now: () => Date.now(),
+    // 账号级小智身份（2026-11-05 v0.2.1）：带主窗口 token 请求本服务器 API，
+    // 解包双层契约只把 data 交给引擎；失败 throw 由引擎降级处置（local-legacy/引导）。
+    serverApi: (method, p, body) => serverRequest(method, p, body),
+    // 安全：语音 IPC 只接语音窗 sender。主窗口加载的是远程 Flask 页，
+    // 共享 preload 不能把驱动麦/上下课的能力交给远程内容（CodeReview 警告⑨）
+    allowSender: (s) => {
+      try { return !!(voiceWindow && !voiceWindow.isDestroyed() && s === voiceWindow.webContents); }
+      catch (e) { return false; }
+    },
+    windowOps: {
+      send: (ch, payload) => {
+        if (voiceWindow && !voiceWindow.isDestroyed()) voiceWindow.webContents.send('xz:' + ch, payload);
+      },
+    },
+    onEvent: (evt) => {
+      // 课堂状态relay给主窗（黑板页指示灯/按钮文案）：只读转发，不给远程内容控制能力
+      if (evt && evt.type === 'state') {
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('xz:voice-state', evt.state); } catch (e) { /* noop */ }
+      }
+      // 字幕上报（v0.2.2 两段式黑板）：tts 逐句 = 老师口播，stt = 学生发言；
+      // 真机 ESP32 上课不走这条路（服务端拿不到口播文本，黑板页自动退化为卡片流）
+      if (boardSpeech) { try { boardSpeech.onEvent(evt); } catch (e) { /* 上报异常不断链 */ } }
+      // 事件流水落盘供排障/实弹留证（与 logs/debug_trace 同思路，userData 下免权限问题）
+      try {
+        fs.appendFileSync(path.join(app.getPath('userData'), 'xz_voice_events.log'),
+          JSON.stringify({ ts: new Date().toISOString(), evt }) + '\n');
+      } catch (e) { /* 日志失败不断链 */ }
+    },
+  });
+}
+
 /* ------------------------------------------------------- 启动 */
 
 app.whenReady().then(() => {
@@ -341,6 +477,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle('app:getServerBase', () => SERVER_BASE);
 
+  setupXzVoice();
+
   createMainWindow();
 
   app.on('activate', () => {
@@ -350,5 +488,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (asrSession) { try { asrSession.close(); } catch (e) {} asrSession = null; }
+  if (xzEngine) { try { xzEngine.dispose(); } catch (e) {} xzEngine = null; }
   if (process.platform !== 'darwin') app.quit();
 });

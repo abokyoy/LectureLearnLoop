@@ -1650,13 +1650,21 @@ def mastery_assessment(pid):
                 "rating": rating,
             })
             # 9-29 A 方案补履：评估通道同样全量留痕（答对进流水，答错自动入错题池）；选项随流水留存供翻卡复习
+            rec_id = None
             try:
-                kms.practice_manager.save_practice_record(
+                rec_id = kms.practice_manager.save_practice_record(
                     subject, pid, q.get("question", ""), user_ans, is_correct,
                     g.user_id, correct_ans, q.get("explanation", ""),
                     question_type="single", options=q.get("options") if isinstance(q.get("options"), list) else None)
             except Exception as e:  # noqa: BLE001
                 log.log_error("bridge", "assessment_persist", f"pid={pid} i={i} err={e}")
+            # v0.2.8「AI老师讲」：答错时回查入池错题行回传（判分结果行进黑板指派），回查失败不阻断判分
+            if not is_correct and rec_id:
+                try:
+                    detailed[-1]["teach_error_id"] = \
+                        kms.practice_manager.get_error_id_for_record(rec_id, g.user_id)
+                except Exception as e:  # noqa: BLE001
+                    log.log_error("bridge", "assessment_teach_lookup", f"pid={pid} i={i} err={e}")
         # 整批折叠为一次复习（取批内最保守 rating）：有答错→Again，全对按最低质量档
         accuracy = (correct_count / len(questions)) if questions else 0.0
         if ratings:
@@ -1687,6 +1695,7 @@ def mastery_assessment(pid):
 _CONFIG_TEXT_KEYS = {
     "summary_mode", "whisper_language", "selected_audio_device_name",
     "deepseek_model", "deepseek_api_url", "ollama_model", "gemini_model", "qwen_model", "qwen_api_url",
+    "glm_model", "glm_api_url",
 }
 _CONFIG_NUM_KEYS = {
     "auto_summary_interval", "auto_summary_max_chars", "manual_summary_max_chars",
@@ -1713,7 +1722,7 @@ def config_save():
                 continue
         elif k in _CONFIG_BOOL_KEYS:
             updates[k] = bool(v)
-        elif k in ("deepseek_api_key", "gemini_api_key", "qwen_api_key"):
+        elif k in ("deepseek_api_key", "gemini_api_key", "qwen_api_key", "glm_api_key"):
             # 2026-09-28 积分系统：系统级密钥仅管理员可改（管理后台 /api/admin/llm-config），普通用户禁止经此端点写入
             if not cr.is_admin_user(g.user_id):
                 continue
@@ -3258,8 +3267,9 @@ def point_practice_submit(pid):
         q_text = str((q.get("question") if isinstance(q, dict) else "") or "")
         c_ans = str((q.get("correct_answer") if isinstance(q, dict) else "") or "")
         expl = str((q.get("explanation") if isinstance(q, dict) else "") or "")
+        rec_id = None
         try:
-            kms.practice_manager.save_practice_record(
+            rec_id = kms.practice_manager.save_practice_record(
                 subject, pid, q_text, user_ans, ok, g.user_id, c_ans, expl,
                 question_type=(q.get("type") if isinstance(q, dict) else "") or "",
                 options=(q.get("options") if isinstance(q, dict) and isinstance(q.get("options"), list) else None),
@@ -3268,11 +3278,18 @@ def point_practice_submit(pid):
                 importance_score=kp_importance)
         except Exception as e:  # noqa: BLE001
             log.log_error("bridge", "practice_persist", f"pid={pid} i={i} err={e}")
+        # v0.2.8「AI老师讲」：答错回查入池错题行（判分结果行进黑板指派），失败不阻断判分
+        teach_eid = None
+        if not ok and rec_id:
+            try:
+                teach_eid = kms.practice_manager.get_error_id_for_record(rec_id, g.user_id)
+            except Exception as e:  # noqa: BLE001
+                log.log_error("bridge", "practice_teach_lookup", f"pid={pid} i={i} err={e}")
         detailed.append({
             "question_index": i, "question": q_text, "type": (q.get("type") if isinstance(q, dict) else "single"),
             "user_answer": user_ans, "correct_answer": c_ans, "is_correct": ok,
             "difficulty": difficulty, "explanation": expl, "comment": results[i]["comment"],
-            "rating": ratings[i],
+            "rating": ratings[i], "teach_error_id": teach_eid,
         })
 
     # ---- 4) 整批折叠为一次 FSRS 复习（与评估同口径）：取批内最保守 rating，实测正确率封顶 ----
@@ -3495,8 +3512,9 @@ def practice_error_set_submit():
         c_ans = str(q.get("correct_answer") or "")
         expl = str(q.get("explanation") or "")
         q_subj = root["subject"] if root else subject
+        rec_id = None
         try:
-            kms.practice_manager.save_practice_record(
+            rec_id = kms.practice_manager.save_practice_record(
                 q_subj, kp_id, q_text, user_ans, ok, g.user_id, c_ans, expl,
                 question_type=str(q.get("type") or ""),
                 options=q.get("options") if isinstance(q.get("options"), list) else None,
@@ -3507,6 +3525,16 @@ def practice_error_set_submit():
                 pool_new_on_wrong=derived)
         except Exception as e:  # noqa: BLE001
             log.log_error("bridge", "error_set_persist", f"i={i} eid={eid} err={e}")
+        # v0.2.8「AI老师讲」：答错回查本题错题行——派生题新行只靠流水关联（旧 error_id
+        # 挂的是 root），重练又错回查到原行；回查不成退化用 root eid，不阻断判分
+        teach_eid = None
+        if not ok:
+            teach_eid = eid
+            if rec_id:
+                try:
+                    teach_eid = kms.practice_manager.get_error_id_for_record(rec_id, g.user_id) or eid
+                except Exception as e:  # noqa: BLE001
+                    log.log_error("bridge", "error_set_teach_lookup", f"i={i} eid={eid} err={e}")
         # 错题行 FSRS：重练/派生题都算对 root 记忆的提取（举一反三为复习 root 而生）
         if eid is not None:
             try:
@@ -3529,7 +3557,7 @@ def practice_error_set_submit():
             "user_answer": user_ans, "correct_answer": c_ans, "is_correct": ok,
             "difficulty": str(q.get("difficulty") or ""), "explanation": expl,
             "comment": results[i]["comment"], "rating": rating,
-            "error_id": eid, "derived": derived,
+            "error_id": eid, "derived": derived, "teach_error_id": teach_eid,
         })
 
     # ---- kp 分组折叠更新 + 回读展示值 ----

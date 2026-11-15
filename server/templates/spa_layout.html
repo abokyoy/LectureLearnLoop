@@ -114,7 +114,9 @@
                 var _map = {
                     practice_overview: 'practice_overview',
                     practice_materials: 'practice_overview', practice_knowledge: 'practice_overview', practice_errors: 'practice_overview',
-                    memory_knowledge: 'memory_overview', memory_errors: 'memory_overview', memory_overview: 'memory_overview'
+                    memory_knowledge: 'memory_overview', memory_errors: 'memory_overview', memory_overview: 'memory_overview',
+                    // 2026-11-11 “学”二级菜单：笔记学习/目标导向学习都点亮“学”主项（直达页 learn_goals）
+                    learn_goals: 'learn_goals', online_course_notes: 'learn_goals'
                 };
                 setActiveMenuItem(_map[window.current_page] || window.current_page);
             }

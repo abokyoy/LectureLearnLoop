@@ -30,7 +30,9 @@ _TMPL_DIR = Path(__file__).resolve().parent / "templates"
 # 四期D组：“从资料学习”已合并进网课笔记，/learn_materials 302 重定向，不再列入。
 _SPA_PAGES = {
     "/online_course": "online_course_notes",
+    "/learn_goals": "learn_goals",  # 2026-11-11 目标导向学习（体系化课程）
     "/knowledge_base": "knowledge_base",
+    "/teacher_board": "teacher_board",
     "/settings": "settings",
     "/llm_logs": "llm_logs",
     "/admin/credits": "admin_credits",
@@ -49,6 +51,9 @@ _FRAGMENT_IDS = {
     "memory_overview",
     "memory_errors",
     "knowledge_point",  # u10：知识点详情独立直达页（从练/记总览、选点页直达，不再绕脑图）
+    "micro_course",  # 2026-10-30 S1：微课详情/列表页（course_key 由前端 query/hash 传递）
+    "teacher_board",  # 2026-11-04：小智云端讲师黑板页
+    "learn_goals",  # 2026-11-11：目标导向学习（“学”二级菜单新项）
     "knowledge_base",
     "settings",
     "llm_logs",
@@ -104,10 +109,24 @@ def page_online_course():
                            content_id="online_course_notes", active_menu="online_course_notes")
 
 
+@pages_bp.route("/learn_goals")
+def page_learn_goals():
+    """目标导向学习（2026-11-11）：输入学习目标→AI 生成体系化课程。"""
+    return render_template("spa/page.html", page="pages/learn_goals.html",
+                           content_id="learn_goals", active_menu="learn_goals")
+
+
 @pages_bp.route("/knowledge_base")
 def page_knowledge_base():
     return render_template("spa/page.html", page="pages/knowledge_base.html",
                            content_id="knowledge_base", active_menu="knowledge_base")
+
+
+@pages_bp.route("/teacher_board")
+def page_teacher_board():
+    """小智云端讲师黑板（2026-11-04 P1）：AI 老师实时板书的展示面。"""
+    return render_template("spa/page.html", page="pages/teacher_board.html",
+                           content_id="teacher_board", active_menu="teacher_board")
 
 
 @pages_bp.route("/settings")
