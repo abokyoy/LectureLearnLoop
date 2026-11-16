@@ -4443,5 +4443,62 @@ class TalkUnboardedMirrorTest(unittest.TestCase):
         self.assertIn("黑板一笔没添", self._probe())
 
 
+class TnDropMirrorTest(unittest.TestCase):
+    """吞字镜（2026-11-18 实弹轮用户报障：字幕「所有形如 的向量」「再看 这个向量」
+    ——坐标式被云端 TTS 归一化吞成空格，下发即残、客户端无法回补）：
+    老师句中现「汉字 空格 汉字」即记账，下次工具返回递一次指名提醒并消费。
+    纯内存状态机不碰 DB；探针同 TalkUnboardedMirrorTest 口径。"""
+
+    def setUp(self):
+        self.uid = "tnmir_" + uuid.uuid4().hex[:10]
+
+    def tearDown(self):
+        LB._boards.pop(self.uid, None)
+
+    def _probe(self):
+        return LB.execute_tool("board_highlight", {"item_id": -1}, self.uid)
+
+    def test_u1_normal_speech_no_mirror(self):
+        """正常中文句无句中空格：不触发。"""
+        LB.append_speech(self.uid, "teacher", "第三个分量永远是零，这个方向就废了")
+        self.assertNotIn("凭空消失", self._probe())
+
+    def test_u2_residue_triggers_once_with_sample(self):
+        """吞字残骸：镜带上残句样本指名道姓，且只递一次（消费即清，不反复唠）。"""
+        LB.append_speech(self.uid, "teacher", "所有形如 的向量，第三个分量锁死是零")
+        t = self._probe()
+        self.assertIn("凭空消失", t)
+        self.assertIn("所有形如 的向量", t)  # 残句样本同屏
+        self.assertNotIn("凭空消失", self._probe())  # 第二次不重复递
+
+    def test_u3_latin_spacing_not_counted(self):
+        """中英混排的正常空格不误触：空格两侧必挨字母，不是「汉字 空格 汉字」。"""
+        LB.append_speech(self.uid, "teacher", "在 R3 空间里有三个基，每一个都靠它们搭")
+        self.assertNotIn("凭空消失", self._probe())
+
+    def test_u3b_pure_latin_spacing_clean(self):
+        LB.append_speech(self.uid, "teacher", "矩阵 A 和 B 相乘不满足交换律")
+        self.assertNotIn("凭空消失", self._probe())
+
+    def test_u4_student_speech_not_counted(self):
+        """学生的话不记账：这镜盯的是老师的嘴。"""
+        LB.append_speech(self.uid, "student", "形如 的向量是什么意思")
+        self.assertNotIn("凭空消失", self._probe())
+
+    def test_u5_clear_board_resets(self):
+        """擦板重开：吞字提醒旧账清零。"""
+        LB.append_speech(self.uid, "teacher", "再看 这个向量")
+        LB.execute_tool("board_clear", {}, self.uid)
+        self.assertNotIn("凭空消失", self._probe())
+
+    def test_u6_refire_after_consumed(self):
+        """消费后可重犯重递：不是终身制沉默。"""
+        LB.append_speech(self.uid, "teacher", "形如 的向量是一类")
+        self.assertIn("凭空消失", self._probe())
+        self.assertNotIn("凭空消失", self._probe())
+        LB.append_speech(self.uid, "teacher", "等于 的那个式子")
+        self.assertIn("凭空消失", self._probe())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

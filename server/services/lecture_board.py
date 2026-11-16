@@ -69,6 +69,10 @@ _ASSIGN_TTL_S = 600     # 指派有效期（秒）：超时视为学生没真上
 _ASSIGN_KINDS = ("error", "kp", "text", "lesson")
 _LESSON_TXT_MAX = 2800  # 指导语/重放内嵌课文限长（超长截断并在文末提示老师分段推进）
 _TALK_UNBOARDED_MIN = 260  # 老师连续口播这么多字没上板即触「说了没写镜」（约 1 分钟讲课话）
+# 吞字残骸探测（2026-11-18 实弹轮：字幕「所有形如 的向量」——坐标式被云端 TTS
+# 文本归一化吞成空格）。口径：中文正文句中本不该有空格，「汉字 空格 汉字」
+# 即吞字强特征（中英混排的空格两侧必挨字母，不误触；多发空格已在入口压单）
+_TN_TRACE_RE = re.compile(r"[\u4e00-\u9fff] [\u4e00-\u9fff]")
 _ASSIGN_STORE_MAX = 40  # 指派标题存储硬顶（防绕过展示层限长直调 set_assign 塞长文；
                         # 必须 ≥ routes_board._ASSIGN_LABEL_MAX 展示层限长，评审 Minor-4）
 
@@ -125,9 +129,11 @@ def _board(uid: str) -> dict:
              # lesson_txt=本课在讲的指派课时 {id,label}（与 lesson_kp 同性质互斥，
              # 目标导向课程轮：课文讲一半被追问时重放课文素材，防有料断讲）；
              # t_since_board=老师上次上板以来累计口播字数（2026-11-17「面板一直
-             # 说话、板书不动」报障：≥_TALK_UNBOARDED_MIN 未上板即镜检拦嘴）
+             # 说话、板书不动」报障：≥_TALK_UNBOARDED_MIN 未上板即镜检拦嘴）；
+             # tn_drop/tn_last=本轮待提醒的「吞字残骸」句计数与残句样本
+             # （2026-11-18 实弹轮：坐标式被 TTS 吞成空格，下次工具返回提醒一次）
              "lesson_kp": None, "unexplained": [], "q_unboarded": 0,
-             "lesson_txt": None, "t_since_board": 0}
+             "lesson_txt": None, "t_since_board": 0, "tn_drop": 0, "tn_last": ""}
         _boards[uid] = b
     return b
 
@@ -203,6 +209,8 @@ def clear_board(uid: str) -> dict:
         b["unexplained"] = []       # 板空了进度镜同步归零（lesson_kp 与 assign 同理保留）
         b["q_unboarded"] = 0        # 擦板重开：追问没上板的旧账一并清零
         b["t_since_board"] = 0      # 擦板重开：干讲账同样清零
+        b["tn_drop"] = 0            # 擦板重开：吞字提醒旧账一并清零
+        b["tn_last"] = ""
         b["source_error_id"] = None
         # 擦板不清指派（中位线定理误杀事故 2026-11-07）：常见流是「点指派开新课 →
         # 先擦旧板书 → 请老师上课」，旧语义把刚下发的指派连带作废，老师取料落回
@@ -699,6 +707,12 @@ def append_speech(uid: str, role: str, text: str):
             # 说了没写镜记账（2026-11-17）：老师每句口播累计字数，上板即清；
             # 封顶防无界增长（镜检只需知道够不够多，超阈后数值不精确无妨）
             b["t_since_board"] = min(2000, (b.get("t_since_board") or 0) + len(t))
+            # 吞字残骸探测（2026-11-18 实弹轮）：句中「汉字 空格 汉字」=式子被
+            # 云端归一化吞掉的现场，留最近残句样本供镜检指名道姓（计数上限 9，
+            # 镜只递一次即清，见 _tn_drop_mirror）
+            if _TN_TRACE_RE.search(t):
+                b["tn_drop"] = min(9, (b.get("tn_drop") or 0) + 1)
+                b["tn_last"] = t[:60]
         else:
             # 学生开口=一次追问/回应：「讲了没写」计数 +1（上限 9 防无界，
             # 镜检只需知道够不够多、不需精确数，见 _q_unboarded_mirror）
@@ -1198,8 +1212,9 @@ TOOLS = [
             "关系画结构图、几何画图形、函数统计画图像，用 board_draw 配图。"
             "追问纪律：学生问一个问题，把它讲透（结论→为什么→举个例子）再停嘴，"
             "别回两三句就停下等学生催「继续」；答完把关键结论 board_write 上板。"
-            "口播纪律：念符号必须带中文名（如「矩阵A」「x零」），"
-            "口播里别只写 LaTeX 符号（会被语音合成吞字，学生和你都看不见）。",
+            "口播纪律：念符号必须带中文名（如「矩阵A」），坐标式也要翻成中文"
+            "（别说「(x,y,0)」，说「第三个分量是零」）——裸 LaTeX 和括号式会被"
+            "语音合成吞成空格，学生听到的就是断句。",
         "inputSchema": {"type": "object", "properties": {
             "error_id": {"type": "string", "description": "错题id；省略＝只列清单"}},
         },
@@ -1380,7 +1395,7 @@ def execute_tool(name: str, args: dict, uid: str) -> str:
     + 讲了没写镜（追问阶段只说不写上板，见 _q_unboarded_mirror）。"""
     return (_execute_core(name, args, uid) + _anim_notice(uid)
             + _explain_mirror(uid) + _q_unboarded_mirror(uid)
-            + _talk_unboarded_mirror(uid))
+            + _talk_unboarded_mirror(uid) + _tn_drop_mirror(uid))
 
 
 def _explain_mirror(uid: str) -> str:
@@ -1424,9 +1439,30 @@ def _talk_unboarded_mirror(uid: str) -> str:
     if n < _TALK_UNBOARDED_MIN:
         return ""
     return ("\n你已连续讲了约 " + str(n) + " 字，黑板一笔没添。"
-            "把刚才这段讲的内容收拢成一卡 board_write 上板；能画的一定用 "
+            "把刚才这段讲的内容收拢成一卡 board_write 上板；能画的一律用 "
             "board_draw 画出来（关系画结构图、几何画图形、函数画图像）——"
             "话说过就没，板书才是学生回头能看见的东西。")
+
+
+def _tn_drop_mirror(uid: str) -> str:
+    """吞字镜（2026-11-18 实弹轮用户报障：字幕「所有形如 的向量」——坐标式
+    被云端 TTS 文本归一化吞成空格，客户端拿到的就是残句、无法回补）：
+    append_speech 检测到吞字残骸即记账，下次工具返回递一次指名道姓的提醒
+    并消费清零（同一批不反复唠叨；再犯再递）。这是唯一能闭环到模型的通道：
+    残骸只能在产出端（老师的口播文本）预防，不能在展示端恢复。"""
+    with _lock:
+        b = _board(uid)
+        n, last = b.get("tn_drop") or 0, b.get("tn_last") or ""
+        if n:
+            b["tn_drop"] = 0
+            b["tn_last"] = ""
+    if not n:
+        return ""
+    return ("\n你刚才那句里有个式子凭空消失了，字幕变成：「" + last + "」。"
+            "坐标、括号式、LaTeX 这类写法会被语音合成吞成空格，学生听到的就是断句。"
+            "式子必须翻成能念的中文再说：不说「形如 (x,y,0) 的向量」，"
+            "说「第三个分量锁死是零的那类向量」；「形如/比如/等于/再看」后面"
+            "必须紧跟能读出来的内容，读完自检一遍句子完不完整。")
 
 
 def _execute_core(name: str, args: dict, uid: str) -> str:
