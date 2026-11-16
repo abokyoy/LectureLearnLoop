@@ -435,3 +435,115 @@ class TestAssignText:
         assert a["raw_text"] == "第二段"  # 学生改口覆写
         text = LB.execute_tool("get_lesson_material", {}, au["user_id"])
         assert "第二段" in text and "第一段" not in text
+
+
+class TestAssignLesson:
+    """目标导向课程轮：整堂课时指派 kind='lesson'（课文页「让 AI 老师讲课」）。
+    覆盖：空课文拒指派、归属拒止、指导语注入+一次性消费、lesson_txt 常驻重放、
+    课文被删摘除回落、与 lesson_kp 互斥覆盖。"""
+
+    @staticmethod
+    def _reset(uid):
+        import services.lecture_board as LB
+        with LB._lock:
+            b = LB._board(uid)
+            b["assign"] = None
+            b["lesson_kp"] = None
+            b["lesson_txt"] = None
+
+    def test_50_no_content_rejected(self, client, au, llm):
+        import services.lecture_board as LB
+        self._reset(au["user_id"])
+        lid = _mk_lesson(client, au)  # status=new，正文未生成
+        r = client.post("/api/board/assign",
+                        json={"kind": "lesson", "lesson_id": lid}, headers=_h(au["token"]))
+        j = r.get_json()
+        assert j["success"] is False and "课文" in j["error"], j
+        assert LB.get_assign(au["user_id"]) is None  # 拒收不落指派
+
+    def test_51_assign_ok_and_inject_consume(self, client, au, llm):
+        import services.lecture_board as LB
+        self._reset(au["user_id"])
+        lid = _mk_lesson(client, au)
+        _pass_pretest(client, au, lid)  # 课文正文在库
+        r = client.post("/api/board/assign",
+                        json={"kind": "lesson", "lesson_id": lid}, headers=_h(au["token"]))
+        j = r.get_json()
+        assert j["success"], j
+        assert j["data"]["kind"] == "lesson" and j["data"]["label"]
+        a = LB.get_assign(au["user_id"])
+        assert a and a["kind"] == "lesson" and a["id"] == lid
+        d = client.get("/api/board/assign", headers=_h(au["token"])).get_json()["data"]
+        assert d["assign"]["kind"] == "lesson"  # GET 不消费（黑板页提示条链复用）
+        text = LB.execute_tool("get_lesson_material", {}, au["user_id"])
+        assert text.startswith("📌网页指定讲解"), text[:60]
+        assert "梯度下降" in text and "这堂课" in text  # 课文全文现取注入
+        assert "续讲" not in text  # 首次取料不叠续讲定式（双份指令防，同 kp 口径）
+        assert LB.get_assign(au["user_id"]) is None  # 一次性消费
+        with LB._lock:
+            lt = LB._board(au["user_id"]).get("lesson_txt")
+        assert lt and lt["id"] == lid  # 消费后素材课内常驻
+
+    def test_52_replay_after_consume(self, client, au, llm):
+        import services.lecture_board as LB
+        self._reset(au["user_id"])
+        lid = _mk_lesson(client, au)
+        _pass_pretest(client, au, lid)
+        client.post("/api/board/assign",
+                    json={"kind": "lesson", "lesson_id": lid}, headers=_h(au["token"]))
+        LB.execute_tool("get_lesson_material", {}, au["user_id"])  # 消费
+        text2 = LB.execute_tool("get_lesson_material", {}, au["user_id"])  # 再取料（追问）
+        assert "📌" not in text2
+        assert "续讲：本课正在讲学生点名的这一堂课" in text2
+        assert "梯度下降" in text2 and "严禁结课道别" in text2  # 有料可重讲
+
+    def test_53_lesson_deleted_fallback(self, client, au, llm):
+        import services.lecture_board as LB
+        self._reset(au["user_id"])
+        lid = _mk_lesson(client, au)
+        _pass_pretest(client, au, lid)
+        client.post("/api/board/assign",
+                    json={"kind": "lesson", "lesson_id": lid}, headers=_h(au["token"]))
+        LB.execute_tool("get_lesson_material", {}, au["user_id"])
+        conn = _conn()
+        try:
+            conn.execute("UPDATE course_lessons SET content_md = '' WHERE id = ?", (lid,))
+            conn.commit()
+        finally:
+            conn.close()
+        text2 = LB.execute_tool("get_lesson_material", {}, au["user_id"])
+        assert "续讲" not in text2  # 课文落空回落正常取料，不把老师往空课文上引
+        with LB._lock:
+            assert LB._board(au["user_id"]).get("lesson_txt") is None  # 常驻已摘除
+
+    def test_54_kp_lesson_context_exclusive(self, client, au, llm):
+        import services.lecture_board as LB
+        self._reset(au["user_id"])
+        lid = _mk_lesson(client, au)
+        _pass_pretest(client, au, lid)
+        with LB._lock:
+            LB._board(au["user_id"])["lesson_kp"] = {"id": 999, "label": "旧知识点语境"}
+        client.post("/api/board/assign",
+                    json={"kind": "lesson", "lesson_id": lid}, headers=_h(au["token"]))
+        LB.execute_tool("get_lesson_material", {}, au["user_id"])
+        with LB._lock:
+            b = LB._board(au["user_id"])
+            assert b["lesson_kp"] is None  # 新课时覆盖旧知识点语境
+            assert b["lesson_txt"]["id"] == lid
+
+    def test_55_foreign_and_invalid_rejected(self, client, au, au2, llm):
+        import services.lecture_board as LB
+        self._reset(au2["user_id"])
+        lid = _mk_lesson(client, au)
+        _pass_pretest(client, au, lid)
+        r = client.post("/api/board/assign",
+                        json={"kind": "lesson", "lesson_id": lid}, headers=_h(au2["token"]))
+        assert r.get_json()["success"] is False  # B 指派 A 的课时：归属拒止
+        assert LB.get_assign(au2["user_id"]) is None
+        r2 = client.post("/api/board/assign",
+                         json={"kind": "lesson", "lesson_id": "abc"}, headers=_h(au["token"]))
+        j2 = r2.get_json()
+        assert j2["success"] is False and "lesson_id" in j2["error"]
+        r3 = client.post("/api/board/assign",
+                         json={"kind": "lesson", "lesson_id": 99999999}, headers=_h(au["token"]))
+        assert r3.get_json()["success"] is False  # 查无此课

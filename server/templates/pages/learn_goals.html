@@ -1121,7 +1121,21 @@
         if (!box || !flow) return;
         box.innerHTML = '<p class="text-[11px] text-cl-muted mb-1">知识点提取</p>'
             + '<button id="cgExtractGoBtn" class="w-full px-2 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary hover:border-cl-primary transition-colors">从课文提取知识点</button>'
+            + '<button id="cgLessonTeachBtn" class="w-full mt-1.5 px-2 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary hover:border-cl-primary transition-colors">让 AI 老师讲课</button>'
             + '<div id="cgExtractOut" class="mt-2"></div>';
+        // 目标导向课程轮：整堂课时指派进小黑板（同框选「请老师讲课」链），
+        // 老师取料时现取课文注入指导语；学生到黑板说「开始讲课吧」即讲这堂课
+        $('cgLessonTeachBtn').addEventListener('click', function () {
+            var btn = this;
+            btn.disabled = true;
+            cgPost('/api/board/assign', { kind: 'lesson', lesson_id: flow.lid }).then(function () {
+                if (global.goMenu) { global.goMenu('teacher_board'); }
+                else { location.href = '/teacher_board'; }
+            }).catch(function (e) {
+                btn.disabled = false;
+                alert('打开 AI 老师黑板失败：' + ((e && e.message) || e));
+            });
+        });
         $('cgExtractGoBtn').addEventListener('click', function () {
             var btn = this, out = $('cgExtractOut');
             btn.disabled = true; btn.textContent = '提取中…（消耗提取积分）';

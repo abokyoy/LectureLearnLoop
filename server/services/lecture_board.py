@@ -64,7 +64,10 @@ _UNEXPLAINED_MAX = 24   # 「写了还没讲」卡队列保留上限（镜检只
 _ASSIGN_TTL_S = 600     # 指派有效期（秒）：超时视为学生没真上课，静默作废
 # text 型=课文框选原文指派（追问笔记树轮 2026-11-12）：target_id=文本稳定哈希（同源去重用），
 # raw_text 随指派存内存（进程重启即失，指派本就是 TTL 分钟级短命语义）。
-_ASSIGN_KINDS = ("error", "kp", "text")
+# lesson 型=整堂课时指派（目标导向课程轮 2026-11-11）：target_id=course_lessons.id，
+# 课文素材不随指派存（长文），指导语/重放现取 DB——课文被删即落空返空串。
+_ASSIGN_KINDS = ("error", "kp", "text", "lesson")
+_LESSON_TXT_MAX = 2800  # 指导语/重放内嵌课文限长（超长截断并在文末提示老师分段推进）
 _ASSIGN_STORE_MAX = 40  # 指派标题存储硬顶（防绕过展示层限长直调 set_assign 塞长文；
                         # 必须 ≥ routes_board._ASSIGN_LABEL_MAX 展示层限长，评审 Minor-4）
 
@@ -117,8 +120,11 @@ def _board(uid: str) -> dict:
              # 仍须课内可重放（学生说「继续/没听懂」时老师取料拿得回内容）；
              # unexplained=写上板但老师还没开口讲过的卡号队列（老师一句口播即清零）；
              # q_unboarded=学生追问计数（2026-11-16 实弹轮：追问阶段板书不同步）——
-             # 学生每说一句 +1，任何上板动作清零；≥2 时镜检拦嘴（见 _q_unboarded_mirror）
-             "lesson_kp": None, "unexplained": [], "q_unboarded": 0}
+             # 学生每说一句 +1，任何上板动作清零；≥2 时镜检拦嘴（见 _q_unboarded_mirror）；
+             # lesson_txt=本课在讲的指派课时 {id,label}（与 lesson_kp 同性质互斥，
+             # 目标导向课程轮：课文讲一半被追问时重放课文素材，防有料断讲）
+             "lesson_kp": None, "unexplained": [], "q_unboarded": 0,
+             "lesson_txt": None}
         _boards[uid] = b
     return b
 
@@ -212,6 +218,24 @@ def clear_board(uid: str) -> dict:
 
 # ---------------------------------------------------------------- 网页「AI老师讲」指派（v0.2.8）
 
+def lesson_teach_pack(uid: str, lid) -> dict | None:
+    """课时素材唯一实现：归属三表链（lesson→module→goal.user_id）+ 课文非空。
+    查无此课 / 不属于你 / 课文还没写成 → None（指派层据此拒，绝不把老师往不存在的课文上引）。"""
+    conn = _conn_factory()()
+    try:
+        row = conn.execute(
+            "SELECT l.title, l.content_md, g.subject_name "
+            "FROM course_lessons l JOIN course_modules m ON l.module_id = m.id "
+            "JOIN learning_goals g ON m.goal_id = g.id "
+            "WHERE l.id = ? AND g.user_id = ?", (lid, str(uid))).fetchone()
+    finally:
+        conn.close()
+    if not row or not str(row[1] or "").strip():
+        return None
+    return {"title": str(row[0] or "").strip() or "未命名课文",
+            "text": str(row[1]), "subject": row[2] or "通用"}
+
+
 def set_assign(uid: str, kind: str, target_id, label: str, raw_text: str = "") -> dict:
     """记一条网页指派讲解目标（入口按钮→跳黑板→老师取料时注入开讲指导）。
     归属校验由调用方（routes_board）走素材唯一实现把关；重复指派覆写（学生改口）。
@@ -280,6 +304,25 @@ def _assign_directive(uid: str, a: dict) -> str:
                 "关键处拆开讲），适合画图的地方 board_draw 配图。\n"
                 "讲课纪律：一张卡讲透再写下一张（写完就停嘴连写多张=没上课）；"
                 "板上所有卡都讲完、学生点头之前，不要结课道别。\n")
+    if a["kind"] == "lesson":
+        try:
+            pack = lesson_teach_pack(uid, a["id"])
+        except Exception as e:  # noqa: BLE001 课文瞬抖读不到不阻断取料主流程（消费侧留指派重试）
+            log.log("xz_board", "assign_lesson_pack", f"error:{e}", {"uid": uid, "lid": a["id"]})
+            return ""
+        if not pack:
+            return ""
+        txt = pack["text"].strip()
+        if len(txt) > _LESSON_TXT_MAX:
+            txt = txt[:_LESSON_TXT_MAX] + "\n（课文较长只展示到这里——先把展示部分讲完，学生要继续时用「继续」，你按板书进度往下讲）"
+        return (f"📌网页指定讲解：学生点名要你讲学科「{pack['subject']}」课上的这一堂课"
+                f"「{pack['title']}」。课文全文如下：\n{txt}\n"
+                "开讲方式：先 board_write 建 topic 主干卡（这堂课的标题），再把课文按"
+                "逻辑顺序拆成 2-4 个关键点逐一建卡讲解——每张卡讲透（结论→为什么→"
+                "举例子）再写下一张（写完就停嘴连写多张=没上课）；公式用 formula 卡，"
+                "适合画图的地方 board_draw 配图。\n"
+                "讲课纪律：只讲这篇课文，不擅自跳下一课、不改题；"
+                "课文没讲完、学生点头之前，不要结课道别。\n")
     if a["kind"] == "kp":
         try:
             from routes_micro_course import kp_teach_pack
@@ -336,6 +379,33 @@ def _kp_replay_text(uid: str, lk: dict) -> str:
             "学生说「继续/没听懂/再讲一下」时，就照那几张卡的正文换个例子或更直白的说法重讲，"
             "需要改写某张卡用 board_replace；原理图舞台若已就绪，也可用 board_anim_step 重推一步带学生再看一遍。"
             "板上卡片没讲完之前，严禁结课道别。")
+
+
+def _lesson_txt_replay(uid: str, lt: dict) -> str:
+    """课内指派课时素材重放（与 _kp_replay_text 同形，目标导向课程轮）：
+    课文指派已消费，学生说「继续/没听懂」时老师重新取料，拿回课文与板面进度
+    接着往下讲。课文被删/清空则摘除常驻，回落正常取料流程。"""
+    try:
+        pack = lesson_teach_pack(uid, lt.get("id"))
+    except Exception as e:  # noqa: BLE001 重放失败不阻断取料主流程
+        log.log("xz_board", "lesson_txt_replay", f"error:{e}", {"uid": uid, "lid": lt.get("id")})
+        return ""
+    if not pack:
+        with _lock:
+            b = _board(uid)
+            if (b.get("lesson_txt") or {}).get("id") == lt.get("id"):
+                b["lesson_txt"] = None
+        return ""
+    txt = pack["text"].strip()
+    if len(txt) > _LESSON_TXT_MAX:
+        txt = txt[:_LESSON_TXT_MAX] + "\n（课文较长只展示到这里，按展示部分推进。）"
+    return (f"续讲：本课正在讲学生点名的这一堂课「{pack['title']}」"
+            f"（学科 {pack['subject']}，素材全课有效）。课文如下：\n{txt}\n"
+            + status_line(uid) + "\n"
+            "先对照状态行找出还没讲过的卡，从最旧那张起一张一张讲透；"
+            "学生说「继续/没听懂/再讲一下」时，照板上最新那张卡找到课文里对应段落，"
+            "换个例子或更直白的说法把下一段接着讲完，需要改写某张卡用 board_replace。"
+            "课文没讲完之前，严禁结课道别。")
 
 
 def _resume_directive(uid: str) -> str:
@@ -1330,26 +1400,37 @@ def _execute_core(name: str, args: dict, uid: str) -> str:
                 # 不再靠老师行为反推指派去向（kp 素材落空返空串历史上全静默）
             log.log("xz_board", "assign_take", "injected" if pre else "miss",
                     {"uid": uid, "kind": a["kind"], "id": a["id"]})
-        if a and (pre or a["kind"] != "kp"):
+        if a and (pre or a["kind"] not in ("kp", "lesson")):
+            # lesson 与 kp 同待遇：素材现取 DB，瞬抖读不到时不清指派（下次取料重试）
             _drop_assign(uid, a)
-            # 指派消费后素材课内常驻（讲课连续性）：kp 型注入成功即记 lesson_kp，
-            # 学生说「继续/没听懂」时重调本工具可重放素材；错题新指派覆盖知识点语境
+            # 指派消费后素材课内常驻（讲课连续性）：kp/lesson 型注入成功即记常驻键，
+            # 学生说「继续/没听懂」时重调本工具可重放素材；新指派互相覆盖语境
             with _lock:
                 b = _board(uid)
                 if a["kind"] == "kp" and pre:
                     b["lesson_kp"] = {"id": a["id"], "label": a["label"]}
+                    b["lesson_txt"] = None
+                elif a["kind"] == "lesson" and pre:
+                    b["lesson_txt"] = {"id": a["id"], "label": a["label"]}
+                    b["lesson_kp"] = None
                 elif a["kind"] == "error":
                     b["lesson_kp"] = None
+                    b["lesson_txt"] = None
         if not error_id:
             # 课内指定知识点重放（事故主因：指派一次性消费后素材再也拿不回，
             # 老师被学生追问时无料可讲，只能空口收尾道别）；本次刚消费 kp 指派
             # 的不算——开讲指导语（pre）已带全素材，再拼「续讲」就是双份指令
             #（十一轮评审 Warning：首 call 开讲+续讲同屏、口吻相反）
-            if not (a and a["kind"] == "kp" and pre):
+            if not (a and a["kind"] in ("kp", "lesson") and pre):
                 with _lock:
                     lk = dict(_board(uid).get("lesson_kp") or {})
+                    lt = dict(_board(uid).get("lesson_txt") or {})
                 if lk:
                     replay = _kp_replay_text(uid, lk)
+                    if replay:
+                        return pre + replay
+                elif lt:
+                    replay = _lesson_txt_replay(uid, lt)
                     if replay:
                         return pre + replay
             conn = _conn_factory()()

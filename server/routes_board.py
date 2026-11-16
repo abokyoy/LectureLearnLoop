@@ -65,8 +65,10 @@ def _assign_label(stem: str) -> str:
 @require_auth
 def board_assign():
     """记指派：body {kind:'error', error_id} / {kind:'kp', kp_id} /
-    {kind:'text', text}（课文框选原文，追问笔记树轮 2026-11-12）。
-    error/kp 归属校验走素材唯一实现（错题 error_explain_pack / 知识点 kp_teach_pack），
+    {kind:'text', text}（课文框选原文，追问笔记树轮 2026-11-12） /
+    {kind:'lesson', lesson_id}（整堂课时指派，目标导向课程轮）。
+    error/kp/lesson 归属校验走素材唯一实现（错题 error_explain_pack / 知识点
+    kp_teach_pack / 课时 LB.lesson_teach_pack），
     查无此料即拒，不在指派层另开 SQL；text 无归属问题（文本来自本人页面操作）。"""
     body = request.get_json(silent=True) or {}
     kind = str(body.get("kind") or "").strip().lower()
@@ -125,7 +127,24 @@ def board_assign():
         except Exception as e:  # noqa: BLE001
             log.log_error("xz_board", "stage_auto", f"uid={g.user_id} err={e}")
         return jsonify({"success": True, "data": {"kind": "text", "label": a["label"]}})
-    return jsonify({"success": False, "error": "kind 只支持 error/kp/text"})
+    if kind == "lesson":
+        # 目标导向课程「让 AI 老师讲课」：指派整堂课时，课文素材不随指派存
+        # （长文），老师取料时现走 lesson_teach_pack 注入指导语。
+        # 故意不开原理图舞台：整篇课文非单概念图能表达，也省生成成本
+        try:
+            lid = int(body.get("lesson_id"))
+        except (TypeError, ValueError, OverflowError):
+            return jsonify({"success": False, "error": "lesson_id 非法"})
+        try:
+            pack = LB.lesson_teach_pack(str(g.user_id), lid)
+        except Exception as e:  # noqa: BLE001 入口异常不能把页面带坑
+            log.log_error("xz_board", "board_assign", f"uid={g.user_id} err={e}")
+            return jsonify({"success": False, "error": "课文素材读取失败，稍后再试"})
+        if not pack:
+            return jsonify({"success": False, "error": "课文还没写成（或不存在/不属于你），先完成课文再请老师讲课"})
+        a = LB.set_assign(g.user_id, "lesson", lid, _assign_label(pack["title"]))
+        return jsonify({"success": True, "data": {"kind": "lesson", "label": a["label"]}})
+    return jsonify({"success": False, "error": "kind 只支持 error/kp/text/lesson"})
 
 
 @board_bp.route("/api/board/assign", methods=["GET"])
