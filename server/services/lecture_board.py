@@ -68,6 +68,7 @@ _ASSIGN_TTL_S = 600     # 指派有效期（秒）：超时视为学生没真上
 # 课文素材不随指派存（长文），指导语/重放现取 DB——课文被删即落空返空串。
 _ASSIGN_KINDS = ("error", "kp", "text", "lesson")
 _LESSON_TXT_MAX = 2800  # 指导语/重放内嵌课文限长（超长截断并在文末提示老师分段推进）
+_TALK_UNBOARDED_MIN = 260  # 老师连续口播这么多字没上板即触「说了没写镜」（约 1 分钟讲课话）
 _ASSIGN_STORE_MAX = 40  # 指派标题存储硬顶（防绕过展示层限长直调 set_assign 塞长文；
                         # 必须 ≥ routes_board._ASSIGN_LABEL_MAX 展示层限长，评审 Minor-4）
 
@@ -122,9 +123,11 @@ def _board(uid: str) -> dict:
              # q_unboarded=学生追问计数（2026-11-16 实弹轮：追问阶段板书不同步）——
              # 学生每说一句 +1，任何上板动作清零；≥2 时镜检拦嘴（见 _q_unboarded_mirror）；
              # lesson_txt=本课在讲的指派课时 {id,label}（与 lesson_kp 同性质互斥，
-             # 目标导向课程轮：课文讲一半被追问时重放课文素材，防有料断讲）
+             # 目标导向课程轮：课文讲一半被追问时重放课文素材，防有料断讲）；
+             # t_since_board=老师上次上板以来累计口播字数（2026-11-17「面板一直
+             # 说话、板书不动」报障：≥_TALK_UNBOARDED_MIN 未上板即镜检拦嘴）
              "lesson_kp": None, "unexplained": [], "q_unboarded": 0,
-             "lesson_txt": None}
+             "lesson_txt": None, "t_since_board": 0}
         _boards[uid] = b
     return b
 
@@ -199,6 +202,7 @@ def clear_board(uid: str) -> dict:
         b["items"] = []
         b["unexplained"] = []       # 板空了进度镜同步归零（lesson_kp 与 assign 同理保留）
         b["q_unboarded"] = 0        # 擦板重开：追问没上板的旧账一并清零
+        b["t_since_board"] = 0      # 擦板重开：干讲账同样清零
         b["source_error_id"] = None
         # 擦板不清指派（中位线定理误杀事故 2026-11-07）：常见流是「点指派开新课 →
         # 先擦旧板书 → 请老师上课」，旧语义把刚下发的指派连带作废，老师取料落回
@@ -301,8 +305,9 @@ def _assign_directive(uid: str, a: dict) -> str:
             return ""
         return (f"📌网页指定讲解：学生刚从课文里框选了这段内容，点名要你讲：\n「{t}」\n"
                 "先 board_write 建 topic 主干卡把这段内容讲透（它在说什么→为什么→"
-                "关键处拆开讲），适合画图的地方 board_draw 配图。\n"
+                "关键处拆开讲）。\n"
                 "讲课纪律：一张卡讲透再写下一张（写完就停嘴连写多张=没上课）；"
+                "能画的一定画——每张卡讲完想一遍能不能画，用 board_draw 配图；"
                 "板上所有卡都讲完、学生点头之前，不要结课道别。\n")
     if a["kind"] == "lesson":
         try:
@@ -319,8 +324,10 @@ def _assign_directive(uid: str, a: dict) -> str:
                 f"「{pack['title']}」。课文全文如下：\n{txt}\n"
                 "开讲方式：先 board_write 建 topic 主干卡（这堂课的标题），再把课文按"
                 "逻辑顺序拆成 2-4 个关键点逐一建卡讲解——每张卡讲透（结论→为什么→"
-                "举例子）再写下一张（写完就停嘴连写多张=没上课）；公式用 formula 卡，"
-                "适合画图的地方 board_draw 配图。\n"
+                "举例子）再写下一张（写完就停嘴连写多张=没上课）；公式用 formula 卡。\n"
+                "画图铁律：能画的一定画——每个关键点讲完想一遍能不能画，"
+                "关系画结构图、几何画图形、函数统计画图像，用 board_draw 配图；"
+                "只给关键点配图不画装饰，纯背诵类才免画。\n"
                 "讲课纪律：只讲这篇课文，不擅自跳下一课、不改题；"
                 "课文没讲完、学生点头之前，不要结课道别。\n")
     if a["kind"] == "kp":
@@ -340,6 +347,7 @@ def _assign_directive(uid: str, a: dict) -> str:
                 f"（学科 {pack.get('subject') or '未分类'}，当前掌握度 {prof}）。"
                 f"知识点描述：{pack.get('desc') or '（无描述）'}。"
                 "先 board_write 建 topic 主干卡把概念讲透（定义→关键点→易错处），"
+                "能画的一定画（board_draw：关系画结构图、几何画图形、函数统计画图像），"
                 f"再从下面清单挑该知识点最有代表性的 1-2 道错题用 board_show_problem "
                 f"上黑板配例讲（学生刚答错过，敲例子最管用）：{errs}。\n"
                 "讲课纪律：一张卡讲透再写下一张（写完就停嘴连写多张=没上课）；"
@@ -376,6 +384,7 @@ def _kp_replay_text(uid: str, lk: dict) -> str:
             f"知识点描述：{pack.get('desc') or '（无描述）'}。\n"
             + status_line(uid) + "\n"
             "照着板面从上往下讲：先对照状态行找出还没讲过的卡，从最旧那张起一张一张讲透；"
+            "讲到没配图的卡，能画的一律 board_draw 补一张图；"
             "学生说「继续/没听懂/再讲一下」时，就照那几张卡的正文换个例子或更直白的说法重讲，"
             "需要改写某张卡用 board_replace；原理图舞台若已就绪，也可用 board_anim_step 重推一步带学生再看一遍。"
             "板上卡片没讲完之前，严禁结课道别。")
@@ -402,7 +411,8 @@ def _lesson_txt_replay(uid: str, lt: dict) -> str:
     return (f"续讲：本课正在讲学生点名的这一堂课「{pack['title']}」"
             f"（学科 {pack['subject']}，素材全课有效）。课文如下：\n{txt}\n"
             + status_line(uid) + "\n"
-            "先对照状态行找出还没讲过的卡，从最旧那张起一张一张讲透；"
+            "先对照状态行找出还没讲过的卡，从最旧那张起一张一张讲透，"
+            "讲到没配图的卡能画就 board_draw 补一张；"
             "学生说「继续/没听懂/再讲一下」时，照板上最新那张卡找到课文里对应段落，"
             "换个例子或更直白的说法把下一段接着讲完，需要改写某张卡用 board_replace。"
             "课文没讲完之前，严禁结课道别。")
@@ -556,6 +566,7 @@ def _append_locked(b: dict, kind: str, text: str, data=None, anchors=None) -> in
     # 讲了没写镜归零（2026-11-16 实弹轮）：只要有新卡上板，之前的追问没上板
     # 就一笔勾销——镜检只盯「当下还在只说不写」，不翻旧账
     b["q_unboarded"] = 0
+    b["t_since_board"] = 0        # 说了没写镜同口径：新卡上板即归零
     # 讲课进度镜：新卡进「写了没讲」队列，被淘汰出板的卡号一并剔除
     uq = b.setdefault("unexplained", [])
     uq.append(b["seq"])
@@ -676,6 +687,9 @@ def append_speech(uid: str, role: str, text: str):
             # 进度镜口径：老师开口=开始讲了，「写了没讲」队列清零；
             # 连写卡不说话时才累积（见 _explain_mirror）
             b["unexplained"] = []
+            # 说了没写镜记账（2026-11-17）：老师每句口播累计字数，上板即清；
+            # 封顶防无界增长（镜检只需知道够不够多，超阈后数值不精确无妨）
+            b["t_since_board"] = min(2000, (b.get("t_since_board") or 0) + len(t))
         else:
             # 学生开口=一次追问/回应：「讲了没写」计数 +1（上限 9 防无界，
             # 镜检只需知道够不够多、不需精确数，见 _q_unboarded_mirror）
@@ -772,6 +786,7 @@ def replace_card(uid: str, item_id: int, kind: str, text: str, data=None,
         card["kind"] = kind
         card["text"] = text
         b["q_unboarded"] = 0        # 改写卡也是板书在跟着问答走，同归零口径
+        b["t_since_board"] = 0      # 改写卡同样算「板在跟着嘴动」，干讲账归零
         if anchors:
             card["anchors"] = list(anchors)
         else:
@@ -1169,10 +1184,13 @@ TOOLS = [
             "取学习材料。不填 error_id＝列出该用户最近的错题清单（含错题id，供选择讲解哪道）；"
             "填 error_id＝返回该题完整素材（题干/选项/你的作答/正确答案/解析）。"
             "内容开头若有「📌网页指定讲解」指导语，是学生刚在界面上点名要讲的内容，必须优先照办。"
-            "素材是备课资料：消化后用自己的话讲解，不要整段照念；适合画图的内容"
-            "（函数/几何/统计）写上黑板后第一步就 board_draw 配图讲。"
+            "素材是备课资料：消化后用自己的话讲解，不要整段照念。"
+            "画图纪律：能画的一律画——每个关键点讲完想一遍能不能画，"
+            "关系画结构图、几何画图形、函数统计画图像，用 board_draw 配图。"
             "追问纪律：学生问一个问题，把它讲透（结论→为什么→举个例子）再停嘴，"
-            "别回两三句就停下等学生催「继续」；答完把关键结论 board_write 上板。",
+            "别回两三句就停下等学生催「继续」；答完把关键结论 board_write 上板。"
+            "口播纪律：念符号必须带中文名（如「矩阵A」「x零」），"
+            "口播里别只写 LaTeX 符号（会被语音合成吞字，学生和你都看不见）。",
         "inputSchema": {"type": "object", "properties": {
             "error_id": {"type": "string", "description": "错题id；省略＝只列清单"}},
         },
@@ -1352,7 +1370,8 @@ def execute_tool(name: str, args: dict, uid: str) -> str:
     + 讲课进度镜（连写未讲卡拦嘴，见 _explain_mirror）
     + 讲了没写镜（追问阶段只说不写上板，见 _q_unboarded_mirror）。"""
     return (_execute_core(name, args, uid) + _anim_notice(uid)
-            + _explain_mirror(uid) + _q_unboarded_mirror(uid))
+            + _explain_mirror(uid) + _q_unboarded_mirror(uid)
+            + _talk_unboarded_mirror(uid))
 
 
 def _explain_mirror(uid: str) -> str:
@@ -1380,9 +1399,25 @@ def _q_unboarded_mirror(uid: str) -> str:
     if n < 2:
         return ""
     return ("\n你已经答了学生 " + str(n) + " 次追问，黑板一个字也没添。"
-            "每答完一问，挑关键结论用 board_write 写一卡上板；适合画图的"
-            "用 board_draw 配图——只说不写，板书和讲解就脱节了，"
+            "每答完一问，挑关键结论用 board_write 写一卡上板；能画的"
+            "一定画（board_draw 配图）——只说不写，板书和讲解就脱节了，"
             "学生回头看到的还是旧板书。")
+
+
+def _talk_unboarded_mirror(uid: str) -> str:
+    """说了没写镜（2026-11-17 用户报障「面板一直说话、板书不更新」）：
+    与讲了没写镜（盯学生追问没上板）互补——这镜盯老师自己：连续口播
+    ≥_TALK_UNBOARDED_MIN 字却一笔没写，下次工具返回拦嘴。口径：老师每句
+    口播累计字数、任何上板/改写/擦板清零；正常边讲边写节奏（约 200 字一卡）
+    永不触发，只拦纯干讲。"""
+    with _lock:
+        n = _board(uid).get("t_since_board") or 0
+    if n < _TALK_UNBOARDED_MIN:
+        return ""
+    return ("\n你已连续讲了约 " + str(n) + " 字，黑板一笔没添。"
+            "把刚才这段讲的内容收拢成一卡 board_write 上板；能画的一定用 "
+            "board_draw 画出来（关系画结构图、几何画图形、函数画图像）——"
+            "话说过就没，板书才是学生回头能看见的东西。")
 
 
 def _execute_core(name: str, args: dict, uid: str) -> str:

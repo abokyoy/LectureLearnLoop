@@ -4376,5 +4376,72 @@ class QUnboardedMirrorTest(unittest.TestCase):
         self.assertIn("你已经答了学生 9 次追问", self._probe())
 
 
+class TalkUnboardedMirrorTest(unittest.TestCase):
+    """说了没写镜（2026-11-17 用户报障「面板一直说话、板书不更新」）：
+    老师连续口播 ≥_TALK_UNBOARDED_MIN 字而黑板一笔没添，下次工具返回拦嘴；
+    任何上板/改写/擦板清零。与讲了没写镜（盯学生追问）互补：这镜盯老师
+    自己干讲。纯板面状态机不碰 DB；探针同 QUnboardedMirrorTest 口径。"""
+
+    def setUp(self):
+        self.uid = "tmir_" + uuid.uuid4().hex[:10]
+
+    def tearDown(self):
+        LB._boards.pop(self.uid, None)
+
+    def _probe(self):
+        return LB.execute_tool("board_highlight", {"item_id": -1}, self.uid)
+
+    def _talk(self, n, role="teacher", tag="讲"):
+        """报 n 字口播：单句受 _SPEECH_TEXT_MAX=200 截断，分多句报。"""
+        sent = 0
+        while sent < n:
+            chunk = min(150, n - sent)
+            LB.append_speech(self.uid, role, tag * chunk)
+            sent += chunk
+
+    def test_t1_below_threshold_no_mirror(self):
+        """正常边讲边写节奏量级（约 200 字）不拦嘴。"""
+        self._talk(200)
+        self.assertNotIn("黑板一笔没添", self._probe())
+
+    def test_t2_over_threshold_mirror(self):
+        self._talk(300)
+        self.assertIn("黑板一笔没添", self._probe())
+        self.assertIn("board_draw", self._probe())
+
+    def test_t3_board_write_clears(self):
+        """写卡动作清零：写卡自身不带镜，后续探针也不带。"""
+        self._talk(300)
+        t = LB.execute_tool("board_write", {"kind": "step", "content": "收拢上板"}, self.uid)
+        self.assertNotIn("黑板一笔没添", t)
+        self.assertNotIn("黑板一笔没添", self._probe())
+
+    def test_t4_replace_and_clear_also_reset(self):
+        """改写卡/擦板同清零口径（板在跟着嘴动就不拦）。"""
+        LB.execute_tool("board_write", {"kind": "step", "content": "卡一"}, self.uid)
+        with LB._lock:
+            cid = LB._board(self.uid)["items"][-1]["id"]
+        self._talk(300)
+        self.assertIn("黑板一笔没添", self._probe())
+        LB.execute_tool("board_replace", {"item_id": cid, "content": "改写"}, self.uid)
+        self.assertNotIn("黑板一笔没添", self._probe())
+        self._talk(300)
+        LB.execute_tool("board_clear", {}, self.uid)
+        self.assertNotIn("黑板一笔没添", self._probe())
+
+    def test_t5_student_speech_not_counted(self):
+        """学生的话不记账：这镜只盯老师嘴，学生长段发言不得误伤。"""
+        self._talk(300, role="student", tag="我")
+        self.assertNotIn("黑板一笔没添", self._probe())
+
+    def test_t6_cumulative_across_sentences(self):
+        """跨句累计：单句都在阈下，累加过阈仍拦（镜盯的是总口播量）。"""
+        for _ in range(2):
+            LB.append_speech(self.uid, "teacher", "讲" * 100)
+        self.assertNotIn("黑板一笔没添", self._probe())
+        LB.append_speech(self.uid, "teacher", "讲" * 70)
+        self.assertIn("黑板一笔没添", self._probe())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
