@@ -115,8 +115,10 @@ def _board(uid: str) -> dict:
              # 讲课连续性（2026-11-09「讲课不连续」事故）：
              # lesson_kp=本课在讲的指定知识点 {id,label}——指派一次性消费后素材
              # 仍须课内可重放（学生说「继续/没听懂」时老师取料拿得回内容）；
-             # unexplained=写上板但老师还没开口讲过的卡号队列（老师一句口播即清零）
-             "lesson_kp": None, "unexplained": []}
+             # unexplained=写上板但老师还没开口讲过的卡号队列（老师一句口播即清零）；
+             # q_unboarded=学生追问计数（2026-11-16 实弹轮：追问阶段板书不同步）——
+             # 学生每说一句 +1，任何上板动作清零；≥2 时镜检拦嘴（见 _q_unboarded_mirror）
+             "lesson_kp": None, "unexplained": [], "q_unboarded": 0}
         _boards[uid] = b
     return b
 
@@ -190,6 +192,7 @@ def clear_board(uid: str) -> dict:
                 _outbox_push_locked(b, i)
         b["items"] = []
         b["unexplained"] = []       # 板空了进度镜同步归零（lesson_kp 与 assign 同理保留）
+        b["q_unboarded"] = 0        # 擦板重开：追问没上板的旧账一并清零
         b["source_error_id"] = None
         # 擦板不清指派（中位线定理误杀事故 2026-11-07）：常见流是「点指派开新课 →
         # 先擦旧板书 → 请老师上课」，旧语义把刚下发的指派连带作废，老师取料落回
@@ -480,6 +483,9 @@ def _append_locked(b: dict, kind: str, text: str, data=None, anchors=None) -> in
                     _fill_caption_locked(b, i)
                 _outbox_push_locked(b, i)
     _prune_focus_locked(b)
+    # 讲了没写镜归零（2026-11-16 实弹轮）：只要有新卡上板，之前的追问没上板
+    # 就一笔勾销——镜检只盯「当下还在只说不写」，不翻旧账
+    b["q_unboarded"] = 0
     # 讲课进度镜：新卡进「写了没讲」队列，被淘汰出板的卡号一并剔除
     uq = b.setdefault("unexplained", [])
     uq.append(b["seq"])
@@ -600,6 +606,10 @@ def append_speech(uid: str, role: str, text: str):
             # 进度镜口径：老师开口=开始讲了，「写了没讲」队列清零；
             # 连写卡不说话时才累积（见 _explain_mirror）
             b["unexplained"] = []
+        else:
+            # 学生开口=一次追问/回应：「讲了没写」计数 +1（上限 9 防无界，
+            # 镜检只需知道够不够多、不需精确数，见 _q_unboarded_mirror）
+            b["q_unboarded"] = min(9, (b.get("q_unboarded") or 0) + 1)
         b["rev"] += 1
     log.log("xz_board", "speech", "success",
            {"uid": uid, "role": r, "id": line["id"], "len": len(t),
@@ -691,6 +701,7 @@ def replace_card(uid: str, item_id: int, kind: str, text: str, data=None,
             return "kindflip"
         card["kind"] = kind
         card["text"] = text
+        b["q_unboarded"] = 0        # 改写卡也是板书在跟着问答走，同归零口径
         if anchors:
             card["anchors"] = list(anchors)
         else:
@@ -1089,7 +1100,9 @@ TOOLS = [
             "填 error_id＝返回该题完整素材（题干/选项/你的作答/正确答案/解析）。"
             "内容开头若有「📌网页指定讲解」指导语，是学生刚在界面上点名要讲的内容，必须优先照办。"
             "素材是备课资料：消化后用自己的话讲解，不要整段照念；适合画图的内容"
-            "（函数/几何/统计）写上黑板后第一步就 board_draw 配图讲。",
+            "（函数/几何/统计）写上黑板后第一步就 board_draw 配图讲。"
+            "追问纪律：学生问一个问题，把它讲透（结论→为什么→举个例子）再停嘴，"
+            "别回两三句就停下等学生催「继续」；答完把关键结论 board_write 上板。",
         "inputSchema": {"type": "object", "properties": {
             "error_id": {"type": "string", "description": "错题id；省略＝只列清单"}},
         },
@@ -1266,8 +1279,10 @@ def resolve_uid_by_username(username: str):
 
 def execute_tool(name: str, args: dict, uid: str) -> str:
     """MCP tools/call 统一入口：核心执行 + 舞台衔接触发器（就绪/失败一次性尾注）
-    + 讲课进度镜（连写未讲卡拦嘴，见 _explain_mirror）。"""
-    return _execute_core(name, args, uid) + _anim_notice(uid) + _explain_mirror(uid)
+    + 讲课进度镜（连写未讲卡拦嘴，见 _explain_mirror）
+    + 讲了没写镜（追问阶段只说不写上板，见 _q_unboarded_mirror）。"""
+    return (_execute_core(name, args, uid) + _anim_notice(uid)
+            + _explain_mirror(uid) + _q_unboarded_mirror(uid))
 
 
 def _explain_mirror(uid: str) -> str:
@@ -1282,6 +1297,22 @@ def _explain_mirror(uid: str) -> str:
             + "、".join(f"#{x}" for x in ids[-6:]) + "）却一句还没讲。"
             "先停笔：把最近这张卡讲透——举个例子、问一句学生懂没懂，"
             "确认懂了再写下一张；板书不等于讲解，没讲的卡学生看不见也不会。")
+
+
+def _q_unboarded_mirror(uid: str) -> str:
+    """讲了没写镜（2026-11-16 实弹轮用户报障：追问阶段板书一直不更新）：
+    与「写了没讲镜」镜像对称——学生连续问了 ≥2 句、黑板却没添过一笔，
+    下次工具返回拦嘴。口径：学生一句话 +1、任何上板/改写/擦板动作清零；
+    本轮工具若真写了卡，执行时已归零→镜自然不触发（误报面收敛到
+    「调了工具还是不写板」的真目标场景）。"""
+    with _lock:
+        n = _board(uid).get("q_unboarded") or 0
+    if n < 2:
+        return ""
+    return ("\n你已经答了学生 " + str(n) + " 次追问，黑板一个字也没添。"
+            "每答完一问，挑关键结论用 board_write 写一卡上板；适合画图的"
+            "用 board_draw 配图——只说不写，板书和讲解就脱节了，"
+            "学生回头看到的还是旧板书。")
 
 
 def _execute_core(name: str, args: dict, uid: str) -> str:

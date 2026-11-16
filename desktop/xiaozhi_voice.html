@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>AI老师语音上课</title>
+<style>
+  /* 与主窗口同色系：暖米白底 + 石板灰文字，卡片式字幕流 */
+  :root {
+    --bg: #FAF7F2; --card: #FFFFFF; --ink: #44403C; --sub: #78716C;
+    --line: #E7E5E4; --accent: #B45309; --ok: #15803D; --bad: #B91C1C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    display: flex; flex-direction: column;
+    -webkit-user-select: none; user-select: none;
+  }
+  header {
+    -webkit-app-region: drag;
+    padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--line); background: var(--card);
+  }
+  header .title { font-size: 14px; font-weight: 600; }
+  header .chip {
+    -webkit-app-region: no-drag;
+    font-size: 12px; padding: 2px 10px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--sub); background: var(--bg);
+  }
+  header .chip.ok { color: var(--ok); border-color: #BBF7D0; background: #F0FDF4; }
+  header .chip.bad { color: var(--bad); border-color: #FECACA; background: #FEF2F2; }
+  main { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 12px 16px; gap: 10px; }
+  #activation {
+    display: none; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 12px;
+    padding: 12px 16px; font-size: 13px; line-height: 1.7;
+  }
+  #activation .code { font-size: 28px; font-weight: 700; letter-spacing: 8px; color: var(--accent); }
+  #subs {
+    flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;
+    padding-right: 4px;
+  }
+  .line { max-width: 86%; padding: 8px 12px; border-radius: 12px; font-size: 14px; line-height: 1.6;
+          border: 1px solid var(--line); background: var(--card); }
+  .line.stt { align-self: flex-end; background: #EFF6FF; border-color: #BFDBFE; }
+  .line.tts { align-self: flex-start; }
+  .line.note { align-self: center; font-size: 12px; color: var(--sub); background: transparent; border: none; }
+  .line b { display: block; font-size: 11px; color: var(--sub); font-weight: 600; margin-bottom: 2px; }
+  footer { display: flex; align-items: center; gap: 10px; padding: 10px 16px 14px; flex-wrap: wrap; }
+  button {
+    -webkit-app-region: no-drag;
+    font-size: 13px; padding: 8px 18px; border-radius: 10px; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink); cursor: pointer;
+  }
+  button:hover { border-color: #D6D3D1; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #FFF; }
+  button.primary:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .45; cursor: default; }
+  select, input[type=range] { font-size: 12px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  .spacer { flex: 1; }
+  #vu { font-size: 12px; color: var(--sub); min-width: 120px; }
+  /* 设备探测面板（v0.2.4）：沿用本页同一套色系，卡片式覆盖层 */
+  #probeMask { display: none; position: fixed; inset: 0; background: rgba(68,64,60,.35); z-index: 40; align-items: center; justify-content: center; }
+  #probeCard { width: 90%; max-width: 460px; background: var(--card); border-radius: 14px; padding: 16px 18px; box-shadow: 0 12px 32px rgba(0,0,0,.18); }
+  #probeCard .pt { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  #probeHint { font-size: 12.5px; color: var(--sub); line-height: 1.6; margin-bottom: 10px; min-height: 38px; }
+  #probeHint b { color: var(--ink); }
+  #probeList { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+  .prow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+  .prow.pick { border-color: var(--accent); background: #FFF7ED; cursor: pointer; }
+  .prow .pn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prow .pbar { width: 90px; height: 6px; border-radius: 3px; background: var(--bg); border: 1px solid var(--line); }
+  .prow .pbar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent); }
+  .prow .ps { min-width: 118px; text-align: right; color: var(--sub); font-size: 11.5px; }
+  #probeBtns { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">AI老师 · 电脑小智</span>
+  <span id="stateChip" class="chip">未连接</span>
+  <span id="netChip" class="chip">–</span>
+  <div class="spacer"></div>
+</header>
+<main>
+  <div id="activation">
+    <div id="actBind" style="display:none">
+      这个账号还没有绑定小智设备。请到本软件 <b>设置页 → 小智智能教室连接</b>：生成一台虚拟小智，
+      或把已有的 ESP32 小智认进来，绑定完成后回到这里重新「开始上课」。
+    </div>
+    <div id="actCode">本机语音老师尚未绑定账号。请打开 <b>xiaozhi.me 控制台 → 添加设备</b>，输入下方 6 位激活码，
+    绑定完成后点「重新绑定」：<br />
+    激活码 <span class="code" id="codeNum">------</span>
+    <button id="btnRebind" style="margin-left:12px;">重新绑定</button></div>
+  </div>
+  <div id="subs"></div>
+</main>
+<footer>
+  <button id="btnStart" class="primary">开始上课</button>
+  <button id="btnStop" disabled>下课</button>
+  <button id="btnExit" disabled>退下</button>
+  <button id="btnBarge" disabled>打断</button>
+  <select id="selMode" title="打断方式：说话打断=出声即打断；举手发言=点「举手」持续听，点「发言完毕」才提交"><option value="auto">说话打断</option><option value="manual">举手发言</option></select>
+  <div class="spacer"></div>
+  <span id="vu">–</span>
+  <button id="btnProbe" title="逐个测试并选出录得最清楚的麦克风">检测麦克风</button>
+  <select id="selDev" title="麦克风"></select>
+  <input id="vol" type="range" min="0" max="100" value="90" title="音量" />
+</footer>
+<div id="probeMask">
+  <div id="probeCard">
+    <div class="pt">挑出最好的麦克风</div>
+    <div id="probeHint"></div>
+    <div id="probeList"></div>
+    <div id="probeBtns">
+      <button id="probeAgain" style="display:none">再测一次</button>
+      <button id="probeUse" class="primary" style="display:none">就用这个</button>
+      <button id="probeGo" class="primary">开始检测</button>
+      <button id="probeClose">关闭</button>
+    </div>
+  </div>
+</div>
+<script src="xz_mic_probe.js"></script>
+<script>
+/* ------------------------------------------------------------------
+ * 电脑小智语音窗口（渲染层职责仅三件：采集上行、播放下行、UI）。
+ * 协议 / opus 编解码 / 回声剥离 / 打断状态机全部在主进程 xz_voice.js。
+ * IPC 约定（preload 的 xzVoice 桥）：
+ *   上行 xz:mic  ← ArrayBuffer(Int16 LE @16k, 960 样本/60ms 帧)
+ *   下行 xz:play {pcm, rate} | xz:hold | xz:resume | xz:flush | xz:evt {...}
+ * ------------------------------------------------------------------ */
+'use strict';
+const $ = (id) => document.getElementById(id);
+const subs = $('subs');
+let live = false;         // 上课中（点了开始且没下课）
+let held = false;         // 主进程 hold：暂停出声但不清队列后续
+let barMode = 'auto';     // 听话窗模式：auto=声控打断（现状）| manual=手动开关麦（v0.2.5）
+let barMicOpen = true;    // manual 模式的麦窗状态（引擎 evt 同步，auto 模式恒真不参与渲染）
+
+function addLine(kind, who, text) {
+  const d = document.createElement('div');
+  d.className = 'line ' + kind;
+  if (who) { const b = document.createElement('b'); b.textContent = who; d.appendChild(b); }
+  d.appendChild(document.createTextNode(text));
+  subs.appendChild(d);
+  // 控制总量，长课堂不涨内存
+  while (subs.children.length > 200) subs.removeChild(subs.firstChild);
+  subs.scrollTop = subs.scrollHeight;
+  return d;
+}
+
+function setState(text, cls) {
+  const c = $('stateChip');
+  c.textContent = text;
+  c.className = 'chip' + (cls ? ' ' + cls : '');
+}
+
+/* ============================ 下行播放 ============================ */
+let actx = null, gain = null;
+const players = [];            // 正在排期的 AudioBufferSourceNode
+let nextStart = 0;
+
+function ensureCtx() {
+  if (!actx) {
+    actx = new AudioContext();
+    gain = actx.createGain();
+    gain.connect(actx.destination);
+    gain.gain.value = Number($('vol').value) / 100;
+  }
+  if (actx.state === 'suspended') actx.resume();
+}
+function playPcm(pcmBuf, rate) {
+  ensureCtx();
+  if (held) return;                       // 先停：hold 期不出新声（引擎侧一般已拦，双保险）
+  const i16 = new Int16Array(pcmBuf.buffer, pcmBuf.byteOffset, Math.floor(pcmBuf.byteLength / 2));
+  const buf = actx.createBuffer(1, Math.max(1, i16.length), rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < i16.length; i++) ch[i] = i16[i] / 32768;
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  src.connect(gain);
+  const t0 = Math.max(actx.currentTime + 0.02, nextStart);
+  src.start(t0);
+  nextStart = t0 + buf.duration;
+  players.push(src);
+  src.onended = () => { const k = players.indexOf(src); if (k >= 0) players.splice(k, 1); };
+}
+function stopAllPlay() {
+  for (const s of players) { try { s.onended = null; s.stop(); } catch (e) {} }
+  players.length = 0;
+  nextStart = actx ? actx.currentTime : 0;
+}
+
+/* ============================ IPC 事件入口 ============================ */
+window.xzVoice.onPanel((channel, p) => {
+  if (channel === 'play') { playPcm(p.pcm, p.rate); return; }
+  // 黑板页「开始上课」合并入口（2026-11-05）：主窗代按本页开工按钮
+  if (channel === 'autostart') { if (!live) $('btnStart').click(); return; }
+  if (channel === 'hold') { held = true; stopAllPlay(); return; }
+  if (channel === 'resume') { held = false; return; }
+  if (channel === 'flush') { held = false; stopAllPlay(); return; }
+  if (channel === 'evt') {
+    if (p.type === 'state') {
+      const s = p.state || {};
+      if (s.status === 'ready') setState('上课中', 'ok');
+      else if (s.status === 'connecting') setState('连接中');
+      else if (s.status === 'registering') setState('绑定中');
+      else if (s.status === 'error') setState('异常：' + (s.lastError || ''), 'bad');
+      else setState(live ? '待命' : '未连接');
+      if (s.needBind) showActivation('');
+      else if (s.bound === false && s.activationCode) showActivation(s.activationCode);
+      else $('activation').style.display = 'none';
+    } else if (p.type === 'stt') { addLine('stt', '我', p.text); }
+    else if (p.type === 'tts') {
+      if (p.state === 'sentence') addLine('tts', '老师', p.text);
+      else if (p.state === 'start') { /* 播报开始：音频帧自然到 */ }
+    } else if (p.type === 'barge') { addLine('note', '', '（已打断老师）'); }
+    else if (p.type === 'talk' && p.state === 'commit') { addLine('note', '', '（发言已发送，等老师回答）'); }
+    else if (p.type === 'talk' && p.state === 'lost') { addLine('note', '', '（这句没有发出去：连接中断或老师已在回答，请举手再说）'); }
+    else if (p.type === 'micwin') { barMicOpen = !!p.open; renderBargeBtn(); }
+    else if (p.type === 'mode') { barMode = p.mode === 'manual' ? 'manual' : 'auto'; barMicOpen = !!p.micWinOpen; renderBargeBtn(); }
+    else if (p.type === 'ready') { $('netChip').textContent = '下行 ' + (p.downRate / 1000) + 'k'; }
+    else if (p.type === 'sock') { $('netChip').textContent = String(p.note || ''); }
+    else if (p.type === 'error') { addLine('note', '', '⚠ ' + p.message); }
+    else if (p.type === 'log') { /* 主进程杂讯，仅留字幕下方不打扰 */ }
+  }
+});
+
+function showActivation(code) {
+  // 账号级模型（v0.2.1）：无码可出=未绑定，引导去设置页；有码=旧包对旧服务器的本地注册流
+  $('actBind').style.display = code ? 'none' : 'block';
+  $('actCode').style.display = code ? 'block' : 'none';
+  if (code) $('codeNum').textContent = code;
+  $('activation').style.display = 'block';
+}
+
+/* ============================ 麦克风采集 ============================ */
+let mediaStream = null, micCtx = null, micNode = null;
+const WORKLET = 'xzmic';
+// AudioWorklet 源码：任意设备采样率 → 线性重采样到 16k → 攒 960 样本(60ms) 一帧回传
+// 注意：必须用模板字面量，多行双引号串会让整个渲染窗脚本 SyntaxError（CodeReview 实物）
+const workletSrc = `
+class MicFrameProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.outRate = 16000;
+    this.frameLen = 960;
+    this.acc = new Int16Array(this.frameLen);
+    this.accLen = 0;
+    this.ratio = sampleRate / this.outRate; // 全局 sampleRate = 输入设备率
+    this.nextOut = 0;                       // 未消费输入位置（输出单）余量，跨块携带防拖动
+  }
+  process(inputs) {
+    const inp = inputs[0] && inputs[0][0];
+    if (!inp || !inp.length) return true;
+    const r = this.ratio, n = inp.length;
+    while (this.nextOut * r < n) {
+      const p = this.nextOut * r;
+      const i0 = Math.floor(p);
+      const i1 = Math.min(n - 1, i0 + 1);
+      const f = p - i0;
+      let v = inp[i0] * (1 - f) + inp[i1] * f;
+      v = v < -1 ? -1 : (v > 1 ? 1 : v);
+      this.acc[this.accLen++] = Math.round(v * 32767);
+      if (this.accLen >= this.frameLen) {
+        const out = this.acc;
+        this.acc = new Int16Array(this.frameLen);
+        this.accLen = 0;
+        this.port.postMessage(out.buffer, [out.buffer]);
+      }
+      this.nextOut += 1;
+    }
+    this.nextOut -= n / r;
+    return true;
+  }
+}
+registerProcessor('xzmic', MicFrameProcessor);
+`;
+
+async function listDevices() {
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    // 滤掉 Chromium 的 default/communications 别名（非独立硬件：exact 锁它等于锁"系统默认"，静默降级又会回来）
+    const mics = devs.filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+    const sel = $('selDev');
+    sel.innerHTML = '';
+    for (const m of mics) {
+      const o = document.createElement('option');
+      o.value = m.deviceId;
+      o.textContent = m.label || ('麦克风 ' + m.deviceId.slice(0, 6));
+      sel.appendChild(o);
+    }
+    if (!mics.length) { const o = document.createElement('option'); o.textContent = '未检测到麦克风'; sel.appendChild(o); }
+    // 记忆恢复（v0.2.4）：Chromium 的 deviceId 每次重启会变，设备名才是可靠主键；
+    // 未授权时 label 为空串，不拿空串参与匹配
+    const pref = loadMicPref();
+    if (pref && pref.label) {
+      const hit = Array.from(sel.options).find((o) => o.value && o.textContent === pref.label);
+      if (hit) sel.value = hit.value;
+      // 记忆的麦不在列表：放一个空 id 占位项，startMic 见到空值+有记忆会拒起，
+      // 绝不让第 0 项（常是虚拟/远程麦）顶位
+      else {
+        const o = document.createElement('option');
+        o.value = ''; o.textContent = '⚠ 记忆的麦克风不在了（' + pref.label + '），请重选';
+        sel.insertBefore(o, sel.firstChild);
+        sel.value = '';
+      }
+    }
+  } catch (e) { /* 未授权时列表为空 */ }
+}
+
+async function startMic() {
+  if (micNode) return true;
+  try {
+    await listDevices();
+    const devId = $('selDev').value || undefined;
+    // 有记忆但本次列表里没有它（占位空项）：明确提示重选，不拿系统默认麦兜底
+    if (!devId) {
+      const prefN = loadMicPref();
+      if (prefN && prefN.label) {
+        addLine('note', '', '⚠ 记忆的麦克风「' + prefN.label + '」不在当前设备列表，请点「检测麦克风」重新选');
+        return false;
+      }
+    }
+    // 外放防回声全靠主进程谱减剥离：系统 3A（AEC/降噪/AGC）必须关掉，
+    // 否则处理过的信号无法与播放参考对齐（APK 同口径）
+    const audio = { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    // 硬锁定（v0.2.4）：选过的设备用 exact 约束——不可用就直接报错引导重选，
+    // 绝不静默降级到别的麦（2026-11-06 UU 虚拟麦偷占采集的事故根因）
+    if (devId) audio.deviceId = { exact: devId };
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    // 首次成功出声且还没有记忆：把本次实际用到的设备存下来（按名字）
+    const pref0 = loadMicPref();
+    if (!pref0) {
+      const tk = mediaStream.getAudioTracks()[0];
+      const lb = tk && tk.label;
+      if (lb) saveMicPref({ label: lb, deviceId: devId || '', ts: Date.now() });
+    }
+    micCtx = new AudioContext();
+    const blobUrl = URL.createObjectURL(new Blob([workletSrc], { type: 'application/javascript' }));
+    await micCtx.audioWorklet.addModule(blobUrl);
+    URL.revokeObjectURL(blobUrl);
+    const srcNode = micCtx.createMediaStreamSource(mediaStream);
+    micNode = new AudioWorkletNode(micCtx, WORKLET);
+    micNode.port.onmessage = (ev) => {
+      // ev.data: ArrayBuffer(Int16 LE, 960 样本 @16k)
+      window.xzVoice.mic(ev.data);
+      meterFromFrame(ev.data);
+    };
+    srcNode.connect(micNode);
+    // worklet 输出接 0 增益到 destination：保证渲染图拉动节点处理，又不从耳机/音箱回放
+    const sink = micCtx.createGain();
+    sink.gain.value = 0;
+    micNode.connect(sink);
+    sink.connect(micCtx.destination);
+    return true;
+  } catch (e) {
+    // exact 锁定的设备没了（被拔/被远程软件重定向）：明确提示重选，不默默换麦
+    if (e && (e.name === 'OverconstrainedError' || e.name === 'NotFoundError')) {
+      const pref = loadMicPref();
+      const o = $('selDev').selectedOptions[0];
+      const lb = (pref && pref.label) || (o && o.textContent) || '所选麦克风';
+      addLine('note', '', '⚠ 麦克风「' + lb + '」当前不可用（可能被拔掉或被远程软件接管），请点「检测麦克风」重新选');
+      return false;
+    }
+    addLine('note', '', '⚠ 麦克风启动失败：' + e.message);
+    return false;
+  }
+}
+function stopMic() {
+  try { if (micNode) { micNode.port.onmessage = null; micNode.disconnect(); } } catch (e) {}
+  try { if (mediaStream) mediaStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+  try { if (micCtx) micCtx.close(); } catch (e) {}
+  micNode = null; mediaStream = null; micCtx = null;
+}
+function meterFromFrame(ab) {
+  const i16 = new Int16Array(ab);
+  let sum = 0;
+  for (let i = 0; i < i16.length; i++) sum += i16[i] * i16[i];
+  const rms = Math.sqrt(sum / Math.max(1, i16.length));
+  const bars = Math.min(20, Math.round(rms / 150));
+  $('vu').textContent = '电平 ' + '#'.repeat(bars) + '.'.repeat(20 - bars);
+}
+
+/* ==================== 听话窗模式记忆（v0.2.5，仿 xz_mic_pref_v1 降级模式） ==================== */
+const BARGE_MODE_KEY = 'xz_barge_mode_v1';
+let bargeModeMem = null; let bargeLsBroken = false;
+function loadBargeMode() {
+  if (bargeLsBroken) return bargeModeMem || 'auto';
+  try {
+    const s = localStorage.getItem(BARGE_MODE_KEY);
+    return (s === 'manual' || s === 'auto') ? s : (bargeModeMem || 'auto');
+  } catch (e) { return bargeModeMem || 'auto'; }
+}
+function saveBargeMode(m) {
+  bargeModeMem = m;
+  try { localStorage.setItem(BARGE_MODE_KEY, m); } catch (e) { bargeLsBroken = true; }
+}
+// 按钮三态文案（PTT，2026-11-16 实弹改版）：auto=打断；manual 待机=举手；manual 发言中=发言完毕
+function renderBargeBtn() {
+  const b = $('btnBarge');
+  b.textContent = barMode === 'manual' ? (barMicOpen ? '发言完毕' : '举手') : '打断';
+  b.title = barMode === 'manual'
+    ? (barMicOpen ? '点击提交本段发言——在此之前系统一直听你说，不会中途抢话' : '点击开始发言（可持续说，想多久说多久）')
+    : '老师播报中出声即打断';
+}
+
+/* ==================== 设备记忆（v0.2.4，存 userData 的 localStorage） ==================== */
+// 主键是设备名 label（deviceId 每次重启会变）；localStorage 不可用时降级为当次会话内存
+const MIC_PREF_KEY = 'xz_mic_pref_v1';
+let micPrefMem = null; let micLsBroken = false; // 降级备份 / localStorage 不可用标记
+function loadMicPref() {
+  if (micLsBroken) return micPrefMem; // 写失败过就以内存为准，别让旧值顶掉本次会话的选择
+  try {
+    const s = localStorage.getItem(MIC_PREF_KEY);
+    const v = s ? JSON.parse(s) : null;
+    return v && typeof v === 'object' && typeof v.label === 'string' ? v : micPrefMem;
+  } catch (e) { return micPrefMem; }
+}
+function saveMicPref(p) {
+  micPrefMem = p;
+  try { localStorage.setItem(MIC_PREF_KEY, JSON.stringify(p)); } catch (e) { micLsBroken = true; }
+}
+
+/* ==================== 麦克风并行探测（v0.2.4：一次念话，全部设备同测） ====================
+ * 流程：开始 → 逐个 exact 打开候选麦（打不开单项标记）→ 1.2s 静默采底噪
+ *       → 4.5s 念引导语（每设备实时电平条）→ 本地物理信号评分排名
+ *       → 用户确认采用 → 写记忆 + 下拉框同步。全程不碰正在上课的 micCtx。
+ */
+const PROBE_PHRASE = '1234 5678，测试测试';
+const PROBE_NOISE_MS = 1200, PROBE_SPEECH_MS = 4500;
+const probe = { running: false, starting: false, epoch: 0, phase: 'idle', ctx: null, timer: null, t0: 0,
+                chans: [], results: [], pickIdx: -1 };
+
+function probeHintHtml(html) { $('probeHint').innerHTML = html; }
+function probeHintText(text) { $('probeHint').textContent = text; } // 异常原文等动态内容一律走 textContent，innerHTML 只吃常量模板
+function probeResetUi() {
+  // 失败早退：清掉过期结果、恢复可点状态（防用户点「就用这个」采用上一轮排名）
+  probe.results = []; probe.pickIdx = -1;
+  $('probeUse').style.display = 'none';
+  $('probeGo').disabled = false; $('probeGo').style.display = '';
+}
+
+function cleanupProbeStreams() {
+  for (const c of probe.chans) {
+    try { if (c.src) c.src.disconnect(); } catch (e) {}
+    try { if (c.stream) c.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+  }
+  probe.chans = [];
+  if (probe.ctx) { try { probe.ctx.close(); } catch (e) {} probe.ctx = null; }
+  if (probe.timer) { clearInterval(probe.timer); probe.timer = null; }
+  probe.running = false;
+}
+
+async function runProbe() {
+  // 同步互斥：入口 await 期间按钮还没禁、running 还没置，快速双击会并发两轮（ctx/timer 被覆盖泄漏）
+  if (probe.running || probe.starting) return;
+  probe.starting = true;
+  try { await runProbeInner(); } finally { probe.starting = false; }
+}
+
+async function runProbeInner() {
+  const myEpoch = probe.epoch;
+  const aborted = () => myEpoch !== probe.epoch; // 面板中途被关：本轮作废
+  $('probeGo').disabled = true;
+  // 先拿一次默认麦把权限/标签预热（未授权时 enumerate 出来的 label 全空，列表没法看）
+  try {
+    const w = await navigator.mediaDevices.getUserMedia({ audio: true });
+    w.getTracks().forEach((t) => t.stop());
+  } catch (e) {
+    probeHintText('⚠ 系统麦克风权限拿不到：' + ((e && e.message) || e));
+    probeResetUi();
+    return;
+  }
+  if (aborted()) return;
+  const devs = (await navigator.mediaDevices.enumerateDevices())
+    .filter((d) => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+  if (aborted()) return;
+  if (!devs.length) { probeHintText('⚠ 系统里没有可用的麦克风输入设备'); probeResetUi(); return; }
+  probe.running = true; probe.phase = 'noise'; probe.results = []; probe.pickIdx = -1; probe.chans = [];
+  $('probeAgain').style.display = 'none'; $('probeUse').style.display = 'none';
+  // 列表骨架先搭好（设备名 + 空电平条），再逐个并行开通道
+  const listEl = $('probeList'); listEl.innerHTML = '';
+  probe.ctx = new AudioContext();
+  for (const d of devs) {
+    const row = document.createElement('div');
+    row.className = 'prow';
+    row.innerHTML = '<span class="pn"></span><div class="pbar"><i></i></div><span class="ps">准备中</span>';
+    row.querySelector('.pn').textContent = d.label || ('麦克风 ' + d.deviceId.slice(0, 6));
+    listEl.appendChild(row);
+    const c = { dev: d, label: d.label || ('麦克风 ' + d.deviceId.slice(0, 6)), row, stream: null, src: null, an: null,
+                td: null, fd: null, acc: { nzSum: 0, nzCnt: 0, spSq: 0, spCnt: 0, peak: 0, clip: 0, n: 0, vbSum: 0, vbCnt: 0 } };
+    probe.chans.push(c);
+    try {
+      c.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: d.deviceId }, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
+    } catch (e) {
+      c.openFail = true; // 独占占用/驱动异常：该项不参与检测，不影响其它设备
+    }
+    // 面板中途被关：立即停掉已打开的全部麦流并退出，不留幽灵探测/指示灯常亮
+    if (aborted() || !probe.ctx) { cleanupProbeStreams(); return; }
+    if (c.openFail) { c.row.querySelector('.ps').textContent = '打不开'; continue; }
+    try {
+      c.src = probe.ctx.createMediaStreamSource(c.stream);
+      c.an = probe.ctx.createAnalyser();
+      c.an.fftSize = 2048;
+      c.src.connect(c.an);
+      c.td = new Float32Array(c.an.fftSize);
+      c.fd = new Uint8Array(c.an.frequencyBinCount);
+      c.row.querySelector('.ps').textContent = '待测';
+    } catch (e) {
+      c.openFail = true;
+      c.row.querySelector('.ps').textContent = '打不开';
+    }
+  }
+  probe.t0 = performance.now();
+  probeHintHtml('接下来 <b>1 秒钟请保持安静</b>（测量环境底噪）…');
+  probe.timer = setInterval(probeTick, 100);
+}
+
+function probeTick() {
+  const el = performance.now() - probe.t0;
+  if (probe.phase === 'noise' && el >= PROBE_NOISE_MS) {
+    probe.phase = 'speech';
+    probeHintHtml('请对着麦克风念一句：<b>' + PROBE_PHRASE + '</b>');
+  }
+  if (probe.phase === 'speech' && el >= PROBE_NOISE_MS + PROBE_SPEECH_MS) { finishProbe(); return; }
+  const inSpeech = probe.phase === 'speech';
+  for (const c of probe.chans) {
+    if (c.openFail || !c.an) continue;
+    c.an.getFloatTimeDomainData(c.td);
+    const st = window.XzMicProbe.frameStats(c.td);
+    if (probe.phase === 'noise') { c.acc.nzSum += st.rms; c.acc.nzCnt++; }
+    else {
+      c.acc.spSq += st.rms * st.rms; c.acc.spCnt++;
+      if (st.peak > c.acc.peak) c.acc.peak = st.peak;
+      c.acc.clip += st.clip; c.acc.n += st.n;
+      c.an.getByteFrequencyData(c.fd);
+      c.acc.vbSum += window.XzMicProbe.voiceBandRatio(c.fd, probe.ctx.sampleRate, c.an.fftSize);
+      c.acc.vbCnt++;
+    }
+    c.row.querySelector('.pbar i').style.width = Math.min(100, Math.round(st.rms * 400)) + '%';
+  }
+}
+
+function finishProbe() {
+  // 先拿住通道副本再清理：cleanup 会把 probe.chans 清空，特征数据必须从旧对象读
+  const chans = probe.chans.slice();
+  cleanupProbeStreams();
+  probe.phase = 'idle';
+  const P = window.XzMicProbe;
+  for (const c of chans) {
+    let r;
+    if (c.openFail) r = { score: 0, level: 'bad', reason: '设备打不开（可能被其它程序独占）' };
+    else if (!c.acc.spCnt || !c.acc.nzCnt) r = { score: 0, level: 'bad', reason: '没采到数据' };
+    else {
+      r = P.scoreMic({
+        noiseRms: c.acc.nzSum / Math.max(1, c.acc.nzCnt),
+        speechRms: Math.sqrt(c.acc.spSq / c.acc.spCnt),
+        speechPeak: c.acc.peak,
+        clipRatio: c.acc.clip / Math.max(1, c.acc.n),
+        voiceBandRatio: c.acc.vbSum / Math.max(1, c.acc.vbCnt),
+      });
+    }
+    probe.results.push({ label: c.label, deviceId: c.dev.deviceId, row: c.row, score: r.score, level: r.level, reason: r.reason });
+  }
+  probe.results = P.rankResults(probe.results);
+  // 重排列表行，第一名（有分才推荐）预选
+  const listEl = $('probeList');
+  for (const res of probe.results) listEl.appendChild(res.row); // 按名次追加即排序
+  let bestIdx = -1;
+  probe.results.forEach((res, i) => {
+    res.row.querySelector('.ps').textContent = res.score + ' 分 · ' + res.reason;
+    if (bestIdx < 0 && res.score > 0) bestIdx = i;
+  });
+  if (bestIdx >= 0) { probe.pickIdx = bestIdx; paintProbePick(); }
+  const usable = probe.results.some((r) => r.score > 0);
+  probeHintHtml(usable
+    ? '检测完成：排第一的录得最清楚。可点其它行改选，再点「就用这个」。'
+    : '⚠ 所有麦克风都没听到声音：请检查系统声音设置的输入权限/设备连接，或断开远程软件后重试。');
+  $('probeGo').disabled = false;
+  $('probeGo').style.display = 'none'; // 结果阶段只留「再测一次」，避免两个橙色主按钮并排误导
+  if (usable) { $('probeUse').style.display = ''; $('probeAgain').style.display = ''; }
+  else { $('probeAgain').style.display = ''; }
+}
+
+function paintProbePick() {
+  probe.results.forEach((res, i) => {
+    res.row.classList.toggle('pick', i === probe.pickIdx);
+    const mark = i === probe.pickIdx ? ' ✓' : '';
+    res.row.querySelector('.pn').textContent = (res.score > 0 ? '' : '✕ ') + res.label + mark;
+  });
+}
+
+async function adoptProbe() {
+  const res = probe.results[probe.pickIdx];
+  if (!res || res.score <= 0) return;
+  const prev = loadMicPref();
+  saveMicPref({ label: res.label, deviceId: res.deviceId, ts: Date.now() });
+  // 下拉框同步到新选择（按名字找当次会话的 deviceId，不在列表里就补一项）
+  const sel = $('selDev');
+  let hit = null;
+  for (const o of sel.options) { if (o.value && o.textContent === res.label) { hit = o; break; }
+  }
+  if (!hit) { hit = document.createElement('option'); hit.value = res.deviceId; hit.textContent = res.label; sel.appendChild(hit); }
+  sel.value = hit.value;
+  addLine('note', '', '已选定麦克风：' + res.label + '（已记住，下次自动用）');
+  closeProbe();
+  // 直播中换麦：必须等并校验新麦启动结果，失败回滚到上一个记忆，绝不能上课中静默无声
+  if (live) {
+    stopMic();
+    if (await startMic()) return;
+    saveMicPref(prev);
+    await listDevices();
+    if (!await startMic()) addLine('note', '', '⚠ 换麦失败且原麦也不可用，本课无拾音，请重新点「检测麦克风」');
+  }
+}
+
+function openProbe() {
+  if (probe.running) return;
+  $('probeMask').style.display = 'flex';
+  probeHintHtml('接下来同时测试所有候选麦克风。点「开始检测」后：先安静 1 秒，再对着念一句 <b>' + PROBE_PHRASE + '</b>，系统会按录得清楚程度排名并帮你锁定最好的那个。');
+  $('probeList').innerHTML = '';
+  $('probeUse').style.display = 'none'; $('probeAgain').style.display = 'none';
+  $('probeGo').disabled = false; $('probeGo').style.display = '';
+}
+function closeProbe() {
+  probe.epoch++; // 作废进行中的 runProbe 内循环（await 回来后自查）
+  cleanupProbeStreams();
+  probe.phase = 'idle';
+  $('probeMask').style.display = 'none';
+}
+
+
+/* ============================ 按钮 ============================ */
+$('btnStart').onclick = async () => {
+  if (live) return;
+  const okMic = await startMic();
+  if (!okMic) return;
+  live = true;
+  $('btnStart').disabled = true; $('btnStop').disabled = false;
+  $('btnExit').disabled = false; $('btnBarge').disabled = false;
+  const r = await window.xzVoice.start();
+  if (r && r.needBind) {
+    showActivation('');
+    addLine('note', '', '账号未绑定小智：请到设置页「小智智能教室连接」绑定后再来上课');
+    live = false;
+    $('btnStart').disabled = false; $('btnStop').disabled = true;
+  } else if (r && r.needActivation) {
+    showActivation(r.code);
+    addLine('note', '', '设备未绑定：请在 xiaozhi.me 控制台输入激活码后点「重新绑定」');
+  } else if (r && !r.started) {
+    addLine('note', '', '⚠ 无法开始：' + (r.note || r.message || '未知'));
+  }
+  setState('连接中');
+};
+$('btnStop').onclick = () => {
+  live = false;
+  window.xzVoice.stop();
+  stopMic();
+  stopAllPlay(); held = false;
+  $('btnStart').disabled = false; $('btnStop').disabled = true;
+  $('btnExit').disabled = true; $('btnBarge').disabled = true;
+  setState('未连接');
+  addLine('note', '', '已下课');
+};
+$('btnExit').onclick = () => { window.xzVoice.ctl('exit'); addLine('note', '', '老师退下（静音，点「继续听」恢复）'); };
+$('btnBarge').onclick = async () => {
+  if (barMode !== 'manual') { window.xzVoice.ctl('abort'); return; }
+  // PTT：举手=打断老师并开始持续送话；发言完毕=提交整段，老师才开始回答
+  const r = await window.xzVoice.ctl('bargeToggle');
+  if (r && !r.ok) { addLine('note', '', '⚠ ' + (r.error || '操作失败')); return; }
+  if (r) { barMicOpen = !!r.micWinOpen; renderBargeBtn(); }
+};
+$('selMode').onchange = async () => {
+  barMode = $('selMode').value === 'manual' ? 'manual' : 'auto';
+  saveBargeMode(barMode);
+  const r = await window.xzVoice.ctl('setMode', barMode);
+  if (r && r.ok) barMicOpen = !!r.micWinOpen;
+  renderBargeBtn();
+  addLine('note', '', barMode === 'manual' ? '已切换：举手发言 —— 点「举手」开始说，说完点「发言完毕」老师才回答，整句不被抢（已记住）' : '已切换：说话打断 —— 出声即打断老师（已记住）');
+};
+$('btnRebind').onclick = async () => {
+  let r = null;
+  try { r = await window.xzVoice.register(); }
+  catch (e) { addLine('note', '', '⚠ ' + ((e && e.message) || '注册失败')); }
+  if (r && r.bound) { $('activation').style.display = 'none'; addLine('note', '', '绑定成功，点「开始上课」'); }
+  else if (r && r.code) showActivation(r.code);
+};
+// 退下后想再听：双击字幕区恢复收声（轻量交互，不加按钮堆）
+subs.ondblclick = () => { if (live) { window.xzVoice.ctl('resumeListen'); addLine('note', '', '继续听课'); } };
+$('vol').oninput = () => { if (gain) gain.gain.value = Number($('vol').value) / 100; };
+$('selDev').onchange = async () => {
+  // 手动下拉选择 = 新的记忆（用户裁定：选好就记住，除非重新选）
+  const o = $('selDev').selectedOptions[0];
+  if (o && o.value && o.textContent) saveMicPref({ label: o.textContent, deviceId: o.value, ts: Date.now() });
+  if (live) { stopMic(); await startMic(); }
+};
+/* 探测面板接线 */
+$('btnProbe').onclick = () => openProbe();
+$('probeGo').onclick = () => runProbe();
+$('probeAgain').onclick = () => runProbe();
+$('probeUse').onclick = () => adoptProbe();
+$('probeClose').onclick = () => closeProbe();
+// 排名阶段点其它设备行可改选
+$('probeList').addEventListener('click', (ev) => {
+  const row = ev.target.closest ? ev.target.closest('.prow') : null;
+  if (!row) return;
+  const i = probe.results.findIndex((r) => r.row === row);
+  if (i >= 0 && probe.results[i].score > 0) { probe.pickIdx = i; paintProbePick(); }
+});
+
+/* ============================ 初始化 ============================ */
+(async () => {
+  // 听话窗模式：读记忆后只在引擎与记忆不一致时才 setMode 纠偏——setMode 带「manual 默认闭麦」
+  // 副作用，课堂进行中面板重载不能拿它当只读查询（CodeReview Minor：同步与控制解耦）
+  barMode = loadBargeMode();
+  $('selMode').value = barMode;
+  await listDevices();
+  const s = await window.xzVoice.state();
+  if (s && s.bargeMode === barMode) barMicOpen = !!s.micWinOpen;
+  else { const rm = await window.xzVoice.ctl('setMode', barMode); if (rm && rm.ok) barMicOpen = !!rm.micWinOpen; }
+  renderBargeBtn();
+  if (s && s.needBind) showActivation('');
+  else if (s && s.bound === false && s.activationCode) showActivation(s.activationCode);
+  if (s && s.registered) $('netChip').textContent = '已绑定';
+})();
+</script>
+</body>
+</html>

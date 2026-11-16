@@ -88,11 +88,12 @@ class XzVoiceEngine {
     this.identitySource = '';   // '' | local | server | local-legacy（resolveIdentity 后定）
     this.devType = '';
     this.needBind = false;      // 服务器未绑且本机无可迁移身份 → 面板引导去设置页
-    // 听话窗（v0.2.5 手动打断，2026-11-06 用户裁定）：auto=声控打断现状；
-    // manual=默认闭麦（上行静音帧、不过打断哨兵），点「说话」才开麦，老师开口自动闭麦
+    // 听话窗（v0.2.5 手动打断，2026-11-06 用户裁定；2026-11-16 实弹改版：
+    // manual 升级为 PTT 举手发言——用户裁定：点「举手」后系统持续听，
+    // 直到点「发言完毕」才提交，根治“话说一半被云端 VAD 判停抢话”）：
+    // auto=声控打断现状（服务端 VAD 判停）；manual=举手↔发言完毕（listen mode=manual）
     this.bargeMode = 'auto';    // auto | manual（引擎级字段，面板持久化记忆后同步）
     this.micWinOpen = true;     // manual 模式的麦窗开关；auto 模式恒 true 不参与逻辑
-    this._silFrame = new Int16Array(MIC_FRAME_SAMPLES); // 闭麦上行占位零帧
     this._idPromise = null;     // resolveIdentity 并发去重
     this._codecMod = deps.codec || null;
   }
@@ -356,8 +357,19 @@ class XzVoiceEngine {
             session.downRate = sampleRate;
             session.gauge = new EchoGauge({ micRate: MIC_RATE, refRate: sampleRate });
           } catch (e) { self._note('下行解码器创建失败：' + e.message); }
-          socket.listenStart('auto');           // 服务端 VAD 判停，与固件一致
-          session.listenOpen = true;
+          // auto：开课即开服务端 VAD 听话窗（与固件一致）；manual（PTT）：
+          // 不预开窗——收声窗只由用户点「举手」打开，免得云端 VAD 乱判停；
+          // 重连评审修复：窗态不变量跨重连保持——举手途中断线重开 manual 窗，
+          // 否则陈旧 listenOpen 归零（不带着旧旗号在新 socket 上盲发 stop）
+          if (self.bargeMode !== 'manual') {
+            socket.listenStart('auto');
+            session.listenOpen = true;
+          } else if (self.micWinOpen) {
+            socket.listenStart('manual');
+            session.listenOpen = true;
+          } else {
+            session.listenOpen = false;
+          }
           self._emitState();
           self._emit({ type: 'ready', sessionId, downRate: sampleRate, frameDuration });
         },
@@ -491,17 +503,12 @@ class XzVoiceEngine {
       this._reopenListen(session);
     }
 
-    // M) 手动模式（v0.2.5）：闭麦时不过打断哨兵、上行零帧（云端 VAD 听不到声音），
-    //    但押后 stop/字幕播放钟照常被帧驱动；开麦时真帧上行但哨兵仍不喂——
-    //    打断只由按钮触发，从机制上消灭"自己打断自己"的循环
+    // M) 手动模式（PTT，2026-11-16 实弹改版）：闭麦=没有听话窗，零上行（旧静音帧
+    //    保活手法只为服务端 VAD 窗存在，现在窗只在举手期间开）；开麦时真帧上行但
+    //    哨兵不喂，押后 stop/字幕播放钟照常被帧驱动
     if (this.bargeMode === 'manual') {
       if (!this.micWinOpen) {
-        // 闭麦下 hold 不可能为真（哨兵不喂），freezeOnHold 传 false 与旧内联写法同语义
         this._drainSubtitleClock(session, now, false);
-        try {
-          const packet = session.enc.encode(this._silFrame);
-          if (this.socket && this.socket.isReady()) this.socket.sendAudio(Buffer.from(packet.buffer, packet.byteOffset, packet.byteLength));
-        } catch (e) { this._note('编码失败：' + e.message); }
         return;
       }
       // 开麦：真帧走回声剥离+上行（供云端识别），但哨兵不喂，字幕钟照常
@@ -602,12 +609,21 @@ class XzVoiceEngine {
     if (cmd === 'exit') {
       // 退下：静音闸 + 停当前播报，连接保留（可直接再"继续"）
       if (session) { session.gate.exit(this._now()); this._toPanel('flush', {}); }
-      if (this.socket) { this.socket.listenStop(); }
+      // stop 只在窗真开着且连接就绪时发（PTT 语义下 stop=提交发言，没窗时盲发会
+      // 多提交一次；评审二审 Minor-2：断连中发只会触发「未连接」误报错误，与 commit 分支同口径）
+      if (this.socket && this.socket.isReady() && session && session.listenOpen) { this.socket.listenStop(); session.listenOpen = false; }
+      // 评审 Major-1：退下一律闭麦——否则举手后点退下留下 micWinOpen=true/
+      // listenOpen=false 分裂态：麦开分支照常零上行、按钮还卡在「发言完毕」
+      if (this.bargeMode === 'manual' && this.micWinOpen) {
+        this.micWinOpen = false;
+        this._emit({ type: 'micwin', open: false });
+      }
       return { ok: true };
     }
     if (cmd === 'resumeListen') {
       if (session) session.gate.unmute();
-      if (this.socket && this.socket.isReady()) { this.socket.listenStart('auto'); if (session) session.listenOpen = true; }
+      // manual（PTT）：继续听只解静音，收声窗仍由用户点「举手」打开
+      if (this.bargeMode !== 'manual' && this.socket && this.socket.isReady()) { this.socket.listenStart('auto'); if (session) session.listenOpen = true; }
       return { ok: true };
     }
     if (cmd === 'abort') {
@@ -632,22 +648,36 @@ class XzVoiceEngine {
       this._emit({ type: 'mode', mode: m, micWinOpen: this.micWinOpen });
       return { ok: true, mode: m, micWinOpen: this.micWinOpen };
     }
-    if (cmd === 'bargeToggle') {             // 手动模式「说话/闭麦」按钮
+    if (cmd === 'bargeToggle') {             // 手动模式「举手/发言完毕」按钮（PTT）
       if (this.bargeMode !== 'manual') return { ok: false, error: '非手动模式' };
       const session = this.session;
       if (!session) return { ok: false, error: '未在上课' };
       if (this.micWinOpen) {
-        this.micWinOpen = false;             // 再点一下=手动闭麦（老师迟迟不接话时的兜底）
+        // 发言完毕：本路发言唯一提交点——发 listen stop，云端据此整段送 STT 并回答；
+        // 不再靠服务端 VAD 判停（旧坑：用户换气/想词就被提前提交抢话）
+        this.micWinOpen = false;
+        if (this.socket && this.socket.isReady() && session.listenOpen) {
+          this.socket.listenStop();
+          session.listenOpen = false;
+          this._emit({ type: 'talk', state: 'commit' });
+        } else {
+          // 评审二审 Minor-1：断连中点发言完毕不得虚假确认——窗没提交成功，
+          // 发 lost 让面板如实提示（listenOpen 残留旗号由重连 onReady 归位兜底）
+          this._emit({ type: 'talk', state: 'lost' });
+        }
       } else {
+        // 评审 Minor-2：连接未就绪（拨号中/后台重连）举手不得置位——
+        // 否则留下麦开无窗分裂态，对着没开的窗说话还会虚假提交
+        if (!(this.socket && this.socket.isReady())) {
+          return { ok: false, error: '连接未就绪，请稍候再举手' };
+        }
         this.micWinOpen = true;
         session.slideLen = 0;                // 清窗：开麦首帧不混入闭麦前的旧声音
-        // 开口即打断老师：与哨兵 abort 同效果（作废本轮+重开收声窗），只是不过状态机；
-        // gate 的在途丢弃窗/重入闸要手工同步打开，否则云端被打断后的残余音频照播
-        if (this.socket && this.socket.isReady()) {
-          this.socket.abort();
-          this.socket.listenStart('auto');
-          session.listenOpen = true;
-        }
+        // 举手即打断老师并开始持续送话；mode=manual 告诉云端不要自行判停，
+        // 直到收到 listen stop（发言完毕）才提交整段
+        this.socket.abort();
+        this.socket.listenStart('manual');
+        session.listenOpen = true;
         const g = session.gate;
         g.hold = false; g.voicedMs = 0;
         // 退下静音中点「说话」：一并解静音，否则问了问题听不到回答（半死状态只剩双击字幕区可解）
@@ -687,8 +717,10 @@ class XzVoiceEngine {
     return { stopped: true };
   }
 
-  /** 每轮回答落地后重开听话窗（用户插话能被继续听到）；退下静音/已开/断开都不重发 */
+  /** 每轮回答落地后重开听话窗（用户插话能被继续听到）；退下静音/已开/断开都不重发。
+   *  manual（PTT）不自动开窗：下一句由用户点「举手」主动开始 */
   _reopenListen(session) {
+    if (this.bargeMode === 'manual') return;
     if (!this.socket || !this.socket.isReady() || session.closed || session.listenOpen) return;
     if (session.gate.muted) return;              // 退下状态：由 resumeListen 手动重开
     this.socket.listenStart('auto');

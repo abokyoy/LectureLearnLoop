@@ -881,10 +881,10 @@ async function testSpeechReport() {
     (mainSrc.match(/SERVER_BASE \+ p/g) || []).length === 1);
 }
 
-/* ================= H. 手动打断模式（v0.2.5 用户裁定） =================
- * auto=声控打断（现状）；manual=默认闭麦，点「说话」开麦即打断，老师 tts start 自动闭麦。
- * manual 下哨兵永不喂（机制上消灭自我打断）；闭麦=零帧上行（listen 窗保活但云端听不到声），
- * 字幕钟/押后 stop 照常帧驱动；开麦打断与哨兵 abort 同效（含在途丢弃窗）。
+/* ================= H. 手动打断模式（v0.2.5；2026-11-16 实弹改版 PTT） =================
+ * auto=声控打断（现状）；manual=举手↔发言完毕：待机无听话窗、零上行；
+ * 举手=abort+listen start(mode=manual) 持续送话；发言完毕=listen stop 唯一提交点；
+ * 老师 tts start 自动闭麦兜底；回答落地后 manual 不自动开窗（下句由举手主动开始）。
  */
 async function testManualBarge() {
   const codec = await import('libopus-wasm');
@@ -948,22 +948,22 @@ async function testManualBarge() {
   ok('H1a muted never interrupts teacher', !conn.texts.slice(m0).some((t) => JSON.parse(t).type === 'abort')
     && !panel.sent.some((s) => s.ch === 'hold' || s.ch === 'flush'));
   const pk1 = await upSilence(b0);
-  ok('H1b muted uplinks silent frames', conn.binaries.length - b0 >= 1 && pk1 < 50, 'n=' + (conn.binaries.length - b0) + ' peak=' + pk1);
+  ok('H1b muted idle uplinks nothing (PTT: no window)', conn.binaries.length === b0, 'n=' + (conn.binaries.length - b0));
   ok('H1c subtitle clock still drives while muted', sents().includes('H1句'), sents().join(','));
   const t1s = conn.texts.length;
   conn.ws.send(JSON.stringify({ type: 'tts', state: 'stop' })); await sleep(60);
   ok('H1d stop deferred while draining', eng.session.pendingStopAt > clock);
-  clock += 2000; feed(voiced, 1); await sleep(120);           // 闭麦帧照常驱动押后 stop 落地
-  ok('H1e stop lands & relisten while muted', eng.session.pendingStopAt === 0 && eng.session.gate.hold === false
-    && conn.texts.slice(t1s).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start'; }));
+  clock += 2000; feed(voiced, 1); await sleep(120);           // 闭麦零上行，押后 stop 靠字幕钟帧照常落地
+  ok('H1e stop lands & NO auto relisten in manual', eng.session.pendingStopAt === 0 && eng.session.gate.hold === false
+    && !conn.texts.slice(t1s).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start'; }));
 
   // H2 开麦=打断+真帧上行（哨兵仍不喂）：bargeToggle（此刻 talk 态，不开丢弃窗）
   panel.sent.length = 0;
   const t2 = conn.texts.length;
   const r2 = eng.ctl('bargeToggle'); await sleep(100);
   ok('H2a toggle opens mic', r2.ok === true && r2.micWinOpen === true);
-  ok('H2b abort + listen start on open', conn.texts.slice(t2).some((t) => JSON.parse(t).type === 'abort')
-    && conn.texts.slice(t2).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start'; }));
+  ok('H2b abort + listen start(mode=manual) on raise hand', conn.texts.slice(t2).some((t) => JSON.parse(t).type === 'abort')
+    && conn.texts.slice(t2).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start' && o.mode === 'manual'; }));
   ok('H2c panel flush + micwin evt', panel.sent.some((s) => s.ch === 'flush')
     && evtN((e) => e.type === 'micwin' && e.open === true) === 1);
   ok('H2d no drop window when teacher idle', eng.session.gate.dropUntil === 0);
@@ -981,18 +981,18 @@ async function testManualBarge() {
   const b3 = conn.binaries.length;
   feed(voiced, 8); await sleep(150);
   const ab3 = conn.texts.slice(t3).map((t) => JSON.parse(t)).filter((o) => o.type === 'abort').length;
-  const pk3 = await upSilence(b3);
-  ok('H3b after auto-mute frames are silent & no abort', ab3 === 0 && conn.binaries.length > b3 && pk3 < 50, 'ab=' + ab3 + ' peak=' + pk3 + ' open=' + eng.micWinOpen);
+  ok('H3b after auto-mute uplinks nothing & no abort', ab3 === 0 && conn.binaries.length === b3, 'ab=' + ab3 + ' n=' + (conn.binaries.length - b3) + ' open=' + eng.micWinOpen);
 
-  // H4 播报中点「说话」开麦：与哨兵 abort 同效含在途丢弃窗；再点=手动闭麦零协议消息
-  eng.ctl('bargeToggle'); await sleep(100);                    // play 态开麦→打断
+  // H4 播报中点「举手」：与哨兵 abort 同效含在途丢弃窗；再点=发言完毕（提交 listen stop）
+  eng.ctl('bargeToggle'); await sleep(100);                    // play 态举手→打断
   ok('H4a play-state open arms inflight drop', eng.micWinOpen === true && eng.session.gate.dropUntil === Number.MAX_SAFE_INTEGER);
   const playP0 = panel.sent.filter((s) => s.ch === 'play').length;
   conn.ws.send(downPacket); await sleep(100);
   ok('H4b residual audio after manual abort dropped', panel.sent.filter((s) => s.ch === 'play').length === playP0);
   const t4 = conn.texts.length;
-  const r4 = eng.ctl('bargeToggle'); await sleep(100);          // 再点=闭麦兜底
-  ok('H4c manual close flips only', r4.ok === true && r4.micWinOpen === false && conn.texts.length === t4);
+  const r4 = eng.ctl('bargeToggle'); await sleep(100);          // 再点=发言完毕：提交整段
+  ok('H4c commit sends listen stop', r4.ok === true && r4.micWinOpen === false && eng.session.listenOpen === false
+    && conn.texts.slice(t4).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'stop'; }));
 
   // H5 回 auto：丢弃窗由后续 stop 落地闭合，声控打断全链复原（现状行为不变）
   const r5 = eng.ctl('setMode', 'auto');
@@ -1028,6 +1028,126 @@ async function testManualBarge() {
   await cloud.close();
 }
 
+/**
+ * I) PTT 举手发言协议契约（2026-11-16 实弹轮，用户裁定：点举手持续聆听，
+ * 按「发言完毕」才提交）：引擎级行为契约——
+ * 开课不预开 VAD 窗；举手=abort+listen start(mode=manual)；发言完毕=listen stop
+ * 唯一提交点；回答落地不自动开窗；闭麦零上行；窗未开 exit 不盲发 stop。
+ */
+async function testPttProtocol() {
+  const codec = await import('libopus-wasm');
+  const cloud = await startMockCloud({ downRate: 24000 });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xzptt-'));
+  fs.writeFileSync(path.join(dir, 'xz_voice.json'), JSON.stringify({
+    seed: 'ptt-seed', device_mac: macFromSeed('ptt-seed'), client_uuid: 'ptt-uuid',
+    wsUrl: cloud.url, token: 'tk', wsVersion: 1, activationCode: '',
+  }));
+  let clock = 1200000;
+  const panel = { sent: [], events: [] };
+  const eng = new XzVoiceEngine({
+    configDir: dir, now: () => clock, codec: codec,
+    httpPost: async () => ({ status: 200, text: '{}' }),
+    windowOps: { send: (ch, p) => panel.sent.push({ ch, p }) },
+    onEvent: (e) => panel.events.push(e),
+  });
+  // 面板恢复记忆的真实时序：开课前面板把持久化模式同步进引擎，再点上课
+  eng.bargeMode = 'manual';
+  eng.micWinOpen = false;
+  await eng.lessonStart();
+  await sleep(250);
+  const conn = cloud.last();
+  const voiced = sineI16(960, 16000, 6000, 300);
+  const feed = (f, n) => { for (let i = 0; i < n; i++) { eng.handleMicFrame(i16ToBuf(f)); clock += 60; } };
+  const dec16 = await codec.createDecoder({ sampleRate: 16000, channels: 1 });
+  const upPeak = () => {
+    const pcm = dec16.decode(conn.binaries[conn.binaries.length - 1]);
+    let p = 0; for (const v of pcm) p = Math.max(p, Math.abs(v));
+    return p;
+  };
+  const evtN = (pred) => panel.events.filter(pred).length;
+  const enc24 = await codec.createEncoder({ sampleRate: 24000, channels: 1, frameSize: 1440, application: codec.Application.Voip, bitrate: 32000 });
+  const downPacket = Buffer.from(enc24.encode(sineI16(1440, 24000, 8000, 440)));
+
+  // I1 开课（PTT）：onReady 不预开窗——全程无 listen start，listenOpen=false；举手前零上行
+  ok('I1a lesson start opens no listen window (manual)',
+    !conn.texts.some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start'; })
+    && eng.session.listenOpen === false);
+  const b1 = conn.binaries.length;
+  feed(voiced, 8); await sleep(120);
+  ok('I1b idle before raise-hand uplinks nothing', conn.binaries.length === b1, 'n=' + (conn.binaries.length - b1));
+
+  // I2 举手：abort + listen start(mode=manual)，之后真声持续上行（云端不判停）
+  const t2 = conn.texts.length;
+  const r2 = eng.ctl('bargeToggle'); await sleep(100);
+  ok('I2a raise hand opens manual window', r2.ok === true && r2.micWinOpen === true && eng.session.listenOpen === true);
+  ok('I2b abort + listen start mode=manual', conn.texts.slice(t2).some((t) => JSON.parse(t).type === 'abort')
+    && conn.texts.slice(t2).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start' && o.mode === 'manual'; }));
+  const b2 = conn.binaries.length;
+  feed(voiced, 6); await sleep(150);
+  ok('I2c keeps streaming while hand raised', conn.binaries.length > b2 && upPeak() > 200, 'peak=' + upPeak());
+
+  // I3 发言完毕：本路唯一提交点 listen stop；talk commit 事件恰一次；提交后再喂声零上行
+  const t3 = conn.texts.length;
+  const r3 = eng.ctl('bargeToggle'); await sleep(100);
+  ok('I3a commit sends listen stop', r3.ok === true && r3.micWinOpen === false && eng.session.listenOpen === false
+    && conn.texts.slice(t3).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'stop'; }));
+  ok('I3b talk commit event exactly once', evtN((e) => e.type === 'talk' && e.state === 'commit') === 1);
+  const b3 = conn.binaries.length;
+  feed(voiced, 6); await sleep(120);
+  ok('I3c nothing uplinks after commit', conn.binaries.length === b3, 'n=' + (conn.binaries.length - b3));
+
+  // I4 老师回答一轮收口（tts start→stop，押后 stop 帧驱动落地）：manual 不自动开窗，下句由举手开始
+  const t4 = conn.texts.length;
+  conn.ws.send(JSON.stringify({ type: 'tts', state: 'start' })); await sleep(60);
+  conn.ws.send(downPacket); await sleep(120);
+  conn.ws.send(JSON.stringify({ type: 'tts', state: 'stop' })); await sleep(60);
+  clock += 2000; feed(voiced, 1); await sleep(120);
+  ok('I4a deferred stop landed', eng.session.pendingStopAt === 0 && eng.session.gate.hold === false);
+  ok('I4b no auto relisten after answer (PTT)',
+    !conn.texts.slice(t4).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'start'; })
+    && eng.session.listenOpen === false);
+
+  // I5 窗未开点退下：stop=提交语义，无窗时 exit 不得盲发（云端会把空 stop 当提交）
+  const t5 = conn.texts.length;
+  eng.ctl('exit'); await sleep(60);
+  ok('I5 exit without window sends no listen stop',
+    !conn.texts.slice(t5).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'stop'; }));
+
+  // I6 举手后点退下：exit 必先提交再闭麦（评审 Major-1）——发 stop、窗态归位、闭麦后零上行
+  const r6a = eng.ctl('bargeToggle'); await sleep(80);
+  ok('I6a raise hand after exit works', r6a.ok === true && r6a.micWinOpen === true && eng.session.listenOpen === true);
+  const t6 = conn.texts.length;
+  eng.ctl('exit'); await sleep(80);
+  ok('I6b exit commits and force-closes mic', eng.micWinOpen === false && eng.session.listenOpen === false
+    && conn.texts.slice(t6).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'stop'; }));
+  const b6 = conn.binaries.length;
+  feed(voiced, 6); await sleep(120);
+  ok('I6c no uplink after exit closed mic', conn.binaries.length === b6, 'n=' + (conn.binaries.length - b6));
+
+  // I7 断连场景（打桩 isReady）：断连中点「发言完毕」不虚假确认（emit lost、不发 stop）；
+  //    断连中举手拒绝且状态不变；恢复后 exit 兜底清残留窗（评审二审 Minor-1/2）
+  const r7a = eng.ctl('bargeToggle'); await sleep(80);           // 退下后再举手（bargeToggle 自动解静音）
+  ok('I7a raise works again', r7a.ok === true && eng.session.listenOpen === true);
+  const t7 = conn.texts.length;
+  eng.socket.isReady = () => false;
+  eng.ctl('bargeToggle'); await sleep(80);                        // 窗开着但连接断了点「发言完毕」
+  ok('I7b offline commit emits lost not commit', eng.micWinOpen === false
+    && evtN((e) => e.type === 'talk' && e.state === 'commit') === 1
+    && evtN((e) => e.type === 'talk' && e.state === 'lost') === 1
+    && !conn.texts.slice(t7).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'stop'; }));
+  const r7c = eng.ctl('bargeToggle');                             // 断连中举手：拒绝且态不变
+  ok('I7c offline raise refused', r7c.ok === false && eng.micWinOpen === false
+    && eng.session.listenOpen === true);                          // 残留旗号等 onReady/exit 兜底，不假清
+  delete eng.socket.isReady;
+  eng.ctl('exit'); await sleep(80);                               // 恢复后 exit 兜底提交残留窗归位
+  ok('I7d exit commits pending window when ready', eng.session.listenOpen === false
+    && conn.texts.slice(t7).some((t) => { const o = JSON.parse(t); return o.type === 'listen' && o.state === 'stop'; }));
+
+  await eng.lessonStop();
+  try { dec16.free(); enc24.free(); } catch (e) { /* noop */ }
+  await cloud.close();
+}
+
 /* ================= main ================= */
 (async () => {
   try {
@@ -1039,6 +1159,7 @@ async function testManualBarge() {
     await testSpeechSync();
     await testSpeechReport();
     await testManualBarge();
+    await testPttProtocol();
   } catch (e) {
     OUT.push('THREW ' + (e && e.stack ? e.stack : String(e)));
     fails.push('UNCAUGHT');

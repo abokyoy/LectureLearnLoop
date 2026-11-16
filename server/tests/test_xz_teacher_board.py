@@ -4310,5 +4310,71 @@ class LessonResumeAfterReconnectTest(unittest.TestCase):
         self.assertNotIn("【课堂进行中】", t)
 
 
+class QUnboardedMirrorTest(unittest.TestCase):
+    """讲了没写镜（2026-11-16 实弹轮用户报障：追问阶段板书一直不更新）：
+    学生连问 ≥2 句而黑板没添一笔，下次工具返回拦嘴；任何上板/改写/擦板
+    动作清零。纯板面状态机不碰 DB；探针用 board_highlight（不存在卡）：
+    既不写板又能带出镜尾——写板类工具执行时已归零，自身不会带镜。"""
+
+    def setUp(self):
+        self.uid = "qmir_" + uuid.uuid4().hex[:10]
+
+    def tearDown(self):
+        LB._boards.pop(self.uid, None)
+
+    def _probe(self):
+        return LB.execute_tool("board_highlight", {"item_id": -1}, self.uid)
+
+    def test_q1_single_question_no_mirror(self):
+        """对照口径：只问了一句不拦嘴（镜只盯连续只说不写）。"""
+        LB.append_speech(self.uid, "student", "矩阵乘法怎么算")
+        self.assertNotIn("你已经答了学生", self._probe())
+
+    def test_q2_two_questions_mirror(self):
+        LB.append_speech(self.uid, "student", "矩阵乘法怎么算")
+        LB.append_speech(self.uid, "student", "转置是啥")
+        self.assertIn("你已经答了学生 2 次追问", self._probe())
+
+    def test_q3_teacher_speech_not_counted(self):
+        """老师口播不计数：正课讲解中镜不得误伤。"""
+        for i in range(3):
+            LB.append_speech(self.uid, "teacher", f"讲课第{i + 1}句")
+        self.assertNotIn("你已经答了学生", self._probe())
+
+    def test_q4_board_write_clears(self):
+        """两问后写一卡：写卡自身不带镜（执行时已归零），后续探针也不带。"""
+        LB.append_speech(self.uid, "student", "问一")
+        LB.append_speech(self.uid, "student", "问二")
+        t = LB.execute_tool("board_write", {"kind": "step", "content": "关键结论上板"}, self.uid)
+        self.assertNotIn("你已经答了学生", t)
+        self.assertNotIn("你已经答了学生", self._probe())
+
+    def test_q5_refire_after_clear_then_replace(self):
+        """归零不翻旧账也不终身制：再问两句重新拦；改写卡（board_replace）同样清零。"""
+        LB.execute_tool("board_write", {"kind": "step", "content": "结论卡"}, self.uid)
+        with LB._lock:
+            cid = LB._board(self.uid)["items"][-1]["id"]
+        LB.append_speech(self.uid, "student", "追问一")
+        LB.append_speech(self.uid, "student", "追问二")
+        self.assertIn("你已经答了学生 2 次追问", self._probe())
+        t = LB.execute_tool("board_replace",
+                            {"item_id": cid, "content": "改写后的结论"}, self.uid)
+        self.assertNotIn("你已经答了学生", t)
+        self.assertNotIn("你已经答了学生", self._probe())
+
+    def test_q6_clear_board_resets(self):
+        """擦板=重开一页：追问没上板的旧账一并清零。"""
+        LB.append_speech(self.uid, "student", "问一")
+        LB.append_speech(self.uid, "student", "问二")
+        LB.execute_tool("board_clear", {}, self.uid)
+        self.assertNotIn("你已经答了学生", self._probe())
+
+    def test_q7_count_capped(self):
+        """计数上限 9：镜只需量级不需精确数，长问不乱累加。"""
+        for i in range(12):
+            LB.append_speech(self.uid, "student", f"追问{i + 1}")
+        self.assertIn("你已经答了学生 9 次追问", self._probe())
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
