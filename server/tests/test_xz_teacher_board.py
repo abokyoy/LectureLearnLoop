@@ -4189,5 +4189,126 @@ class PrincipleStageFuseTest(unittest.TestCase):
         self.assertEqual(hit["content"]["mode"], "off")
 
 
+class LessonResumeAfterReconnectTest(unittest.TestCase):
+    """断线失忆防（2026-11-15 用户裁定：没点下课=同一堂课）：
+    小智云待机/重连后老师记忆清零，但黑板一直在——取料/上题的工具返回
+    必须以板面为权威：黑板非空绝不引导重新上题、清板、从头重讲。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = APP.test_client()
+        cls.suffix = uuid.uuid4().hex[:8]
+        username = "xzrs_" + cls.suffix
+        cls.client.post("/api/auth/register",
+                        json={"username": username, "password": "test123456"})
+        r = cls.client.post("/api/auth/login",
+                            json={"username": username, "password": "test123456"})
+        tok = r.get_json()["data"]["token"]
+        seg = tok.split(".")[1]
+        cls.uid = str(json.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))["uid"])
+        db = DatabaseManager(str(config.DB_PATH))
+        cls.conn = db.get_connection()
+        subj = "测试学科XZR" + cls.suffix
+        cur = cls.conn.execute(
+            "INSERT INTO knowledge_points (user_id, subject_name, point_name, "
+            "core_description, mastery_score) VALUES (?, ?, ?, ?, ?) RETURNING id",
+            (cls.uid, subj, "导数", "链式法则", 30))
+        cls.kp = cur.fetchone()[0]
+        cur = cls.conn.execute(
+            "INSERT INTO practice_records (user_id, subject_name, knowledge_point_id, "
+            "question_content, user_answer, is_correct, options_json) "
+            "VALUES (?, ?, ?, ?, ?, 0, ?) RETURNING id",
+            (cls.uid, subj, cls.kp, "(2x+1)^2 的导数是？", "A", "[]"))
+        pr = cur.fetchone()[0]
+        cur = cls.conn.execute(
+            "INSERT INTO error_questions (user_id, subject_name, knowledge_point_id, "
+            "practice_record_id, current_proficiency, correct_answer, explanation) "
+            "VALUES (?, ?, ?, ?, 20, 'B', '先外层再内层') RETURNING id",
+            (cls.uid, subj, cls.kp, pr))
+        cls.err = cur.fetchone()[0]
+        cur = cls.conn.execute(
+            "INSERT INTO practice_records (user_id, subject_name, knowledge_point_id, "
+            "question_content, user_answer, is_correct, options_json) "
+            "VALUES (?, ?, ?, ?, ?, 0, ?) RETURNING id",
+            (cls.uid, subj, cls.kp, "ln(1+x) 的等价无穷小是？", "A", "[]"))
+        pr2 = cur.fetchone()[0]
+        cur = cls.conn.execute(
+            "INSERT INTO error_questions (user_id, subject_name, knowledge_point_id, "
+            "practice_record_id, current_proficiency, correct_answer, explanation) "
+            "VALUES (?, ?, ?, ?, 20, 'B', 'x→0 时 ln(1+x)~x') RETURNING id",
+            (cls.uid, subj, cls.kp, pr2))
+        cls.err2 = cur.fetchone()[0]
+        cls.conn.commit()   # PG 连接池按连接隔离：不提交服务端另一连接看不到
+
+    @classmethod
+    def tearDownClass(cls):
+        for tbl in ("error_questions", "practice_records", "knowledge_points"):
+            cls.conn.execute(f"DELETE FROM {tbl} WHERE user_id = ?", (cls.uid,))
+        cls.conn.commit()
+        cls.conn.close()
+        LB._boards.pop(cls.uid, None)
+
+    def setUp(self):
+        LB._boards.pop(self.uid, None)
+
+    def tearDown(self):
+        LB.execute_tool("board_clear", {}, self.uid)
+        LB._boards.pop(self.uid, None)
+
+    def test_r1_material_list_resume_when_board_full(self):
+        """黑板非空：取料清单不再「选题开讲」，换续讲定式。"""
+        LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        LB.execute_tool("board_write", {"kind": "step", "content": "先外层 2(2x+1)"}, self.uid)
+        t = LB.execute_tool("get_lesson_material", {}, self.uid)
+        self.assertIn("【课堂进行中】", t)
+        self.assertIn("严禁 board_clear", t)
+        self.assertNotIn("选一道题，用 board_show_problem 把它写上黑板后开始讲解", t)
+
+    def test_r2_pack_error_id_on_board(self):
+        """题已在板上：重取素材不引导「写上黑板开始讲解」。"""
+        LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        t = LB.execute_tool("get_lesson_material", {"error_id": str(self.err)}, self.uid)
+        self.assertIn("已在黑板上", t)
+        self.assertIn("【课堂进行中】", t)
+        self.assertNotIn("用 board_show_problem 把这题写上黑板", t)
+
+    def test_r3_show_problem_twice_no_rotate(self):
+        """断线重连后重 show 同题=拒且不得触发换题重开（板卡张数/序号不变）。"""
+        LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        LB.execute_tool("board_write", {"kind": "step", "content": "再乘内层导数 2"}, self.uid)
+        with LB._lock:
+            b0 = LB._board(self.uid)
+            n0, seq0 = len(b0["items"]), b0["seq"]
+        t = LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        self.assertIn("不需要重新上题", t)
+        with LB._lock:
+            b1 = LB._board(self.uid)
+            self.assertEqual(len(b1["items"]), n0)
+            self.assertEqual(b1["seq"], seq0)   # 没重铺卡
+
+    def test_r4_empty_board_normal_flow(self):
+        """对照组：空板取料照旧「开新课」引导，不叠续讲定式。"""
+        t = LB.execute_tool("get_lesson_material", {}, self.uid)
+        self.assertIn("选一道题，用 board_show_problem 把它写上黑板后开始讲解", t)
+        self.assertNotIn("【课堂进行中】", t)
+
+    def test_r5_clear_then_show_is_fresh_lesson(self):
+        """擦板=明确结课：之后 show 同题走正常上题流程，不被防抖拦。"""
+        LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        LB.execute_tool("board_clear", {}, self.uid)
+        t = LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        self.assertIn("已写上黑板", t)
+        self.assertNotIn("不需要重新上题", t)
+
+    def test_r6_fresh_assign_outranks_resume(self):
+        """刚消费学生网页点名指派（pre=开讲新题）：清单不叠续讲定式
+        （评审 W2：相反指令同屏会吞掉学生合法的换题请求）。"""
+        LB.execute_tool("board_show_problem", {"error_id": str(self.err)}, self.uid)
+        LB.set_assign(self.uid, "error", self.err2, "等价无穷小")
+        t = LB.execute_tool("get_lesson_material", {}, self.uid)
+        self.assertIn("📌网页指定讲解", t)
+        self.assertNotIn("【课堂进行中】", t)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

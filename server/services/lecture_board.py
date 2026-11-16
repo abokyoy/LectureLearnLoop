@@ -335,6 +335,29 @@ def _kp_replay_text(uid: str, lk: dict) -> str:
             "板上卡片没讲完之前，严禁结课道别。")
 
 
+def _resume_directive(uid: str) -> str:
+    """黑板非空时的续讲定式（断线失忆防，2026-11-15 用户裁定：没点下课=同一堂课）：
+    小智云待机/断线后重建会话，老师记忆清零，但本侧黑板与进度镜一直在——
+    工具返回就是「讲到哪」的权威锚，堵住从零重开（重上题/清板/重讲题干）。
+    与 kp 续讲定式（_kp_replay_text）同口径，面向一切在板课。"""
+    with _lock:
+        n = len(_board(uid)["items"])
+    if not n:
+        return ""
+    return ("【课堂进行中】黑板上已有讲义，就算你刚才断线丢了记忆，这堂课也没有结束："
+            "严禁 board_clear、严禁重新上题、严禁从头重讲题干。"
+            "对照下面的板面状态行找出没讲过的卡，从最旧那张接着讲；"
+            "学生说「继续/没听懂」就照那张卡的正文换例子重讲。"
+            "只有学生明确说要换题，才另开新题。\n")
+
+
+def _board_lesson_on(uid: str, error_id: str) -> bool:
+    """该题正在板上且课堂进行中（断线重取素材时的防重开判据）。"""
+    with _lock:
+        b = _board(uid)
+        return bool(b["items"]) and b.get("source_error_id") == error_id
+
+
 def _extract_anchors(text: str) -> tuple[str, list[str]]:
     """正文剥锚：〔片段〕→ 片段（正文干净），片段按出现顺序进 anchors[]。"""
     anchors: list[str] = []
@@ -1313,6 +1336,12 @@ def _execute_core(name: str, args: dict, uid: str) -> str:
                               + status_line(uid))
             menu = "\n".join(f"- 错题id {r[0]}（{r[2] or '未分类'}）：{(r[1] or '').strip()}"
                              for r in rows)
+            # 评审 W2（与 kp 续放同口径）：刚消费学生点名指派（pre=开讲新题指令）时
+            # 不叠续讲定式，避免「开讲 X」与「严禁上题」相反指令同屏吞掉合法换题请求
+            resume = "" if pre else _resume_directive(uid)
+            if resume:
+                # 黑板非空=课堂进行中：清单只作参考，不再引导重开新课（断线失忆防）
+                return pre + resume + f"最近错题清单（仅供学生点名换题时用）：\n{menu}\n" + status_line(uid)
             return pre + (f"最近错题清单：\n{menu}\n"
                           "选一道题，用 board_show_problem 把它写上黑板后开始讲解。"
                           + status_line(uid))
@@ -1321,6 +1350,12 @@ def _execute_core(name: str, args: dict, uid: str) -> str:
             return pre + (f"没找到 id 为 {error_id} 的错题，可能不属于该用户。"
                           "先调 get_lesson_material 不带参数拿清单，再按清单里的 id 操作。"
                           + status_line(uid))
+        if _board_lesson_on(uid, error_id):
+            # 题还在板上：素材重放只助备课，指导语换成续讲（防老师拿完素材又 show 一遍重置板面）；
+            # 建议配图照给——配图是讲中正常动作，禁的是清板/重上题/从头重讲（test_30 钉出）
+            return pre + (f"第 {error_id} 题素材（本题已在黑板上）：\n{pack['text']}\n"
+                          + _suggest_plot(pack.get("stem") or "", pack["text"])
+                          + _resume_directive(uid) + status_line(uid))
         return pre + (f"第 {error_id} 题素材：\n{pack['text']}\n"
                       "用 board_show_problem 把这题写上黑板，然后一步一张 step 卡讲清错因，"
                       "关键结论用 formula 卡。"
@@ -1331,6 +1366,11 @@ def _execute_core(name: str, args: dict, uid: str) -> str:
 
     if name == "board_show_problem":
         error_id = str(args.get("error_id") or "").strip()
+        if _board_lesson_on(uid, error_id):
+            # 换题重开防抖（2026-11-15 断线失忆实弹）：本题就在板上，重 show 会
+            # 触发换题重开（重铺卡、进度镜归零），学生看到的板书被从头复制一遍
+            return (f"第 {error_id} 题已经在黑板上，这堂课还在进行中，不需要重新上题。"
+                    + _resume_directive(uid) + status_line(uid))
         pack = _lesson_pack_text(uid, error_id)
         if pack is None:
             return (f"没找到 id 为 {error_id} 的错题。先用 get_lesson_material 不带参数取清单。"
