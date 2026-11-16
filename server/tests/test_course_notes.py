@@ -478,6 +478,7 @@ class TestAssignLesson:
         text = LB.execute_tool("get_lesson_material", {}, au["user_id"])
         assert text.startswith("📌网页指定讲解"), text[:60]
         assert "梯度下降" in text and "这堂课" in text  # 课文全文现取注入
+        assert "总览图定场" in text and "讲课节奏" in text  # 锚图提前+节奏纪律（2026-11-18 实弹「开局干讲两分钟」修法）
         assert "续讲" not in text  # 首次取料不叠续讲定式（双份指令防，同 kp 口径）
         assert LB.get_assign(au["user_id"]) is None  # 一次性消费
         with LB._lock:
@@ -496,6 +497,7 @@ class TestAssignLesson:
         assert "📌" not in text2
         assert "续讲：本课正在讲学生点名的这一堂课" in text2
         assert "梯度下降" in text2 and "严禁结课道别" in text2  # 有料可重讲
+        assert "别干讲不推进" in text2  # 重放同步节奏纪律（图跟着嘴走）
 
     def test_53_lesson_deleted_fallback(self, client, au, llm):
         import services.lecture_board as LB
