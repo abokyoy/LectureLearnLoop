@@ -329,7 +329,8 @@ def board_slide_image():
     except Exception:  # noqa: BLE001
         return jsonify({"success": False, "error": "图片不是合法 base64"})
     r = BL.append_slide(g.user_id, lk, body.get("plot_json"), body.get("caption") or "",
-                        raw, body.get("title") or "", body.get("source_error_id"))
+                        raw, body.get("title") or "", body.get("source_error_id"),
+                        course_lesson_id=LB.get_course_lesson_id(str(g.user_id)))
     if not r.get("success"):
         return jsonify({"success": False, "error": r.get("error") or "课件页入库失败"})
     return jsonify({"success": True, "data": {"lesson_key": lk, "seq": r["seq"],
@@ -403,6 +404,18 @@ def board_lesson():
 def board_lessons():
     """本账号的课件列表（备课入口与「已备好一节课」提示条数据源）。"""
     return jsonify({"success": True, "data": {"lessons": BL.list_lessons(g.user_id)}})
+
+
+@board_bp.route("/api/board/lesson_courses", methods=["GET"])
+@require_auth
+def board_lesson_courses():
+    """某堂目标导向课文的历史课件（画图硬纪律轮 2026-11-18，用户裁定：
+    上完课生成的课件要回到课程页可见，用户才知道自己上过这节课）。"""
+    lid = (request.args.get("lesson_id") or "").strip()
+    if not lid.isdigit():
+        return jsonify({"success": False, "error": "lesson_id 必须是数字"}), 400
+    return jsonify({"success": True, "data": {
+        "courses": BL.list_lesson_courses(str(g.user_id), lid)}})
 
 
 @board_bp.route("/api/board/prep", methods=["POST"])

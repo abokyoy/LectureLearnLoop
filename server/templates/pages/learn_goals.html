@@ -1116,13 +1116,19 @@
         box.innerHTML = html;
     }
     // ---------------- 知识点提取右栏（追问笔记树轮）：提取→勾选→入库，阅读中随时可提 ----------------
+    // 画图硬纪律轮 2026-11-18：顶部加「已提取」历史折叠块（用户裁定：提过要看得见），
+    // 「让 AI 老师讲课」按钮下加「上课历史」课件块（上完课生成的课件回课程页可见）。
     function buildExtractPanel() {
         var box = $('cgExtractPanel');
         if (!box || !flow) return;
         box.innerHTML = '<p class="text-[11px] text-cl-muted mb-1">知识点提取</p>'
+            + '<div id="cgExtractHist" class="mb-1.5"></div>'
             + '<button id="cgExtractGoBtn" class="w-full px-2 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary hover:border-cl-primary transition-colors">从课文提取知识点</button>'
             + '<button id="cgLessonTeachBtn" class="w-full mt-1.5 px-2 py-1.5 rounded-clbtn text-[12px] border border-cl-border text-cl-muted hover:text-cl-primary hover:border-cl-primary transition-colors">让 AI 老师讲课</button>'
+            + '<div id="cgClassHist" class="mt-1.5"></div>'
             + '<div id="cgExtractOut" class="mt-2"></div>';
+        loadExtractHistory();
+        loadClassHistory();
         // 目标导向课程轮：整堂课时指派进小黑板（同框选「请老师讲课」链），
         // 老师取料时现取课文注入指导语；学生到黑板说「开始讲课吧」即讲这堂课
         $('cgLessonTeachBtn').addEventListener('click', function () {
@@ -1178,12 +1184,99 @@
             cgPost('/api/knowledge/confirm', { confirmations: conf }).then(function () {
                 msg.innerHTML = '<span class="text-green-600">✓ 已加入知识点库</span>';
                 window.__cgExtractSaved = true; // CDP 断言哨兵
+                // 入库成功后回写提取历史（服务端同名幂等），并刷新「已提取」块；
+                // 回写失败只静默跳过，绝不影响入库成功提示
+                var names = conf.map(function (c) { return { name: c.point_data.point_name }; });
+                cgPost('/api/course/lessons/' + flow.lid + '/extracts', { items: names })
+                    .then(loadExtractHistory).catch(function () {});
             }).catch(function (e) {
                 btn.disabled = false; btn.textContent = '加入知识点库';
                 msg.innerHTML = '<span class="text-red-600">' + cgEsc(e && e.status === 402 ? '积分不足：' + e.message : ((e && e.message) || '入库失败')) + '</span>';
             });
         });
         window.__cgExtractReady = true; // CDP 断言哨兵
+    }
+    // 「已提取」历史折叠块：默认收起，点击展开看本课历史提取（name + 日期）
+    function loadExtractHistory() {
+        var box = $('cgExtractHist');
+        if (!box || !flow || !flow.lid) return;
+        cgGet('/api/course/lessons/' + flow.lid + '/extracts').then(function (d) {
+            var items = (d && d.items) || [];
+            if (!items.length) { box.innerHTML = ''; return; }
+            box.innerHTML = '<div id="cgExtHistToggle" class="text-[11px] text-cl-muted cursor-pointer hover:text-cl-primary">▸ 已提取（' + items.length + '）</div>'
+                + '<div id="cgExtHistList" class="hidden mt-1 max-h-40 overflow-y-auto rounded-cl border border-cl-border bg-cl-bg/50 px-2 py-1.5">'
+                + items.map(function (it) {
+                    return '<div class="flex justify-between gap-2 py-0.5 text-[11px]"><span class="min-w-0 truncate text-cl-text" title="' + cgEsc(it.name) + '">' + cgEsc(it.name) + '</span><span class="shrink-0 text-cl-muted">' + cgEsc((it.time || '').slice(0, 10)) + '</span></div>';
+                }).join('') + '</div>';
+            $('cgExtHistToggle').addEventListener('click', function () {
+                var li = $('cgExtHistList');
+                li.classList.toggle('hidden');
+                this.textContent = (li.classList.contains('hidden') ? '▸ ' : '▾ ') + '已提取（' + items.length + '）';
+            });
+        }).catch(function () { box.innerHTML = ''; });
+    }
+    // 「上课历史」课件块：这堂课（flow.lid）上过后生成的课件列在讲课按钮下方
+    function loadClassHistory() {
+        var box = $('cgClassHist');
+        if (!box || !flow || !flow.lid) return;
+        cgGet('/api/board/lesson_courses?lesson_id=' + flow.lid).then(function (d) {
+            var courses = (d && d.courses) || [];
+            if (!courses.length) { box.innerHTML = ''; return; }
+            box.innerHTML = '<p class="text-[11px] text-cl-muted mb-1">上课历史</p>'
+                + courses.map(function (c, i) {
+                    return '<div class="rounded-cl border border-cl-border bg-cl-bg/50 px-2 py-1.5 mb-1 text-[11px]">'
+                        + '<div class="cgClsHistToggle flex justify-between gap-2 cursor-pointer hover:text-cl-primary" data-ci="' + i + '">'
+                        + '<span class="min-w-0 truncate text-cl-text">▸ ' + cgEsc(c.title || '课件') + '</span>'
+                        + '<span class="shrink-0 text-cl-muted">' + c.pages + ' 页 · ' + cgEsc((c.updated_time || '').slice(0, 10)) + '</span></div>'
+                        + '<div id="cgClsHistPage' + i + '" class="hidden mt-1.5 space-y-1.5"></div></div>';
+                }).join('');
+            box.querySelectorAll('.cgClsHistToggle').forEach(function (el) {
+                el.addEventListener('click', function () {
+                    toggleClassCoursePages(Number(this.getAttribute('data-ci')), courses[Number(this.getAttribute('data-ci'))]);
+                });
+            });
+        }).catch(function () { box.innerHTML = ''; });
+    }
+    // 展开/收起某份课件的页缩略图：首次展开才拉 slides（懒加载），逐页签名取图
+    function toggleClassCoursePages(i, c) {
+        var pg = $('cgClsHistPage' + i);
+        if (!pg || !c) return;
+        var tg = pg.previousElementSibling;
+        if (!pg.classList.contains('hidden')) { pg.classList.add('hidden'); if (tg) tg.querySelector('span').textContent = '▸ ' + (c.title || '课件'); return; }
+        pg.classList.remove('hidden');
+        if (tg) tg.querySelector('span').textContent = '▾ ' + (c.title || '课件');
+        if (pg.dataset.loaded) return;
+        pg.dataset.loaded = '1';
+        pg.innerHTML = '<div class="text-[11px] text-cl-muted">课件加载中…</div>';
+        cgGet('/api/board/lesson?lesson_key=' + encodeURIComponent(c.lesson_key)).then(function (d) {
+            var slides = (d && d.slides) || [];
+            if (!slides.length) { pg.innerHTML = '<div class="text-[11px] text-cl-muted">暂无页面</div>'; return; }
+            pg.innerHTML = '';
+            slides.forEach(function (s) {
+                var wrap = document.createElement('div');
+                var h = document.createElement('p');
+                h.className = 'text-[11px] text-cl-muted mb-0.5 truncate';
+                h.textContent = s.seq + '. ' + (s.title || '');
+                wrap.appendChild(h);
+                if (s.has_image && s.image_rel) {
+                    var img = document.createElement('img');
+                    img.className = 'w-full rounded-cl border border-cl-border bg-cl-surface cursor-zoom-in';
+                    img.loading = 'lazy'; img.alt = s.title || '';
+                    img.addEventListener('click', function () { window.open(this.src, '_blank'); });
+                    wrap.appendChild(img);
+                    cgGet('/api/board/asset/sign?rel=' + encodeURIComponent(s.image_rel)).then(function (sig) {
+                        if (sig && sig.t) {
+                            img.src = '/api/board/asset?u=' + encodeURIComponent(sig.u) + '&rel=' + encodeURIComponent(sig.rel) + '&exp=' + sig.exp + '&t=' + encodeURIComponent(sig.t);
+                        }
+                    }).catch(function () {});
+                } else {
+                    var t = document.createElement('div');
+                    t.className = 'text-[11px] text-cl-muted'; t.textContent = '（本页无图）';
+                    wrap.appendChild(t);
+                }
+                pg.appendChild(wrap);
+            });
+        }).catch(function (e) { pg.innerHTML = '<div class="text-[11px] text-red-600">' + cgEsc((e && e.message) || '课件加载失败') + '</div>'; });
     }
     function openAskPop(rect, text, parentId) {
         hideSelMenu();

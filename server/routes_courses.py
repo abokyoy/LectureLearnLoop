@@ -1146,6 +1146,66 @@ def lesson_extract(lid):
     return _ok({"points": points, **cr.billing_for_response()})
 
 
+_EXTRACT_NAME_MAX = 120   # 提取历史单条名长（防绕过展示层塞长文）
+_EXTRACT_ITEMS_MAX = 50   # 单次回写条数硬顶（一次提取几十条已够，防滥用）
+
+
+@courses_bp.route("/api/course/lessons/<int:lid>/extracts", methods=["GET"])
+@require_auth
+def lesson_extracts_list(lid):
+    """本课提取历史（画图硬纪律轮 2026-11-18：用户裁定「提过要看得见，
+    不重复白耗提取积分」）：右栏「提取过」块数据源，新提的在前。"""
+    conn = _conn()
+    try:
+        ctx = _lesson_ctx(conn, lid, g.user_id)
+        if not ctx:
+            return _err("课文不存在", 404)
+        rows = conn.execute(
+            "SELECT point_name, created_time FROM lesson_extracts "
+            "WHERE user_id = ? AND lesson_id = ? ORDER BY id DESC LIMIT 200",
+            (str(g.user_id), lid)).fetchall()
+    finally:
+        conn.close()
+    return _ok({"items": [{"name": r[0], "time": r[1] or ""} for r in rows]})
+
+
+@courses_bp.route("/api/course/lessons/<int:lid>/extracts", methods=["POST"])
+@require_auth
+def lesson_extracts_log(lid):
+    """入库成功后回写提取历史：{items:[{name}]}。同名幂等跳过（UNIQUE 三元组），
+    空名/超长名清洗后丢弃；归属双条件隔离，越权 404。"""
+    body = request.get_json(silent=True) or {}
+    items = body.get("items") or []
+    if not isinstance(items, list) or not items:
+        return _err("items 必须为非空列表", 400)
+    names = []
+    for it in items[:_EXTRACT_ITEMS_MAX]:
+        nm = str((it or {}).get("name") if isinstance(it, dict) else it or "").strip()
+        nm = nm[:_EXTRACT_NAME_MAX]
+        if nm and nm not in names:
+            names.append(nm)
+    if not names:
+        return _err("没有有效名称可记", 400)
+    conn = _conn()
+    try:
+        ctx = _lesson_ctx(conn, lid, g.user_id)
+        if not ctx:
+            return _err("课文不存在", 404)
+        added = 0
+        for nm in names:
+            cur = conn.execute(
+                "INSERT INTO lesson_extracts (user_id, lesson_id, point_name) "
+                "VALUES (?, ?, ?) ON CONFLICT (user_id, lesson_id, point_name) DO NOTHING",
+                (str(g.user_id), lid, nm))
+            added += cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    log.log("course", "extract_log", "success",
+            {"lid": lid, "names": len(names), "added": added})
+    return _ok({"added": added})
+
+
 @courses_bp.route("/api/course/lessons/<int:lid>/complete", methods=["POST"])
 @require_auth
 def lesson_complete(lid):

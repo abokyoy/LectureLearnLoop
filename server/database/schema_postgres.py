@@ -459,6 +459,20 @@ PG_TABLES = [
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_lesson_notes_lesson ON lesson_notes (lesson_id, parent_id)",
+
+    # 课文知识点提取历史（画图硬纪律轮 2026-11-18）：本课提过哪些知识点持久留档，
+    # 右栏「提取过」块可展开回看；同名重提不重复记（UNIQUE 三元组幂等跳过）。
+    """
+    CREATE TABLE IF NOT EXISTS lesson_extracts (
+        id BIGSERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        lesson_id BIGINT NOT NULL,
+        point_name TEXT NOT NULL,
+        created_time TEXT DEFAULT (to_char(timezone('UTC', now()), 'YYYY-MM-DD HH24:MI:SS')),
+        UNIQUE (user_id, lesson_id, point_name)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_lesson_extracts_lesson ON lesson_extracts (lesson_id)",
 ]
 
 # 主库拷贝顺序（外键虽未建，仍按依赖序保证数据语义）
@@ -469,7 +483,7 @@ MAIN_TABLES = [
     "favorite_questions", "knowledge_mindmaps", "learning_paths",
     "micro_courses", "micro_scenes",
     "learning_goals", "course_modules", "course_lessons", "course_tests", "course_attempts",
-    "lesson_notes",
+    "lesson_notes", "lesson_extracts",
 ]
 # practice 每用户库合并迁移的表（需注入 user_id）
 PRACTICE_TABLES_WITH_USER = [

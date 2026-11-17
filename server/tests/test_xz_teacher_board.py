@@ -4500,5 +4500,90 @@ class TnDropMirrorTest(unittest.TestCase):
         self.assertIn("凭空消失", self._probe())
 
 
+class PlotLagMirrorTest(unittest.TestCase):
+    """图打头阵镜（2026-11-18 三轮用户裁定：「每推进一个段落都要有一张图打头阵」）：
+    一张图之后又写 ≥2 张文字卡未新画图，下次工具返回拦嘴递选图速查表并消费清零。
+    与吞字镜/说了没写镜同口径纯内存状态机；探针同 TalkUnboardedMirrorTest。"""
+
+    def setUp(self):
+        self.uid = "plmir_" + uuid.uuid4().hex[:10]
+
+    def tearDown(self):
+        LB._boards.pop(self.uid, None)
+
+    def _probe(self):
+        return LB.execute_tool("board_highlight", {"item_id": -1}, self.uid)
+
+    def _draw(self):
+        return LB.execute_tool("board_draw", {"title": "段落图", "spec": {
+            "plot_type": "mermaid",
+            "code": "graph TD\n  A[起点] --> B[终点]"}}, self.uid)
+
+    def _write(self, tag):
+        return LB.execute_tool("board_write", {"kind": "step", "content": tag}, self.uid)
+
+    def test_p1_one_card_after_plot_no_mirror(self):
+        """正常节奏（图后一张文字卡）不拦嘴：阈值是 ≥2 才触发。
+        镜在写卡动作自身返回里递（发生即递），断言跟着 _write 而非探针。"""
+        self._draw()
+        self.assertNotIn("打头阵", self._write("卡一"))
+
+    def test_p2_two_cards_trigger_with_menu(self):
+        """图后两张文字卡：第二张写卡返回即拦嘴，带张数与选图速查表
+        （绘图方式全景必须递到）；递过即消费，后续探针不再重复。"""
+        self._draw()
+        self._write("卡一")
+        t = self._write("卡二")
+        self.assertIn("2 张文字卡", t)
+        self.assertIn("选图速查", t)
+        self.assertIn("mermaid", t)
+        self.assertNotIn("打头阵", self._probe())   # 已消费，不二次唠叨
+
+    def test_p3_consumed_then_reaccumulate(self):
+        """消费即清：同一批不反复唠叨；再攒够 2 张才重递。"""
+        self._draw()
+        self._write("卡一")
+        self.assertIn("打头阵", self._write("卡二"))
+        self.assertNotIn("打头阵", self._probe())   # 已消费，不重复递
+        self.assertNotIn("打头阵", self._write("卡三"))   # 只攒 1 张不递
+        self.assertIn("打头阵", self._write("卡四"))      # 再攒 2 张重递
+
+    def test_p4_new_plot_clears(self):
+        """画了新图就清账：图后 1 张卡再画图 → 写卡不拦。"""
+        self._draw()
+        self._write("卡一")
+        self._draw()
+        self.assertNotIn("打头阵", self._write("卡二"))
+
+    def test_p5_clear_board_resets(self):
+        """擦板重开：打头阵旧账清零。"""
+        self._write("卡一")
+        self._write("卡二")
+        LB.execute_tool("board_clear", {}, self.uid)
+        self.assertNotIn("打头阵", self._write("卡三"))
+
+    def test_p6_lesson_rotate_resets(self):
+        """换课从头计：新课开头不翻旧课的账。"""
+        self._write("卡一")
+        self._write("卡二")
+        with LB._lock:
+            LB._rotate_lesson_locked(LB._board(self.uid))
+        self.assertNotIn("打头阵", self._write("卡三"))
+
+    def test_p7_accum_cap_bounded(self):
+        """累加封顶 20：长局文字卡狂写计数有界；每递一次消费清零，
+        下批攒够 2 张再递（封顶不致镜失能）。"""
+        hits = 0
+        for i in range(25):
+            if "打头阵" in self._write(f"卡{i + 1}"):
+                hits += 1
+        with LB._lock:
+            n = LB._board(self.uid).get("cards_since_plot")
+        self.assertLessEqual(n, 20)
+        self.assertGreaterEqual(hits, 2)   # 长局里镜反复生效过
+        self.assertIn("打头阵", self._write("新卡一"))
+        self.assertNotIn("打头阵", self._write("新卡二"))  # 刚递过，1 张不递
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

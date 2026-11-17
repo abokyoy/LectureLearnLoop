@@ -131,9 +131,12 @@ def _board(uid: str) -> dict:
              # t_since_board=老师上次上板以来累计口播字数（2026-11-17「面板一直
              # 说话、板书不动」报障：≥_TALK_UNBOARDED_MIN 未上板即镜检拦嘴）；
              # tn_drop/tn_last=本轮待提醒的「吞字残骸」句计数与残句样本
-             # （2026-11-18 实弹轮：坐标式被 TTS 吞成空格，下次工具返回提醒一次）
+             # （2026-11-18 实弹轮：坐标式被 TTS 吞成空格，下次工具返回提醒一次）；
+             # cards_since_plot=上次画图以来新上板的文字卡数（2026-11-18 三轮：
+             # 「每段落图打头阵」硬纪律——≥2 张无新图即镜检拦嘴，画图清零）
              "lesson_kp": None, "unexplained": [], "q_unboarded": 0,
-             "lesson_txt": None, "t_since_board": 0, "tn_drop": 0, "tn_last": ""}
+             "lesson_txt": None, "t_since_board": 0, "tn_drop": 0, "tn_last": "",
+             "cards_since_plot": 0}
         _boards[uid] = b
     return b
 
@@ -209,6 +212,7 @@ def clear_board(uid: str) -> dict:
         b["unexplained"] = []       # 板空了进度镜同步归零（lesson_kp 与 assign 同理保留）
         b["q_unboarded"] = 0        # 擦板重开：追问没上板的旧账一并清零
         b["t_since_board"] = 0      # 擦板重开：干讲账同样清零
+        b["cards_since_plot"] = 0   # 擦板重开：图打头阵账也清零
         b["tn_drop"] = 0            # 擦板重开：吞字提醒旧账一并清零
         b["tn_last"] = ""
         b["source_error_id"] = None
@@ -316,7 +320,8 @@ def _assign_directive(uid: str, a: dict) -> str:
                 "关键处拆开讲），建完主干卡第二步就 board_draw 一张总览图定场\n"
                 "（这段内容的结构/关系/图形画成一张图，学生第一眼要有得看）。\n"
                 "讲课纪律：一张卡讲透再写下一张（写完就停嘴连写多张=没上课）；"
-                "能画的一定画——每张卡讲完想一遍能不能画，用 board_draw 配图；"
+                "每进入一个新要点，先 board_draw 一张代表它的图打头阵；"
+                "讲的内容落不进现有图里就画新图，别硬塞旧图；"
                 "板上没出新卡/新图之前，不要往下讲新内容；"
                 "板上所有卡都讲完、学生点头之前，不要结课道别。\n")
     if a["kind"] == "lesson":
@@ -335,12 +340,16 @@ def _assign_directive(uid: str, a: dict) -> str:
                 "开讲方式：先 board_write 建 topic 主干卡（这堂课的标题），"
                 "紧接着第二步就 board_draw 一张整课总览图定场（结构图/示意图/函数图像，"
                 "选最能代表这堂课的一张）——学生第一眼黑板上就要有图可看；"
-                "再把课文按逻辑顺序拆成 2-4 个关键点逐一建卡讲解——每张卡讲透"
+                "先把课文按逻辑顺序拆成 2-4 个关键点逐一建卡讲解——每张卡讲透"
                 "（结论→为什么→举例子）再写下一张（写完就停嘴连写多张=没上课）；"
                 "公式用 formula 卡。\n"
-                "画图铁律：能画的一定画——每个关键点讲完想一遍能不能画，"
-                "关系画结构图、几何画图形、函数统计画图像，用 board_draw 配图；"
-                "只给关键点配图不画装饰，纯背诵类才免画。\n"
+                "画图铁律（每个段落图打头阵）：每进入一个新的关键点/段落，"
+                "第一步就 board_draw 一张代表这一段落的图上板打头阵，再开嘴讲；"
+                "讲的内容落不进现有的图里，立刻画新图，别硬塞旧图。"
+                "选图速查：关系/层级→diagram(flow/tree)，拆原理理思路→mermaid，"
+                "数量对比→stats(bar)、占比→pie、相关性→scatter，函数变化→function，"
+                "区间→numberline，角度→unitcircle/polar，几何→geometry，"
+                "过程步骤→timeline，要点清单/对比表→diagram 排版块（PPT 式版式）。\n"
                 "讲课节奏：黑板上要始终跟着你的嘴走——每讲完一个关键点就要有新卡或"
                 "新图上板，板上没出新动作之前不要往下赶新内容（你干讲两分钟，"
                 "学生盯着旧板书两分钟）。\n"
@@ -363,7 +372,8 @@ def _assign_directive(uid: str, a: dict) -> str:
                 f"（学科 {pack.get('subject') or '未分类'}，当前掌握度 {prof}）。"
                 f"知识点描述：{pack.get('desc') or '（无描述）'}。"
                 "先 board_write 建 topic 主干卡把概念讲透（定义→关键点→易错处），"
-                "能画的一定画（board_draw：关系画结构图、几何画图形、函数统计画图像），"
+                "能画的一定画，每个关键点图打头阵（board_draw：关系→diagram(flow/tree)，"
+                "思路→mermaid，几何→geometry，函数统计→function/stats），"
                 f"再从下面清单挑该知识点最有代表性的 1-2 道错题用 board_show_problem "
                 f"上黑板配例讲（学生刚答错过，敲例子最管用）：{errs}。\n"
                 "讲课纪律：一张卡讲透再写下一张（写完就停嘴连写多张=没上课）；"
@@ -400,7 +410,8 @@ def _kp_replay_text(uid: str, lk: dict) -> str:
             f"知识点描述：{pack.get('desc') or '（无描述）'}。\n"
             + status_line(uid) + "\n"
             "照着板面从上往下讲：先对照状态行找出还没讲过的卡，从最旧那张起一张一张讲透；"
-            "讲到没配图的卡，能画的一律 board_draw 补一张图；"
+            "讲到没配图的卡，能画的一律 board_draw 补一张图；进新要点先画新图打头阵，"
+            "讲的内容落不进现有图里就画新图；"
             "学生说「继续/没听懂/再讲一下」时，就照那几张卡的正文换个例子或更直白的说法重讲，"
             "需要改写某张卡用 board_replace；原理图舞台若已就绪，也可用 board_anim_step 重推一步带学生再看一遍。"
             "板上卡片没讲完之前，严禁结课道别。")
@@ -428,7 +439,8 @@ def _lesson_txt_replay(uid: str, lt: dict) -> str:
             f"（学科 {pack['subject']}，素材全课有效）。课文如下：\n{txt}\n"
             + status_line(uid) + "\n"
             "先对照状态行找出还没讲过的卡，从最旧那张起一张一张讲透，"
-            "讲到没配图的卡能画就 board_draw 补一张；黑板上要始终跟着你的嘴走，"
+            "讲到没配图的卡能画就 board_draw 补一张；每开讲新段落先画新图打头阵；"
+            "黑板上要始终跟着你的嘴走，"
             "讲完一个关键点就上新卡/新图，别干讲不推进；"
             "学生说「继续/没听懂/再讲一下」时，照板上最新那张卡找到课文里对应段落，"
             "换个例子或更直白的说法把下一段接着讲完，需要改写某张卡用 board_replace。"
@@ -584,6 +596,11 @@ def _append_locked(b: dict, kind: str, text: str, data=None, anchors=None) -> in
     # 就一笔勾销——镜检只盯「当下还在只说不写」，不翻旧账
     b["q_unboarded"] = 0
     b["t_since_board"] = 0        # 说了没写镜同口径：新卡上板即归零
+    # 图打头阵镜记账（2026-11-18 三轮）：新图上板清零，文字卡上板累加（封顶防无界）
+    if kind == "plot":
+        b["cards_since_plot"] = 0
+    else:
+        b["cards_since_plot"] = min(20, (b.get("cards_since_plot") or 0) + 1)
     # 讲课进度镜：新卡进「写了没讲」队列，被淘汰出板的卡号一并剔除
     uq = b.setdefault("unexplained", [])
     uq.append(b["seq"])
@@ -673,6 +690,7 @@ def _rotate_lesson_locked(b: dict) -> str:
     """换课：先给挂着的那张图闭窗定稿（仍算上一节课的页），再换新课键。"""
     _close_open_caption_locked(b)
     b["lesson_key"] = uuid.uuid4().hex[:16]
+    b["cards_since_plot"] = 0   # 新课从头计：图打头阵账不翻旧课的账
     b["rev"] += 1
     return b["lesson_key"]
 
@@ -761,6 +779,15 @@ def get_lesson_key(uid: str):
     with _lock:
         b = _boards.get(uid)
         return (b or {}).get("lesson_key")
+
+
+def get_course_lesson_id(uid: str):
+    """本课在讲的目标导向课文 id（画图硬纪律轮 2026-11-18，上课历史归属用）：
+    仅 lesson 型指派消费后在板（lesson_txt 常驻）时有值，课件首张页建课时写入 ref。"""
+    with _lock:
+        b = _boards.get(uid) or {}
+        lt = b.get("lesson_txt") or {}
+        return lt.get("id")
 
 
 def set_lesson_key(uid: str, lesson_key: str) -> dict:
@@ -1291,12 +1318,13 @@ TOOLS = [
     {
         "name": "board_draw",
         "description":
-            "必须画图：能画成图的别用文字卡。spec.plot_type：function=函数曲线（curves≤3，"
-            "expr 只用 x 与初等函数，可带 shades/tangents）；numberline=数轴；"
-            "geometry=几何（中点写 mid:['B','C']，关系写 relations 供核验）；polar=极坐标；"
+            "新关键点先画图再开嘴讲（图打头阵），能画成图的别用文字卡；"
+            "落不进当前图就画新图。spec.plot_type：function=函数曲线（curves≤3，"
+            "expr 只用 x，可带 shades/tangents）；numberline=数轴；"
+            "geometry=几何（中点 mid:['B','C']，关系 relations 供核验）；polar=极坐标；"
             "unitcircle=单位圆；timeline=时间轴；stats=统计（shape=bar|pie|line|"
             "scatter|box|histogram，scatter 可带 trend）；diagram=框图（flow|barmodel|tree|sankey）；"
-            "mermaid=思路图（讲思路/拆原理，code 写 mermaid DSL）。"
+            "mermaid=思路图（code 写 DSL）。"
             "元素带 step 供 reveal=N 分步；成功回黑板实况，照此说；"
             "marks 供 point=N 指认；非法拒收重试",
         "inputSchema": {"type": "object", "properties": {
@@ -1395,7 +1423,8 @@ def execute_tool(name: str, args: dict, uid: str) -> str:
     + 讲了没写镜（追问阶段只说不写上板，见 _q_unboarded_mirror）。"""
     return (_execute_core(name, args, uid) + _anim_notice(uid)
             + _explain_mirror(uid) + _q_unboarded_mirror(uid)
-            + _talk_unboarded_mirror(uid) + _tn_drop_mirror(uid))
+            + _talk_unboarded_mirror(uid) + _tn_drop_mirror(uid)
+            + _plot_lag_mirror(uid))
 
 
 def _explain_mirror(uid: str) -> str:
@@ -1463,6 +1492,26 @@ def _tn_drop_mirror(uid: str) -> str:
             "式子必须翻成能念的中文再说：不说「形如 (x,y,0) 的向量」，"
             "说「第三个分量锁死是零的那类向量」；「形如/比如/等于/再看」后面"
             "必须紧跟能读出来的内容，读完自检一遍句子完不完整。")
+
+
+def _plot_lag_mirror(uid: str) -> str:
+    """图打头阵镜（2026-11-18 三轮用户裁定：「每推进一个段落都要有一张图打头阵」）：
+    一张图之后又写了 ≥2 张文字卡还没新图，下次工具返回拦嘴递方法表并消费清零。
+    与说了没写镜互补：那镜盯「完全不写」，这镜盯「只写字不画图」；
+    新图上板/擦板/换课清零，同一批不反复唠叨。"""
+    with _lock:
+        b = _board(uid)
+        n = b.get("cards_since_plot") or 0
+        if n >= 2:
+            b["cards_since_plot"] = 0
+    if n < 2:
+        return ""
+    return ("\n那张图之后你又写了 " + str(n) + " 张文字卡，没再画过图。"
+            "新讲一个关键点，第一步先 board_draw 一张图打头阵；刚才讲的内容"
+            "落不进现有图里的，就画新图，别硬塞旧图。选图速查：关系/层级→diagram"
+            "(flow/tree)，拆原理理思路→mermaid，数量对比→stats(bar)或占比→pie，"
+            "函数变化→function，区间→numberline，角度→unitcircle/polar，"
+            "几何→geometry，过程步骤→timeline，要点清单/对比表→diagram 排版块。")
 
 
 def _execute_core(name: str, args: dict, uid: str) -> str:
