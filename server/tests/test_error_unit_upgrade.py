@@ -306,6 +306,32 @@ class TestP4Service(unittest.TestCase):
             self.WR.extract_json_object('{"html": "a\nb')
         self.assertIn("截断", str(cm3.exception))
 
+    def test_01d_extract_bare_quote_repair(self):
+        """畸形修补层（GLM 畸形轮 2026-11-17）：串值里未转义双引号/裸反斜杠
+        （strict=False 救不了的那半失败模式）状态机修复后救回；修不好的
+        真垃圾仍报 ValueError，不得静默吐半成品。"""
+        # 裸双引号：html 属性 class="box" 没转义
+        bad = '{"title": "t", "html": "<div class="box">hi</div>"}'
+        obj = self.WR.extract_json_object(bad)
+        self.assertIn('class="box"', obj["html"])
+        self.assertEqual(obj["title"], "t")
+        # 裸反斜杠：JS 正则 /\d+/ 直接写进值里
+        bad2 = '{"html": "var r=/\\d+/; done"}'
+        obj2 = self.WR.extract_json_object(bad2)
+        self.assertIn("/\\d+/", obj2["html"])
+        # 合法输入不走修补也不破坏（幂等）
+        ok = '{"a": 1, "b": "x\\"y"}'
+        self.assertEqual(self.WR.extract_json_object(ok), {"a": 1, "b": 'x"y'})
+
+    def test_01e_extract_truncation_css_braces(self):
+        """截断检测补强（畸形轮 2026-11-17）：半截 html 的内联 CSS 里有一堆 }，
+        原「一个 } 都没有才判截断」的闸对 html 长文失效——改按开合失衡判，
+        截断不再伪装成「不可解析」。"""
+        trunc = '{"title": "x", "html": "<style>.a{color:red}.b{width:1px'
+        with self.assertRaises(ValueError) as cm:
+            self.WR.extract_json_object(trunc)
+        self.assertIn("截断", str(cm.exception))
+
     def test_02_validate_strict(self):
         vid = {11, 12}
         rep = self.WR.validate_report({"summary_md": "## 总体", "nodes": [

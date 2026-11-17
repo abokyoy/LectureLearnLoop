@@ -246,6 +246,28 @@ def test_24_llm_fail_terminal_no_double_charge():
         _purge_pc(uid)
 
 
+def test_24b_fail_error_copy():
+    """失败文案分流（畸形轮 2026-11-17）：截断真因透传（「再点一次」对容量
+    不足是误导）；其他 ValueError 保持友好文案不透内部报错细节。"""
+    orig = BE.call_llm_for_user
+    try:
+        uid = "cv" + uuid.uuid4().hex[:8]
+        BE.call_llm_for_user = Stub(
+            raises=ValueError("模型输出被截断（JSON 未闭合）：模型上下文或生成长度上限不足"))
+        r = BE.start_for_lesson(uid, _ctx(), "principle")
+        j = _wait_done(uid, r["job"]["job_id"])
+        assert j["state"] == "failed" and "截断" in j["error"]
+
+        uid = "cv" + uuid.uuid4().hex[:8]
+        BE.call_llm_for_user = Stub(raises=ValueError("模型返回不可解析为 JSON 对象"))
+        r = BE.start_for_lesson(uid, _ctx(), "principle")
+        j = _wait_done(uid, r["job"]["job_id"])
+        assert j["state"] == "failed" and "再点一次" in j["error"]
+        assert "不可解析" not in j["error"]                   # 内部文案不外溜
+    finally:
+        BE.call_llm_for_user = orig
+
+
 def test_25_key_isolation():
     """同课文 principle/lab 互不覆盖；课级 course_lesson 轨与黑板 lesson 轨互不串。"""
     uid = "cv" + uuid.uuid4().hex[:8]

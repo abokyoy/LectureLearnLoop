@@ -30,6 +30,51 @@ _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 
 
+def _repair_json_text(t: str) -> str:
+    """畸形 JSON 修补（GLM 偶发畸形轮 2026-11-17）：模型在长 html 串值里写
+    未转义的双引号（class="x"）或裸反斜杠（/\d 正则），strict=False 也救不了
+    ——同 prompt 重跑又正常（实弹复现铁证：失败单 11236 字解析炸，重放单
+    10235 字全 OK），白扣一单。状态机按结构启发式转义后再给一次解析机会；
+    修不好照旧走失败路径，绝不重发请求（防双扣分纪律不变）。"""
+    out = []
+    in_str = False
+    i, n = 0, len(t)
+    while i < n:
+        c = t[i]
+        if not in_str:
+            if c == '"':
+                in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "\\":
+            nxt = t[i + 1] if i + 1 < n else ""
+            if nxt in '"\\/bfnrtu':
+                out.append(c)
+                out.append(nxt)
+                i += 2
+            else:
+                out.append("\\\\")   # 裸反斜杠 → 转义
+                i += 1
+            continue
+        if c == '"':
+            # 闭引号判定：后面首个非空白字符应是结构符（, : } ]）或到文末，
+            # 否则是串值里的裸引号 → 转义（误判成闭引号时解析仍失败，落回原错）
+            j = i + 1
+            while j < n and t[j] in " \t\r\n":
+                j += 1
+            if j >= n or t[j] in ",:}]":
+                in_str = False
+                out.append(c)
+            else:
+                out.append('\\"')
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def build_prompt(subject: str, items: list[dict]) -> str:
     """错题集 → 分析 prompt。items 元素键：error_id/kp_name/question/user_answer/correct/explanation。"""
     lines = []
@@ -75,7 +120,9 @@ def extract_json_object(text: str) -> dict:
     s, e = t.find("{"), t.rfind("}")
     if s >= 0 and e > s:
         cand = t[s:e + 1]
-        candidates += [cand, _TRAILING_COMMA_RE.sub(r"\1", cand)]
+        rep = _repair_json_text(cand)
+        candidates += [cand, _TRAILING_COMMA_RE.sub(r"\1", cand), rep,
+                       _TRAILING_COMMA_RE.sub(r"\1", rep)]
     for cand in candidates:
         # strict=False 补轮（实验台偶发畸形 JSON 轮 2026-11-12）：GLM 偶发在长
         # html 字符串值里写裸换行/制表符（严格 JSON 非法），同 prompt 重跑又正常——
@@ -90,8 +137,10 @@ def extract_json_object(text: str) -> dict:
     # 截断与格式不合要分开报（坏舞台轮 2026-11-10）：本地模型 ctx/生成长度上限不足时
     # 吐出的是「有 { 无 }」的半截 JSON，报「不可解析」会把容量问题伪装成格式问题，
     # 老师只能转述「再点一次试试」，用户永远猜不到要的是调大 num_ctx。
-    if t.find("{") >= 0 and t.rfind("}") < 0:
-        raise ValueError("模型输出被截断（JSON 未闭合）：本地模型上下文或生成长度"
+    # 补强（畸形轮 2026-11-17）：半截 html 的内联 CSS/JS 里本就有一堆 }，
+    # 「一个 } 都没有」才判截断的原闸对 html 长文全失效——改按花括号开合失衡判。
+    if t.find("{") >= 0 and t.count("{") > t.count("}"):
+        raise ValueError("模型输出被截断（JSON 未闭合）：模型上下文或生成长度"
                          "上限不足，本页暂时生成不了")
     raise ValueError("模型返回不可解析为 JSON 对象")
 

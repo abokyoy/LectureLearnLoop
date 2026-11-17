@@ -337,6 +337,7 @@ def _run(job_id: str, uid: str, prompt: str, mode: str = "off",
     显式传参不依赖表命中，测试桩/调用方行为可预测）。
     pc_kind/scene：归档轨道与计量场景（黑板链默认 "lesson"/原理图；课文页走
     "course_lesson" 与实验台场景，两轨互不串，图文结合轮 2026-11-12）。"""
+    raw = ""
     try:
         raw = call_llm_for_user(uid, prompt, scene=scene, timeout=(
             _LLM_TIMEOUT_REFRESH if mode == "on" else _LLM_TIMEOUT),
@@ -365,12 +366,19 @@ def _run(job_id: str, uid: str, prompt: str, mode: str = "off",
         log.log("xz_board", "explain_done", "fail",
                 {"uid": uid, "job": job_id, "reason": "credits"})
     except Exception as e:  # noqa: BLE001 生成失败不影响黑板主流程
-        _finish(job_id, state="failed",
-                error=("模型返回的内容不完整或不合格式，再点一次试试"
-                       if isinstance(e, ValueError) else
-                       f"生成失败：{str(e)[:80]}"))
+        msg = str(e) or ""
+        # 截断真因直接透传（畸形轮 2026-11-17）：「再点一次」对容量不足是
+        # 误导——重跑照样在同一处砍断，用户反复白等；文案本身已可读
+        if "截断" in msg:
+            user_err = msg[:100]
+        elif isinstance(e, ValueError):
+            user_err = "模型返回的内容不完整或不合格式，再点一次试试"
+        else:
+            user_err = f"生成失败：{msg[:80]}"
+        _finish(job_id, state="failed", error=user_err)
         log.log("xz_board", "explain_done", "fail",
-                {"uid": uid, "job": job_id, "err": str(e)[:120]})
+                {"uid": uid, "job": job_id, "err": msg[:120],
+                 "raw_head": (raw or "")[:80], "raw_tail": (raw or "")[-80:]})
 
 
 # ---------------------------------------------------------------- 课文级视觉产物（图文结合轮 2026-11-12，用户裁定 A 方案）
